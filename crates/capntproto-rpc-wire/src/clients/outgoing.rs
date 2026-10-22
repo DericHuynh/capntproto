@@ -3,6 +3,7 @@
 use super::*;
 use crate::buffer::{Buffer, Capacity};
 use capntproto_rpc_engine::storage::Storage as SlotStorage;
+use capntproto_rpc_engine::waiting::{Requirement, Slot as WaitSlot, Waiting};
 mod handoff;
 use crate::{
     calls,
@@ -102,6 +103,7 @@ impl<'id, P: Copy, S, const PATH: usize> Route<'id, P, S, PATH> {
 pub enum Error {
     NonemptyStorage,
     Capacity,
+    ObserversFull,
     Question(questions::Error),
     Canceled,
     Graph(clients::Error),
@@ -118,21 +120,31 @@ impl core::error::Error for Error {}
 struct Entry<'id, const PATH: usize> {
     question: questions::Key<'id>,
     client: clients::Key<'id>,
+    subscription: clients::Subscription<'id>,
     original_route: bool,
+    previous: Option<core::num::NonZeroUsize>,
+    next: Option<core::num::NonZeroUsize>,
     fields: Buffer<u16, PATH>,
     length: usize,
 }
 pub struct Slot<'id, const PATH: usize> {
+    retry: WaitSlot,
     entry: Option<Entry<'id, PATH>>,
 }
 impl<const PATH: usize> Slot<'_, PATH> {
-    pub const EMPTY: Self = Self { entry: None };
+    pub const EMPTY: Self = Self {
+        entry: None,
+        retry: WaitSlot::EMPTY,
+    };
 }
 pub struct Bindings<'s, 'id, P, const PATH: usize> {
+    registry: Option<questions::OutgoingRegistry<'id>>,
     path_capacity: Capacity,
     slots: SlotStorage<'s, Slot<'id, PATH>>,
     peer: P,
     live: usize,
+    listener: Option<clients::Listener<'id>>,
+    retry: Waiting<{ crate::resources::COUNT }>,
 }
 pub enum Progress<'id> {
     Unrelated,
@@ -141,14 +153,176 @@ pub enum Progress<'id> {
     Resolved(Option<clients::Barrier<'id>>),
 }
 impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
-    pub(crate) fn clear_terminal(&mut self) {
+    fn claim_registry(
+        &mut self,
+        questions: &mut questions::Questions<'id, '_>,
+    ) -> Result<(), Error> {
+        if self.registry.is_none() {
+            self.registry = Some(
+                questions
+                    .claim_outgoing_registry()
+                    .map_err(Error::Question)?,
+            );
+        }
+        Ok(())
+    }
+    pub(crate) fn has_waiters(&self) -> bool {
+        self.retry.has_waiters()
+    }
+    pub(crate) fn next_observer(&self, index: usize) -> Option<usize> {
+        self.slots
+            .get(index)?
+            .entry
+            .as_ref()?
+            .next
+            .map(|i| i.get() - 1)
+    }
+    pub(crate) fn retry_ready(&self, available: impl FnMut(Requirement) -> bool) -> bool {
+        self.retry.has_ready(&self.slots, |s| &s.retry, available)
+    }
+    pub(crate) fn next_retry(
+        &mut self,
+        available: impl FnMut(Requirement) -> bool,
+    ) -> Option<usize> {
+        self.retry.pop(&mut self.slots, |s| &mut s.retry, available)
+    }
+    pub(crate) fn remove_wait(&mut self, index: usize) {
+        if index < self.slots.len() {
+            self.retry.remove(&mut self.slots, index, |s| &mut s.retry);
+        }
+    }
+    pub(crate) fn park(&mut self, index: usize, requirement: Requirement) {
+        self.retry
+            .park(&mut self.slots, index, requirement, |s| &mut s.retry);
+    }
+    pub(crate) fn resource_waiting(&self, index: usize) -> bool {
+        self.slots.get(index).is_some_and(|s| s.retry.is_parked())
+    }
+    pub(crate) fn clear_terminal<G: clients::Capabilities<'id>>(&mut self, graph: &mut G) {
+        if let Some(listener) = self.listener.take() {
+            graph.close_listener(listener);
+        }
         for slot in self.slots.iter_mut() {
             slot.entry = None;
+            slot.retry = WaitSlot::EMPTY;
         }
+        self.retry = Waiting::EMPTY;
         self.live = 0;
+        self.registry = None;
+    }
+    fn link(
+        &mut self,
+        index: usize,
+        question: questions::Key<'id>,
+        questions: &mut questions::Questions<'id, '_>,
+    ) -> Option<core::num::NonZeroUsize> {
+        let next = questions.link_observer(question, false, index);
+        if let Some(next) = next {
+            self.slots[next]
+                .entry
+                .as_mut()
+                .expect("linked observer")
+                .previous = core::num::NonZeroUsize::new(index + 1);
+        }
+        next.and_then(|i| core::num::NonZeroUsize::new(i + 1))
+    }
+    fn finish<G: clients::Capabilities<'id>>(
+        &mut self,
+        index: usize,
+        questions: &mut questions::Questions<'id, '_>,
+        graph: &mut G,
+    ) {
+        self.retry.remove(&mut self.slots, index, |s| &mut s.retry);
+        let entry = self.slots[index].entry.take().expect("live observer");
+        questions.advance_observer_work(
+            entry.question,
+            false,
+            index,
+            entry.next.map(|i| i.get() - 1),
+        );
+        graph.unsubscribe(entry.subscription);
+        if let Some(previous) = entry.previous {
+            self.slots[previous.get() - 1]
+                .entry
+                .as_mut()
+                .expect("previous observer")
+                .next = entry.next;
+        } else {
+            questions.unlink_observer_head(
+                entry.question,
+                false,
+                index,
+                entry.next.map(|i| i.get() - 1),
+            );
+        }
+        if let Some(next) = entry.next {
+            self.slots[next.get() - 1]
+                .entry
+                .as_mut()
+                .expect("next observer")
+                .previous = entry.previous;
+        }
+        questions.remove_observer(entry.question, false);
+        self.live -= 1;
+        if self.live == 0 {
+            if let Some(registry) = self.registry.take() {
+                questions.release_outgoing_registry(registry);
+            }
+        }
+    }
+
+    pub(crate) fn abandon<G: clients::Capabilities<'id>>(
+        &mut self,
+        event: clients::Event<'id>,
+        questions: &mut questions::Questions<'id, '_>,
+        graph: &mut G,
+    ) -> Option<questions::Key<'id>> {
+        let index = event.owner;
+        let entry = self.slots.get(index)?.entry.as_ref()?;
+        if entry.client != event.client || entry.subscription.key() != event.subscription {
+            return None;
+        }
+        let question = entry.question;
+        self.finish(index, questions, graph);
+        Some(question)
+    }
+    pub(crate) fn has_events<G: clients::Capabilities<'id>>(&self, graph: &G) -> bool {
+        self.listener
+            .as_ref()
+            .is_some_and(|listener| graph.has_events(listener))
+    }
+    pub(crate) fn next_event<G: clients::Capabilities<'id>>(
+        &self,
+        graph: &mut G,
+    ) -> Option<clients::Event<'id>> {
+        self.listener
+            .as_ref()
+            .and_then(|listener| graph.next_event(listener))
+    }
+    fn subscribe<G: clients::Capabilities<'id>>(
+        &mut self,
+        graph: &mut G,
+        key: clients::Key<'id>,
+        index: usize,
+    ) -> Result<clients::Subscription<'id>, clients::Error> {
+        if self.listener.is_none() {
+            self.listener = Some(graph.listen()?);
+        }
+        graph.subscribe(
+            self.listener.as_ref().unwrap(),
+            key,
+            index,
+            clients::Watch::Abandonment,
+        )
     }
     pub fn is_empty(&self) -> bool {
         self.live == 0
+    }
+    pub(crate) fn available(&self) -> usize {
+        self.slots.maximum() - self.live
+    }
+    pub(crate) fn maximum(&self) -> usize {
+        self.slots.maximum()
     }
     pub fn capacity(&self) -> usize {
         self.slots.len()
@@ -178,7 +352,10 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             return Err(Error::NonemptyStorage);
         }
         Ok(Self {
+            registry: None,
             live: 0,
+            listener: None,
+            retry: Waiting::EMPTY,
             slots,
             peer,
             path_capacity,
@@ -205,24 +382,36 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         if path.fields().len() > self.path_capacity.maximum::<PATH>() {
             return Err(Error::Capacity);
         }
-        let slot = self
+        self.claim_registry(questions)?;
+        let index = self
             .slots
-            .vacant_mut(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
-            .ok_or(Error::Capacity)?;
+            .vacant(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
+            .ok_or(Error::ObserversFull)?;
         let fields = self
             .path_capacity
             .copy(path.fields())
             .ok_or(Error::Capacity)?;
         let client = graph.promise(&mut None).map_err(Error::Graph)?;
+        let subscription = match self.subscribe(graph, client.key(), index) {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                graph.release(client);
+                return Err(Error::Graph(error));
+            }
+        };
         self.live += 1;
-        questions.add_observer(response.key(), false);
-        slot.entry = Some(Entry {
+        let next = self.link(index, response.key(), questions);
+        self.slots[index].entry = Some(Entry {
+            previous: None,
+            next,
             question: response.key(),
             client: client.key(),
+            subscription,
             original_route: false,
             fields,
             length: path.fields().len(),
         });
+        self.retry.wake(&mut self.slots, index, |s| &mut s.retry);
         Ok(client)
     }
 
@@ -270,9 +459,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         let observed = match graph.retain_key(entry.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
-                questions.remove_observer(entry.question, false);
-                slot.entry = None;
-                self.live -= 1;
+                self.finish(index, questions, graph);
                 return Ok(Progress::Abandoned);
             }
             Err(error) => return Err(Error::Graph(error)),
@@ -350,16 +537,14 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         graph.release(observed);
         match resolved {
             Ok(barrier) => {
-                questions.remove_observer(entry.question, false);
-                slot.entry = None;
-                self.live -= 1;
+                self.finish(index, questions, graph);
                 Ok(Progress::Resolved(barrier))
             }
             Err(error) => {
-                graph.release(replacement.expect("unaccepted replacement"));
                 if observer {
-                    pipelines.discard_unexposed(key, answers);
+                    pipelines.discard_unexposed(key, answers, graph);
                 }
+                graph.release(replacement.expect("unaccepted replacement"));
                 Err(Error::Graph(error))
             }
         }
@@ -381,42 +566,33 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         if path.fields().len() > self.path_capacity.maximum::<PATH>() {
             return Err(Error::Capacity);
         }
-        let matching = self.slots.iter().position(|slot| {
-            slot.entry.as_ref().is_some_and(|entry| {
-                entry.question == question.key() && &entry.fields[..entry.length] == path.fields()
-            })
-        });
+        self.claim_registry(questions)?;
+        let mut matching = None;
+        let mut cursor = questions.observer_head(question.key(), false);
+        while let Some(index) = cursor {
+            let entry = self.slots[index].entry.as_ref().expect("question observer");
+            debug_assert_eq!(entry.question, question.key());
+            if &entry.fields[..entry.length] == path.fields() {
+                matching = Some(index);
+                break;
+            }
+            cursor = entry.next.map(|i| i.get() - 1);
+        }
         if let Some(index) = matching {
             match graph.retain_key(self.slots[index].entry.as_ref().unwrap().client) {
                 Ok(client) => return Ok(client),
-                Err(clients::Error::Stale) => (),
+                Err(clients::Error::Stale) => self.finish(index, questions, graph),
                 Err(error) => return Err(Error::Graph(error)),
             }
         }
+        self.claim_registry(questions)?;
         let index = matching
             .or_else(|| self.slots.iter().position(|slot| slot.entry.is_none()))
-            .or_else(|| {
-                self.slots.iter_mut().enumerate().find_map(|(index, slot)| {
-                    match graph.retain_key(slot.entry.as_ref()?.client) {
-                        Err(clients::Error::Stale) => {
-                            questions.remove_observer(slot.entry.as_ref().unwrap().question, false);
-                            slot.entry = None;
-                            self.live -= 1;
-                            Some(index)
-                        }
-                        Ok(client) => {
-                            graph.release(client);
-                            None
-                        }
-                        Err(_) => None,
-                    }
-                })
-            })
             .or_else(|| {
                 self.slots
                     .vacant(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
             })
-            .ok_or(Error::Capacity)?;
+            .ok_or(Error::ObserversFull)?;
         let fields = self
             .path_capacity
             .copy(path.fields())
@@ -441,13 +617,25 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
                 questions.release(route.local);
                 Error::Graph(rejected.error)
             })?;
-        if self.slots[index].entry.is_none() {
+        let subscription = match self.subscribe(graph, client.key(), index) {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                graph.release(client);
+                return Err(Error::Graph(error));
+            }
+        };
+        let (previous, next) = if let Some(old) = self.slots[index].entry.as_ref() {
+            (old.previous, old.next)
+        } else {
             self.live += 1;
-            questions.add_observer(question.key(), false);
-        }
+            (None, self.link(index, question.key(), questions))
+        };
         self.slots[index].entry = Some(Entry {
+            previous,
+            next,
             question: question.key(),
             client: client.key(),
+            subscription,
             original_route: true,
             fields: observer_fields,
             length: path.fields().len(),

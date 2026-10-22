@@ -279,30 +279,13 @@ impl PipelineHook for Pipeline {
     }
 }
 
-enum PipelineOwner {
-    Queued {
-        _pipeline: Rc<RefCell<PipelineInner>>,
-    },
-    Wire {
-        _pipeline: Rc<crate::scoped::wire::PipelineState>,
-    },
-}
-
-enum PendingCall {
-    Hook(
-        u64,
-        u16,
-        Box<dyn ParamsHook>,
-        Box<dyn ResultsHook>,
-        CallHints,
-    ),
-    Request(Box<local::Request>),
-}
-enum ForwardedCall {
-    Hook(Promise<(), Error>),
-    Response(Promise<capnp::capability::Response<any_pointer::Owned>, Error>),
-}
-
+type PendingCall = (
+    u64,
+    u16,
+    Box<dyn ParamsHook>,
+    Box<dyn ResultsHook>,
+    CallHints,
+);
 pub(crate) struct ClientInner {
     // Once the promise resolves, this will become non-null and point to the underlying object.
     // A resolved target is immutable. Clone its owner without allocating a new
@@ -310,15 +293,14 @@ pub(crate) struct ClientInner {
     redirect: Option<Rc<dyn ClientHook>>,
 
     // Keep the originating pipeline alive until forwarding publishes a target.
-    // Wire projections already have a queue and need no queued PipelineInner.
-    pipeline_owner: Option<PipelineOwner>,
+    pipeline_owner: Option<Rc<RefCell<PipelineInner>>>,
 
     promise_to_drive: Option<futures::future::Shared<Promise<(), Error>>>,
 
     // When this promise resolves, each queued call will be forwarded to the real client.  This needs
     // to occur *before* any 'whenMoreResolved()' promises resolve, because we want to make sure
     // previously-queued calls are delivered before any new calls made in response to the resolution.
-    call_forwarding_queue: SenderQueue<PendingCall, ForwardedCall>,
+    call_forwarding_queue: SenderQueue<PendingCall, Promise<(), Error>>,
 
     // whenMoreResolved() returns forks of this promise.  These must resolve *after* queued calls
     // have been initiated (so that any calls made in the whenMoreResolved() handler are correctly
@@ -346,16 +328,8 @@ impl ClientInner {
         state.borrow_mut().redirect = Some(client.clone());
         let pending = state.borrow_mut().call_forwarding_queue.drain();
         for (args, waiter) in pending {
-            let forwarded = match args {
-                PendingCall::Hook(interface, method, params, results, hints) => {
-                    ForwardedCall::Hook(
-                        client.call_with_hints(interface, method, params, results, hints),
-                    )
-                }
-                PendingCall::Request(request) => {
-                    ForwardedCall::Response(request.send_to(&*client).promise)
-                }
-            };
+            let (interface, method, params, results, hints) = args;
+            let forwarded = client.call_with_hints(interface, method, params, results, hints);
             let _ = waiter.send(forwarded);
         }
 
@@ -376,60 +350,10 @@ pub(crate) struct Client {
 }
 
 impl Client {
-    pub(crate) fn pending_wire(&self) -> Option<Self> {
-        matches!(
-            self.inner.borrow().pipeline_owner,
-            Some(PipelineOwner::Wire { .. })
-        )
-        .then(|| Self {
-            inner: self.inner.clone(),
-        })
-    }
-
-    pub(crate) fn send_request(
-        &self,
-        request: Box<local::Request>,
-    ) -> capnp::capability::RemotePromise<any_pointer::Owned> {
-        let forwarded = self
-            .inner
-            .borrow_mut()
-            .call_forwarding_queue
-            .push_future(PendingCall::Request(request))
-            .attach(self.inner.clone());
-        let driver = self.inner.borrow().promise_to_drive.clone();
-        capnp::capability::RemotePromise {
-            promise: Promise::from_future(async move {
-                let forwarded = match driver {
-                    Some(driver) => drive_until_ready(forwarded, driver).await?,
-                    None => forwarded.await?,
-                };
-                let ForwardedCall::Response(response) = forwarded else {
-                    unreachable!("queued request completion")
-                };
-                response.await
-            }),
-            pipeline: any_pointer::Pipeline::new(Box::new(broken::DisabledPipeline)),
-        }
-    }
-
-    pub(crate) fn wire(
-        pipeline: Rc<crate::scoped::wire::PipelineState>,
-        driver: Option<futures::future::Shared<Promise<(), Error>>>,
-    ) -> Self {
-        let client = Self::new(None);
-        {
-            let mut inner = client.inner.borrow_mut();
-            inner.pipeline_owner = Some(PipelineOwner::Wire {
-                _pipeline: pipeline,
-            });
-            inner.promise_to_drive = driver;
-        }
-        client
-    }
     pub(crate) fn new(pipeline_inner: Option<Rc<RefCell<PipelineInner>>>) -> Self {
         let inner = Rc::new(RefCell::new(ClientInner {
             promise_to_drive: None,
-            pipeline_owner: pipeline_inner.map(|_pipeline| PipelineOwner::Queued { _pipeline }),
+            pipeline_owner: pipeline_inner,
             redirect: None,
             call_forwarding_queue: SenderQueue::new(),
             client_resolution_queue: SenderQueue::new(),
@@ -481,19 +405,6 @@ impl ClientHook for Client {
         let redirect = self.inner.borrow().redirect.clone();
         if let Some(client) = redirect {
             return client.new_call(interface_id, method_id, size_hint);
-        }
-        let pipeline = match &self.inner.borrow().pipeline_owner {
-            Some(PipelineOwner::Wire { _pipeline }) => Some(_pipeline.clone()),
-            _ => None,
-        };
-        if let Some(pipeline) = pipeline {
-            return capnp::capability::Request::new(Box::new(local::Request::prepared(
-                interface_id,
-                method_id,
-                size_hint,
-                self.add_ref(),
-                &pipeline,
-            )));
         }
         ::capnp::capability::Request::new(Box::new(local::Request::new(
             interface_id,
@@ -552,13 +463,7 @@ impl ClientHook for Client {
             .inner
             .borrow_mut()
             .call_forwarding_queue
-            .push_future(PendingCall::Hook(
-                interface_id,
-                method_id,
-                params,
-                results,
-                hints,
-            ))
+            .push_future((interface_id, method_id, params, results, hints))
             .attach(inner_clone);
 
         // Drive until the call is forwarded, not until the forwarded call
@@ -568,9 +473,6 @@ impl ClientHook for Client {
             let call = match driver {
                 Some(driver) => drive_until_ready(forwarded, driver).await?,
                 None => forwarded.await?,
-            };
-            let ForwardedCall::Hook(call) = call else {
-                unreachable!("queued hook completion")
             };
             call.await
         })
@@ -584,6 +486,10 @@ impl ClientHook for Client {
         0
     }
 
+    fn metadata_changes(&self) -> Option<std::rc::Rc<capnp::private::capability::MetadataChanges>> {
+        let redirect = self.inner.borrow().redirect.clone();
+        redirect.and_then(|inner| inner.metadata_changes())
+    }
     #[cfg(unix)]
     fn get_fd(&self) -> Option<std::rc::Rc<std::os::fd::OwnedFd>> {
         let redirect = self.inner.borrow().redirect.clone();

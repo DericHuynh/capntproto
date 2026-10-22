@@ -56,6 +56,8 @@ mod queue;
 mod receiving;
 #[cfg(feature = "alloc")]
 pub use parts::{Parts, SharedParts};
+#[cfg(feature = "alloc")]
+pub use queue::{OutputStatus, Publication, PublicationSink};
 pub use queue::{Queue, QueueEntry, QueueSlot, QueueWindow};
 pub use receiving::{ReceiveReadError, Receiving};
 
@@ -235,6 +237,7 @@ pub struct OfferError<'id> {
 }
 
 pub struct Messages<'id, 'storage, 'bytes> {
+    failed_minimum: Cell<Option<usize>>,
     buffers: Buffers<'storage, 'bytes>,
     sends: crate::storage::Storage<'storage, SendSlot>,
     brand: Brand<'id>,
@@ -276,6 +279,7 @@ fn new_scope<'id, 'storage, 'bytes>(
         buffer.bytes = RefCell::new(bytes);
     }
     Ok(Messages {
+        failed_minimum: Cell::new(None),
         buffers: Buffers::Borrowed(buffers),
         sends: crate::storage::Storage::borrowed(sends),
         brand: PhantomData,
@@ -316,6 +320,34 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
     /// Used to flush accepted output before admitting another buffered request.
     /// True does not guarantee allocation success or reserve this capacity;
     /// the actual reservation still checks every bound and exclusive owner.
+    /// The exact byte demand from the most recent failed buffer reservation.
+    pub fn failed_minimum(&self) -> Option<usize> {
+        self.failed_minimum.get()
+    }
+    pub fn can_ever_reserve(&self, minimum: usize) -> bool {
+        #[cfg(feature = "alloc")]
+        if let Buffers::Growing(buffers) = &self.buffers {
+            return buffers.maximum_buffers != 0
+                && minimum <= buffers.maximum_buffer_bytes
+                && minimum
+                    .checked_add(7)
+                    .is_some_and(|n| n <= buffers.maximum_bytes);
+        }
+        self.buffers
+            .iter()
+            .any(|b| b.generation.get() != u64::MAX && b.capacity.get() >= minimum)
+    }
+    pub fn maximum_sends(&self) -> usize {
+        self.sends.maximum()
+    }
+    pub fn available_sends(&self) -> usize {
+        self.sends.maximum()
+            - self
+                .sends
+                .iter()
+                .filter(|s| s.send.is_some() || s.generation == u64::MAX)
+                .count()
+    }
     pub fn can_reserve(&self, minimum: usize) -> bool {
         #[cfg(feature = "alloc")]
         if let Buffers::Growing(buffers) = &self.buffers {
@@ -389,10 +421,13 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             buffer.generation.set(buffer.generation.get() + 1);
             return Ok(bytes.share(0..source.len()));
         }
-        let index = buffers.append(source.len()).ok_or(if exhausted {
-            Error::GenerationExhausted
-        } else {
-            Error::NoBuffer
+        let index = buffers.append(source.len()).ok_or_else(|| {
+            self.failed_minimum.set(Some(source.len()));
+            if exhausted {
+                Error::GenerationExhausted
+            } else {
+                Error::NoBuffer
+            }
         })?;
         let buffer = buffers.at(index);
         let mut bytes = buffer.bytes.borrow_mut();
@@ -466,10 +501,13 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
                 brand: PhantomData,
             });
         }
-        let index = self.buffers.append(capacity).ok_or(if exhausted {
-            Error::GenerationExhausted
-        } else {
-            Error::NoBuffer
+        let index = self.buffers.append(capacity).ok_or_else(|| {
+            self.failed_minimum.set(Some(capacity));
+            if exhausted {
+                Error::GenerationExhausted
+            } else {
+                Error::NoBuffer
+            }
         })?;
         let buffer = &self.buffers[index];
         initialize(&mut buffer.bytes.borrow_mut());
@@ -529,10 +567,13 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
                 brand: PhantomData,
             });
         }
-        let index = self.buffers.append(minimum).ok_or(if exhausted {
-            Error::GenerationExhausted
-        } else {
-            Error::NoBuffer
+        let index = self.buffers.append(minimum).ok_or_else(|| {
+            self.failed_minimum.set(Some(minimum));
+            if exhausted {
+                Error::GenerationExhausted
+            } else {
+                Error::NoBuffer
+            }
         })?;
         let buffer = &self.buffers[index];
         buffer.generation.set(buffer.generation.get() + 1);

@@ -76,7 +76,7 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 let key = accept.key();
                 let outcome = (|| {
                     let producer = driver
-                        .ledgers
+                        .ledgers()
                         .answers
                         .get(key)
                         .map_err(wire_error)?
@@ -94,7 +94,7 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         )
                         .map_err(|rejected| {
                             if let Ok(result) = rejected.result {
-                                result.release(messages, &mut driver.runtime);
+                                result.release(messages, &mut driver.capabilities());
                             }
                             wire_error(rejected.error)
                         })?;
@@ -142,12 +142,12 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             Ok(client) => {
                 let client = match coordinator
                     .hooks
-                    .try_retain(&mut driver.runtime, &*client.hook)?
+                    .try_retain(&mut driver.capabilities(), &*client.hook)?
                 {
                     Some(client) => client,
                     None => coordinator
                         .foreign
-                        .import(&mut driver.runtime, &*client.hook)?,
+                        .import(&mut driver.capabilities(), &*client.hook)?,
                 };
                 let result = driver.complete_bootstrap(
                     bootstrap,
@@ -156,7 +156,7 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     options.output_bytes.get(),
                     options.reader,
                 );
-                driver.runtime.release(client);
+                driver.capabilities().release(client);
                 result.map_err(wire_error)?;
             }
             Err(error) => {
@@ -170,7 +170,7 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     )
                     .map_err(wire_error)?;
                 driver
-                    .ledgers
+                    .ledgers()
                     .answers
                     .get(bootstrap.answer())
                     .map_err(wire_error)?
@@ -182,7 +182,7 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         Ok(())
     }
     pub(super) fn network_idle(&self) -> bool {
-        self.coordinator.driver.runtime.queued() == 0
+        self.coordinator.driver.runtime().queued() == 0
             && !self.coordinator.driver.has_network()
             && self.coordinator.worker.pending_redirect().is_none()
     }
@@ -208,7 +208,7 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         let result = (|| {
             let driver = &mut coordinator.driver;
             let producer = &driver
-                .ledgers
+                .ledgers()
                 .answers
                 .get(key)
                 .map_err(wire_error)?
@@ -253,15 +253,13 @@ impl<I, P: Copy + Eq, const C: usize, const H: usize> Drop
             Effects::Network => coordinator.changed(),
             Effects::Publication => {
                 coordinator.schedule.active |= WorkSet::CALLS | WorkSet::MAINTENANCE;
-                coordinator.calls.invalidate_scan();
-                coordinator.driver.invalidate_maintenance();
-                if coordinator.driver.runtime.queued() != 0 || coordinator.driver.has_pending_call()
+                if coordinator.driver.runtime().queued() != 0
+                    || coordinator.driver.has_pending_call()
                 {
                     coordinator.schedule.active |= WorkSet::ACCEPT;
                 }
                 if !coordinator.worker.is_empty() {
                     coordinator.schedule.active |= WorkSet::WORKER;
-                    coordinator.worker.protocol_changed();
                 }
             }
             Effects::None => (),
@@ -304,7 +302,7 @@ pub trait Control<
     /// Whether `received` observes hosted client metadata for this event.
     /// Returning false defers synchronization to application dispatch/delivery;
     /// the callback must not expose newly admitted hooks itself in that case.
-    fn observes_hooks(&self, _event: &connection::Received<'id, server::Results>) -> bool {
+    fn observes_hooks(&self, _event: &connection::Received<'id, server::Producer>) -> bool {
         true
     }
     /// True only when receiving a plain result cannot enable control work.
@@ -322,7 +320,7 @@ pub trait Control<
     fn preserves_idle(&self, activity: Activity) -> bool;
     fn received(
         &mut self,
-        event: connection::Received<'id, server::Results>,
+        event: connection::Received<'id, server::Producer>,
         context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,

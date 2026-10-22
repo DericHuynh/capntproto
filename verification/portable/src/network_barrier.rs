@@ -5,6 +5,7 @@ use super::{
     portable_capnp::{api::echo::EchoParams, echo},
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients,
     ids::{ImportId, QuestionId, WireId},
@@ -31,11 +32,11 @@ pub fn owning_network_barrier(mode: u8) {
             let claim = embargoes.claim(b"").unwrap();
             with_owned_peer_storage::<4, 1, _>(|mut peer| {
                 let service = peer
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::local(41), clients::Location::Local)
                     .unwrap();
-                let mut batch = peer.ledgers.exports.batch();
-                let grant = binding::stage(&mut peer.runtime, &mut batch, &service).unwrap();
+                let (mut graph, mut batch) = peer.export_batch();
+                let grant = binding::stage(&mut graph, &mut batch, &service).unwrap();
                 batch.commit();
                 let provide = Frame::build(messages, 776, Default::default(), |b| {
                     network::provide(
@@ -105,12 +106,13 @@ pub fn owning_network_barrier(mode: u8) {
                         .err()
                         .unwrap();
                     assert_eq!(rejected.error, Error::Busy);
-                    let ready = peer.runtime.next_ready().unwrap().unwrap();
+                    let mut dispatch = peer.capabilities();
+                    let ready = dispatch.next_ready().unwrap().unwrap();
                     let running = ready.accept();
-                    let Task::Invoke(call) = peer.runtime.complete(running) else {
+                    let Task::Invoke(call) = peer.capabilities().complete(running) else {
                         panic!("older call")
                     };
-                    call.release(messages, &mut peer.runtime);
+                    call.release(messages, &mut peer.capabilities());
                     (rejected.frame, 1)
                 } else {
                     (marker, 0)
@@ -127,12 +129,13 @@ pub fn owning_network_barrier(mode: u8) {
                     );
                     assert!(peer.take_network().is_none());
                     assert_eq!(embargoes.readiness(&claim), Err(provision::Error::Pending));
-                    let ready = peer.runtime.next_ready().unwrap().unwrap();
+                    let mut dispatch = peer.capabilities();
+                    let ready = dispatch.next_ready().unwrap().unwrap();
                     let running = ready.accept();
-                    let Task::Invoke(call) = peer.runtime.complete(running) else {
+                    let Task::Invoke(call) = peer.capabilities().complete(running) else {
                         panic!("older call")
                     };
-                    call.release(messages, &mut peer.runtime);
+                    call.release(messages, &mut peer.capabilities());
                 }
                 fn finish<'p>(messages: &mut messages::Messages<'p, '_, '_>) -> Frame<'p> {
                     Frame::build(messages, 776, Default::default(), |b| {
@@ -244,7 +247,7 @@ pub fn owning_network_barrier(mode: u8) {
                         Received::Finished(Some(59))
                     ));
                 }
-                peer.runtime.release(service);
+                peer.capabilities().release(service);
                 assert_eq!(close(peer, messages, &mut queue), 41);
                 let free: [_; 8] = core::array::from_fn(|_| messages.reserve(776).unwrap());
                 for w in free {

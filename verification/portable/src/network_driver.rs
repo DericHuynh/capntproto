@@ -1,5 +1,6 @@
 //! Registration work is attached to exact driver answer generations.
 use super::{driver::with_owned_peer, ZERO};
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients,
     ids::{ImportId, QuestionId, WireId},
@@ -23,13 +24,13 @@ pub fn owning_network_registration(mode: u8) {
         let mut queue = super::driver::message_queue(&mut queue_slots).unwrap();
         with_owned_peer(|mut peer| {
             let service = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(41), clients::Location::Local)
                 .unwrap();
-            let mut batch = peer.ledgers.exports.batch();
-            let grant = binding::stage(&mut peer.runtime, &mut batch, &service).unwrap();
+            let (mut graph, mut batch) = peer.export_batch();
+            let grant = binding::stage(&mut graph, &mut batch, &service).unwrap();
             batch.commit();
-            peer.runtime.release(service);
+            peer.capabilities().release(service);
             let frame = Frame::build(messages, 776, Default::default(), |builder| {
                 network::provide(
                     builder,
@@ -54,12 +55,7 @@ pub fn owning_network_registration(mode: u8) {
                 .unwrap_or_else(|r| panic!("{}", r.error)),
                 Received::Network
             ));
-            assert!(peer
-                .ledgers
-                .exports
-                .release(grant.id(), 1)
-                .unwrap()
-                .is_none());
+            assert!(peer.release_export(grant.id(), 1).unwrap().is_none());
             assert!(!peer.drain_export(0));
             let mut finish_owner = None;
             if mode != 3 {
@@ -145,7 +141,7 @@ pub fn owning_network_registration(mode: u8) {
                             peer.drain_endpoint().is_none(),
                             "accepted authority survives Provide Finish"
                         );
-                        peer.runtime.release(authority);
+                        peer.capabilities().release(authority);
                     }
                 }
             }
@@ -237,15 +233,10 @@ pub fn owning_provision_sender() {
                 )
                 .is_err());
             peer.release_provision(vine);
-            assert!(!peer.ledgers.questions.is_empty());
-            assert!(capntproto_rpc_wire::owned::controls::finish_one(
-                &mut peer.ledgers.questions,
-                messages,
-                &mut queue,
-                776,
-                Default::default()
-            )
-            .is_err());
+            assert!(!peer.ledgers().questions.is_empty());
+            assert!(peer
+                .send_pending_finish(messages, &mut queue, 776, Default::default())
+                .is_err());
             let frame = super::owning::exchange(messages, &mut queue, 1);
             frame
                 .with(messages, |root| {
@@ -258,14 +249,9 @@ pub fn owning_provision_sender() {
                 })
                 .unwrap();
             frame.release(messages);
-            assert!(capntproto_rpc_wire::owned::controls::finish_one(
-                &mut peer.ledgers.questions,
-                messages,
-                &mut queue,
-                776,
-                Default::default()
-            )
-            .unwrap());
+            assert!(peer
+                .send_pending_finish(messages, &mut queue, 776, Default::default())
+                .unwrap());
             let frame = super::owning::exchange(messages, &mut queue, 1);
             frame
                 .with(messages, |root| {
@@ -280,7 +266,7 @@ pub fn owning_provision_sender() {
                 })
                 .unwrap();
             frame.release(messages);
-            assert!(peer.ledgers.questions.is_empty());
+            assert!(peer.ledgers().questions.is_empty());
             assert_eq!(
                 super::driver_invocation::close(peer, messages, &mut queue),
                 0

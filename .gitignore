@@ -288,3 +288,17 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-22-architecture-implementation/socket-counts.json
 !/research/reports/portable-performance/2026-10-22-architecture-implementation/evidence-index.json
 !/research/reports/portable-performance/2026-10-22-architecture-implementation/archive.json
+
+# Complete portable architecture replacements and repeated qualification.
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/
+/research/reports/portable-performance/2026-10-22-architecture-replacements/*
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/README.md
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/comparisons.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/aggregate.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/profiles.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/profile-attribution.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/ciphertext-counts.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/io-comparison.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/evidence-index.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/validation.json
+!/research/reports/portable-performance/2026-10-22-architecture-replacements/archive.json

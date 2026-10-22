@@ -82,15 +82,8 @@ impl Params {
         }
     }
 
-    pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
-        if !self.cap_table.is_empty() {
-            return None;
-        }
-        let size = self.get().ok()?.target_size().ok()?;
-        if size.cap_count != 0 {
-            return None;
-        }
-        usize::try_from(size.word_count).ok()?.checked_mul(8)
+    pub(crate) fn capability_table(&self) -> &[Option<Box<dyn ClientHook>>] {
+        &self.cap_table
     }
     pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
@@ -691,42 +684,8 @@ impl Request {
             self.message.freeze_large();
         }
     }
-    pub(crate) fn send_to(
-        mut self: Box<Self>,
-        client: &dyn ClientHook,
-    ) -> capability::RemotePromise<any_pointer::Owned> {
-        debug_assert!(self.client.is_none());
-        if self.hints.no_promise_pipelining
-            && !self.hints.only_promise_pipeline
-            && !self.is_streaming
-            && self.third_party.is_none()
-            && crate::scoped::response::available(client)
-        {
-            // The resolved queue already owns this hook. Admission retains its
-            // exact endpoint and projected parent interest before returning;
-            // cloning temporary boxed hooks adds no ownership protection.
-            let context = self.context.take();
-            return crate::scoped::response::request(
-                client,
-                self.interface_id,
-                self.method_id,
-                self.hints,
-                self,
-                context,
-            );
-        }
-        self.client = Some(RequestClient::Hook(client.add_ref()));
-        self.send()
-    }
-    pub(crate) fn batch_content_bytes(&self) -> Option<usize> {
-        if !self.cap_table.is_empty() {
-            return None;
-        }
-        let size = self.get().ok()?.target_size().ok()?;
-        if size.cap_count != 0 {
-            return None;
-        }
-        usize::try_from(size.word_count).ok()?.checked_mul(8)
+    pub(crate) fn capability_table(&self) -> &[Option<Box<dyn ClientHook>>] {
+        &self.cap_table
     }
     pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
@@ -802,26 +761,6 @@ impl RequestHook for Request {
         0
     }
     fn send(mut self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
-        if self.hints.no_promise_pipelining
-            && !self.hints.only_promise_pipeline
-            && !self.is_streaming
-            && self.third_party.is_none()
-        {
-            let queued = self
-                .client
-                .as_deref()
-                .expect("unsent request")
-                .as_any()
-                .and_then(|client| client.downcast_ref::<crate::queued::Client>())
-                .and_then(crate::queued::Client::pending_wire);
-            if let Some(queued) = queued {
-                // Keep the request intact until its wire projection resolves.
-                // The queue's waiter owns the client; storing it in the request
-                // too would form a cycle and delay cancellation.
-                self.client.take();
-                return queued.send_request(self);
-            }
-        }
         if self.hints.no_promise_pipelining
             && !self.hints.only_promise_pipeline
             && !self.is_streaming

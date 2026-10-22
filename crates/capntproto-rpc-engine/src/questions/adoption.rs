@@ -51,6 +51,9 @@ impl<'id, 's> Questions<'id, 's> {
                     provision: false,
                     owner: None,
                     observers: [0; 2],
+                    observer_heads: [None; 2],
+                    observer_work: [None; 2],
+                    observer_notified: [false; 2],
                 },
             )
             .map_err(|rejected| match rejected.kind {

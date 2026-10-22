@@ -496,6 +496,7 @@ where
 
     tasks: RefCell<Option<crate::task_set::TaskSetHandle<capnp::Error>>>,
     connection: RefCell<::std::result::Result<Box<dyn crate::Connection<VatId>>, ::capnp::Error>>,
+    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
     disconnect_fulfiller: RefCell<Option<oneshot::Sender<Promise<(), Error>>>>,
 
     client_downcast_map: RefCell<HashMap<usize, WeakClient<VatId>>>,
@@ -540,6 +541,7 @@ impl<VatId> ConnectionState<VatId> {
             embargoes: RefCell::new(new_embargoes()),
             tasks: RefCell::new(None),
             connection: RefCell::new(Ok(connection)),
+            metadata_changes: std::cell::OnceCell::new(),
             disconnect_fulfiller: RefCell::new(Some(disconnect_fulfiller)),
             client_downcast_map: RefCell::new(HashMap::new()),
             registry,
@@ -829,6 +831,9 @@ impl<VatId> ConnectionState<VatId> {
             unreachable!()
         };
         let _ = fulfiller.send(Promise::from_future(promise.attach(c)));
+        if let Some(source) = self.metadata_changes.get() {
+            source.notify();
+        }
     }
 
     // Transform a future into a promise that gets executed even if it is never polled.
@@ -2903,6 +2908,7 @@ where
     /// Number of times we've received this import from the peer.
     remote_references: ImportRefs,
     fd: Option<AttachedFd>,
+    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
 }
 
 impl<VatId> Drop for ImportClient<VatId> {
@@ -2957,6 +2963,7 @@ where
             connection_state: connection_state.clone(),
             import_id,
             remote_references: ImportRefs::new(),
+            metadata_changes: std::cell::OnceCell::new(),
             fd: None,
         }))
     }
@@ -3378,6 +3385,37 @@ impl<VatId> Clone for Client<VatId> {
 }
 
 impl<VatId> ClientHook for Client<VatId> {
+    fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
+        match &self.variant {
+            ClientVariant::Import(client) => Some(
+                client
+                    .borrow()
+                    .metadata_changes
+                    .get_or_init(|| {
+                        let connection = self
+                            .connection_state
+                            .metadata_changes
+                            .get_or_init(|| {
+                                Rc::new(capnp::private::capability::MetadataChanges::default())
+                            })
+                            .clone();
+                        Rc::new(capnp::private::capability::MetadataChanges::combined(vec![
+                            connection,
+                        ]))
+                    })
+                    .clone(),
+            ),
+            ClientVariant::Promise(client) => {
+                let cap = client.borrow().cap.clone();
+                cap.metadata_changes()
+            }
+            ClientVariant::ThirdParty(client) => {
+                client.resolved().and_then(|cap| cap.metadata_changes())
+            }
+            ClientVariant::Pipeline(_) => None,
+        }
+    }
+
     fn get_failure(&self) -> Option<Error> {
         // Resolved promises and accepted introductions can survive the old
         // connection. Their replacement is checked during Join resolution.

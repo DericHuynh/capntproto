@@ -2,29 +2,29 @@ use super::*;
 use core::cell::Cell;
 
 #[test]
-fn bounded_idle_check_observes_deferred_retirement_and_forgotten_batches() {
+fn retirement_queue_observes_deferred_retirement_and_forgotten_batches() {
     let mut slots = [const { Slot::EMPTY }; 1];
     with_exports(&mut slots, |exports| {
-        assert!(!exports.retirement_is_idle(0));
-        assert!(exports.retirement_is_idle(1));
+        assert!(exports.retirement_is_idle());
+        assert!(exports.retirement_is_idle());
         let mut batch = exports.batch();
         let grant = batch.export(31).unwrap();
         batch.commit();
-        assert!(exports.retirement_is_idle(1));
+        assert!(exports.retirement_is_idle());
         let lease = exports.lease(grant.id()).unwrap();
         assert_eq!(exports.release(grant.id(), 1), Ok(None));
-        assert!(exports.retirement_is_idle(1));
+        assert!(exports.retirement_is_idle());
         exports.release_local_deferred(lease);
-        assert!(!exports.retirement_is_idle(1));
+        assert!(!exports.retirement_is_idle());
         assert_eq!(exports.take_retired(0), Some(31));
-        assert!(exports.retirement_is_idle(1));
+        assert!(exports.retirement_is_idle());
 
         let mut batch = exports.batch();
         let _ = batch.export(37).unwrap();
         core::mem::forget(batch);
-        assert!(!exports.retirement_is_idle(1));
+        assert!(!exports.retirement_is_idle());
         assert_eq!(exports.take_retired(0), Some(37));
-        assert!(exports.retirement_is_idle(1));
+        assert!(exports.retirement_is_idle());
 
         // An unpublished grant on an existing export also needs rollback,
         // even though there is no retired owner to return.
@@ -34,17 +34,17 @@ fn bounded_idle_check_observes_deferred_retirement_and_forgotten_batches() {
         let mut batch = exports.batch();
         let _ = batch.grant(grant.key()).unwrap();
         core::mem::forget(batch);
-        assert!(!exports.retirement_is_idle(1));
+        assert!(!exports.retirement_is_idle());
         assert_eq!(exports.take_retired(0), None);
-        assert!(exports.retirement_is_idle(1));
+        assert!(exports.retirement_is_idle());
         assert_eq!(exports.release(grant.id(), 1), Ok(Some(41)));
 
         let mut batch = exports.batch();
         let _ = batch.export(43).unwrap();
         drop(batch);
-        assert!(!exports.retirement_is_idle(1));
+        assert!(!exports.retirement_is_idle());
         assert_eq!(exports.take_retired(0), Some(43));
-        assert!(exports.retirement_is_idle(1));
+        assert!(exports.retirement_is_idle());
     })
     .unwrap();
 }
@@ -262,6 +262,8 @@ fn nonempty_storage_rejection_and_terminal_unwind_preserve_ownership() {
     extern crate std;
     let drops = Cell::new(0);
     let mut slots = [Slot {
+        retirement: crate::work_queue::Link::EMPTY,
+        publication: crate::work_queue::Link::EMPTY,
         generation: 9,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]

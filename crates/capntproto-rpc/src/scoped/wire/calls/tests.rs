@@ -50,15 +50,27 @@ fn local<'p, 'id>(
     hook: Rc<dyn ClientHook>,
 ) -> capability::Client {
     let client = driver
-        .runtime
+        .capabilities()
         .endpoint(Route::local(hook), Location::Local)
         .unwrap_or_else(|e| panic!("{}", e.error));
-    let exported = hooks.export_client(&mut driver.runtime, &client).unwrap();
-    driver.runtime.release(client);
+    let exported = hooks
+        .export_client(&mut driver.capabilities(), &client)
+        .unwrap();
+    driver.capabilities().release(client);
     exported
 }
 fn import<'p, 'id>(
-    runtime: &mut Runtime<'p, 'id, '_, (), u8, Rc<dyn ClientHook>, 8, 8>,
+    runtime: &mut capntproto_rpc_wire::owned::connection::Scope<
+        '_,
+        'p,
+        'id,
+        '_,
+        (),
+        u8,
+        Rc<dyn ClientHook>,
+        8,
+        8,
+    >,
     hook: &dyn ClientHook,
 ) -> capnp::Result<Client<'id>> {
     runtime
@@ -70,20 +82,14 @@ fn remote<'p, 'id>(
     hooks: &mut ClientHooks<'id>,
 ) -> capability::Client {
     let mut slots = [imports::ReceiveSlot::new(ImportId::from_wire(7), ())];
-    driver
-        .ledgers
-        .imports
-        .prepare_receive(&mut slots)
-        .unwrap()
-        .commit();
+    driver.prepare_imports(&mut slots).unwrap().commit();
     let reference = slots[0].take_local().unwrap();
-    let cap = driver
-        .imports
-        .bind(&mut driver.runtime, &mut driver.ledgers.imports, &reference)
+    let cap = driver.bind_import(&reference).unwrap();
+    driver.release_import(reference);
+    let client = hooks
+        .export_client(&mut driver.capabilities(), &cap)
         .unwrap();
-    driver.ledgers.imports.release(reference);
-    let client = hooks.export_client(&mut driver.runtime, &cap).unwrap();
-    driver.runtime.release(cap);
+    driver.capabilities().release(cap);
     client
 }
 fn with_peer(
@@ -156,7 +162,7 @@ fn teardown<'p, 'id>(
 ) {
     calls.terminate(&mut driver, messages);
     hooks.close(
-        &mut driver.runtime,
+        &mut driver.capabilities(),
         Error::disconnected("test close".into()),
     );
     let mut closing = driver.terminate(queue);
@@ -199,7 +205,7 @@ fn ok() -> capability::DispatchCallResult {
 }
 
 #[test]
-fn consumed_hosted_reply_waits_for_its_completion_binding_before_new_admission() {
+fn hosted_reply_reclaims_its_binding_before_releasing_the_operation_slot() {
     with_peer(|mut driver, messages| {
         let mut hooks = ClientHooks::new(8, 8);
         let seen = Rc::new(RefCell::new(Vec::new()));
@@ -216,11 +222,11 @@ fn consumed_hosted_reply_waits_for_its_completion_binding_before_new_admission()
         let mut second = request(&client, 2).send();
         let mut calls = Calls::new(1, None).unwrap();
         let mut queue = messages::Queue::new_growing(0, 1).unwrap();
-        let mut observed_cleanup_gap = false;
         for _ in 0..256 {
-            if calls.entries.iter().all(Option::is_none) && !calls.invocations.has_capacity() {
-                observed_cleanup_gap = true;
-            }
+            assert!(
+                calls.live != 0 || calls.invocations.has_capacity(),
+                "no detached completion binding may outlive its hosted operation slot"
+            );
             if let Poll::Ready(result) = tick(
                 &mut calls,
                 &mut hooks,
@@ -232,7 +238,6 @@ fn consumed_hosted_reply_waits_for_its_completion_binding_before_new_admission()
                 result.expect("temporary completion pressure must not fail the connection");
             }
         }
-        assert!(observed_cleanup_gap);
         assert_eq!(*seen.borrow(), [1, 2]);
         ready(&mut first.promise).unwrap();
         ready(&mut second.promise).unwrap();
@@ -573,15 +578,18 @@ fn independently_polled_early_pipeline_wakes_the_coordinator() {
             );
         }
         let mut task = executor.0.borrow_mut().pop().expect("protected task");
-        publish.send(()).unwrap();
         let before = counter.0.load(Ordering::SeqCst);
+        publish.send(()).unwrap();
         assert!(task
             .poll_unpin(&mut Context::from_waker(Waker::noop()))
             .is_pending());
         assert!(
             counter.0.load(Ordering::SeqCst) > before,
-            "early publication must wake the coordinator independently of method completion"
+            "early publication must leave the coordinator notified independently of method completion"
         );
+        // The gate and early publication may coalesce into one ready owner;
+        // that retained work must survive until the coordinator consumes it.
+        assert!(!calls.ready.is_empty());
         let piped = capability::Client::new(parent.pipeline.hook.get_pipelined_cap(&[]));
         let mut child_call = request(&piped, 2).send();
         drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
@@ -815,7 +823,11 @@ fn publication_resolves_waiting_children_before_the_parent_flushes() {
             let child_reply = child_request.send();
             let mut calls = Calls::new(8, None).unwrap();
             let mut queue = messages::Queue::new_growing(0, 8).unwrap();
-            assert_eq!(hooks.inbox.queue.borrow().len(), 1);
+            assert_eq!(
+                hooks.inbox.queue.borrow().len(),
+                2,
+                "parent and direct projection share admission FIFO"
+            );
             let progress = tick(
                 &mut calls,
                 &mut hooks,
@@ -891,7 +903,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
             let mut hooks = ClientHooks::new(24, 24);
             let client = remote(&mut driver, &mut hooks);
             let older = project_before_send.then(|| {
-                let target = driver.runtime.promise(&mut None).unwrap();
+                let target = driver.capabilities().promise(&mut None).unwrap();
                 let task = driver
                     .enqueue_dynamic(
                         &target,
@@ -942,8 +954,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
             }
             assert_eq!(calls.invocations.capacity(), 0);
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
-            let Some(DirectStage::Sent(question)) = calls.entries[0].as_ref().unwrap().wire.direct
-            else {
+            let CallRoute::Remote(question) = calls.entries[0].as_ref().unwrap().wire.route else {
                 panic!("published direct parent")
             };
             let parent_bytes = drain(&mut queue, messages);
@@ -970,7 +981,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
                         NonZeroUsize::new(8).unwrap(),
                     )
                     .unwrap();
-                hooks.collect(&mut driver.runtime);
+                hooks.collect(&mut driver.capabilities());
             }
             let child_reply = request(&child, 2).send();
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
@@ -979,7 +990,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
                     .entries
                     .iter()
                     .flatten()
-                    .all(|entry| entry.wire.task.is_none()));
+                    .all(|entry| entry.wire.task().is_none()));
             }
             let bytes = drain(&mut queue, messages);
             let mut remaining = bytes.as_slice();
@@ -1027,7 +1038,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
                         NonZeroUsize::new(8).unwrap(),
                     )
                     .unwrap();
-                hooks.collect(&mut driver.runtime);
+                hooks.collect(&mut driver.capabilities());
                 drain(&mut queue, messages);
             }
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
@@ -1042,7 +1053,7 @@ fn direct_remote_projections_keep_the_parent_question_before_and_after_publicati
             drop((late_reply, late, child_reply, child, parent, client));
             if let Some((target, task)) = older {
                 assert!(driver.cancel_invocation(task, messages));
-                driver.runtime.release(target);
+                driver.capabilities().release(target);
             }
             teardown(calls, hooks, driver, messages, &mut queue);
         });
@@ -1054,7 +1065,7 @@ fn queued_pipeline_sink_failure_reclaims_its_unpublished_task() {
     with_peer(|mut driver, messages| {
         let mut hooks = ClientHooks::new(24, 24);
         let client = remote(&mut driver, &mut hooks);
-        let older = driver.runtime.promise(&mut None).unwrap();
+        let older = driver.capabilities().promise(&mut None).unwrap();
         let task = driver
             .enqueue_dynamic(
                 &older,
@@ -1092,12 +1103,12 @@ fn queued_pipeline_sink_failure_reclaims_its_unpublished_task() {
             panic!("pipeline sink rejection")
         };
         assert_eq!(error.extra, "set_pipeline() called twice");
-        assert_eq!(driver.runtime.queued(), 1, "only the older task remains");
-        assert!(driver.runtime.next_ready().unwrap().is_none());
+        assert_eq!(driver.runtime().queued(), 1, "only the older task remains");
+        assert!(driver.capabilities().next_ready().unwrap().is_none());
         assert!(queue.is_empty());
         assert_eq!(calls.invocations.capacity(), 0);
         assert!(driver.cancel_invocation(task, messages));
-        driver.runtime.release(older);
+        driver.capabilities().release(older);
         drop((response, client));
         teardown(calls, hooks, driver, messages, &mut queue);
     });
@@ -1173,7 +1184,7 @@ fn immediate_pipeline_sink_failure_cancels_the_published_question() {
                 .unwrap();
             drain(&mut queue, messages);
         }
-        assert!(driver.ledgers.questions.is_empty());
+        assert!(driver.ledgers().questions.is_empty());
         drop((response, client));
         teardown(calls, hooks, driver, messages, &mut queue);
     });
@@ -1188,7 +1199,7 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
             // An older unresolved task forces the ordinary dispatch path. The
             // ready remote call may pass it once enqueued, but cannot skip the
             // immediate-publication ordering preflight.
-            let unresolved = driver.runtime.promise(&mut None).unwrap();
+            let unresolved = driver.capabilities().promise(&mut None).unwrap();
             let queued = driver
                 .enqueue_dynamic(
                     &unresolved,
@@ -1220,13 +1231,12 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
                 Poll::Ready(Ok(Progress::Advanced))
             ));
             assert!(matches!(
-                calls.entries[0].as_ref().unwrap().wire.direct,
-                Some(DirectStage::Queued)
+                calls.entries[0].as_ref().unwrap().wire.route,
+                CallRoute::Queued(_)
             ));
             let question = if sent {
                 drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
-                let Some(DirectStage::Sent(question)) =
-                    calls.entries[0].as_ref().unwrap().wire.direct
+                let CallRoute::Remote(question) = calls.entries[0].as_ref().unwrap().wire.route
                 else {
                     panic!()
                 };
@@ -1238,10 +1248,10 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
             drop(response);
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
             assert!(calls.is_empty());
-            assert!(driver.runtime.next_ready().unwrap().is_none());
+            assert!(driver.capabilities().next_ready().unwrap().is_none());
             assert_eq!(calls.invocations.capacity(), 0);
             assert!(driver.cancel_invocation(queued, messages));
-            driver.runtime.release(unresolved);
+            driver.capabilities().release(unresolved);
             if let Some(question) = question {
                 let reply = Frame::build(messages, 512, Default::default(), |builder| {
                     calls::acknowledge(
@@ -1266,7 +1276,7 @@ fn direct_remote_cancellation_reclaims_queued_and_late_return_owners() {
                         .unwrap();
                     drain(&mut queue, messages);
                 }
-                assert!(driver.ledgers.questions.is_empty());
+                assert!(driver.ledgers().questions.is_empty());
             } else {
                 assert!(queue.is_empty());
             }
@@ -1296,7 +1306,7 @@ fn burst_admission_keeps_older_cancellation_fair_when_capacity_fills() {
                 drain(&mut queue, messages);
             }
         }
-        let Some(DirectStage::Sent(first)) = calls.entries[0].as_ref().unwrap().wire.direct else {
+        let CallRoute::Remote(first) = calls.entries[0].as_ref().unwrap().wire.route else {
             panic!("direct call")
         };
         drop(responses[0].take());
@@ -1384,7 +1394,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                     .iter()
                     .flatten()
                     .map(|entry| {
-                        let Some(DirectStage::Sent(key)) = entry.wire.direct else {
+                        let CallRoute::Remote(key) = entry.wire.route else {
                             panic!("immediate call")
                         };
                         key
@@ -1447,7 +1457,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                                     &mut driver,
                                     messages,
                                     &mut Context::from_waker(Waker::noop()),
-                                    |hooks, driver| { hooks.collect(&mut driver.runtime) }
+                                    |hooks, driver| { hooks.collect(&mut driver.capabilities()) }
                                 )
                                 .unwrap(),
                             Some(true)
@@ -1551,8 +1561,8 @@ fn immediate_calls_deliver_out_of_order_and_drain_a_canceled_reply() {
             .iter()
             .flatten()
             .map(|entry| {
-                assert!(entry.wire.task.is_none());
-                let Some(DirectStage::Sent(question)) = entry.wire.direct else {
+                assert!(entry.wire.task().is_none());
+                let CallRoute::Remote(question) = entry.wire.route else {
                     panic!()
                 };
                 question
@@ -1647,10 +1657,10 @@ fn immediate_single_capability_calls_keep_only_reachable_grants() {
             assert_eq!(queue.len(), 1);
             let entry = calls.entries.iter().flatten().next().unwrap();
             assert!(
-                entry.wire.task.is_none(),
+                entry.wire.task().is_none(),
                 "settled publication creates no temporary queued task"
             );
-            assert!(matches!(entry.wire.direct, Some(DirectStage::Sent(_))));
+            assert!(matches!(entry.wire.route, CallRoute::Remote(_)));
             let bytes = drain(&mut queue, messages);
             let reader =
                 capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
@@ -1809,7 +1819,10 @@ fn resource_output_retries_publication_and_attaches_only_to_first_write() {
         );
         drop((response, client, cap));
         calls.terminate(&mut driver, messages);
-        hooks.close(&mut driver.runtime, Error::disconnected("close".into()));
+        hooks.close(
+            &mut driver.capabilities(),
+            Error::disconnected("close".into()),
+        );
         let mut closing = driver.terminate(&mut queue);
         let mut done = false;
         for _ in 0..1024 {
@@ -1840,9 +1853,11 @@ fn foreign_failed_promise_completes_calls_with_original_diagnostics() {
         let mut error = Error::overloaded("original foreign exception".into());
         error.set_detail(37, vec![8, 9]);
         let failed: capability::Client = crate::new_future_client(Promise::err(error.clone()));
-        let route = foreign.import(&mut driver.runtime, &*failed.hook).unwrap();
+        let route = foreign
+            .import(&mut driver.capabilities(), &*failed.hook)
+            .unwrap();
         let client = hooks
-            .export_client_with_metadata(&mut driver.runtime, &route, foreign::metadata)
+            .export_client_with_metadata(&mut driver.capabilities(), &route, foreign::metadata)
             .unwrap();
         // Queue before metadata reports failure, then admit after graph
         // settlement. This exercises the retained failed endpoint owner.
@@ -1850,7 +1865,7 @@ fn foreign_failed_promise_completes_calls_with_original_diagnostics() {
         for _ in 0..16 {
             if let Poll::Ready(result) = foreign.poll(
                 &mut hooks,
-                &mut driver.runtime,
+                &mut driver.capabilities(),
                 &mut Context::from_waker(Waker::noop()),
                 NonZeroUsize::new(1).unwrap(),
             ) {
@@ -1875,9 +1890,9 @@ fn foreign_failed_promise_completes_calls_with_original_diagnostics() {
         assert_eq!(failure.extra, error.extra);
         assert_eq!(failure.detail(37), error.detail(37));
         drop((failed, client, response));
-        driver.runtime.release(route);
+        driver.capabilities().release(route);
         drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
-        foreign.terminate();
+        foreign.terminate(&mut driver.capabilities());
         teardown(calls, hooks, driver, messages, &mut queue);
     });
 }
@@ -1893,9 +1908,11 @@ fn calls_before_and_after_foreign_resolution_keep_original_order() {
             crate::new_future_client(
                 async move { receiver.await.map_err(crate::canceled_to_error) },
             );
-        let route = foreign.import(&mut driver.runtime, &*source.hook).unwrap();
+        let route = foreign
+            .import(&mut driver.capabilities(), &*source.hook)
+            .unwrap();
         let client = hooks
-            .export_client_with_metadata(&mut driver.runtime, &route, foreign::metadata)
+            .export_client_with_metadata(&mut driver.capabilities(), &route, foreign::metadata)
             .unwrap();
         let mut before = request(&client, 1).send();
         let mut calls = Calls::new(4, None).unwrap();
@@ -1917,7 +1934,7 @@ fn calls_before_and_after_foreign_resolution_keep_original_order() {
         for _ in 0..16 {
             if let Poll::Ready(result) = foreign.poll(
                 &mut hooks,
-                &mut driver.runtime,
+                &mut driver.capabilities(),
                 &mut Context::from_waker(Waker::noop()),
                 NonZeroUsize::new(1).unwrap(),
             ) {
@@ -1934,9 +1951,9 @@ fn calls_before_and_after_foreign_resolution_keep_original_order() {
         ready(&mut after.promise).unwrap();
         assert_eq!(*recorded.borrow(), [1, 2]);
         drop((source, client, before, after));
-        driver.runtime.release(route);
+        driver.capabilities().release(route);
         drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
-        foreign.terminate();
+        foreign.terminate(&mut driver.capabilities());
         teardown(calls, hooks, driver, messages, &mut queue);
     });
 }
@@ -1959,7 +1976,7 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
             let entry = calls.entries.iter().flatten().next().unwrap();
             assert!(entry.wire.pipeline.is_some());
-            let Some(DirectStage::Sent(question)) = entry.wire.direct else {
+            let CallRoute::Remote(question) = entry.wire.route else {
                 panic!("published parent")
             };
             assert_eq!(
@@ -1998,7 +2015,7 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
                     &mut driver,
                     messages,
                     &mut Context::from_waker(Waker::noop()),
-                    |hooks, driver| hooks.collect(&mut driver.runtime),
+                    |hooks, driver| hooks.collect(&mut driver.capabilities()),
                 )
                 .unwrap();
             assert_eq!(completed, (!project_early).then_some(false));
@@ -2014,7 +2031,7 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
                             NonZeroUsize::new(8).unwrap(),
                         )
                         .unwrap();
-                    hooks.collect(&mut driver.runtime);
+                    hooks.collect(&mut driver.capabilities());
                 }
                 drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
             }
@@ -2022,7 +2039,7 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
             let returned: capability::Client = response.get().unwrap().get_as_capability().unwrap();
             let late = capability::Client::new(pipeline.hook.get_pipelined_cap(&[]));
             drop((response, promise, pipeline, early));
-            hooks.collect(&mut driver.runtime);
+            hooks.collect(&mut driver.capabilities());
             drain(&mut queue, messages);
             let child = request(&late, 2).send();
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
@@ -2103,7 +2120,7 @@ fn queued_child_keeps_parent_until_output_acceptance_or_cancellation() {
                 "full output must preserve the child request"
             );
             assert!(
-                driver.ledgers.questions.pending_finish().is_none(),
+                !driver.ledgers().questions.has_pending_finish(),
                 "Finish cannot overtake an unsent child"
             );
             let bytes = drain(&mut queue, messages);
@@ -2173,4 +2190,213 @@ fn queued_child_keeps_parent_until_output_acceptance_or_cancellation() {
             teardown(calls, hooks, driver, messages, &mut queue);
         });
     }
+}
+
+#[test]
+fn one_canceled_remote_operation_does_not_poll_parked_siblings() {
+    with_peer(|mut driver, messages| {
+        driver.use_owned_output_queues(true);
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let mut responses: Vec<_> = (0..16)
+            .map(|_| {
+                Some(
+                    client
+                        .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                            7,
+                            0,
+                            None,
+                            CallHints {
+                                no_promise_pipelining: true,
+                                ..Default::default()
+                            },
+                        )
+                        .send(),
+                )
+            })
+            .collect();
+        let mut calls = Calls::new(24, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 16).unwrap();
+        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+        assert_eq!(calls.live, 16);
+        assert!(calls.ready.is_empty());
+        let _ = drain(&mut queue, messages);
+        let before: Vec<_> = calls
+            .entries
+            .iter()
+            .map(|entry| entry.as_ref().unwrap().polls)
+            .collect();
+        drop(responses[7].take());
+        for _ in 0..64 {
+            if let Poll::Ready(Err(error)) = tick(
+                &mut calls,
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                &mut Context::from_waker(Waker::noop()),
+            ) {
+                panic!("{error}");
+            }
+            if calls.entries[7].is_none() {
+                break;
+            }
+        }
+        assert!(calls.entries[7].is_none());
+        assert_eq!(calls.live, 15);
+        for (index, expected) in before.into_iter().enumerate() {
+            if index != 7 {
+                assert_eq!(
+                    calls.entries[index].as_ref().unwrap().polls,
+                    expected,
+                    "unrelated call {index}"
+                );
+            }
+        }
+        drop((responses, client));
+        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn direct_projection_is_memoized_before_binding_and_imports_its_question_route() {
+    with_peer(|mut driver, messages| {
+        driver.use_owned_output_queues(true);
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let parent = request(&client, 1).send();
+        let first = parent.pipeline.hook.get_pipelined_cap(&[]);
+        let same = parent.pipeline.hook.get_pipelined_cap(&[PipelineOp::Noop]);
+        assert_eq!(
+            first.get_ptr(),
+            same.get_ptr(),
+            "normalized path shares its pre-publication identity"
+        );
+        let projected = direct_response_hook(&*first).expect("direct operation endpoint");
+        assert!(projected.0.index.get().is_none());
+        let mut parameter = request(&client, 2);
+        parameter.get().set_as_capability(first.add_ref());
+        let parameter = parameter.send();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+        assert_eq!(queue.len(), 2);
+        assert!(projected.0.index.get().is_some());
+        let bytes = drain(&mut queue, messages);
+        let mut source = bytes.as_slice();
+        let first_message =
+            capnp::serialize::read_message(&mut source, Default::default()).unwrap();
+        let rpc_capnp::message::Call(first_call) = first_message
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("parent Call")
+        };
+        let question = first_call.unwrap().get_question_id();
+        let second_message =
+            capnp::serialize::read_message(&mut source, Default::default()).unwrap();
+        let rpc_capnp::message::Call(second_call) = second_message
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("parameter Call")
+        };
+        let params = second_call.unwrap().get_params().unwrap();
+        let caps = params.get_cap_table().unwrap();
+        assert_eq!(caps.len(), 1);
+        // Publication currently stages export descriptors. Verify its
+        // owner is the original question route, never an opaque local adapter.
+        let id = match caps.get(0).which().unwrap() {
+            rpc_capnp::cap_descriptor::SenderPromise(id)
+            | rpc_capnp::cap_descriptor::SenderHosted(id) => id,
+            _ => panic!("projected export"),
+        };
+        let export = driver
+            .ledgers()
+            .exports
+            .lookup(capntproto_rpc_engine::ids::ExportId::from_wire(id))
+            .unwrap();
+        let owner = driver.ledgers().exports.resolve(export).unwrap();
+        let Destination::Endpoint {
+            owner: Route::Question(route),
+            ..
+        } = driver.runtime().inspect(owner).unwrap()
+        else {
+            panic!("original question authority")
+        };
+        assert_eq!(
+            route
+                .target(&driver.ledgers().questions)
+                .unwrap()
+                .0
+                .to_wire(),
+            question
+        );
+        assert!(source.is_empty());
+        drop((first, same, parameter, parent, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn unbound_projection_admission_parks_until_binding_or_cancellation() {
+    with_peer(|mut driver, messages| {
+        let mut hooks = ClientHooks::new(8, 8);
+        let pipeline = PipelineState::prepared(Some(&hooks.inbox));
+        let projected =
+            WirePipeline(PipelineRef(Some(pipeline.clone()), None)).get_pipelined_cap(&[]);
+        let client = capability::Client::new(projected);
+        let mut child = request(&client, 1);
+        child.hook.set_hints(capability::CallHints {
+            no_promise_pipelining: true,
+            ..Default::default()
+        });
+        let child = child.send();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let mut cx = Context::from_waker(Waker::noop());
+        let _ = tick(
+            &mut calls,
+            &mut hooks,
+            &mut driver,
+            messages,
+            &mut queue,
+            &mut cx,
+        );
+        assert!(calls.admission_parked);
+        assert!(!calls.admission_wait.as_ref().unwrap().is_ready());
+        for _ in 0..8 {
+            assert!(tick(
+                &mut calls,
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                &mut cx
+            )
+            .is_pending());
+        }
+        drop(child);
+        assert!(calls.admission_wait.as_ref().unwrap().is_ready());
+        assert!(matches!(
+            tick(
+                &mut calls,
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                &mut cx
+            ),
+            Poll::Ready(Ok(Progress::Advanced))
+        ));
+        assert!(calls.pending.is_none());
+        assert!(queue.is_empty());
+        drop((client, pipeline));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
 }

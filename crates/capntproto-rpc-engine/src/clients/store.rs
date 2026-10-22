@@ -8,6 +8,30 @@ pub(super) mod sealed {
 pub trait Capabilities<'id>: sealed::Sealed {
     type Owner;
     type Peer: Copy + Eq;
+    fn resources(&self) -> Resources;
+    fn listen(&mut self) -> Result<Listener<'id>, Error>;
+    fn subscribe(
+        &mut self,
+        listener: &Listener<'id>,
+        client: Key<'id>,
+        owner: usize,
+        watch: Watch,
+    ) -> Result<Subscription<'id>, Error>;
+    fn exclusive_subscription_owner(
+        &self,
+        listener: &Listener<'id>,
+        client: Key<'id>,
+    ) -> Option<usize>;
+    fn has_events(&self, listener: &Listener<'id>) -> bool;
+    fn next_event(&mut self, listener: &Listener<'id>) -> Option<Event<'id>>;
+    fn unsubscribe(&mut self, subscription: Subscription<'id>);
+    fn rebind_subscription(
+        &mut self,
+        subscription: &Subscription<'id>,
+        client: Key<'id>,
+    ) -> Result<(), Error>;
+    fn close_listener(&mut self, listener: Listener<'id>);
+    fn pending_resolution(&self, client: &Client<'id>) -> Result<Option<Key<'id>>, Error>;
     fn is_settled(&self, client: &Client<'id>) -> Result<bool, Error>;
     fn inspect(
         &self,
@@ -44,6 +68,50 @@ impl<T, P> sealed::Sealed for Graph<'_, '_, T, P> {}
 impl<'id, T, P: Copy + Eq> Capabilities<'id> for Graph<'id, '_, T, P> {
     type Owner = T;
     type Peer = P;
+    fn resources(&self) -> Resources {
+        self.resources()
+    }
+    fn listen(&mut self) -> Result<Listener<'id>, Error> {
+        self.listen()
+    }
+    fn subscribe(
+        &mut self,
+        listener: &Listener<'id>,
+        client: Key<'id>,
+        owner: usize,
+        watch: Watch,
+    ) -> Result<Subscription<'id>, Error> {
+        self.subscribe(listener, client, owner, watch)
+    }
+    fn exclusive_subscription_owner(
+        &self,
+        listener: &Listener<'id>,
+        client: Key<'id>,
+    ) -> Option<usize> {
+        self.exclusive_subscription_owner(listener, client)
+    }
+    fn has_events(&self, listener: &Listener<'id>) -> bool {
+        self.has_events(listener)
+    }
+    fn next_event(&mut self, listener: &Listener<'id>) -> Option<Event<'id>> {
+        self.next_event(listener)
+    }
+    fn unsubscribe(&mut self, subscription: Subscription<'id>) {
+        self.unsubscribe(subscription)
+    }
+    fn rebind_subscription(
+        &mut self,
+        subscription: &Subscription<'id>,
+        client: Key<'id>,
+    ) -> Result<(), Error> {
+        self.rebind_subscription(subscription, client)
+    }
+    fn close_listener(&mut self, listener: Listener<'id>) {
+        self.close_listener(listener)
+    }
+    fn pending_resolution(&self, client: &Client<'id>) -> Result<Option<Key<'id>>, Error> {
+        self.pending_resolution(client)
+    }
     fn is_settled(&self, client: &Client<'id>) -> Result<bool, Error> {
         self.is_settled(client)
     }

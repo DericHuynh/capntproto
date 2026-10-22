@@ -14,6 +14,7 @@ use capnp_rpc::bounded::{
     },
     rpc_capnp::api::{CapDescriptor, Message, Payload, Return},
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients, completion, connection,
     ids::{AnswerId, ImportId, WireId},
@@ -42,6 +43,12 @@ fn with_fixed_peer<'pool, const SLOTS: usize, R>(
                 maximum: 4,
             };
             let bounds = connection::GrowingStorage {
+                notifications: capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                    connection::Growth {
+                        initial: 0,
+                        maximum: 12,
+                    },
+                ),
                 imports: bound,
                 exports: bound,
                 questions: bound,
@@ -86,7 +93,7 @@ fn run(mode: u8, growing: u8) {
             let target = if remote_call {
                 remote(&mut peer, ImportId::from_wire(91))
             } else {
-                peer.runtime
+                peer.capabilities()
                     .endpoint(binding::Route::local(43), clients::Location::Local)
                     .unwrap()
             };
@@ -331,7 +338,7 @@ fn run(mode: u8, growing: u8) {
             let (mut peer, messages, calls) = session.into_parts();
             assert!(calls.is_empty());
             assert_eq!(calls.terminate(&mut peer, messages), 0);
-            peer.runtime.release(target);
+            peer.capabilities().release(target);
             assert_eq!(
                 close(peer, messages, &mut queue),
                 if remote_call { 0 } else { 43 }
@@ -345,8 +352,8 @@ fn run(mode: u8, growing: u8) {
     .unwrap();
 }
 
-/// Growth after the driver caches an idle scan must expose every new cleanup
-/// slot. The IO queue stays bounded to one frame throughout this test.
+/// Growth after an idle poll must enqueue every new cleanup obligation.
+/// The IO queue stays bounded to one frame throughout this test.
 #[cfg(feature = "alloc")]
 pub fn growing_ledger_cleanup() {
     use capntproto_rpc_wire::owned::{answer, connection::Progress, pipelines};
@@ -358,9 +365,8 @@ pub fn growing_ledger_cleanup() {
         let mut sends = [None];
         let mut queue = super::driver::message_queue(&mut sends).unwrap();
         with_fixed_peer::<9, _>(2, |mut peer| {
-            // Exceed the eight-slot vacancy certificate to leave the general
-            // maintenance cursor part way through an empty scan. Ledger growth
-            // and the one-frame output bound remain the fault under test.
+            // Idle is observed directly from producer queues. Later ledger
+            // growth must notify cleanup without an invalidation call.
             assert!(matches!(
                 peer.poll_maintenance(
                     messages,
@@ -371,38 +377,26 @@ pub fn growing_ledger_cleanup() {
                     NonZeroUsize::new(7).unwrap()
                 )
                 .unwrap(),
-                Progress::Yield
+                Progress::Idle
             ));
             for n in 0..4 {
-                let imported = peer
-                    .ledgers
-                    .imports
-                    .admit(ImportId::from_wire(n), ())
-                    .unwrap();
-                peer.ledgers.imports.release(imported);
+                let imported = peer.admit_import(ImportId::from_wire(n), ()).unwrap();
+                peer.release_import(imported);
                 let server = peer
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::local(n + 1), clients::Location::Local)
                     .unwrap();
                 // An uncommitted export retains its owner for explicit draining.
-                let _ = peer.ledgers.exports.batch().export(server).ok().unwrap();
+                let _ = peer.export_batch().1.export(server).ok().unwrap();
                 let id = AnswerId::from_wire(n);
                 let key = peer
-                    .ledgers
-                    .answers
-                    .admit(id, answer::State::new(pipelines::Results::new(n + 1)))
+                    .admit_answer(id, answer::State::new(pipelines::Results::new(n + 1)))
                     .ok()
                     .unwrap();
-                let retained = peer.ledgers.answers.pipeline(id).unwrap();
-                assert!(peer
-                    .ledgers
-                    .answers
-                    .prepare_return(key)
-                    .unwrap()
-                    .accept()
-                    .is_none());
-                assert!(peer.ledgers.answers.finish(id, false).retired.is_none());
-                peer.ledgers.answers.release_pipeline_deferred(retained);
+                let retained = peer.answer_pipeline(id).unwrap();
+                assert!(peer.prepare_answer_return(key).unwrap().accept().is_none());
+                assert!(peer.finish_answer(id, false).retired.is_none());
+                peer.release_answer_pipeline_deferred(retained);
             }
             let (mut imports, mut producers, mut servers, mut releases) = (0, 0, 0, 0);
             let mut idle = false;
@@ -449,9 +443,9 @@ pub fn growing_ledger_cleanup() {
             assert_eq!(producers, 10, "maintenance visits grown answer slots");
             assert_eq!(servers, 10, "maintenance visits grown export slots");
             assert_eq!(releases, 15);
-            assert!(peer.ledgers.imports.is_empty());
-            assert!(peer.ledgers.exports.is_empty());
-            assert!(peer.ledgers.answers.is_empty());
+            assert!(peer.ledgers().imports.is_empty());
+            assert!(peer.ledgers().exports.is_empty());
+            assert!(peer.ledgers().answers.is_empty());
             assert_eq!(close(peer, messages, &mut queue), 0);
         });
         let writers = core::array::from_fn::<_, 8, _>(|_| messages.reserve(776).unwrap());
@@ -462,7 +456,7 @@ pub fn growing_ledger_cleanup() {
     .unwrap();
 }
 
-/// A maintenance scan started before bindings grew must visit every new slot.
+/// Bindings grown after idle must notify each abandoned projection.
 /// Dropping the observer does not remove its retained answer until maintenance.
 #[cfg(feature = "growing")]
 pub fn growing_binding_cleanup() {
@@ -490,35 +484,19 @@ pub fn growing_binding_cleanup() {
             for n in 0..4 {
                 let id = AnswerId::from_wire(n);
                 let key = peer
-                    .ledgers
-                    .answers
-                    .admit(id, answer::State::new(pipelines::Results::new(n + 1)))
+                    .admit_answer(id, answer::State::new(pipelines::Results::new(n + 1)))
                     .ok()
                     .unwrap();
-                let answer = peer.ledgers.answers.pipeline(id).unwrap();
+                let answer = peer.answer_pipeline(id).unwrap();
                 let observer = peer
-                    .pipelines
-                    .bind(
-                        &mut peer.runtime,
-                        &mut peer.ledgers.answers,
-                        &answer,
-                        capntproto_rpc_wire::pipeline::Path::new(&[]),
-                    )
+                    .project_answer(&answer, capntproto_rpc_wire::pipeline::Path::new(&[]))
                     .unwrap();
-                peer.ledgers.answers.release_pipeline_deferred(answer);
-                assert!(peer
-                    .ledgers
-                    .answers
-                    .prepare_return(key)
-                    .unwrap()
-                    .accept()
-                    .is_none());
-                assert!(peer.ledgers.answers.finish(id, false).retired.is_none());
+                peer.release_answer_pipeline_deferred(answer);
+                assert!(peer.prepare_answer_return(key).unwrap().accept().is_none());
+                assert!(peer.finish_answer(id, false).retired.is_none());
                 if n == 0 {
-                    // Growth invalidates the empty-ledger idle certificate.
-                    // Keep this observer live for its first Pending poll, so
-                    // the scan suspends before the other bindings grow. Empty
-                    // phases no longer consume the one-step allowance.
+                    // Keep this observer live through its first Pending poll.
+                    // Later bindings must register their own independent work.
                     assert!(matches!(
                         peer.poll_maintenance(
                             messages,
@@ -532,9 +510,9 @@ pub fn growing_binding_cleanup() {
                         Progress::Yield
                     ));
                 }
-                peer.runtime.release(observer);
+                peer.capabilities().release(observer);
             }
-            assert_eq!(peer.pipelines.capacity(), 4);
+            assert!(!peer.maintenance_is_idle(messages, &queue));
             let mut producers = 0;
             let mut idle = false;
             for _ in 0..400 {
@@ -563,7 +541,7 @@ pub fn growing_binding_cleanup() {
                 producers, 10,
                 "maintenance visits every grown pipeline observer"
             );
-            assert!(peer.ledgers.answers.is_empty());
+            assert!(peer.ledgers().answers.is_empty());
             assert_eq!(close(peer, messages, &mut queue), 0);
         });
     })

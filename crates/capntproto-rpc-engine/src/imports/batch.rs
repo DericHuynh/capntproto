@@ -222,6 +222,7 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
                 .as_ref()
                 .is_some_and(|entry| entry.local == 0)
             {
+                self.imports.binding_revision = self.imports.binding_revision.saturating_add(1);
                 self.imports.unlink_release(plan.index);
             }
             let slot = &mut self.imports.slots[plan.index];

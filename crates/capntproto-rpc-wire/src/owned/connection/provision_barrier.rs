@@ -197,7 +197,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if self.network.is_some() {
             return Ok(false);
         }
-        let Some(ready) = self.runtime.next_ready().map_err(Error::Dispatch)? else {
+        let Some(ready) = self.runtime.ready().map_err(Error::Dispatch)? else {
             return Ok(false);
         };
         if !matches!(

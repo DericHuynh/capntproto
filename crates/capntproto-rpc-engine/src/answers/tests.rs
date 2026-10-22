@@ -2,32 +2,32 @@ use super::*;
 use crate::ids::WireId;
 
 #[test]
-fn bounded_idle_check_observes_deferred_pipeline_release_across_id_reuse() {
+fn retirement_queue_observes_deferred_pipeline_release_across_id_reuse() {
     let mut slots = [Slot::EMPTY, Slot::EMPTY];
     with_answers(&mut slots, |answers| {
-        assert!(!answers.reclamation_is_idle(1));
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
+        assert!(answers.reclamation_is_idle());
         let id = AnswerId::from_wire(7);
         let old = answers.admit(id, 41).unwrap();
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
         assert!(answers.dispatch(old, false).unwrap());
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
         let pipeline = answers.pipeline(id).unwrap();
         assert!(answers.prepare_return(old).unwrap().accept().is_none());
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
         assert!(answers.finish(id, false).retired.is_none());
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
         let next = answers.admit(id, 43).unwrap();
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
         answers.release_pipeline_deferred(pipeline);
-        assert!(!answers.reclamation_is_idle(2));
+        assert!(!answers.reclamation_is_idle());
         assert_eq!(answers.take_finished(0), Some(41));
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
         assert_eq!(answers.get(next), Ok(&43));
         assert!(answers.finish(id, false).retired.is_none());
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
         assert_eq!(answers.prepare_return(next).unwrap().accept(), Some(43));
-        assert!(answers.reclamation_is_idle(2));
+        assert!(answers.reclamation_is_idle());
     })
     .unwrap();
 }
@@ -259,4 +259,82 @@ fn growing_answers_keep_old_pipeline_owner_across_wire_id_reuse() {
         assert!(answers.is_empty());
     })
     .unwrap();
+}
+
+#[test]
+fn queued_cancellation_waits_for_final_dependency_and_cannot_cross_slot_reuse() {
+    let measured = allocation_counter::measure(|| {
+        let mut slots = [const { Slot::EMPTY }; 32];
+        with_answers(&mut slots, |answers| {
+            let keys = core::array::from_fn::<_, 32, _>(|i| {
+                answers.admit(AnswerId::from_wire(i as u32), i).unwrap()
+            });
+            let lease = answers.pipeline(keys[17].id()).unwrap();
+            assert!(!answers.finish(keys[17].id(), false).cancel);
+            assert!(!answers.has_queued_cancellations());
+            answers.release_pipeline_deferred(lease);
+            assert_eq!(answers.next_queued_cancellation(), Some(keys[17]));
+            // Output rejection keeps the exact obligation ready.
+            drop(answers.prepare_return(keys[17]).unwrap());
+            assert_eq!(answers.next_queued_cancellation(), Some(keys[17]));
+            assert!(answers.finish(keys[23].id(), false).cancel);
+            assert_eq!(answers.prepare_return(keys[17]).unwrap().accept(), Some(17));
+            let next = answers.admit(keys[17].id(), 99).unwrap();
+            assert_ne!(next, keys[17]);
+            assert_eq!(answers.next_queued_cancellation(), Some(keys[23]));
+            assert_eq!(
+                answers.acknowledge_queued_cancellation(keys[17]),
+                Err(Error::StaleKey)
+            );
+            assert!(!answers.dispatch(keys[23], true).unwrap());
+            assert!(!answers.has_queued_cancellations());
+            // Running methods have their own execution notifications.
+            assert!(answers.dispatch(next, true).unwrap());
+            assert!(answers.finish(next.id(), false).cancel);
+            assert!(!answers.has_queued_cancellations());
+        })
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn protocol_readiness_notifies_only_watched_generation_without_callbacks_or_allocation() {
+    let measured = allocation_counter::measure(|| {
+        let mut slots = [const { Slot::EMPTY }; 32];
+        with_answers(&mut slots, |answers| {
+            let keys = core::array::from_fn::<_, 32, _>(|i| {
+                answers.admit(AnswerId::from_wire(i as u32), i).unwrap()
+            });
+            for key in keys {
+                answers.watch_execution(key).unwrap();
+            }
+            assert!(!answers.has_changed_producers());
+            answers.get_mut(keys[17]).unwrap();
+            answers.get_mut(keys[17]).unwrap();
+            // Payload edits only notify pipeline observers, not execution.
+            assert_eq!(answers.take_changed_producer(), None);
+            answers.finish(keys[17].id(), false);
+            assert_eq!(answers.take_changed_producer(), Some(&17));
+            assert_eq!(answers.take_changed_producer(), None);
+            let lease = answers.pipeline(keys[23].id()).unwrap();
+            answers.finish(keys[23].id(), false);
+            // An admitted dependency still needs the producer to finish.
+            assert_eq!(answers.take_changed_producer(), None);
+            assert_eq!(answers.take_changed_producer(), None);
+            answers.release_pipeline_deferred(lease);
+            assert_eq!(answers.take_changed_producer(), Some(&23));
+            answers.get_mut(keys[23]).unwrap();
+            assert_eq!(answers.prepare_return(keys[23]).unwrap().accept(), Some(23));
+            let next = answers.admit(keys[23].id(), 99).unwrap();
+            assert!(!answers.has_changed_producers());
+            assert_eq!(answers.unwatch_execution(keys[23]), Err(Error::StaleKey));
+            answers.watch_execution(next).unwrap();
+            answers.finish(next.id(), false);
+            answers.unwatch_execution(next).unwrap();
+            assert_eq!(answers.take_changed_producer(), None);
+        })
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
 }

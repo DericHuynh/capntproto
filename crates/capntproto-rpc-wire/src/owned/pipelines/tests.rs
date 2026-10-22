@@ -43,6 +43,10 @@ fn occupancy_preserves_other_observers_across_cancellation_discard_and_reuse() {
     messages::with_messages(&mut [], &mut [], |pool| {
         clients::with_graph(
             &mut [const { clients::Slot::EMPTY }; 4],
+            capntproto_rpc_engine::clients::NotificationStorage {
+                listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+            },
             |graph: &mut Graph<'_, '_, u32, u8>| {
                 answers::with_answers(&mut [answers::Slot::EMPTY], |answers| {
                     let id = AnswerId::from_wire(3);
@@ -55,9 +59,15 @@ fn occupancy_preserves_other_observers_across_cancellation_discard_and_reuse() {
                     let lease = answers.pipeline(id).unwrap();
                     let mut slots = [const { Slot::<0>::EMPTY }; 16];
                     let mut bindings = Bindings::new(&mut slots).unwrap();
+                    let mut other_slots = [const { Slot::<0>::EMPTY }; 2];
+                    let mut other = Bindings::new(&mut other_slots).unwrap();
                     let first = bindings
                         .bind(graph, answers, &lease, pipeline::Path::new(&[]))
                         .unwrap();
+                    assert!(matches!(
+                        other.bind(graph, answers, &lease, pipeline::Path::new(&[])),
+                        Err(Error::Answer(answers::Error::AlreadyObserved))
+                    ));
                     let second = bindings
                         .bind(graph, answers, &lease, pipeline::Path::new(&[]))
                         .unwrap();
@@ -67,17 +77,25 @@ fn occupancy_preserves_other_observers_across_cancellation_discard_and_reuse() {
                         Progress::Abandoned
                     ));
                     assert!(!bindings.is_empty());
-                    bindings.discard_unexposed(second.key(), answers);
+                    bindings.discard_unexposed(second.key(), answers, graph);
                     graph.release(second);
                     assert!(bindings.is_empty());
                     let reused = bindings
                         .bind(graph, answers, &lease, pipeline::Path::new(&[]))
                         .unwrap();
                     assert!(!bindings.is_empty());
-                    assert!(bindings.drain_one(answers));
+                    assert!(bindings.drain_one(answers, graph));
                     assert!(bindings.is_empty());
-                    assert!(!bindings.drain_one(answers));
+                    assert!(!bindings.drain_one(answers, graph));
                     graph.release(reused);
+                    // Fully draining the old registry transfers authority to a
+                    // new generation; its slot indices cannot alias the old list.
+                    let rebound = other
+                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
+                        .unwrap();
+                    graph.release(rebound);
+                    assert!(other.drain_one(answers, graph));
+                    assert!(!other.drain_one(answers, graph));
                     answers.release_pipeline_deferred(lease);
                     answers.finish(id, false);
                     assert!(answers.prepare_return(key).unwrap().accept().is_some());
@@ -99,6 +117,10 @@ fn published_pipeline_keeps_advertised_route_after_remote_promise_resolves() {
         messages::with_messages(&mut buffers, &mut [], |pool| {
             clients::with_graph(
                 &mut [const { clients::Slot::EMPTY }; 4],
+                capntproto_rpc_engine::clients::NotificationStorage {
+                    listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                },
                 |graph: &mut Graph<'_, '_, u32, u8>| {
                     exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
                         let remote = graph.endpoint(10, Location::Remote(1)).unwrap();
@@ -163,7 +185,9 @@ fn published_pipeline_keeps_advertised_route_after_remote_promise_resolves() {
                                         .accept()
                                         .unwrap()
                                         .release(pool)
-                                        .release(pool, graph);
+                                        .release(pool, graph, |_| {
+                                            panic!("fixture has no redirected question")
+                                        });
                                 }
                             },
                         )
@@ -192,6 +216,10 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
             messages::with_messages(&mut buffers, &mut [], |pool| {
                 clients::with_graph(
                     &mut [const { clients::Slot::EMPTY }; 4],
+                    capntproto_rpc_engine::clients::NotificationStorage {
+                        listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                        subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                    },
                     |graph: &mut Graph<'_, '_, u32, u8>| {
                         exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
                             answers::with_answers(
@@ -302,14 +330,22 @@ fn finished_parent_and_reused_wire_id_still_resolve_the_admitted_child() {
                                     assert_eq!(runtime.complete(running), 99);
                                     let retired = answers.take_finished(0).unwrap();
                                     assert_eq!(
-                                        retired.release(pool).release(pool, &mut runtime),
+                                        retired.release(pool).release(
+                                            pool,
+                                            &mut runtime,
+                                            |_| panic!("fixture has no redirected question")
+                                        ),
                                         41
                                     );
                                     answers.finish(id, true);
                                     let retired =
                                         answers.prepare_return(reused).unwrap().accept().unwrap();
                                     assert_eq!(
-                                        retired.release(pool).release(pool, &mut runtime),
+                                        retired.release(pool).release(
+                                            pool,
+                                            &mut runtime,
+                                            |_| panic!("fixture has no redirected question")
+                                        ),
                                         43
                                     );
                                     if invalid_path {
@@ -346,6 +382,10 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
             let mut nodes = [clients::Slot::EMPTY];
             clients::with_graph(
                 &mut nodes[..graph_capacity],
+                capntproto_rpc_engine::clients::NotificationStorage {
+                    listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                },
                 |graph: &mut Graph<'_, '_, u32, u8>| {
                     answers::with_answers(&mut [answers::Slot::EMPTY], |answers| {
                         let id = AnswerId::from_wire(3);
@@ -370,7 +410,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
                                 assert!(!bindings.is_empty());
                                 assert!(matches!(
                                     bindings.bind(graph, answers, &lease, pipeline::Path::new(&[])),
-                                    Err(Error::Capacity)
+                                    Err(Error::ObserversFull)
                                 ));
                                 graph.release(client);
                             }
@@ -391,7 +431,7 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
                         assert!(!answers.dispatch(key, true).unwrap());
                         assert!(answers.prepare_return(key).unwrap().accept().is_some());
                         assert!(bindings.is_empty());
-                        assert!(!bindings.drain_one(answers));
+                        assert!(!bindings.drain_one(answers, graph));
                         assert!(graph.is_empty());
                     })
                     .unwrap();
@@ -407,64 +447,241 @@ fn canceled_observer_releases_parent_and_capacity_failures_preserve_dependencies
 fn broken_producer_preserves_observer_until_graph_capacity_is_available() {
     messages::with_messages(&mut [], &mut [], |pool| {
         let mut nodes = [const { clients::Slot::EMPTY }; 2];
-        clients::with_graph(&mut nodes, |graph: &mut Graph<'_, '_, u32, u8>| {
-            answers::with_answers(&mut [answers::Slot::EMPTY], |answers| {
-                let id = AnswerId::from_wire(3);
-                let key = answers
-                    .admit(
-                        id,
-                        super::super::answer::State::new(Results::<_, 0>::new(())),
-                    )
-                    .unwrap_or_else(|_| panic!("parent"));
-                let lease = answers.pipeline(id).unwrap();
-                let mut slots = [Slot::<0>::EMPTY];
-                let mut bindings = Bindings::new(&mut slots).unwrap();
-                assert!(bindings.is_empty());
-                let child = bindings
-                    .bind(graph, answers, &lease, pipeline::Path::new(&[]))
-                    .unwrap();
-                answers.release_pipeline_deferred(lease);
-                let occupying = graph.endpoint(9, Location::Local).unwrap();
-                assert!(complete(answers, key, Err(capnp::ErrorKind::Unimplemented)).is_ok());
-                assert!(matches!(
-                    bindings.poll_one(0, graph, answers, pool, |_| panic!(
-                        "factory called before capacity reservation"
-                    )),
-                    Err(Error::Graph(clients::Error::Full))
-                ));
-                assert!(!bindings.is_empty()); // Failed resolution keeps its owner.
-                graph.release(occupying);
-                assert_eq!(graph.take_retired(), Some(9));
-                assert!(matches!(
-                    bindings
-                        .poll_one(0, graph, answers, pool, |error| {
-                            assert_eq!(error, capnp::ErrorKind::Unimplemented);
-                            10
-                        })
-                        .unwrap(),
-                    Progress::Resolved(None)
-                ));
-                assert!(bindings.is_empty());
-                let call = graph.prepare_call(&child).unwrap();
-                assert!(matches!(
-                    call.destination(),
-                    Destination::Endpoint {
-                        location: Location::Broken,
-                        owner: &10,
-                        ..
-                    }
-                ));
-                let target = call.accept();
-                graph.release(target);
-                graph.release(child);
-                assert_eq!(graph.take_retired(), Some(10));
-                answers.finish(id, false);
-                assert!(answers.prepare_return(key).unwrap().accept().is_some());
-                assert!(graph.is_empty());
-            })
-            .unwrap();
-        })
+        clients::with_graph(
+            &mut nodes,
+            capntproto_rpc_engine::clients::NotificationStorage {
+                listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+            },
+            |graph: &mut Graph<'_, '_, u32, u8>| {
+                answers::with_answers(&mut [answers::Slot::EMPTY], |answers| {
+                    let id = AnswerId::from_wire(3);
+                    let key = answers
+                        .admit(
+                            id,
+                            super::super::answer::State::new(Results::<_, 0>::new(())),
+                        )
+                        .unwrap_or_else(|_| panic!("parent"));
+                    let lease = answers.pipeline(id).unwrap();
+                    let mut slots = [Slot::<0>::EMPTY];
+                    let mut bindings = Bindings::new(&mut slots).unwrap();
+                    assert!(bindings.is_empty());
+                    let child = bindings
+                        .bind(graph, answers, &lease, pipeline::Path::new(&[]))
+                        .unwrap();
+                    answers.release_pipeline_deferred(lease);
+                    let occupying = graph.endpoint(9, Location::Local).unwrap();
+                    assert!(complete(answers, key, Err(capnp::ErrorKind::Unimplemented)).is_ok());
+                    assert!(matches!(
+                        bindings.poll_one(0, graph, answers, pool, |_| panic!(
+                            "factory called before capacity reservation"
+                        )),
+                        Err(Error::Graph(clients::Error::Full))
+                    ));
+                    assert!(!bindings.is_empty()); // Failed resolution keeps its owner.
+                    graph.release(occupying);
+                    assert_eq!(graph.take_retired(), Some(9));
+                    assert!(matches!(
+                        bindings
+                            .poll_one(0, graph, answers, pool, |error| {
+                                assert_eq!(error, capnp::ErrorKind::Unimplemented);
+                                10
+                            })
+                            .unwrap(),
+                        Progress::Resolved(None)
+                    ));
+                    assert!(bindings.is_empty());
+                    let call = graph.prepare_call(&child).unwrap();
+                    assert!(matches!(
+                        call.destination(),
+                        Destination::Endpoint {
+                            location: Location::Broken,
+                            owner: &10,
+                            ..
+                        }
+                    ));
+                    let target = call.accept();
+                    graph.release(target);
+                    graph.release(child);
+                    assert_eq!(graph.take_retired(), Some(10));
+                    answers.finish(id, false);
+                    assert!(answers.prepare_return(key).unwrap().accept().is_some());
+                    assert!(graph.is_empty());
+                })
+                .unwrap();
+            },
+        )
         .unwrap();
     })
     .unwrap();
+}
+
+#[test]
+fn sparse_answer_notifications_visit_only_changed_producers_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        messages::with_messages(&mut [], &mut [], |messages| {
+            clients::with_graph(
+                &mut [const { clients::Slot::EMPTY }; 32],
+                clients::NotificationStorage {
+                    listeners: &mut [clients::ListenerSlot::EMPTY],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 32],
+                },
+                |graph: &mut Graph<'_, '_, u32, u8>| {
+                    answers::with_answers(&mut [const { answers::Slot::EMPTY }; 32], |answers| {
+                        let mut slots = [const { Slot::<0>::EMPTY }; 32];
+                        let mut bindings = Bindings::new(&mut slots).unwrap();
+                        let mut keys = [None; 32];
+                        let mut clients = [const { None }; 32];
+                        for index in 0..32 {
+                            let id = AnswerId::from_wire(index as u32);
+                            keys[index] = Some(
+                                answers
+                                    .admit(
+                                        id,
+                                        super::super::answer::State::new(Results::<_, 0>::new(
+                                            index,
+                                        )),
+                                    )
+                                    .unwrap_or_else(|_| panic!("capacity")),
+                            );
+                            let lease = answers.pipeline(id).unwrap();
+                            clients[index] = Some(
+                                bindings
+                                    .bind(graph, answers, &lease, pipeline::Path::new(&[]))
+                                    .unwrap(),
+                            );
+                            answers.release_pipeline_deferred(lease);
+                        }
+                        let mut visits = 0;
+                        while let Some(index) = bindings.next_ready(answers, graph) {
+                            assert!(matches!(
+                                bindings
+                                    .poll_one_with(
+                                        index,
+                                        graph,
+                                        answers,
+                                        messages,
+                                        |_| 0,
+                                        |_, _, _| {
+                                            visits += 1;
+                                            Ok(None)
+                                        }
+                                    )
+                                    .unwrap(),
+                                Progress::Pending
+                            ));
+                        }
+                        assert_eq!(visits, 32);
+                        for _ in 0..100 {
+                            assert!(bindings.next_ready(answers, graph).is_none());
+                        }
+                        answers.get_mut(keys[17].unwrap()).unwrap().owner.producer = 999;
+                        let index = bindings.next_ready(answers, graph).unwrap();
+                        assert_eq!(index, 17);
+                        assert!(matches!(
+                            bindings
+                                .poll_one_with(
+                                    index,
+                                    graph,
+                                    answers,
+                                    messages,
+                                    |_| 0,
+                                    |producer, _, _| {
+                                        assert_eq!(*producer, 999);
+                                        visits += 1;
+                                        Ok(None)
+                                    }
+                                )
+                                .unwrap(),
+                            Progress::Pending
+                        ));
+                        assert_eq!(visits, 33);
+                        assert!(bindings.next_ready(answers, graph).is_none());
+                        // A graph-full owner sleeps, while another producer and
+                        // cancellation proceed at one observer per poll.
+                        assert_eq!(graph.resources().nodes, 0);
+                        assert_eq!(
+                            bindings
+                                .poll_one_with(
+                                    17,
+                                    graph,
+                                    answers,
+                                    messages,
+                                    |_| 0,
+                                    |_, _, graph| graph
+                                        .endpoint(91, Location::Local)
+                                        .map(|client| Some(Ok(client)))
+                                        .map_err(|rejected| Error::Graph(rejected.error))
+                                )
+                                .err(),
+                            Some(Error::Graph(clients::Error::Full))
+                        );
+                        answers.get_mut(keys[19].unwrap()).unwrap().owner.producer = 777;
+                        assert_eq!(bindings.next_ready(answers, graph), Some(19));
+                        assert!(matches!(
+                            bindings
+                                .poll_one(19, graph, answers, messages, |_| 0)
+                                .unwrap(),
+                            Progress::Pending
+                        ));
+                        for _ in 0..100 {
+                            assert!(bindings.next_ready(answers, graph).is_none());
+                        }
+                        graph.release(clients[3].take().unwrap());
+                        assert_eq!(graph.resources().nodes, 1);
+                        let mut seen = [false; 2];
+                        for _ in 0..2 {
+                            let index = bindings.next_ready(answers, graph).unwrap();
+                            match index {
+                                3 => {
+                                    seen[0] = true;
+                                    assert!(matches!(
+                                        bindings
+                                            .poll_one_with(
+                                                index,
+                                                graph,
+                                                answers,
+                                                messages,
+                                                |_| 0,
+                                                |_, _, _| panic!(
+                                                    "abandonment does not inspect producer"
+                                                )
+                                            )
+                                            .unwrap(),
+                                        Progress::Abandoned
+                                    ));
+                                }
+                                17 => {
+                                    seen[1] = true;
+                                    assert!(matches!(
+                                        bindings
+                                            .poll_one(index, graph, answers, messages, |_| 0)
+                                            .unwrap(),
+                                        Progress::Pending
+                                    ));
+                                }
+                                _ => panic!("unrelated observer"),
+                            }
+                        }
+                        assert_eq!(seen, [true, true]);
+                        assert!(bindings.next_ready(answers, graph).is_none());
+                        for client in clients.into_iter().flatten() {
+                            graph.release(client);
+                        }
+                        while bindings.drain_one(answers, graph) {}
+                        for key in keys.into_iter().flatten() {
+                            answers.finish(key.id(), false);
+                            assert!(answers.prepare_return(key).unwrap().accept().is_some());
+                        }
+                        assert!(answers.is_empty());
+                        assert!(graph.is_empty());
+                    })
+                    .unwrap();
+                },
+            )
+            .unwrap();
+        })
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
 }

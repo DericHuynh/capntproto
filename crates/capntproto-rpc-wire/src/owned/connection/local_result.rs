@@ -142,7 +142,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn poll_local_result(
         &mut self,
         index: usize,
-        task: dispatch::TaskKey<'id>,
+        task: InvocationKey<'id>,
         result: &LocalResult<'pool, 'id, CAPS>,
         messages: &messages::Messages<'pool, '_, '_>,
     ) -> Result<Propagation, Error> {

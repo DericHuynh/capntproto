@@ -10,7 +10,7 @@ use super::super::ready;
 type Running<'p, 'id, I, const C: usize, const P: usize> =
     dispatch::Running<'id, connection::Request<'p, 'id, I, C, P>>;
 type Peer<'p, 'id, 's, I, P, const C: usize, const H: usize> =
-    Driver<'p, 'id, 's, I, Results, P, Rc<dyn ClientHook>, C, H>;
+    Driver<'p, 'id, 's, I, Producer, P, Rc<dyn ClientHook>, C, H>;
 
 enum Stage {
     Prepare,
@@ -24,6 +24,10 @@ struct Entry<'p, 'id, I, const C: usize, const H: usize> {
     results: Results,
     stage: Stage,
     waker: Waker,
+    #[cfg(test)]
+    polls: usize,
+    result_revision: u64,
+    redirect_work: capntproto_rpc_engine::work_queue::Link,
 }
 impl<'p, 'id, I, const C: usize, const H: usize> Entry<'p, 'id, I, C, H> {
     fn request(&self) -> &connection::Request<'p, 'id, I, C, H> {
@@ -45,9 +49,9 @@ pub enum Progress {
 /// Incoming service execution for a hosted connection using the portable driver.
 ///
 /// Call `accept` for ready incoming Calls and `poll` alongside IO, invocation
-/// delivery and `Driver::poll_maintenance_with`. After external driver mutations,
-/// call `protocol_changed` before polling again; spurious polls do not recheck
-/// parked operations. The maintenance resolver must
+/// delivery and `Driver::poll_maintenance_with`. Protocol transitions notify
+/// the exact registered producer; spurious polls do not recheck parked
+/// operations. The maintenance resolver must
 /// use `ClientHooks::server_pipeline` so explicit early pipelines win over final
 /// results. Other dispatcher tasks and authenticated third-party answers remain
 /// with their caller. Local endpoint owners are the original policy-preserving
@@ -63,6 +67,9 @@ pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     first_free: usize,
     maximum: usize,
     ready: ready::Queue,
+    redirects: capntproto_rpc_engine::work_queue::Queue,
+    preparing: usize,
+    protocol_turn: bool,
     completed_plain: bool,
     completed_ordinary: bool,
     results_cache: results::Cache,
@@ -76,6 +83,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             first_free: 0,
             maximum,
             ready: ready::Queue::default(),
+            redirects: capntproto_rpc_engine::work_queue::Queue::EMPTY,
+            preparing: 0,
+            protocol_turn: true,
             completed_plain: false,
             completed_ordinary: false,
             results_cache: results::Cache::default(),
@@ -89,8 +99,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         &self,
         charge: Option<coordinator::policy::Charge>,
         pool: Option<capnp::message::SegmentPool>,
-    ) -> Results {
-        self.results_cache.acquire(charge, pool)
+    ) -> Producer {
+        self.results_cache.acquire(charge, pool).into_producer()
     }
     pub(crate) fn completed_plain(&self) -> bool {
         self.completed_plain
@@ -98,17 +108,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     pub(crate) fn completed_ordinary(&self) -> bool {
         self.completed_plain || self.completed_ordinary
     }
-    /// Recheck accepted work after mutating the driver outside this worker.
-    /// Application futures use their individual wakers; protocol changes such
-    /// as Finish, redirect publication or released capacity need this signal.
-    pub fn protocol_changed(&mut self) {
-        self.ready.invalidate();
-    }
     pub(crate) fn has_undispatched(&self) -> bool {
-        self.entries
-            .iter()
-            .flatten()
-            .any(|entry| matches!(entry.stage, Stage::Prepare))
+        self.preparing != 0
     }
     pub(crate) fn pending_redirect(
         &self,
@@ -117,11 +118,21 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         Results,
         Rc<coordinator::multiparty::tail::Redirect>,
     )> {
-        self.entries.iter().flatten().find_map(|entry| {
-            let redirect = entry.results.redirect()?;
-            (!redirect.sent.get())
-                .then(|| (entry.request().answer(), entry.results.clone(), redirect))
-        })
+        let index = self.redirects.head()?;
+        let entry = self.entries[index].as_ref().expect("ready redirect owner");
+        let redirect = entry.results.redirect().expect("ready redirect");
+        debug_assert!(!redirect.sent.get());
+        Some((entry.request().answer(), entry.results.clone(), redirect))
+    }
+    pub(crate) fn redirect_published(&mut self, key: answers::Key<'id>) {
+        let index = self.redirects.head().expect("published redirect owner");
+        assert_eq!(
+            self.entries[index].as_ref().unwrap().request().answer(),
+            key
+        );
+        self.redirects.remove(&mut self.entries, index, |slot| {
+            &mut slot.as_mut().unwrap().redirect_work
+        });
     }
     /// Accept only the oldest ready incoming ordinary Call. False leaves other
     /// tasks, including authenticated handoffs, untouched for their owner.
@@ -134,7 +145,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if let Some(kind) = driver.disconnected() {
             return Err(Error::from_kind(kind));
         }
-        if !driver.has_pending_call() && driver.runtime.queued() == 0 {
+        if !driver.has_pending_call() && driver.runtime().queued() == 0 {
             return Ok(false);
         }
         let index = self.first_free;
@@ -149,13 +160,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         {
             let key = running.owner().answer();
             let results = driver
-                .ledgers
+                .ledgers()
                 .answers
                 .get(key)
                 .expect("dispatched answer remains owned until Return")
                 .owner
                 .producer
-                .clone();
+                .results();
+            driver.answers().watch_execution(key).map_err(wire_error)?;
             self.install(index, running, execute, results);
             return Ok(true);
         }
@@ -164,36 +176,21 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             // dispatch. Queueing itself is progress: network controls must get
             // another turn to prepare a third-party destination before execution.
             let enqueued = matches!(driver.retry_call(), Ok(Some(_)));
-            let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
+            let (mut dispatch, mut answers) = driver.execution();
+            let Some(ready) = dispatch.ready().map_err(wire_error)? else {
                 return Ok(enqueued);
             };
             let Some(request) = ready.owner().as_call() else {
                 return Ok(enqueued);
             };
             let key = request.answer();
-            let results = &driver
-                .ledgers
-                .answers
-                .get(key)
-                .map_err(wire_error)?
-                .owner
-                .producer;
-            if driver
-                .ledgers
-                .answers
-                .is_third_party(key)
-                .map_err(wire_error)?
-                && !results.transfer_ready()
-            {
+            let results = &answers.get(key).map_err(wire_error)?.owner.producer;
+            if answers.is_third_party(key).map_err(wire_error)? && !results.transfer_ready() {
                 return Ok(enqueued);
             }
-            let results = results.clone();
+            let results = results.results();
             // Generated dispatch enforces cancellation via its supplied executor.
-            let execute = driver
-                .ledgers
-                .answers
-                .dispatch(key, true)
-                .map_err(wire_error)?;
+            let execute = answers.dispatch(key, true).map_err(wire_error)?;
             (
                 ready.accept().map_owner(|task| match task {
                     connection::Task::Call(call) => call,
@@ -203,6 +200,10 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 results,
             )
         };
+        driver
+            .answers()
+            .watch_execution(running.owner().answer())
+            .map_err(wire_error)?;
         self.install(index, running, execute, results);
         Ok(true)
     }
@@ -215,8 +216,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         execute: bool,
         results: Results,
     ) {
+        let waker = self.ready.insert(index);
+        results.bind_protocol_waker(waker.clone());
         let entry = Entry {
-            waker: self.ready.insert(index),
+            #[cfg(test)]
+            polls: 0,
+            result_revision: 0,
+            redirect_work: capntproto_rpc_engine::work_queue::Link::EMPTY,
+            waker,
             running,
             results,
             stage: if execute {
@@ -234,6 +241,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             self.entries[index] = Some(entry);
         }
         self.live += 1;
+        self.preparing += usize::from(execute);
         self.first_free = self.entries[index + 1..]
             .iter()
             .position(Option::is_none)
@@ -253,7 +261,17 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         cx: &mut Context<'_>,
         budget: NonZeroUsize,
         import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
@@ -266,7 +284,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             cx,
             budget,
             import,
-            |hooks, driver| hooks.collect_with_metadata(&mut driver.runtime, foreign::metadata),
+            |hooks, driver| {
+                hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
+            },
             |driver, messages, key, bytes| {
                 driver
                     .send_answer(
@@ -276,7 +296,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                         bytes,
                         options,
                         scratch,
-                        Results::write_exception,
+                        Producer::write_exception,
                     )
                     .map_err(wire_error)
             },
@@ -303,7 +323,17 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         mut imported_resource: impl FnMut(&I) -> Option<R>,
         mut local_resource: impl FnMut(&Rc<dyn ClientHook>) -> Option<R>,
         import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
@@ -316,7 +346,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             cx,
             budget,
             import,
-            |hooks, driver| hooks.collect_with_metadata(&mut driver.runtime, foreign::metadata),
+            |hooks, driver| {
+                hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
+            },
             |driver, messages, key, bytes| {
                 driver
                     .send_answer_with_attachments(
@@ -329,7 +361,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                         capacity,
                         &mut imported_resource,
                         &mut local_resource,
-                        Results::write_exception,
+                        Producer::write_exception,
                     )
                     .map_err(wire_error)
             },
@@ -349,7 +381,17 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         cx: &mut Context<'_>,
         budget: NonZeroUsize,
         mut import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
         mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, P, C, H>),
@@ -358,7 +400,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             &mut messages::Messages<'p, '_, '_>,
             answers::Key<'id>,
             usize,
-        ) -> capnp::Result<Option<Results>>,
+        ) -> capnp::Result<Option<Producer>>,
         mut prepare: impl FnMut(&Results),
         mut publish_plain: impl FnMut(
             &mut Peer<'p, 'id, '_, I, P, C, H>,
@@ -379,6 +421,24 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         let mut advanced = false;
         let mut remaining_budget = budget.get();
         while remaining_budget != 0 {
+            if (self.protocol_turn || self.ready.is_empty())
+                && driver.ledgers().answers.has_changed_producers()
+            {
+                let results = driver
+                    .answers()
+                    .take_changed_producer()
+                    .unwrap()
+                    .owner
+                    .producer
+                    .results();
+                self.protocol_turn = false;
+                results.protocol_changed();
+                remaining_budget -= 1;
+                if remaining_budget == 0 {
+                    break;
+                }
+            }
+            self.protocol_turn = true;
             let Some(index) = self.ready.pop() else {
                 return if advanced {
                     Poll::Ready(Ok(Progress::Advanced))
@@ -387,17 +447,24 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 };
             };
             let Some(entry) = self.entries[index].as_mut() else {
-                // Conservative protocol invalidation visits retained holes
-                // under the same budget as live operations.
+                // A stale notification cannot refer to a new generation.
                 remaining_budget -= 1;
                 continue;
             };
+            if entry.result_revision != entry.results.revision() {
+                entry.result_revision = entry.results.revision();
+                let _ = driver.answers().notify_pipeline(entry.request().answer());
+            }
             let waker = entry.waker.clone();
             // A ready completion continues toward Return in this turn, as KJ
             // chains its answer continuation. Only suspension or the shared
             // budget yields the operation; intermediate stages need no enqueue.
             let outcome = loop {
                 remaining_budget -= 1;
+                #[cfg(test)]
+                {
+                    entry.polls += 1;
+                }
                 let preparing = matches!(entry.stage, Stage::Prepare);
                 let outcome = Self::step(
                     entry,
@@ -417,6 +484,13 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     &mut self.completed_plain,
                     &mut self.completed_ordinary,
                 );
+                if entry.result_revision != entry.results.revision() {
+                    entry.result_revision = entry.results.revision();
+                    let _ = driver.answers().notify_pipeline(entry.request().answer());
+                }
+                if preparing && !matches!(entry.stage, Stage::Prepare) {
+                    self.preparing -= 1;
+                }
                 // Dispatch can create routes or cleanup even when its first
                 // execution poll suspends. Report that progress without
                 // enqueueing an unwoken future for another Execute poll.
@@ -429,13 +503,26 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 }
                 break outcome;
             };
+            let redirect_ready = entry
+                .results
+                .redirect()
+                .is_some_and(|redirect| !redirect.sent.get());
+            if redirect_ready {
+                self.redirects.push(&mut self.entries, index, |slot| {
+                    &mut slot.as_mut().unwrap().redirect_work
+                });
+            }
             if let Poll::Ready(outcome) = outcome {
                 if matches!(outcome, Ok(Progress::Replied)) {
                     // Retire before dropping application owners: their wakes
                     // cannot enqueue this slot or a later occupant of it.
                     self.ready.remove(index);
+                    self.redirects.remove(&mut self.entries, index, |slot| {
+                        &mut slot.as_mut().unwrap().redirect_work
+                    });
                     let entry = self.entries[index].take().expect("replied operation");
                     self.live -= 1;
+                    self.preparing -= usize::from(matches!(entry.stage, Stage::Prepare));
                     self.first_free = self.first_free.min(index);
                     self.results_cache.recycle(release(entry, driver, messages));
                 } else {
@@ -452,7 +539,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
         if advanced {
             Poll::Ready(Ok(Progress::Advanced))
-        } else if self.ready.is_empty() {
+        } else if self.ready.is_empty() && !driver.ledgers().answers.has_changed_producers() {
             Poll::Pending
         } else {
             Poll::Ready(Ok(Progress::Yield))
@@ -473,7 +560,17 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         options: capnp::message::ReaderOptions,
         cx: &mut Context<'_>,
         import: &mut impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
         refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, P, C, H>),
@@ -482,7 +579,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             &mut messages::Messages<'p, '_, '_>,
             answers::Key<'id>,
             usize,
-        ) -> capnp::Result<Option<Results>>,
+        ) -> capnp::Result<Option<Producer>>,
         prepare: &mut impl FnMut(&Results),
         publish_plain: &mut impl FnMut(
             &mut Peer<'p, 'id, '_, I, P, C, H>,
@@ -502,7 +599,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             .results
             .redirect()
             .is_some_and(|redirect| redirect.sent.get())
-            && driver.ledgers.answers.get(key).is_err()
+            && driver.ledgers().answers.get(key).is_err()
         {
             return Poll::Ready(Ok(Progress::Replied));
         }
@@ -510,7 +607,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             entry.stage,
             Stage::Prepare | Stage::Execute(_) | Stage::Transfer(_) | Stage::Collect
         ) && driver
-            .ledgers
+            .ledgers()
             .answers
             .cancellation_requested(key)
             .map_err(wire_error)?
@@ -529,7 +626,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     None
                 });
                 let local = match driver
-                    .runtime
+                    .runtime()
                     .inspect(entry.running.target())
                     .map_err(wire_error)?
                 {
@@ -552,7 +649,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     Some(Ok(hook)) => hook,
                     Some(Err(kind)) => Rc::from(crate::broken::new_cap(Error::from_kind(kind))),
                     None => hooks
-                        .export_client(&mut driver.runtime, entry.running.target())?
+                        .export_client(&mut driver.capabilities(), entry.running.target())?
                         .hook
                         .into(),
                 };
@@ -611,11 +708,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             Stage::Collect => {
                 let canceled_transfer = entry.results.transfer_ready()
                     && driver
-                        .ledgers
+                        .ledgers()
                         .answers
                         .cancellation_requested(key)
                         .map_err(wire_error)?;
-                if !canceled_transfer && entry.results.poll_completed(cx).is_pending() {
+                if !canceled_transfer
+                    && (entry.results.poll_completed(cx).is_pending()
+                        || entry.results.projections_pending(hooks, cx))
+                {
                     return Poll::Pending;
                 }
                 if *remaining_budget != 0 && !canceled_transfer {
@@ -663,7 +763,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 };
                 if let Err(rejected) = completed {
                     if let Ok(result) = rejected.result {
-                        result.release(messages, &mut driver.runtime);
+                        result.release(messages, &mut driver.capabilities());
                     }
                     return Poll::Ready(Err(wire_error(rejected.error)));
                 }
@@ -680,9 +780,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 prepare(&entry.results);
                 // Once Finish arrived, Canceled needs only its fixed envelope.
                 let canceled = driver
-                    .ledgers
-                    .answers
-                    .prepare_return(key)
+                    .prepare_answer_return(key)
                     .map_err(wire_error)?
                     .is_cancelled();
                 let bytes = if canceled || entry.results.transfer_ready() {
@@ -720,8 +818,10 @@ fn release<'p, 'id, I, P: Copy + Eq, const C: usize, const H: usize>(
     driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
     messages: &mut messages::Messages<'p, '_, '_>,
 ) -> Results {
+    entry.results.unbind_protocol_waker();
+    let _ = driver.answers().unwatch_execution(entry.request().answer());
     drop(entry.stage);
-    let call = driver.runtime.complete(entry.running);
+    let call = driver.capabilities().complete(entry.running);
     driver.release_call(call, messages);
     entry.results
 }
@@ -734,9 +834,9 @@ impl<'id> ClientHooks<'id> {
         &mut self,
         results: &Results,
         path: pipeline::Path<'_>,
-        runtime: &mut Runtime<'p, 'id, '_, I, P, S, C, H>,
+        runtime: &mut capntproto_rpc_wire::owned::connection::Scope<'_, 'p, 'id, '_, I, P, S, C, H>,
         mut import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, S, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<'_, 'p, 'id, '_, I, P, S, C, H>,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> capnp::Result<Option<Client<'id>>> {

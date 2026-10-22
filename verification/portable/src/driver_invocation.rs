@@ -16,9 +16,9 @@ use capntproto_rpc_engine::{
 use capntproto_rpc_wire::{
     calls, clients as binding,
     owned::{
-        self, answer,
+        self,
         connection::{Driver, Received, Task, Termination},
-        controls, Frame,
+        Frame,
     },
     rpc_capnp,
 };
@@ -120,7 +120,7 @@ pub fn encoded_immediate_return(chunk: usize) {
                             .expect("unknown question or descriptor owner must fail");
                         rejected.frame.release(messages);
                         assert_eq!(
-                            peer.ledgers.questions.len(),
+                            peer.ledgers().questions.len(),
                             1,
                             "rejection retains outstanding question"
                         );
@@ -187,21 +187,16 @@ pub fn encoded_immediate_return(chunk: usize) {
                                 .unwrap();
                             peer.release_output(output, messages);
                         }
-                        let finish = controls::finish_one(
-                            &mut peer.ledgers.questions,
-                            messages,
-                            &mut queue,
-                            776,
-                            Default::default(),
-                        )
-                        .unwrap();
+                        let finish = peer
+                            .send_pending_finish(messages, &mut queue, 776, Default::default())
+                            .unwrap();
                         // A canceled call already owed Finish before Return arrived.
                         assert_eq!(finish, canceled || !no_finish);
                         if finish {
                             super::owning::exchange(messages, &mut queue, chunk).release(messages);
                         }
-                        assert!(peer.ledgers.questions.is_empty());
-                        peer.runtime.release(target);
+                        assert!(peer.ledgers().questions.is_empty());
+                        peer.capabilities().release(target);
                         assert_eq!(close(peer, messages, &mut queue), 0);
                         let writers =
                             core::array::from_fn::<_, 12, _>(|_| messages.reserve(776).unwrap());
@@ -243,7 +238,7 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
                 no_promise_pipelining,
                 only_promise_pipeline: false,
             };
-            let pending = peer.runtime.promise(&mut None).unwrap();
+            let pending = peer.capabilities().promise(&mut None).unwrap();
             let older = peer
                 .enqueue_dynamic(
                     &pending,
@@ -269,7 +264,7 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
                 .unwrap()
                 .is_none());
             assert!(peer.cancel_invocation(older, messages));
-            peer.runtime.release(pending);
+            peer.capabilities().release(pending);
             let writers = core::array::from_fn::<_, 12, _>(|_| messages.reserve(776).unwrap());
             assert!(peer
                 .try_send_immediate(
@@ -283,7 +278,7 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
                     ()
                 )
                 .is_err());
-            assert_eq!(peer.ledgers.questions.len(), 0);
+            assert_eq!(peer.ledgers().questions.len(), 0);
             assert!(queue.is_empty());
             for writer in writers {
                 messages.discard(writer);
@@ -303,7 +298,7 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
                     ()
                 )
                 .is_err());
-            assert_eq!(peer.ledgers.questions.len(), 0);
+            assert_eq!(peer.ledgers().questions.len(), 0);
             assert!(queue.is_empty());
             let key = peer
                 .try_send_immediate(
@@ -318,7 +313,7 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
                 )
                 .unwrap()
                 .unwrap();
-            assert_eq!(peer.runtime.queued(), 0);
+            assert_eq!(peer.runtime().queued(), 0);
             assert!(peer
                 .try_send_immediate(
                     &target,
@@ -331,7 +326,7 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
                     ()
                 )
                 .is_err());
-            assert_eq!(peer.ledgers.questions.len(), 1);
+            assert_eq!(peer.ledgers().questions.len(), 1);
             let frame = super::owning::exchange(messages, &mut queue, chunk);
             frame
                 .with(messages, |root| {
@@ -358,17 +353,12 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
                 .unwrap_or_else(|_| panic!("Return"));
             let output = peer.take_output(key, messages).unwrap().unwrap();
             peer.release_output(output, messages);
-            assert!(controls::finish_one(
-                &mut peer.ledgers.questions,
-                messages,
-                &mut queue,
-                776,
-                Default::default()
-            )
-            .unwrap());
+            assert!(peer
+                .send_pending_finish(messages, &mut queue, 776, Default::default())
+                .unwrap());
             super::owning::exchange(messages, &mut queue, chunk).release(messages);
-            assert!(peer.ledgers.questions.is_empty());
-            peer.runtime.release(target);
+            assert!(peer.ledgers().questions.is_empty());
+            peer.capabilities().release(target);
             assert_eq!(close(peer, messages, &mut queue), 0);
             let writers = core::array::from_fn::<_, 12, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {
@@ -380,15 +370,10 @@ fn immediate_publication_case(chunk: usize, no_promise_pipelining: bool) {
 }
 pub(super) fn remote<'id>(peer: &mut Peer<'_, 'id, '_>, id: ImportId) -> clients::Client<'id> {
     let imported = peer
-        .ledgers
-        .imports
-        .admit(id, ())
+        .admit_import(id, ())
         .unwrap_or_else(|_| panic!("seed import"));
-    let client = peer
-        .imports
-        .bind(&mut peer.runtime, &mut peer.ledgers.imports, &imported)
-        .unwrap();
-    peer.ledgers.imports.release(imported);
+    let client = peer.bind_import(&imported).unwrap();
+    peer.release_import(imported);
     client
 }
 pub(super) fn close<'p>(
@@ -422,23 +407,23 @@ pub fn owning_invocation_driver(chunk: usize) {
         with_owned_peer(|mut client|with_owned_peer(|mut server|{
             // Already-advertised service; subsequent parameter grants use the
             // real generated Call/Return/Release path in both driver domains.
-            let service=server.runtime.endpoint(binding::Route::local(41),clients::Location::Local).unwrap();
-            let mut batch=server.ledgers.exports.batch();
-            let grant=binding::stage(&mut server.runtime,&mut batch,&service).unwrap();
+            let service=server.capabilities().endpoint(binding::Route::local(41),clients::Location::Local).unwrap();
+            let (mut graph, mut batch) = server.export_batch();
+            let grant=binding::stage(&mut graph,&mut batch,&service).unwrap();
             let target=remote(&mut client,ImportId::from_wire(grant.id().to_wire()));
             batch.commit();
-            let callback=client.runtime.endpoint(binding::Route::local(43),clients::Location::Local).unwrap();
+            let callback=client.capabilities().endpoint(binding::Route::local(43),clients::Location::Local).unwrap();
             let task=client.enqueue_call(&target,echo::Owned::CAPABILITY,&[&callback],messages,776,Default::default(),|mut params|params.field(CapabilityParams::VALUE).set_index(0)).unwrap();
-            client.runtime.release(callback);
-            assert_eq!(client.ledgers.exports.len(),0,"no grants before output");
+            client.capabilities().release(callback);
+            assert_eq!(client.ledgers().exports.len(),0,"no grants before output");
             client.send(messages,&mut queue,776,Default::default(),calls::bootstrap).unwrap();
             assert!(matches!(client.send_invocation(messages,&mut queue,776,Default::default(),&mut [0;4]),Err(owned::connection::Error::Input(owned::Error::Storage(messages::Error::NoSendSlot)))));
-            assert_eq!(client.runtime.next_ready().unwrap().unwrap().key(),task);
+            assert_eq!(client.capabilities().next_ready().unwrap().unwrap().owner().invocation_key().unwrap(),task);
             super::owning::exchange(messages,&mut queue,chunk).release(messages);
             // A failing post-build descriptor check must retain the invocation
             // and recover the candidate output, question and grant reservations.
             assert!(client.send_invocation(messages,&mut queue,776,Default::default(),&mut []).is_err());
-            assert_eq!(client.ledgers.questions.len(),1);
+            assert_eq!(client.ledgers().questions.len(),1);
             assert!(queue.is_empty());
             for i in 0..4 {client.drain_export(i);}
             assert!(client.drain_endpoint().is_none(),"invocation retains its callback");
@@ -447,36 +432,36 @@ pub fn owning_invocation_driver(chunk: usize) {
             assert!(!client.cancel_invocation(task,messages));
             let frame=super::owning::exchange(messages,&mut queue,chunk);
             let Received::Queued(key)=server.receive(frame,messages,&mut [0;4],|_|(),||47).unwrap_or_else(|_|panic!("Call")) else {panic!("Call")};
-            let running=server.runtime.next_ready().unwrap().unwrap().accept();
-            assert!(server.ledgers.answers.dispatch(key,true).unwrap());
+            let running=server.capabilities().next_ready().unwrap().unwrap().accept();
+            assert!(server.answers().dispatch(key,true).unwrap());
             let call=running.owner().as_call().unwrap();
             call.with(messages,|request|{
                 let dispatch=request.incoming().dispatch(echo::Owned::CAPABILITY).unwrap();
                 let capability=request.capability(dispatch.params.value().unwrap()).unwrap();
-                let bound=server.imports.bind_capability(capability,&mut server.runtime,&mut server.ledgers.imports,&server.ledgers.exports,&mut server.ledgers.answers,&mut server.pipelines).unwrap();
+                let bound=server.bind_capability(capability).unwrap();
                 let client=bound.into_client();
-                assert!(matches!(server.runtime.inspect(&client).unwrap(),clients::Destination::Endpoint{owner:binding::Route::Capability(binding::Endpoint::Imported(_)),..}));
-                server.runtime.release(client);
+                assert!(matches!(server.runtime().inspect(&client).unwrap(),clients::Destination::Endpoint{owner:binding::Route::Capability(binding::Endpoint::Imported(_)),..}));
+                server.capabilities().release(client);
             }).unwrap();
             let result=Frame::build(messages,776,Default::default(),|builder|calls::results(builder,key.id(),echo::Owned::CAPABILITY,|_|Ok(()))).unwrap();
-            assert!(answer::send(key,&mut server.ledgers.answers,messages,result,queue.reserve().unwrap()).unwrap().is_none());
-            let call=server.runtime.complete(running).into_call().unwrap_or_else(|_|panic!("Call"));
+            assert!(server.publish_answer_frame(key,messages,result,queue.reserve().unwrap()).unwrap().is_none());
+            let call=server.capabilities().complete(running).into_call().unwrap_or_else(|_|panic!("Call"));
             server.release_call(call,messages);
             let frame=super::owning::exchange(messages,&mut queue,chunk);
             assert!(matches!(client.receive(frame,messages,&mut [0;4],|_|(),||panic!("Return")).unwrap_or_else(|_|panic!("Return")),Received::Returned(key, _)if key==sent.question));
             let response=client.take_response(sent.question).unwrap();
             client.release_response(response,messages);
-            assert!(controls::finish_one(&mut client.ledgers.questions,messages,&mut queue,776,Default::default()).unwrap());
+            assert!(client.send_pending_finish(messages,&mut queue,776,Default::default()).unwrap());
             let frame=super::owning::exchange(messages,&mut queue,chunk);
             assert!(matches!(server.receive(frame,messages,&mut [0;4],|_|(),||panic!("Finish")).unwrap_or_else(|_|panic!("Finish")),Received::Finished(Some(47))));
             // Finish on the result must not release the separately advertised
             // parameter grant; its import emits exactly one Release.
             while let Some(owner)=server.drain_endpoint(){assert!(owner.is_none());}
-            assert!(controls::release_one(&mut server.ledgers.imports,messages,&mut queue,776,Default::default()).unwrap().is_some());
+            assert!(server.send_pending_release(messages,&mut queue,776,Default::default()).unwrap().is_some());
             let frame=super::owning::exchange(messages,&mut queue,chunk);
             assert!(matches!(client.receive(frame,messages,&mut [0;4],|_|(),||panic!("Release")).unwrap_or_else(|_|panic!("Release")),Received::Released));
-            client.runtime.release(target);
-            server.runtime.release(service);
+            client.capabilities().release(target);
+            server.capabilities().release(service);
             assert_eq!(close(client,messages,&mut queue),43);
             assert_eq!(close(server,messages,&mut queue),41);
             let writers=core::array::from_fn::<_,12,_>(|_|messages.reserve(776).unwrap());
@@ -494,7 +479,7 @@ pub fn owning_invocation_ordering() {
         let mut queue = super::driver::message_queue(&mut slots).unwrap();
         with_owned_peer_tasks::<4, _>(|mut peer| {
             let target = remote(&mut peer, ImportId::from_wire(91));
-            let pending = peer.runtime.promise(&mut None).unwrap();
+            let pending = peer.capabilities().promise(&mut None).unwrap();
             assert!(matches!(
                 peer.enqueue_call(
                     &target,
@@ -509,8 +494,8 @@ pub fn owning_invocation_ordering() {
                     capnp::ErrorKind::MessageContainsInvalidCapabilityPointer
                 )))
             ));
-            assert_eq!(peer.runtime.queued(), 0);
-            assert_eq!(peer.ledgers.questions.len(), 0);
+            assert_eq!(peer.runtime().queued(), 0);
+            assert_eq!(peer.ledgers().questions.len(), 0);
             let mut enqueue = |value| {
                 peer.enqueue_call(
                     &pending,
@@ -552,12 +537,13 @@ pub fn owning_invocation_ordering() {
                 !peer.cancel_invocation(first, messages),
                 "stale cancellation must not hit reused storage"
             );
-            let mut replacement = Some(peer.runtime.retain(&target).unwrap());
+            let mut replacement = Some(peer.capabilities().retain(&target).unwrap());
             assert!(peer
-                .runtime
+                .capabilities()
                 .resolve(pending.key(), &mut replacement, clients::Source::Direct)
                 .unwrap()
                 .is_none());
+            while peer.capabilities().advance_dispatch_one().unwrap() {}
             for (task, value) in [(second, 13), (third, 17), (fourth, 19)] {
                 let sent = peer
                     .send_invocation(messages, &mut queue, 776, Default::default(), &mut [0; 4])
@@ -589,7 +575,7 @@ pub fn owning_invocation_ordering() {
                 frame.release(messages);
             }
             let local = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(53), clients::Location::Local)
                 .unwrap();
             let task = peer
@@ -607,8 +593,9 @@ pub fn owning_invocation_ordering() {
                 .send_invocation(messages, &mut queue, 776, Default::default(), &mut [0; 4])
                 .unwrap()
                 .is_none());
-            let ready = peer.runtime.next_ready().unwrap().unwrap();
-            assert_eq!(ready.key(), task);
+            let mut dispatch = peer.capabilities();
+            let ready = dispatch.next_ready().unwrap().unwrap();
+            assert_eq!(ready.owner().invocation_key().unwrap(), task);
             let running = ready.accept();
             let Task::Invoke(invocation) = running.owner() else {
                 panic!("local call")
@@ -622,12 +609,12 @@ pub fn owning_invocation_ordering() {
                     );
                 })
                 .unwrap();
-            let Task::Invoke(invocation) = peer.runtime.complete(running) else {
+            let Task::Invoke(invocation) = peer.capabilities().complete(running) else {
                 panic!("local call")
             };
-            invocation.release(messages, &mut peer.runtime);
+            invocation.release(messages, &mut peer.capabilities());
             // Leave an unresolved invocation for terminal cleanup.
-            let never = peer.runtime.promise(&mut None).unwrap();
+            let never = peer.capabilities().promise(&mut None).unwrap();
             peer.enqueue_call(
                 &never,
                 echo::Owned::ECHO,
@@ -638,10 +625,10 @@ pub fn owning_invocation_ordering() {
                 |_| Ok(()),
             )
             .unwrap();
-            peer.runtime.release(never);
-            peer.runtime.release(local);
-            peer.runtime.release(pending);
-            peer.runtime.release(target);
+            peer.capabilities().release(never);
+            peer.capabilities().release(local);
+            peer.capabilities().release(pending);
+            peer.capabilities().release(target);
             assert_eq!(close(peer, messages, &mut queue), 53);
             let writers = core::array::from_fn::<_, 12, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {

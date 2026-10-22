@@ -29,8 +29,14 @@ pub struct Ticket<'id> {
     key: clients::Key<'id>,
 }
 
+impl<'id> Ticket<'id> {
+    pub(crate) fn key(&self) -> clients::Key<'id> {
+        self.key
+    }
+}
 pub struct Bindings<'s, 'id> {
     slots: SlotStorage<'s, Slot<'id>>,
+    live: usize,
     receipts: Receipts<'s, 'id>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,7 +81,11 @@ impl<'s, 'id> Bindings<'s, 'id> {
         }
         let receipts = embargoes::Embargoes::new(BorrowedSparse::from_storage(receipts))
             .map_err(|_| Error::NonemptyStorage)?;
-        Ok(Self { slots, receipts })
+        Ok(Self {
+            slots,
+            receipts,
+            live: 0,
+        })
     }
     pub fn register(
         &mut self,
@@ -90,6 +100,7 @@ impl<'s, 'id> Bindings<'s, 'id> {
                 barrier,
             });
         };
+        self.live += 1;
         let key = barrier.key();
         slot.entry = Some(Entry {
             barrier,
@@ -112,8 +123,14 @@ impl<'s, 'id> Bindings<'s, 'id> {
             .vacant(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
             .is_some()
     }
+    pub fn available(&self) -> usize {
+        self.slots.maximum() - self.live
+    }
+    pub fn maximum(&self) -> usize {
+        self.slots.maximum()
+    }
     pub fn has_capacity(&self) -> bool {
-        self.slots.iter().any(|slot| slot.entry.is_none())
+        self.slots.len() != self.live
     }
     pub fn is_empty(&self) -> bool {
         self.slots.iter().all(|slot| slot.entry.is_none()) && self.receipts.is_empty()
@@ -152,15 +169,19 @@ impl<'s, 'id> Bindings<'s, 'id> {
                     .is_some_and(|entry| entry.barrier.key() == key && entry.sent == Some(id))
             })
             .expect("accepted receipt has its exact affine barrier");
+        self.live -= 1;
         Ok(slot.entry.take().unwrap().barrier)
     }
     /// Terminal cleanup only. Stop IO and application dispatch before dropping
     /// returned barriers and ending their graph scope; do not open them early.
     pub fn drain_one(&mut self) -> Option<clients::Barrier<'id>> {
         while self.receipts.drain_one().is_some() {}
-        self.slots
+        let barrier = self
+            .slots
             .iter_mut()
-            .find_map(|slot| slot.entry.take().map(|entry| entry.barrier))
+            .find_map(|slot| slot.entry.take().map(|entry| entry.barrier))?;
+        self.live -= 1;
+        Some(barrier)
     }
 }
 pub struct Prepared<'b, 's, 'id> {
@@ -285,83 +306,90 @@ mod tests {
     fn queued_loopback_keeps_affine_barrier_through_output_rejection_and_duplicate_echo() {
         let measured = allocation_counter::measure(|| {
             let mut nodes = [const { clients::Slot::EMPTY }; 3];
-            clients::with_graph(&mut nodes, |graph| {
-                let mut tasks = [dispatch::TaskSlot::EMPTY];
-                let mut runtime = dispatch::borrow_runtime(graph, &mut tasks).unwrap();
-                let original = runtime.endpoint(17u32, Location::Remote(1u8)).unwrap();
-                let promise = runtime.promise(&mut Some(original)).unwrap();
-                let old = runtime
-                    .prepare_call(&promise, &mut Some(None))
-                    .unwrap()
-                    .accept();
-                assert!(runtime.cancel(old).unwrap().is_none());
-                let local = runtime.endpoint(23, Location::Local).unwrap();
-                let barrier = runtime
-                    .prepare_resolution(promise.key(), &mut Some(local), Source::Reflected)
-                    .unwrap()
-                    .accept()
-                    .unwrap();
-                let mut slots = [Slot::EMPTY];
-                let mut receipts = [ReceiptSlot::EMPTY];
-                let mut bindings = Bindings::new(&mut slots, &mut receipts).unwrap();
-                let ticket = bindings
-                    .register(barrier)
-                    .unwrap_or_else(|_| panic!("barrier"));
-                let original = runtime
-                    .retain_barrier_route(bindings.barrier(&ticket).unwrap())
-                    .unwrap();
-                runtime
-                    .prepare_call(&original, &mut Some(Some(ticket)))
-                    .unwrap()
-                    .accept();
-                runtime.release(original);
-                let ready = runtime.next_ready().unwrap().unwrap();
-                assert!(matches!(
-                    ready.destination(),
-                    clients::Destination::Endpoint { owner: &17, .. }
-                ));
-                let output = bindings.prepare(ready.owner().as_ref().unwrap()).unwrap();
-                let rejected_id = output.id();
-                drop(output);
-                assert!(matches!(
-                    bindings.receive(rejected_id),
-                    Err(Error::Embargo(embargoes::Error::NotAccepted))
-                ));
-                // Queue acceptance can be retried without losing the graph
-                // barrier or accepting its old rejected wire identity.
-                let output = bindings.prepare(ready.owner().as_ref().unwrap()).unwrap();
-                let id = output.id();
-                assert_ne!(id, rejected_id);
-                let running = ready.accept();
-                output.accept();
-                let ticket = runtime.complete(running).unwrap();
-                assert!(matches!(bindings.prepare(&ticket), Err(Error::AlreadySent)));
-                runtime
-                    .prepare_call(&promise, &mut Some(None))
-                    .unwrap()
-                    .accept();
-                assert!(runtime.next_ready().unwrap().is_none());
-                assert!(matches!(
-                    bindings.receive(rejected_id),
-                    Err(Error::Embargo(embargoes::Error::Unknown))
-                ));
-                runtime.open(bindings.receive(id).unwrap());
-                assert!(matches!(
-                    bindings.receive(id),
-                    Err(Error::Embargo(embargoes::Error::Unknown))
-                ));
-                let ready = runtime.next_ready().unwrap().unwrap();
-                assert!(matches!(
-                    ready.destination(),
-                    clients::Destination::Endpoint { owner: &23, .. }
-                ));
-                let running = ready.accept();
-                assert!(runtime.complete(running).is_none());
-                runtime.release(promise);
-                assert_eq!(runtime.take_retired(), Some(17));
-                assert_eq!(runtime.take_retired(), Some(23));
-                assert!(bindings.is_empty() && runtime.is_empty());
-            })
+            clients::with_graph(
+                &mut nodes,
+                capntproto_rpc_engine::clients::NotificationStorage {
+                    listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                },
+                |graph| {
+                    let mut tasks = [dispatch::TaskSlot::EMPTY];
+                    let mut runtime = dispatch::borrow_runtime(graph, &mut tasks).unwrap();
+                    let original = runtime.endpoint(17u32, Location::Remote(1u8)).unwrap();
+                    let promise = runtime.promise(&mut Some(original)).unwrap();
+                    let old = runtime
+                        .prepare_call(&promise, &mut Some(None))
+                        .unwrap()
+                        .accept();
+                    assert!(runtime.cancel(old).unwrap().is_none());
+                    let local = runtime.endpoint(23, Location::Local).unwrap();
+                    let barrier = runtime
+                        .prepare_resolution(promise.key(), &mut Some(local), Source::Reflected)
+                        .unwrap()
+                        .accept()
+                        .unwrap();
+                    let mut slots = [Slot::EMPTY];
+                    let mut receipts = [ReceiptSlot::EMPTY];
+                    let mut bindings = Bindings::new(&mut slots, &mut receipts).unwrap();
+                    let ticket = bindings
+                        .register(barrier)
+                        .unwrap_or_else(|_| panic!("barrier"));
+                    let original = runtime
+                        .retain_barrier_route(bindings.barrier(&ticket).unwrap())
+                        .unwrap();
+                    runtime
+                        .prepare_call(&original, &mut Some(Some(ticket)))
+                        .unwrap()
+                        .accept();
+                    runtime.release(original);
+                    let ready = runtime.next_ready().unwrap().unwrap();
+                    assert!(matches!(
+                        ready.destination(),
+                        clients::Destination::Endpoint { owner: &17, .. }
+                    ));
+                    let output = bindings.prepare(ready.owner().as_ref().unwrap()).unwrap();
+                    let rejected_id = output.id();
+                    drop(output);
+                    assert!(matches!(
+                        bindings.receive(rejected_id),
+                        Err(Error::Embargo(embargoes::Error::NotAccepted))
+                    ));
+                    // Queue acceptance can be retried without losing the graph
+                    // barrier or accepting its old rejected wire identity.
+                    let output = bindings.prepare(ready.owner().as_ref().unwrap()).unwrap();
+                    let id = output.id();
+                    assert_ne!(id, rejected_id);
+                    let running = ready.accept();
+                    output.accept();
+                    let ticket = runtime.complete(running).unwrap();
+                    assert!(matches!(bindings.prepare(&ticket), Err(Error::AlreadySent)));
+                    runtime
+                        .prepare_call(&promise, &mut Some(None))
+                        .unwrap()
+                        .accept();
+                    assert!(runtime.next_ready().unwrap().is_none());
+                    assert!(matches!(
+                        bindings.receive(rejected_id),
+                        Err(Error::Embargo(embargoes::Error::Unknown))
+                    ));
+                    runtime.open(bindings.receive(id).unwrap());
+                    assert!(matches!(
+                        bindings.receive(id),
+                        Err(Error::Embargo(embargoes::Error::Unknown))
+                    ));
+                    let ready = runtime.next_ready().unwrap().unwrap();
+                    assert!(matches!(
+                        ready.destination(),
+                        clients::Destination::Endpoint { owner: &23, .. }
+                    ));
+                    let running = ready.accept();
+                    assert!(runtime.complete(running).is_none());
+                    runtime.release(promise);
+                    assert_eq!(runtime.take_retired(), Some(17));
+                    assert_eq!(runtime.take_retired(), Some(23));
+                    assert!(bindings.is_empty() && runtime.is_empty());
+                },
+            )
             .unwrap();
         });
         assert_eq!(measured.count_total, 0);

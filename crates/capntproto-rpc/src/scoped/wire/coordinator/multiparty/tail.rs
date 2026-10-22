@@ -163,30 +163,17 @@ impl<
         coordinator: &mut Coordinator<'p, 'id, '_, resources::Import, (), C, H>,
         messages: &messages::Messages<'p, '_, '_>,
     ) -> capnp::Result<bool> {
-        let Some(ready) = coordinator
-            .driver
-            .runtime
-            .next_ready()
-            .map_err(wire_error)?
-        else {
+        let (mut dispatch, answers) = coordinator.driver.execution();
+        let Some(ready) = dispatch.ready().map_err(wire_error)? else {
             return Ok(false);
         };
         let Some(call) = ready.owner().as_call() else {
             return Ok(false);
         };
-        if !coordinator
-            .driver
-            .ledgers
-            .answers
-            .is_third_party(call.answer())
-            .map_err(wire_error)?
-        {
+        if !answers.is_third_party(call.answer()).map_err(wire_error)? {
             return Ok(false);
         }
-        let results = &coordinator
-            .driver
-            .ledgers
-            .answers
+        let results = &answers
             .get(call.answer())
             .map_err(wire_error)?
             .owner
@@ -268,7 +255,9 @@ impl<
                     },
                 )
                 .map_err(wire_error)?;
+            coordinator.worker.redirect_published(key);
             redirect.sent.set(true);
+            results.protocol_changed();
             results.returned();
             return Poll::Ready(Ok(true));
         }
@@ -290,7 +279,7 @@ impl<
                     queue,
                     minimum(completion)?,
                     coordinator.options.reader,
-                    job.task.results.clone(),
+                    job.task.results.clone().into_producer(),
                     |field| field.copy_from(completion),
                 ) {
                     Ok(key) => self.produced.push_back(Produced {
@@ -323,7 +312,7 @@ impl<
             if !job.collected {
                 let canceled = coordinator
                     .driver
-                    .ledgers
+                    .ledgers()
                     .answers
                     .cancellation_requested(job.key)
                     .map_err(wire_error)?;
@@ -350,7 +339,7 @@ impl<
                     .complete_adopted_answer(job.key, result, messages)
                 {
                     if let Ok(result) = rejected.result {
-                        result.release(messages, &mut coordinator.driver.runtime);
+                        result.release(messages, &mut coordinator.driver.capabilities());
                     }
                     return Poll::Ready(Err(wire_error(rejected.error)));
                 }
@@ -359,9 +348,7 @@ impl<
             job.task.results.prepare_trace(&coordinator.policy);
             let bytes = if coordinator
                 .driver
-                .ledgers
-                .answers
-                .prepare_return(job.key)
+                .prepare_answer_return(job.key)
                 .map_err(wire_error)?
                 .is_cancelled()
             {
@@ -380,7 +367,7 @@ impl<
                     scratch,
                     output.bundle(),
                     |owner, imports, bundle| output.attach(owner, imports, bundle),
-                    server::Results::write_exception,
+                    server::Producer::write_exception,
                 )
                 .map_err(wire_error)?;
             return Poll::Ready(Ok(true));

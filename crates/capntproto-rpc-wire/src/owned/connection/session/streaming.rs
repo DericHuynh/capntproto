@@ -141,7 +141,7 @@ impl<
         method: StreamingMethod<IF, Params>,
         capabilities: &[&clients::Client<'id>],
         fill: impl FnOnce(FixedStruct<'_, Params>) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, CallError> {
+    ) -> Result<InvocationKey<'id>, CallError> {
         if let Some(error) = self.failure {
             return Err(error);
         }

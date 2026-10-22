@@ -22,6 +22,7 @@ pub enum Error {
     NonemptyStorage,
     Full,
     GenerationExhausted,
+    AlreadyObserved,
     StaleKey,
     ReferenceLimit,
     UnknownQuestion,
@@ -67,6 +68,9 @@ pub struct Record {
     // until the adapter transfers or releases its owning exchange.
     owner: Option<core::num::NonZeroUsize>,
     observers: [usize; 2],
+    observer_heads: [Option<core::num::NonZeroUsize>; 2],
+    observer_work: [Option<usize>; 2],
+    observer_notified: [bool; 2],
 }
 impl Record {
     #[inline]
@@ -156,7 +160,17 @@ impl<'id> Local<'id> {
     }
 }
 
+/// Exclusive namespace for outgoing projection indices in a question ledger.
+#[must_use = "release after removing every outgoing observer"]
+pub struct OutgoingRegistry<'id> {
+    generation: u64,
+    brand: Brand<'id>,
+}
+
 pub struct Questions<'id, 'storage> {
+    outgoing_registry: Option<u64>,
+    outgoing_registry_generation: u64,
+    outgoing_observers: usize,
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     table: Table<'storage>,
@@ -196,6 +210,9 @@ pub(crate) fn new_scope_with_adoptions<'id, 's>(
     )
     .map_err(|_| Error::NonemptyStorage)?;
     Ok(Questions {
+        outgoing_registry: None,
+        outgoing_registry_generation: 0,
+        outgoing_observers: 0,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         table,
@@ -229,6 +246,9 @@ pub(crate) fn new_growing_with_adoptions<'id, 's>(
     let table = LocalTable::try_new(QuestionSlots::Growing(dense), NoSparse, adopted)
         .map_err(|_| Error::NonemptyStorage)?;
     Ok(Questions {
+        outgoing_registry: None,
+        outgoing_registry_generation: 0,
+        outgoing_observers: 0,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         table,
@@ -319,6 +339,9 @@ impl<'id, 'storage> Questions<'id, 'storage> {
                 provision: false,
                 owner: None,
                 observers: [0; 2],
+                observer_heads: [None; 2],
+                observer_work: [None; 2],
+                observer_notified: [false; 2],
             })
             .map_err(|_| Error::Full)?;
         self.generation = generation;
@@ -386,13 +409,104 @@ impl<'id, 'storage> Questions<'id, 'storage> {
     }
     /// Count weak result observers on this exact generation. These counters do
     /// not retain authority or extend the protocol lifetime.
+    /// Link a weak observer into this exact question's owning list. The caller
+    /// owns the links and removes them before releasing its observer slot.
+    pub fn claim_outgoing_registry(&mut self) -> Result<OutgoingRegistry<'id>, Error> {
+        if self.outgoing_registry.is_some() {
+            return Err(Error::AlreadyObserved);
+        }
+        let generation = self
+            .outgoing_registry_generation
+            .checked_add(1)
+            .ok_or(Error::GenerationExhausted)?;
+        self.outgoing_registry_generation = generation;
+        self.outgoing_registry = Some(generation);
+        Ok(OutgoingRegistry {
+            generation,
+            brand: PhantomData,
+        })
+    }
+    pub fn release_outgoing_registry(&mut self, registry: OutgoingRegistry<'id>) {
+        assert_eq!(self.outgoing_registry, Some(registry.generation));
+        assert_eq!(
+            self.outgoing_observers, 0,
+            "registry still owns outgoing observers"
+        );
+        self.outgoing_registry = None;
+    }
+    pub fn link_observer(
+        &mut self,
+        key: Key<'id>,
+        invocation: bool,
+        index: usize,
+    ) -> Option<usize> {
+        if !invocation {
+            self.outgoing_observers += 1;
+        }
+        let record = self.record_mut(key).expect("live observer question");
+        let kind = usize::from(invocation);
+        record.observers[kind] += 1;
+        record.observer_heads[kind]
+            .replace(
+                core::num::NonZeroUsize::new(index.checked_add(1).expect("observer index"))
+                    .unwrap(),
+            )
+            .map(|i| i.get() - 1)
+    }
+    pub fn begin_observer_work(&mut self, key: Key<'id>, invocation: bool) {
+        let record = self.record_mut(key).expect("live question observer owner");
+        let kind = usize::from(invocation);
+        if !record.observer_notified[kind] {
+            record.observer_notified[kind] = true;
+            record.observer_work[kind] = record.observer_heads[kind].map(|i| i.get() - 1);
+        }
+    }
+    pub fn observer_work(&self, key: Key<'id>, invocation: bool) -> Option<usize> {
+        self.record(key).ok()?.observer_work[usize::from(invocation)]
+    }
+    pub fn advance_observer_work(
+        &mut self,
+        key: Key<'id>,
+        invocation: bool,
+        index: usize,
+        next: Option<usize>,
+    ) {
+        if let Ok(record) = self.record_mut(key) {
+            let cursor = &mut record.observer_work[usize::from(invocation)];
+            if *cursor == Some(index) {
+                *cursor = next;
+            }
+        }
+    }
+    pub fn observer_head(&self, key: Key<'id>, invocation: bool) -> Option<usize> {
+        self.record(key).ok()?.observer_heads[usize::from(invocation)].map(|i| i.get() - 1)
+    }
+    pub fn unlink_observer_head(
+        &mut self,
+        key: Key<'id>,
+        invocation: bool,
+        index: usize,
+        next: Option<usize>,
+    ) {
+        if let Ok(record) = self.record_mut(key) {
+            let head = &mut record.observer_heads[usize::from(invocation)];
+            assert_eq!(head.map(|i| i.get() - 1), Some(index));
+            *head = next.map(|i| core::num::NonZeroUsize::new(i + 1).unwrap());
+        }
+    }
     pub fn add_observer(&mut self, key: Key<'id>, invocation: bool) {
+        if !invocation {
+            self.outgoing_observers += 1;
+        }
         let record = self.record_mut(key).expect("live observer question");
         record.observers[usize::from(invocation)] += 1;
     }
     pub fn remove_observer(&mut self, key: Key<'id>, invocation: bool) {
         if let Ok(record) = self.record_mut(key) {
             record.observers[usize::from(invocation)] -= 1;
+            if !invocation {
+                self.outgoing_observers -= 1;
+            }
         }
     }
     pub fn has_observers(&self, key: Key<'id>, invocation: bool) -> bool {
@@ -534,6 +648,14 @@ impl<'id, 'storage> Questions<'id, 'storage> {
         Some(Finish {
             questions: self,
             key,
+        })
+    }
+    pub fn pending_finish_key(&self) -> Option<Key<'id>> {
+        let id = self.finish_head?;
+        Some(Key {
+            id,
+            generation: self.table.get(id)?.generation,
+            brand: PhantomData,
         })
     }
     pub fn has_pending_finish(&self) -> bool {

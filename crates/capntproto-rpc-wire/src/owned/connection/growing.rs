@@ -20,8 +20,8 @@ pub struct GrowingStorage {
     pub loopbacks: connection::Growth,
     pub embargoes: connection::Growth,
     pub exchanges: connection::Growth,
-    pub tails: connection::Growth,
     pub invocation_pipelines: connection::Growth,
+    pub operations: connection::Growth,
 }
 impl GrowingStorage {
     /// Opt into bounded per-message growth independently of resource-table
@@ -50,8 +50,8 @@ impl GrowingStorage {
             loopbacks: bound,
             embargoes: bound,
             exchanges: bound,
-            tails: bound,
             invocation_pipelines: bound,
+            operations: bound,
         }
     }
 }
@@ -135,9 +135,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     storage.exchanges.maximum,
                     || ExchangeSlot::EMPTY,
                 )?,
-                tails: SlotStorage::growing(storage.tails.initial, storage.tails.maximum, || {
-                    TailSlot::EMPTY
-                })?,
+                operations: SlotStorage::growing(
+                    storage.operations.initial,
+                    storage.operations.maximum,
+                    || OperationSlot::EMPTY,
+                )?,
                 invocation_pipelines: SlotStorage::growing(
                     storage.invocation_pipelines.initial,
                     storage.invocation_pipelines.maximum,

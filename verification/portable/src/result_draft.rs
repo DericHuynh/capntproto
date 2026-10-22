@@ -6,6 +6,7 @@ use super::{
     ZERO,
 };
 use capnp::field_api::Struct;
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{clients, messages};
 use capntproto_rpc_wire::{clients as binding, owned::connection::DraftError};
 use core::{
@@ -23,7 +24,7 @@ pub fn owned_result_draft(mode: u8) {
         let mut queue = super::driver::message_queue(&mut sends).unwrap();
         with_owned_peer(|mut peer| {
             let target = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(43), clients::Location::Local)
                 .unwrap();
             let expected = target.key();
@@ -37,7 +38,7 @@ pub fn owned_result_draft(mode: u8) {
             {
                 let future = draft.write_async(messages, async |content, capabilities| {
                     let mut results = content.cast::<Struct<CapabilityResults>>().init()?;
-                    let owned = peer.runtime.retain(&target).unwrap();
+                    let owned = peer.capabilities().retain(&target).unwrap();
                     capabilities
                         .set(results.field(CapabilityResults::VALUE), owned)
                         .unwrap_or_else(|_| panic!("first owner"));
@@ -45,19 +46,19 @@ pub fn owned_result_draft(mode: u8) {
                     assert!(!capabilities.is_empty());
                     if mode == 4 {
                         for _ in 1..4 {
-                            let owned = peer.runtime.retain(&target).unwrap();
+                            let owned = peer.capabilities().retain(&target).unwrap();
                             capabilities
                                 .set(results.field(CapabilityResults::VALUE), owned)
                                 .unwrap_or_else(|_| panic!("retained owner"));
                         }
-                        let owned = peer.runtime.retain(&target).unwrap();
+                        let owned = peer.capabilities().retain(&target).unwrap();
                         let rejected = capabilities
                             .set(results.field(CapabilityResults::VALUE), owned)
                             .err()
                             .unwrap();
                         assert_eq!(rejected.error, capntproto_rpc_wire::owned::Error::Capacity);
                         assert_eq!(rejected.client.key(), expected);
-                        peer.runtime.release(rejected.client);
+                        peer.capabilities().release(rejected.client);
                         assert_eq!(capabilities.len(), 4);
                     }
                     if mode == 3 {
@@ -98,9 +99,9 @@ pub fn owned_result_draft(mode: u8) {
                 );
             }
             if mode == 5 {
-                draft.discard(messages, &mut peer.runtime);
+                draft.discard(messages, &mut peer.capabilities());
             } else {
-                match draft.finish(messages, &mut peer.runtime) {
+                match draft.finish(messages, &mut peer.capabilities()) {
                     Ok(result) => {
                         assert!(!matches!(mode, 1 | 2 | 3 | 6 | 7));
                         result
@@ -114,14 +115,14 @@ pub fn owned_result_draft(mode: u8) {
                                 assert_eq!(payload.capability(pointer).unwrap().key(), expected);
                             })
                             .unwrap();
-                        result.release(messages, &mut peer.runtime);
+                        result.release(messages, &mut peer.capabilities());
                     }
                     Err(DraftError::Incomplete) => assert!(matches!(mode, 1 | 2 | 6 | 7)),
                     Err(DraftError::Input(_)) => assert_eq!(mode, 3),
                     Err(other) => panic!("unexpected draft failure: {other:?}"),
                 }
             }
-            peer.runtime.release(target);
+            peer.capabilities().release(target);
             assert_eq!(
                 peer.drain_endpoint(),
                 Some(Some(43)),

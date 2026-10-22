@@ -924,7 +924,7 @@ fn early_pipeline_retry_is_transactional_and_survives_final_failure() {
 }
 
 #[test]
-fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor() {
+fn endpoint_retirement_charges_each_owner_and_preserves_fair_selection() {
     with_driver(|mut driver, messages| {
         let mut slots = [None];
         let mut queue = messages::Queue::new(&mut slots).unwrap();
@@ -940,8 +940,7 @@ fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor
                 .unwrap();
             driver.runtime.release(client);
         }
-        driver.maintenance_phase = 5;
-        driver.maintenance_index = 0;
+        driver.work_cursor = 5;
         let mut remaining = 8;
         macro_rules! poll {
             () => {
@@ -962,13 +961,13 @@ fn endpoint_retirement_bursts_charge_each_owner_and_preserve_the_rotating_cursor
         }
         assert!(matches!(poll!(), Progress::Advanced));
         assert_eq!(remaining, 0);
-        assert_eq!(driver.maintenance_phase, 6);
+        assert_eq!(driver.work_cursor, 6);
         assert!(driver.runtime.has_retired());
         remaining = 1;
         assert!(matches!(poll!(), Progress::Advanced));
         assert_eq!(remaining, 0);
         assert_eq!(
-            driver.maintenance_phase, 6,
+            driver.work_cursor, 6,
             "the next rotation skips empty phases and charges one retired owner"
         );
         // The first burst freed exactly eight owners. A single subsequent
@@ -1016,8 +1015,7 @@ fn productive_maintenance_preserves_unused_budget_for_following_cleanup() {
                 .unwrap();
             driver.runtime.release(client);
         }
-        driver.maintenance_phase = 5;
-        driver.maintenance_index = 0;
+        driver.work_cursor = 5;
         remaining = 128;
         let Progress::Server(first) = poll!() else {
             panic!("first retired endpoint")
@@ -1064,8 +1062,7 @@ fn pending_pipeline_callback_exposes_new_cleanup_in_the_same_maintenance_poll() 
                 .unwrap(),
         );
         assert!(!driver.runtime.has_retired());
-        driver.maintenance_phase = 2;
-        driver.maintenance_index = 0;
+        driver.work_cursor = 2;
         let mut slots = [None];
         let mut queue = messages::Queue::new(&mut slots).unwrap();
         let outcome = driver
@@ -1355,16 +1352,15 @@ fn bootstrap_completion_retries_and_preserves_pipelines_after_finish_without_all
 }
 
 #[test]
-fn empty_maintenance_phases_do_not_delay_the_next_owned_operation() {
-    for phase in 0..18 {
+fn empty_work_classes_do_not_delay_the_next_owned_operation() {
+    for phase in 0..16 {
         with_driver(|mut driver, messages| {
             let client = driver
                 .runtime
                 .endpoint(binding::Route::local(99), clients::Location::Local)
                 .unwrap();
             driver.runtime.release(client);
-            driver.maintenance_phase = phase;
-            driver.maintenance_index = 0;
+            driver.work_cursor = phase;
             let mut slots = [None];
             let mut queue = messages::Queue::new(&mut slots).unwrap();
             let mut remaining = 1;
@@ -1386,7 +1382,7 @@ fn empty_maintenance_phases_do_not_delay_the_next_owned_operation() {
                 "starting phase {phase}"
             );
             assert_eq!(remaining, 0);
-            assert_eq!(driver.maintenance_phase, 6);
+            assert_eq!(driver.work_cursor, 6);
             assert!(!driver.runtime.has_retired());
             close(driver, messages, &mut queue);
         });

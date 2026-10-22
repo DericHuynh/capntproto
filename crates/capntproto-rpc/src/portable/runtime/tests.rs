@@ -168,7 +168,7 @@ fn output_completion_starts_the_next_turn_without_an_executor_round_trip() {
 }
 
 #[test]
-fn buffered_protocol_work_does_not_delay_output_until_every_input_is_processed() {
+fn ready_protocol_work_batches_within_one_bounded_output_turn() {
     struct Buffered {
         remaining: usize,
         queued: usize,
@@ -196,19 +196,21 @@ fn buffered_protocol_work_does_not_delay_output_until_every_input_is_processed()
             }
         }
     }
-    let mut runtime = Runtime::new(1.try_into().unwrap());
-    let batches = Rc::new(RefCell::new(Vec::new()));
-    let _completion = runtime
-        .handle()
-        .add_driver(Box::new(Buffered {
-            remaining: 3,
-            queued: 0,
-            batches: batches.clone(),
-            output: None,
-        }))
-        .unwrap();
-    assert!(poll(pin!(runtime.run(std::future::pending::<()>()))).is_pending());
-    assert_eq!(&*batches.borrow(), &[1, 1, 1]);
+    for (remaining, expected) in [(3, 3), (100, 32)] {
+        let mut runtime = Runtime::new(1.try_into().unwrap());
+        let batches = Rc::new(RefCell::new(Vec::new()));
+        let _completion = runtime
+            .handle()
+            .add_driver(Box::new(Buffered {
+                remaining,
+                queued: 0,
+                batches: batches.clone(),
+                output: None,
+            }))
+            .unwrap();
+        assert!(poll(pin!(runtime.run(std::future::pending::<()>()))).is_pending());
+        assert_eq!(&*batches.borrow(), &[expected]);
+    }
 }
 
 #[test]

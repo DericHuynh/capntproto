@@ -304,32 +304,24 @@ fn shared_payload_still_enforces_the_original_traversal_budget() {
             // must still reject amplified reads after the frame is released.
             with_peer(4, |mut driver| {
                 let target = driver
-                    .runtime
+                    .capabilities()
                     .endpoint(Route::local(9), clients::Location::Local)
                     .unwrap();
-                let mut batch = driver.ledgers.exports.batch();
+                let (mut graph, mut batch) = driver.export_batch();
                 let grant =
-                    capntproto_rpc_wire::clients::stage(&mut driver.runtime, &mut batch, &target)
-                        .unwrap();
+                    capntproto_rpc_wire::clients::stage(&mut graph, &mut batch, &target).unwrap();
                 assert_eq!(grant.id().to_wire(), 0);
                 batch.commit();
-                let call = capntproto_rpc_wire::owned::Call::<_, 4, 4>::admit(
-                    frame,
-                    messages,
-                    &mut driver.ledgers.imports,
-                    &mut driver.ledgers.exports,
-                    &mut driver.ledgers.answers,
-                    owned::answer::State::new(owned::pipelines::Results::new(())),
-                    |_| (),
-                )
-                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                let call = driver
+                    .admit_request(
+                        frame,
+                        messages,
+                        owned::answer::State::new(owned::pipelines::Results::new(())),
+                        |_| (),
+                    )
+                    .unwrap_or_else(|rejected| panic!("{}", rejected.error));
                 let params = call.share_plain_params(messages).unwrap().unwrap();
-                call.release(
-                    messages,
-                    &mut driver.ledgers.imports,
-                    &mut driver.ledgers.exports,
-                    &mut driver.ledgers.answers,
-                );
+                driver.release_call(call, messages);
                 let error = capnp::private::capability::ParamsHook::get(&*params)
                     .unwrap()
                     .get_as::<capnp::primitive_list::Reader<'_, ()>>()
@@ -337,7 +329,7 @@ fn shared_payload_still_enforces_the_original_traversal_budget() {
                     .unwrap();
                 assert_eq!(error.kind, capnp::ErrorKind::ReadLimitExceeded);
                 drop(params);
-                driver.runtime.release(target);
+                driver.capabilities().release(target);
             });
             let writer = messages.reserve(256).unwrap();
             messages.discard(writer);
@@ -391,6 +383,9 @@ fn with_peer_storage<'p, const CAPS: usize, const PATH: usize, R>(
         let connection = domain
             .bind_growing_adoptions(
                 storage::GrowingStorage {
+                    notifications: capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                        bound,
+                    ),
                     imports: bound,
                     exports: bound,
                     questions: bound,
@@ -456,18 +451,10 @@ fn settle<'p, 'id, const CAPS: usize, const PATH: usize>(
 }
 fn remote<'p, 'id>(driver: &mut Peer<'p, 'id, '_>) -> Client<'id> {
     let mut slots = [imports::ReceiveSlot::new(ImportId::from_wire(7), ())];
-    driver
-        .ledgers
-        .imports
-        .prepare_receive(&mut slots)
-        .unwrap()
-        .commit();
+    driver.prepare_imports(&mut slots).unwrap().commit();
     let reference = slots[0].take_local().unwrap();
-    let result = driver
-        .imports
-        .bind(&mut driver.runtime, &mut driver.ledgers.imports, &reference)
-        .unwrap();
-    driver.ledgers.imports.release(reference);
+    let result = driver.bind_import(&reference).unwrap();
+    driver.release_import(reference);
     result
 }
 
@@ -477,11 +464,13 @@ fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
         with_pool(|messages| {
             with_peer(4, |mut driver| {
                 let target = driver
-                    .runtime
+                    .capabilities()
                     .endpoint(Route::local(42), clients::Location::Local)
                     .unwrap();
                 let mut hooks = ClientHooks::new(4, 4);
-                let client = hooks.export_client(&mut driver.runtime, &target).unwrap();
+                let client = hooks
+                    .export_client(&mut driver.capabilities(), &target)
+                    .unwrap();
                 let mut request = client
                     .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
                         47,
@@ -506,7 +495,7 @@ fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
                         &mut invocations,
                         messages,
                         Default::default(),
-                        no_import,
+                        |graph, hook| no_import(graph, hook),
                     )
                     .unwrap_or_else(|r| panic!("enqueue {}", r.error));
                 assert_eq!(call.pipeline.is_none(), no_promise_pipelining);
@@ -555,8 +544,11 @@ fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
                 );
                 settle(&mut invocations, &mut driver, messages);
                 assert!(invocations.is_empty());
-                hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
-                driver.runtime.release(target);
+                hooks.close(
+                    &mut driver.capabilities(),
+                    Error::disconnected("done".into()),
+                );
+                driver.capabilities().release(target);
             })
         });
     }
@@ -567,15 +559,17 @@ fn owned_pipeline_queues_child_before_parent_local_completion() {
     with_pool(|messages| {
         with_peer(4, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let child_target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(43), clients::Location::Local)
                 .unwrap();
             let mut hooks = ClientHooks::new(8, 8);
-            let client = hooks.export_client(&mut driver.runtime, &target).unwrap();
+            let client = hooks
+                .export_client(&mut driver.capabilities(), &target)
+                .unwrap();
             let mut remote = client
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None)
                 .send();
@@ -588,7 +582,7 @@ fn owned_pipeline_queues_child_before_parent_local_completion() {
                     &mut invocations,
                     messages,
                     Default::default(),
-                    no_import,
+                    |graph, hook| no_import(graph, hook),
                 )
                 .unwrap_or_else(|r| panic!("enqueue {}", r.error));
             let child = capability::Client::new(remote.pipeline.hook.get_pipelined_cap(&[]));
@@ -608,7 +602,7 @@ fn owned_pipeline_queues_child_before_parent_local_completion() {
                     &mut invocations,
                     messages,
                     Default::default(),
-                    no_import,
+                    |graph, hook| no_import(graph, hook),
                 )
                 .unwrap_or_else(|r| panic!("child enqueue {}", r.error));
             assert!(invocations.accept_local(&mut driver).unwrap().is_none());
@@ -627,9 +621,10 @@ fn owned_pipeline_queues_child_before_parent_local_completion() {
                 .complete_local(&mut driver, messages, parent_running, Ok(output))
                 .unwrap_or_else(|_| panic!("parent completion"));
             settle(&mut invocations, &mut driver, messages);
-            hooks.collect(&mut driver.runtime);
+            hooks.collect(&mut driver.capabilities());
+            while driver.capabilities().advance_dispatch_one().unwrap() {}
             let child_running = invocations.accept_local(&mut driver).unwrap().unwrap();
-            assert_eq!(child_running.task(), child_call.task());
+            assert_eq!(Some(child_running.task()), child_call.task());
             assert!(call
                 .poll(
                     &mut hooks,
@@ -677,9 +672,12 @@ fn owned_pipeline_queues_child_before_parent_local_completion() {
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(47, 3, None)
                 .send();
             assert_eq!(next(&mut hooks).method_id(), 3);
-            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
-            driver.runtime.release(target);
-            driver.runtime.release(child_target);
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
+            driver.capabilities().release(target);
+            driver.capabilities().release(child_target);
         })
     });
 }
@@ -690,7 +688,9 @@ fn wire_reply_exception_preserves_remote_diagnostics() {
         with_peer(4, |mut driver| {
             let target = remote(&mut driver);
             let mut hooks = ClientHooks::new(4, 4);
-            let client = hooks.export_client(&mut driver.runtime, &target).unwrap();
+            let client = hooks
+                .export_client(&mut driver.capabilities(), &target)
+                .unwrap();
             let mut remote = client
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None)
                 .send();
@@ -703,7 +703,7 @@ fn wire_reply_exception_preserves_remote_diagnostics() {
                     &mut invocations,
                     messages,
                     Default::default(),
-                    no_import,
+                    |graph, hook| no_import(graph, hook),
                 )
                 .unwrap_or_else(|r| panic!("enqueue {}", r.error));
             let mut queue = messages::Queue::new_growing(0, 4).unwrap();
@@ -745,8 +745,11 @@ fn wire_reply_exception_preserves_remote_diagnostics() {
             };
             assert_eq!(error.kind, capnp::ErrorKind::Overloaded);
             assert!(error.extra.contains("remote diagnostic"));
-            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
-            driver.runtime.release(target);
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
+            driver.capabilities().release(target);
             queue.fail();
             while queue.discard_one(messages).unwrap() {}
         })
@@ -758,11 +761,13 @@ fn rejected_wire_admission_retains_call_and_cancellation_releases_binding() {
     with_pool(|messages| {
         with_peer(2, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let mut hooks = ClientHooks::new(4, 4);
-            let client = hooks.export_client(&mut driver.runtime, &target).unwrap();
+            let client = hooks
+                .export_client(&mut driver.capabilities(), &target)
+                .unwrap();
             let mut first = client
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None)
                 .send();
@@ -778,7 +783,7 @@ fn rejected_wire_admission_retains_call_and_cancellation_releases_binding() {
                     &mut invocations,
                     messages,
                     Default::default(),
-                    no_import,
+                    |graph, hook| no_import(graph, hook),
                 )
                 .unwrap_or_else(|r| panic!("enqueue {}", r.error));
             let second_call = next(&mut hooks);
@@ -788,7 +793,7 @@ fn rejected_wire_admission_retains_call_and_cancellation_releases_binding() {
                 &mut invocations,
                 messages,
                 Default::default(),
-                no_import,
+                |graph, hook| no_import(graph, hook),
             ) {
                 Err(rejected) => rejected,
                 Ok(_) => panic!("dispatch reserve should reject second call"),
@@ -805,16 +810,19 @@ fn rejected_wire_admission_retains_call_and_cancellation_releases_binding() {
                     &mut invocations,
                     messages,
                     Default::default(),
-                    no_import,
+                    |graph, hook| no_import(graph, hook),
                 )
                 .unwrap_or_else(|r| panic!("retry {}", r.error));
             drop(second_call);
             settle(&mut invocations, &mut driver, messages);
             assert!(invocations.is_empty());
             assert!(ready(&mut second.promise).is_err());
-            assert!(driver.runtime.next_ready().unwrap().is_none());
-            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
-            driver.runtime.release(target);
+            assert!(driver.capabilities().next_ready().unwrap().is_none());
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
+            driver.capabilities().release(target);
         })
     });
 }
@@ -825,7 +833,7 @@ fn dynamic_null_capability_slots_survive_local_and_wire_encoding() {
         with_peer(4, |mut driver| {
             let target = remote(&mut driver);
             let cap = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(55), clients::Location::Local)
                 .unwrap();
             let method = DynamicCall {
@@ -889,8 +897,8 @@ fn dynamic_null_capability_slots_survive_local_and_wire_encoding() {
                 rpc_capnp::cap_descriptor::SenderHosted(_)
             ));
             driver.cancel(sent.question).unwrap();
-            driver.runtime.release(cap);
-            driver.runtime.release(target);
+            driver.capabilities().release(cap);
+            driver.capabilities().release(target);
         })
     });
 }
@@ -900,7 +908,7 @@ fn malformed_dynamic_payload_rolls_back_all_admission() {
     with_pool(|messages| {
         with_peer(4, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let method = DynamicCall {
@@ -919,7 +927,7 @@ fn malformed_dynamic_payload_rolls_back_all_admission() {
                     |params| params.set_capability_index(1)
                 )
                 .is_err());
-            assert!(driver.runtime.next_ready().unwrap().is_none());
+            assert!(driver.capabilities().next_ready().unwrap().is_none());
             // A subsequent valid call can use the same capacity and message pool.
             let task = driver
                 .enqueue_dynamic(
@@ -933,7 +941,7 @@ fn malformed_dynamic_payload_rolls_back_all_admission() {
                 )
                 .unwrap();
             assert!(driver.cancel_invocation(task, messages));
-            driver.runtime.release(target);
+            driver.capabilities().release(target);
         })
     });
 }
@@ -943,11 +951,13 @@ fn pipeline_only_interest_retains_parent_until_final_pipeline_drop() {
     with_pool(|messages| {
         with_peer(4, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let mut hooks = ClientHooks::new(4, 4);
-            let client = hooks.export_client(&mut driver.runtime, &target).unwrap();
+            let client = hooks
+                .export_client(&mut driver.capabilities(), &target)
+                .unwrap();
             let pipeline = client
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None)
                 .send_for_pipeline();
@@ -960,7 +970,7 @@ fn pipeline_only_interest_retains_parent_until_final_pipeline_drop() {
                     &mut invocations,
                     messages,
                     Default::default(),
-                    no_import,
+                    |graph, hook| no_import(graph, hook),
                 )
                 .unwrap_or_else(|r| panic!("enqueue {}", r.error));
             assert!(call
@@ -982,9 +992,12 @@ fn pipeline_only_interest_retains_parent_until_final_pipeline_drop() {
                 .is_ready());
             settle(&mut invocations, &mut driver, messages);
             assert!(invocations.is_empty());
-            assert!(driver.runtime.next_ready().unwrap().is_none());
-            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
-            driver.runtime.release(target);
+            assert!(driver.capabilities().next_ready().unwrap().is_none());
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
+            driver.capabilities().release(target);
         })
     });
 }
@@ -1056,6 +1069,7 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     let mut hooks = ClientHooks::new(1, 1);
     let pipeline = Rc::new(PipelineState {
         used: Cell::new(false),
+        owner_wake: RefCell::new(None),
         adopted: RefCell::default(),
         cached: RefCell::default(),
         _credit: Cell::new(None),
@@ -1098,11 +1112,11 @@ fn prepared_local_server_keeps_parameters_after_original_frame_release() {
     with_pool(|messages| {
         with_peer(4, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let value = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(43), clients::Location::Local)
                 .unwrap();
             let mut hooks = ClientHooks::new(8, 4);
@@ -1144,16 +1158,18 @@ fn prepared_local_server_keeps_parameters_after_original_frame_release() {
             let pointer =
                 capability::Client::new(prepared.params().unwrap().get_pipelined_cap(&[]).unwrap());
             let retained = hooks
-                .try_retain(&mut driver.runtime, &*pointer.hook)
+                .try_retain(&mut driver.capabilities(), &*pointer.hook)
                 .unwrap()
                 .unwrap();
             assert_eq!(retained.key(), value.key());
-            driver.runtime.release(retained);
+            driver.capabilities().release(retained);
 
             // Use an ordinary hosted result context through the server boundary.
             // Dispatch itself remains synchronous; its completion future and
             // result/pipeline ownership are the original hook machinery.
-            let server = hooks.export_client(&mut driver.runtime, &target).unwrap();
+            let server = hooks
+                .export_client(&mut driver.capabilities(), &target)
+                .unwrap();
             let mut reply = server
                 .new_call::<any_pointer::Owned, any_pointer::Owned>(1, 1, None)
                 .send();
@@ -1169,11 +1185,11 @@ fn prepared_local_server_keeps_parameters_after_original_frame_release() {
             assert!(delivered.hints().no_promise_pipelining);
             let cap = delivered.params().unwrap().get_pipelined_cap(&[]).unwrap();
             let retained = hooks
-                .try_retain(&mut driver.runtime, &*cap)
+                .try_retain(&mut driver.capabilities(), &*cap)
                 .unwrap()
                 .unwrap();
             assert_eq!(retained.key(), value.key());
-            driver.runtime.release(retained);
+            driver.capabilities().release(retained);
             delivered
                 .results()
                 .get()
@@ -1194,9 +1210,12 @@ fn prepared_local_server_keeps_parameters_after_original_frame_release() {
             drop((pointer, receiver, cap, server, reply));
             settle(&mut invocations, &mut driver, messages);
             assert!(invocations.is_empty());
-            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
-            driver.runtime.release(target);
-            driver.runtime.release(value);
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
+            driver.capabilities().release(target);
+            driver.capabilities().release(value);
         });
     });
 }
@@ -1208,12 +1227,12 @@ fn received_server_uses_admitted_receipts_and_recovers_from_hook_capacity() {
     with_pool(|messages| {
         with_peer(4, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let export = {
-                let mut batch = driver.ledgers.exports.batch();
-                let grant = binding::stage(&mut driver.runtime, &mut batch, &target).unwrap();
+                let (mut graph, mut batch) = driver.export_batch();
+                let grant = binding::stage(&mut graph, &mut batch, &target).unwrap();
                 batch.commit();
                 grant.id()
             };
@@ -1248,22 +1267,23 @@ fn received_server_uses_admitted_receipts_and_recovers_from_hook_capacity() {
                 Ok(())
             })
             .unwrap();
-            let call = connection::Request::admit(
-                frame,
-                messages,
-                &mut driver.ledgers.imports,
-                &mut driver.ledgers.exports,
-                &mut driver.ledgers.answers,
-                connection::Answer::new(owned::pipelines::Results::new(())),
-                |_| (),
-            )
-            .unwrap_or_else(|_| panic!("admit"));
+            let call = driver
+                .admit_request(
+                    frame,
+                    messages,
+                    connection::Answer::new(owned::pipelines::Results::new(())),
+                    |_| (),
+                )
+                .unwrap_or_else(|_| panic!("admit"));
             assert!(call.share_plain_params(messages).unwrap().is_none());
             let mut full = ClientHooks::new(0, 4);
             assert!(full
                 .prepare_received_server(&call, &mut driver, messages)
                 .is_err());
-            full.close(&mut driver.runtime, Error::disconnected("full".into()));
+            full.close(
+                &mut driver.capabilities(),
+                Error::disconnected("full".into()),
+            );
             let mut hooks = ClientHooks::new(4, 4);
             let prepared = hooks
                 .prepare_received_server(&call, &mut driver, messages)
@@ -1273,25 +1293,26 @@ fn received_server_uses_admitted_receipts_and_recovers_from_hook_capacity() {
             let pointer =
                 capability::Client::new(prepared.params().unwrap().get_pipelined_cap(&[]).unwrap());
             let retained = hooks
-                .try_retain(&mut driver.runtime, &*pointer.hook)
+                .try_retain(&mut driver.capabilities(), &*pointer.hook)
                 .unwrap()
                 .unwrap();
             assert!(
-                matches!(driver.runtime.inspect(&retained).unwrap(), clients::Destination::Endpoint {
+                matches!(driver.runtime().inspect(&retained).unwrap(), clients::Destination::Endpoint {
                 owner: Route::Capability(binding::Endpoint::Imported(remote)), ..
             } if remote.id() == ImportId::from_wire(71))
             );
-            driver.runtime.release(retained);
+            driver.capabilities().release(retained);
             drop((prepared, pointer));
-            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
             let exported = driver
-                .ledgers
-                .exports
-                .release(ExportId::from_wire(export.to_wire()), 1)
+                .release_export(ExportId::from_wire(export.to_wire()), 1)
                 .unwrap()
                 .unwrap();
-            driver.runtime.release(exported);
-            driver.runtime.release(target);
+            driver.capabilities().release(exported);
+            driver.capabilities().release(target);
         });
     });
 }
@@ -1301,7 +1322,7 @@ fn late_invalid_local_projection_breaks_instead_of_waiting_for_retry() {
     with_pool(|messages| {
         with_peer(4, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let mut calls = connection::Invocations::new_growing(0, 4).unwrap();
@@ -1338,17 +1359,17 @@ fn late_invalid_local_projection_breaks_instead_of_waiting_for_retry() {
                 .pipeline(&mut driver, task, pipeline::Path::new(&[]), messages)
                 .unwrap();
             assert!(matches!(
-                driver.runtime.inspect(&projected).unwrap(),
+                driver.runtime().inspect(&projected).unwrap(),
                 clients::Destination::Endpoint {
                     location: clients::Location::Broken,
                     ..
                 }
             ));
-            driver.runtime.release(projected);
+            driver.capabilities().release(projected);
             drop(receiver);
             settle(&mut calls, &mut driver, messages);
             assert!(calls.is_empty());
-            driver.runtime.release(target);
+            driver.capabilities().release(target);
         });
     });
 }
@@ -1406,16 +1427,20 @@ fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
             Capacity::Growing { maximum: 8 },
             |mut driver| {
                 let target = driver
-                    .runtime
+                    .capabilities()
                     .endpoint(Route::local(42), clients::Location::Local)
                     .unwrap();
                 let value = driver
-                    .runtime
+                    .capabilities()
                     .endpoint(Route::local(55), clients::Location::Local)
                     .unwrap();
                 let mut hooks = ClientHooks::new(8, 8);
-                let client = hooks.export_client(&mut driver.runtime, &target).unwrap();
-                let cap = hooks.export_client(&mut driver.runtime, &value).unwrap();
+                let client = hooks
+                    .export_client(&mut driver.capabilities(), &target)
+                    .unwrap();
+                let cap = hooks
+                    .export_client(&mut driver.capabilities(), &value)
+                    .unwrap();
                 let mut request =
                     client.new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None);
                 let mut list = request
@@ -1434,7 +1459,7 @@ fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
                         &mut invocations,
                         messages,
                         Default::default(),
-                        no_import,
+                        |graph, hook| no_import(graph, hook),
                     )
                     .unwrap_or_else(|r| panic!("{}", r.error));
                 let running = invocations.accept_local(&mut driver).unwrap().unwrap();
@@ -1477,16 +1502,19 @@ fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
                     .get_as_capability::<capability::Client>()
                     .unwrap();
                 let retained = hooks
-                    .try_retain(&mut driver.runtime, &*result.hook)
+                    .try_retain(&mut driver.capabilities(), &*result.hook)
                     .unwrap()
                     .unwrap();
                 assert_eq!(retained.key(), value.key());
-                driver.runtime.release(retained);
+                driver.capabilities().release(retained);
                 drop((call, reply, result, remote.pipeline, cap, client));
                 settle(&mut invocations, &mut driver, messages);
-                hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
-                driver.runtime.release(value);
-                driver.runtime.release(target);
+                hooks.close(
+                    &mut driver.capabilities(),
+                    Error::disconnected("done".into()),
+                );
+                driver.capabilities().release(value);
+                driver.capabilities().release(target);
             },
         );
     });
@@ -1536,12 +1564,12 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
     ) -> server::Prepared {
         with_peer(4, |mut driver| {
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(42), clients::Location::Local)
                 .unwrap();
             let export = {
-                let mut batch = driver.ledgers.exports.batch();
-                let grant = binding::stage(&mut driver.runtime, &mut batch, &target).unwrap();
+                let (mut graph, mut batch) = driver.export_batch();
+                let grant = binding::stage(&mut graph, &mut batch, &target).unwrap();
                 batch.commit();
                 grant.id()
             };
@@ -1571,16 +1599,14 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
             assert_eq!(builder.get_segments_for_output().len() > 1, segmented);
             let bytes = capnp::serialize::write_message_to_words(&builder);
             let frame = Frame::copy_from(messages, &bytes, Default::default()).unwrap();
-            let call = connection::Request::admit(
-                frame,
-                messages,
-                &mut driver.ledgers.imports,
-                &mut driver.ledgers.exports,
-                &mut driver.ledgers.answers,
-                connection::Answer::new(owned::pipelines::Results::new(())),
-                |_| (),
-            )
-            .unwrap_or_else(|_| panic!("admit"));
+            let call = driver
+                .admit_request(
+                    frame,
+                    messages,
+                    connection::Answer::new(owned::pipelines::Results::new(())),
+                    |_| (),
+                )
+                .unwrap_or_else(|_| panic!("admit"));
             assert_eq!(call.share_plain_params(messages).unwrap().is_some(), shared);
             let original = call
                 .with(messages, |p| {
@@ -1612,15 +1638,16 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
                 shared
             );
             driver.release_call(call, messages);
-            hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
             let exported = driver
-                .ledgers
-                .exports
-                .release(ExportId::from_wire(export.to_wire()), 1)
+                .release_export(ExportId::from_wire(export.to_wire()), 1)
                 .unwrap()
                 .unwrap();
-            driver.runtime.release(exported);
-            driver.runtime.release(target);
+            driver.capabilities().release(exported);
+            driver.capabilities().release(target);
             payload
         })
     }

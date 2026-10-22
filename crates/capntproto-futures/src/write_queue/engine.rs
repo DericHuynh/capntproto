@@ -9,6 +9,8 @@ struct Queue<M> {
     accepted: u64,
     flushed: u64,
     stopped: bool,
+    reserved: usize,
+    reservation_blocked: bool,
 }
 struct Shared<M> {
     queue: QueueCell<Queue<M>>,
@@ -68,6 +70,12 @@ impl<M> Receiver<M> {
         poll_fn(|cx| {
             self.0.ready.register(cx.waker());
             let mut queue = self.0.queue.lock().unwrap();
+            if queue.reserved != 0 {
+                // A publication owns this deque's reserved capacity. A reentrant
+                // driver poll must not exchange it for the active batch.
+                queue.reservation_blocked = true;
+                return Poll::Pending;
+            }
             if !queue.messages.is_empty() {
                 let mut metrics = self.0.diagnostics.metrics.lock().unwrap();
                 metrics.active = std::mem::take(&mut metrics.queued);
@@ -119,6 +127,8 @@ where
             accepted: 0,
             flushed: 0,
             stopped: false,
+            reserved: 0,
+            reservation_blocked: false,
         }),
         diagnostics: OutgoingQueue {
             metrics: Arc::new(Mutex::new(Metrics::default())),
@@ -142,14 +152,16 @@ where
                     // this future while retaining the same flush watermark and
                     // message lifetime on partial writes.
                     if let Some(bytes) = (batch.len() == 1)
-                        .then(|| batch.front().unwrap().0.framed_bytes()).flatten()
+                        .then(|| batch.front().unwrap().0.framed_bytes())
+                        .flatten()
                     {
                         crate::serialize::write_framed(&mut writer, bytes).await?;
                     } else {
                         crate::serialize::write_message_refs(
                             &mut writer,
                             batch.iter().map(|(message, _)| message),
-                        ).await?;
+                        )
+                        .await?;
                     }
                     writer.flush().await?;
                     receiver.0.diagnostics.metrics.lock().unwrap().active = BatchMetrics::default();
@@ -227,16 +239,34 @@ impl<M: AsOutputSegments> Sender<M> {
         complete: Option<oneshot::Sender<M>>,
         notify: bool,
     ) -> Result<u64, Error> {
+        self.enqueue_inner(message, complete, notify, None)
+    }
+    fn enqueue_inner(
+        &self,
+        message: M,
+        complete: Option<oneshot::Sender<M>>,
+        notify: bool,
+        mut reservation: Option<(&mut u64, &mut bool)>,
+    ) -> Result<u64, Error> {
+        let reserved = reservation.is_some();
         let bytes = message.size_in_bytes();
         let mut now = (!self.shared.queued.load(Ordering::Relaxed))
             .then(|| (self.shared.diagnostics.clock)());
         let accepted = loop {
             let mut queue = self.shared.queue.lock().unwrap();
-            if queue.accepting {
-                let next = queue
+            if !queue.stopped && (queue.accepting || reserved) {
+                let uncommitted = queue.reserved + usize::from(!reserved);
+                queue
                     .accepted
-                    .checked_add(1)
+                    .checked_add(uncommitted as u64)
                     .ok_or_else(|| Error::overloaded("write sequence exhausted".into()))?;
+                if !reserved {
+                    queue
+                        .messages
+                        .try_reserve(uncommitted)
+                        .map_err(|_| Error::overloaded("write queue allocation failed".into()))?;
+                }
+                let next = queue.accepted + 1;
                 let mut metrics = self.shared.diagnostics.metrics.lock().unwrap();
                 if metrics.queued.oldest.is_none() && now.is_none() {
                     // The receiver may have started a batch since the hint.
@@ -253,16 +283,58 @@ impl<M: AsOutputSegments> Sender<M> {
                     metrics.oldest = now;
                 }
                 queue.messages.push_back((message, complete));
+                if let Some((through, armed)) = reservation.take() {
+                    queue.reserved -= 1;
+                    *through = next;
+                    *armed = false;
+                }
                 queue.accepted = next;
                 self.shared.queued.store(true, Ordering::Relaxed);
                 break next;
             }
             return Err(Error::disconnected("WriteQueue has terminated".into()));
         };
-        if notify {
+        let resumed = if reserved {
+            let mut queue = self.shared.queue.lock().unwrap();
+            queue.reserved == 0 && std::mem::take(&mut queue.reservation_blocked)
+        } else {
+            false
+        };
+        if notify || resumed {
             self.shared.ready.wake();
         }
         Ok(accepted)
+    }
+    fn reserve_publication(&self) -> Result<(), Error> {
+        let mut queue = self.shared.queue.lock().unwrap();
+        if !queue.accepting || queue.stopped {
+            return Err(Error::disconnected("WriteQueue has terminated".into()));
+        }
+        let reserved = queue
+            .reserved
+            .checked_add(1)
+            .ok_or_else(|| Error::overloaded("write reservations exhausted".into()))?;
+        queue
+            .accepted
+            .checked_add(reserved as u64)
+            .ok_or_else(|| Error::overloaded("write sequence exhausted".into()))?;
+        queue
+            .messages
+            .try_reserve(reserved)
+            .map_err(|_| Error::overloaded("write queue allocation failed".into()))?;
+        queue.reserved = reserved;
+        Ok(())
+    }
+    fn cancel_publication(&self) {
+        let resumed = {
+            let mut queue = self.shared.queue.lock().unwrap();
+            assert!(queue.reserved != 0, "live output reservation");
+            queue.reserved -= 1;
+            queue.reserved == 0 && std::mem::take(&mut queue.reservation_blocked)
+        };
+        if resumed {
+            self.shared.ready.wake();
+        }
     }
 
     /// Claim the queue's single cumulative flush observer. It shares FIFO order
@@ -281,6 +353,7 @@ impl<M: AsOutputSegments> Sender<M> {
             sender: self.clone(),
             through: 0,
             deferred: false,
+            reserved: false,
         })
     }
 
@@ -326,10 +399,54 @@ pub struct ObservedSender<M: AsOutputSegments> {
     sender: Sender<M>,
     through: u64,
     deferred: bool,
+    reserved: bool,
 }
 impl<M: AsOutputSegments> ObservedSender<M> {
+    /// Reserve the physical FIFO entry before protocol publication commits.
+    /// No receipt or per-frame allocation is needed after this succeeds.
+    pub fn reserve(&mut self) -> Result<(), Error> {
+        assert!(!self.reserved, "one exclusive publication reservation");
+        self.sender.reserve_publication()?;
+        self.reserved = true;
+        Ok(())
+    }
+    pub fn cancel_reservation(&mut self) {
+        if std::mem::take(&mut self.reserved) {
+            self.sender.cancel_publication();
+        }
+    }
+    pub fn publish_reserved(&mut self, message: M) -> Result<(), Error> {
+        assert!(std::mem::take(&mut self.reserved), "reserved publication");
+        struct Cancel<'a, M: AsOutputSegments> {
+            sender: &'a Sender<M>,
+            armed: bool,
+        }
+        impl<M: AsOutputSegments> Drop for Cancel<'_, M> {
+            fn drop(&mut self) {
+                if self.armed {
+                    self.sender.cancel_publication();
+                }
+            }
+        }
+        let mut cancel = Cancel {
+            sender: &self.sender,
+            armed: true,
+        };
+        self.deferred = true;
+        self.sender.enqueue_inner(
+            message,
+            None,
+            false,
+            Some((&mut self.through, &mut cancel.armed)),
+        )?;
+        Ok(())
+    }
+
     /// End the same ordered queue without creating another sender handle.
-    pub fn terminate(&self, result: Result<(), Error>) -> impl Future<Output = Result<(), Error>> + Unpin {
+    pub fn terminate(
+        &self,
+        result: Result<(), Error>,
+    ) -> impl Future<Output = Result<(), Error>> + Unpin {
         self.sender.terminate(result)
     }
     pub fn send(&mut self, message: M) -> Result<(), Error> {
@@ -386,6 +503,7 @@ impl<M: AsOutputSegments> ObservedSender<M> {
 }
 impl<M: AsOutputSegments> Drop for ObservedSender<M> {
     fn drop(&mut self) {
+        self.cancel_reservation();
         let wake = self.sender.shared.flushed.take();
         self.sender.shared.observing.store(false, Ordering::Release);
         drop(wake);

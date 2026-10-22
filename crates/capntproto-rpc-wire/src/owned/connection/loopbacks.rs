@@ -3,15 +3,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
     pub(super) fn normal_dispatch_available(&mut self) -> bool {
-        let capacity = self.runtime.task_capacity();
-        let mut total = 0usize;
-        let mut ordinary = 0;
-        for index in 0..capacity {
-            if let Some((_, task)) = self.runtime.queued_at(index) {
-                total += 1;
-                ordinary += usize::from(!matches!(task, Task::Loopback(_)));
-            }
-        }
+        let total = self.runtime.queued();
+        let ordinary = self.runtime.ordinary_queued();
         // One ordinary admission plus one reserved control slot. When a control
         // already occupies that slot it must not force an unnecessary extra slot.
         let Some(required) = total
@@ -25,7 +18,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     }
     pub(super) fn reserve_barrier(&mut self) -> Result<(), Error> {
         if self.barrier.is_some() || !self.loopbacks.reserve_capacity() {
-            Err(Error::Busy)
+            Err(Error::BarrierFull)
         } else {
             Ok(())
         }
@@ -51,7 +44,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let result = self
             .runtime
             .prepare_call(&route, &mut task)
-            .map(|pending| pending.accept());
+            .map(|pending| pending.reserved_control().accept());
         self.runtime.release(route);
         match result {
             Ok(_) => Ok(true),
@@ -91,14 +84,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .runtime
             .prepare_call(&route, &mut task)
             .map(|pending| pending.accept());
+        if result.is_err() && observer {
+            self.pipelines
+                .discard_unexposed(key, &mut self.ledgers.answers, &mut self.runtime);
+        }
         self.runtime.release(route);
         match result {
             Ok(_) => Ok(true),
             Err(error) => {
-                if observer {
-                    self.pipelines
-                        .discard_unexposed(key, &mut self.ledgers.answers);
-                }
                 let Some(Task::Echo(echo)) = task else {
                     unreachable!("unaccepted echo")
                 };
@@ -114,7 +107,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         minimum: usize,
         options: capnp::message::ReaderOptions,
     ) -> Result<bool, Error> {
-        let Some(ready) = self.runtime.next_ready().map_err(Error::Dispatch)? else {
+        let Some(ready) = self.runtime.ready().map_err(Error::Dispatch)? else {
             return Ok(false);
         };
         if matches!(

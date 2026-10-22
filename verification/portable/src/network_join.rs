@@ -1,5 +1,6 @@
 //! Join metadata is supplied by the network; RPC owns its exact wire lifecycle.
 use super::{driver::with_owned_peer, driver_invocation::close, owning::exchange, ZERO};
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients,
     ids::{ImportId, WireId},
@@ -9,7 +10,7 @@ use capntproto_rpc_wire::{
     calls, clients as binding, network,
     owned::{
         connection::{NetworkRequest, Received},
-        controls, Reply,
+        Reply,
     },
 };
 
@@ -24,13 +25,13 @@ pub fn owning_network_join(mode: u8) {
         with_owned_peer(|mut caller| {
             with_owned_peer(|mut server| {
                 let service = server
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::local(41), clients::Location::Local)
                     .unwrap();
-                let mut batch = server.ledgers.exports.batch();
-                let grant = binding::stage(&mut server.runtime, &mut batch, &service).unwrap();
+                let (mut graph, mut batch) = server.export_batch();
+                let grant = binding::stage(&mut graph, &mut batch, &service).unwrap();
                 batch.commit();
-                server.runtime.release(service);
+                server.capabilities().release(service);
                 let question = caller
                     .send(messages, &mut queue, 776, Default::default(), |b, id| {
                         network::join(
@@ -62,31 +63,21 @@ pub fn owning_network_join(mode: u8) {
                     )
                 })
                 .unwrap();
-                assert!(server
-                    .ledgers
-                    .exports
-                    .release(grant.id(), 1)
-                    .unwrap()
-                    .is_none());
+                assert!(server.release_export(grant.id(), 1).unwrap().is_none());
                 assert!(
                     server.retain_provided(key).is_err(),
                     "Join is not a Provide registration"
                 );
                 let pipeline = if mode == 5 {
-                    Some(server.ledgers.answers.pipeline(key.id()).unwrap())
+                    Some(server.answer_pipeline(key.id()).unwrap())
                 } else {
                     None
                 };
                 if matches!(mode, 2 | 5) {
                     caller.cancel(question).unwrap();
-                    assert!(controls::finish_one(
-                        &mut caller.ledgers.questions,
-                        messages,
-                        &mut queue,
-                        776,
-                        Default::default()
-                    )
-                    .unwrap());
+                    assert!(caller
+                        .send_pending_finish(messages, &mut queue, 776, Default::default())
+                        .unwrap());
                     let frame = exchange(messages, &mut queue, 1);
                     assert!(matches!(
                         server
@@ -128,7 +119,7 @@ pub fn owning_network_join(mode: u8) {
                         .unwrap();
                     join = rejected.join;
                     assert!(queue.is_empty());
-                    assert_eq!(server.ledgers.answers.len(), 1);
+                    assert_eq!(server.ledgers().answers.len(), 1);
                 }
                 let retired = if mode == 3 {
                     server
@@ -203,14 +194,9 @@ pub fn owning_network_join(mode: u8) {
                         })
                         .unwrap();
                     caller.release_response(response, messages);
-                    assert!(controls::finish_one(
-                        &mut caller.ledgers.questions,
-                        messages,
-                        &mut queue,
-                        776,
-                        Default::default()
-                    )
-                    .unwrap());
+                    assert!(caller
+                        .send_pending_finish(messages, &mut queue, 776, Default::default())
+                        .unwrap());
                     let frame = exchange(messages, &mut queue, 1);
                     assert!(matches!(
                         server
@@ -220,27 +206,25 @@ pub fn owning_network_join(mode: u8) {
                     ));
                 }
                 if let Some(pipeline) = pipeline {
-                    let result = server.ledgers.answers.pipelined(&pipeline).owner.target(
+                    let (mut graph, ledgers) = server.split_graph();
+                    let result = ledgers.answers.pipelined(&pipeline).owner.target(
                         capntproto_rpc_wire::pipeline::Path::new(&[]),
                         messages,
-                        &mut server.runtime,
+                        &mut graph,
                     );
                     assert!(result.is_err());
                     assert_eq!(
-                        server
-                            .ledgers
-                            .answers
-                            .release_pipeline(pipeline)
-                            .unwrap()
-                            .release(messages)
-                            .release(messages, &mut server.runtime),
+                        {
+                            let answer = server.release_answer_pipeline(pipeline).unwrap();
+                            server.release_answer(answer, messages)
+                        },
                         43
                     );
                 }
                 if !released_before_finish {
                     assert_eq!(server.drain_endpoint(), Some(Some(41)));
                 }
-                assert!(server.ledgers.answers.is_empty());
+                assert!(server.ledgers().answers.is_empty());
                 assert_eq!(close(caller, messages, &mut queue), 0);
                 assert_eq!(close(server, messages, &mut queue), 0);
                 let free: [_; 8] = core::array::from_fn(|_| messages.reserve(776).unwrap());

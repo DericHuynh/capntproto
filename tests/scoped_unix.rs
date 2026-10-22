@@ -10,7 +10,7 @@ use capnp_rpc::scoped::{
             Coordinator, Handle, Options, TwoParty,
         },
         resources::Import,
-        server::Results,
+        server::Producer,
     },
     ClientHooks,
 };
@@ -155,6 +155,10 @@ async fn peer(
                 let graph = domain
                     .bind_growing_adoptions(
                         storage::GrowingStorage {
+                            notifications:
+                                capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                                    bound,
+                                ),
                             imports: bound,
                             exports: bound,
                             answers: bound,
@@ -172,7 +176,7 @@ async fn peer(
                     '_,
                     '_,
                     Import,
-                    Results,
+                    Producer,
                     u8,
                     Rc<dyn capnp::private::capability::ClientHook>,
                     8,
@@ -375,9 +379,11 @@ async fn descriptors(mode: Mode) {
                     astop.send(()).unwrap();
                     bstop.send(()).unwrap();
                 };
+                // Keep the two large scoped peer state machines out of the
+                // combined debug test future's stack frame.
                 futures::join!(
-                    peer(a, client.client, ah, astopped, limit, mode),
-                    peer(b, service.client, bh, bstopped, limit, mode),
+                    Box::pin(peer(a, client.client, ah, astopped, limit, mode)),
+                    Box::pin(peer(b, service.client, bh, bstopped, limit, mode)),
                     application,
                 );
             }

@@ -1,0 +1,576 @@
+{
+  "final-profile-tls": {
+    "dependent-read-portable": {
+      "totals": {
+        "Ir": 171770430,
+        "Dr": 48250063,
+        "Dw": 33682967,
+        "I1mr": 12256677,
+        "D1mr": 1617243,
+        "D1mw": 1390316,
+        "ILmr": 22873,
+        "DLmr": 31720,
+        "DLmw": 20359,
+        "Bc": 21937449,
+        "Bcm": 1808505,
+        "Bi": 1548757,
+        "Bim": 556247
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-tls/dependent-read-portable/client.callgrind",
+          "sha256": "07d0d487f5aa52f76c6d8af9daaf1d27b6fc344ae01e92fd3b43d1b9250a4b4e",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-measure 127.0.0.1:43629 dependent-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-tls/dependent-read-portable/service-0.callgrind",
+          "sha256": "a172c0db9934164230f6ab7fbf2bc072d92429031b00ea6c18442f7d1865b5cb",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "fanout-32-portable": {
+      "totals": {
+        "Ir": 1472255244,
+        "Dr": 487131051,
+        "Dw": 382609290,
+        "I1mr": 46686215,
+        "D1mr": 12657857,
+        "D1mw": 10637298,
+        "ILmr": 22728,
+        "DLmr": 31716,
+        "DLmw": 24755,
+        "Bc": 308437292,
+        "Bcm": 5703460,
+        "Bi": 7701289,
+        "Bim": 980505
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-tls/fanout-32-portable/client.callgrind",
+          "sha256": "4658b5bdfc97c7953d151dab871acfb67f19bd786ccafbc45da5b8d4a17cc457",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-measure 127.0.0.1:40293 fanout-32 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-tls/fanout-32-portable/service-0.callgrind",
+          "sha256": "8588884ee553f4b61bba33d7750fccd28e24d9d6c2399ed6385905b9cb49430f",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "pipelined-read-portable": {
+      "totals": {
+        "Ir": 165706869,
+        "Dr": 46768187,
+        "Dw": 32515659,
+        "I1mr": 11299462,
+        "D1mr": 1338597,
+        "D1mw": 1144735,
+        "ILmr": 23238,
+        "DLmr": 31724,
+        "DLmw": 20466,
+        "Bc": 21318025,
+        "Bcm": 2140375,
+        "Bi": 1366940,
+        "Bim": 584503
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-tls/pipelined-read-portable/client.callgrind",
+          "sha256": "906edc9583f3a1ff4d2355c0ddcc293e5c2c715757f92ad0b953c914d5e3101a",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-measure 127.0.0.1:33757 pipelined-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-tls/pipelined-read-portable/service-0.callgrind",
+          "sha256": "9073eb1ffebf11a24859ea3d7da1d98f75e3d1ea25e4d6b5fa37ded48f696c7c",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    }
+  },
+  "final-profile-quic": {
+    "dependent-read-portable": {
+      "totals": {
+        "Ir": 246036158,
+        "Dr": 68717714,
+        "Dw": 47277027,
+        "I1mr": 18086500,
+        "D1mr": 2661566,
+        "D1mw": 2400235,
+        "ILmr": 29570,
+        "DLmr": 31600,
+        "DLmw": 25236,
+        "Bc": 32945363,
+        "Bcm": 3348383,
+        "Bi": 1975760,
+        "Bim": 820510
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-quic/dependent-read-portable/client.callgrind",
+          "sha256": "78bbb32719e23147a1b3a99f9e5f448d30387fe1c2c45e38abf2c64dd432df31",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-measure 127.0.0.1:37860 dependent-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-quic/dependent-read-portable/service-0.callgrind",
+          "sha256": "5495f1f4d128061b729ea26c141ca6ce45c1525ef1321a3cc95622c978a98089",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "fanout-32-portable": {
+      "totals": {
+        "Ir": 1553134364,
+        "Dr": 521783895,
+        "Dw": 378845174,
+        "I1mr": 51724172,
+        "D1mr": 15557455,
+        "D1mw": 12136022,
+        "ILmr": 29481,
+        "DLmr": 31592,
+        "DLmw": 30610,
+        "Bc": 305751601,
+        "Bcm": 7875509,
+        "Bi": 8138674,
+        "Bim": 1186784
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-quic/fanout-32-portable/client.callgrind",
+          "sha256": "4cab8cdbc480c7db1616d500313cdc916e065e03490b462f2576b63902c92981",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-measure 127.0.0.1:52986 fanout-32 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-quic/fanout-32-portable/service-0.callgrind",
+          "sha256": "c41d02fa826c62068f27b4d0073f90e2be814410c71f6c96961de17b9972f3f3",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "pipelined-read-portable": {
+      "totals": {
+        "Ir": 206738298,
+        "Dr": 57876821,
+        "Dw": 40115135,
+        "I1mr": 14160424,
+        "D1mr": 1944834,
+        "D1mw": 1648884,
+        "ILmr": 29945,
+        "DLmr": 31602,
+        "DLmw": 25330,
+        "Bc": 27669106,
+        "Bcm": 3136115,
+        "Bi": 1588691,
+        "Bim": 729574
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-quic/pipelined-read-portable/client.callgrind",
+          "sha256": "f0d660dd03ced9067464ab42e0525debe2306663acaa20ac43c5c569b14f91b9",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-measure 127.0.0.1:36244 pipelined-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-profile-quic/pipelined-read-portable/service-0.callgrind",
+          "sha256": "618cbe8e5653c4ab54f03aa3eb95a7061d88a3d3a317b258b35ac425e25fc5cc",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    }
+  },
+  "producer1-profile-quic": {
+    "dependent-read-portable": {
+      "totals": {
+        "Ir": 246454570,
+        "Dr": 69019969,
+        "Dw": 47008577,
+        "I1mr": 18193106,
+        "D1mr": 2589907,
+        "D1mw": 2278999,
+        "ILmr": 29496,
+        "DLmr": 31525,
+        "DLmw": 24745,
+        "Bc": 33015277,
+        "Bcm": 3531652,
+        "Bi": 1932415,
+        "Bim": 735665
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/producer1-profile-quic/dependent-read-portable/client.callgrind",
+          "sha256": "d2e6b6a8ccc0e36767e5f1f7a7f540b2de18e1954d8a9bf027ce60996fab3245",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/producer1 workflow-measure 127.0.0.1:59414 dependent-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/producer1-profile-quic/dependent-read-portable/service-0.callgrind",
+          "sha256": "37941b3ab122f338c86d02405199079d821603de3b81ad998fa13bd403d10986",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/producer1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "pipelined-read-portable": {
+      "totals": {
+        "Ir": 205272905,
+        "Dr": 57570503,
+        "Dw": 39356586,
+        "I1mr": 14161387,
+        "D1mr": 1818761,
+        "D1mw": 1577690,
+        "ILmr": 29892,
+        "DLmr": 31525,
+        "DLmw": 24835,
+        "Bc": 27541890,
+        "Bcm": 3232048,
+        "Bi": 1547043,
+        "Bim": 682073
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/producer1-profile-quic/pipelined-read-portable/client.callgrind",
+          "sha256": "ec91429a640715730c7417af955ea85f79c6e05e07df10d45d85750f917fee9d",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/producer1 workflow-measure 127.0.0.1:50067 pipelined-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/producer1-profile-quic/pipelined-read-portable/service-0.callgrind",
+          "sha256": "a8059b9961d56effd302ad4fd24e96f05747bb2c97c8a0406e1f09d05c6c2c6c",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/producer1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    }
+  },
+  "quicturn1-profile-quic": {
+    "dependent-read-portable": {
+      "totals": {
+        "Ir": 240559124,
+        "Dr": 67112601,
+        "Dw": 45800026,
+        "I1mr": 18158644,
+        "D1mr": 2575087,
+        "D1mw": 2258038,
+        "ILmr": 29622,
+        "DLmr": 31525,
+        "DLmw": 24761,
+        "Bc": 32176095,
+        "Bcm": 3440678,
+        "Bi": 1902324,
+        "Bim": 739730
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/quicturn1-profile-quic/dependent-read-portable/client.callgrind",
+          "sha256": "f7b909d5b68dbed44ee509c4f968eeca97979998ebf206ea50ad4bdfdfc83e76",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/quicturn1 workflow-measure 127.0.0.1:32896 dependent-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/quicturn1-profile-quic/dependent-read-portable/service-0.callgrind",
+          "sha256": "b5a2885403fd9e0ce929a378dda17be199dd1a023e6e06efafedbf48c572a789",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/quicturn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "pipelined-read-portable": {
+      "totals": {
+        "Ir": 202188970,
+        "Dr": 56581195,
+        "Dw": 38722381,
+        "I1mr": 14160067,
+        "D1mr": 1838644,
+        "D1mw": 1568308,
+        "ILmr": 29866,
+        "DLmr": 31523,
+        "DLmw": 24842,
+        "Bc": 27111673,
+        "Bcm": 3223171,
+        "Bi": 1531845,
+        "Bim": 682985
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/quicturn1-profile-quic/pipelined-read-portable/client.callgrind",
+          "sha256": "b15c9562cf0a116588e664dca1a5cdb756b14da0d3272c3df31518c04fa98be5",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/quicturn1 workflow-measure 127.0.0.1:44341 pipelined-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/quicturn1-profile-quic/pipelined-read-portable/service-0.callgrind",
+          "sha256": "b59235a9099340046fb01ffc7c1a980358fba15cc11795e0528886c2f4f775a3",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/quicturn1 workflow-server 127.0.0.1:0"
+        }
+      ]
+    }
+  },
+  "baseline-deep-profile-tls": {
+    "deep-32-concurrent-32-portable": {
+      "totals": {
+        "Ir": 3727035196,
+        "Dr": 1184847678,
+        "Dw": 866132515,
+        "I1mr": 39123066,
+        "D1mr": 19625215,
+        "D1mw": 21009713,
+        "ILmr": 22505,
+        "DLmr": 30994,
+        "DLmw": 24887,
+        "Bc": 634578135,
+        "Bcm": 5758979,
+        "Bi": 23483263,
+        "Bim": 3003024
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/baseline-deep-profile-tls/deep-32-concurrent-32-portable/client.callgrind",
+          "sha256": "53490867caf164b4409cfa4922a271ab1e86c9a67aa8bf325a4a28fe4869f548",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 topology-measure 127.0.0.1:37405 deep-32-concurrent-32 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/baseline-deep-profile-tls/deep-32-concurrent-32-portable/service-0.callgrind",
+          "sha256": "5e1388d888e5392a42a1e961ad5c70f80d016afee159cc4334e30268510a0bdd",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 topology-server 127.0.0.1:0"
+        }
+      ]
+    }
+  },
+  "final-deep-profile-tls": {
+    "deep-32-concurrent-32-portable": {
+      "totals": {
+        "Ir": 3798456718,
+        "Dr": 1207195152,
+        "Dw": 879546276,
+        "I1mr": 50005649,
+        "D1mr": 21996399,
+        "D1mw": 23886083,
+        "ILmr": 21873,
+        "DLmr": 31606,
+        "DLmw": 26074,
+        "Bc": 644946375,
+        "Bcm": 6562478,
+        "Bi": 25294197,
+        "Bim": 3191151
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-deep-profile-tls/deep-32-concurrent-32-portable/client.callgrind",
+          "sha256": "bdb025f8baf78d5c5e678e5a4f026374fcca80f042bb6e5cd06bfc2d1da86af2",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 topology-measure 127.0.0.1:38971 deep-32-concurrent-32 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure54/final-deep-profile-tls/deep-32-concurrent-32-portable/service-0.callgrind",
+          "sha256": "d8f5bdacc6314f682596c9866d187006891edf0b6bf02d9e0bbd4e800f168385",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure54/bundle/turn1 topology-server 127.0.0.1:0"
+        }
+      ]
+    }
+  },
+  "baseline-tls": {
+    "dependent-read-portable": {
+      "totals": {
+        "Ir": 163133142,
+        "Dr": 45185176,
+        "Dw": 31648357,
+        "I1mr": 11904381,
+        "D1mr": 1369369,
+        "D1mw": 1117174,
+        "ILmr": 23472,
+        "DLmr": 30981,
+        "DLmw": 19431,
+        "Bc": 20884316,
+        "Bcm": 1756223,
+        "Bi": 1450166,
+        "Bim": 573316
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-profile/dependent-read-portable/client.callgrind",
+          "sha256": "f1d2beee9914e88f19fa93e4f238af4236c33a450520cff65502e6ed20a8f7b0",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-measure 127.0.0.1:44409 dependent-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-profile/dependent-read-portable/service-0.callgrind",
+          "sha256": "7d649700342627f3a1b028bfa57c5c1c944eded0ed1f7cf3ebb06ae9302cbc20",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "fanout-32-portable": {
+      "totals": {
+        "Ir": 1399900236,
+        "Dr": 464507334,
+        "Dw": 368833436,
+        "I1mr": 34437821,
+        "D1mr": 11223168,
+        "D1mw": 9601098,
+        "ILmr": 23306,
+        "DLmr": 30979,
+        "DLmw": 23769,
+        "Bc": 298137584,
+        "Bcm": 5277395,
+        "Bi": 5890452,
+        "Bim": 688289
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-profile/fanout-32-portable/client.callgrind",
+          "sha256": "df85252c2c2f3955a3ced871fc5a3d19be3aeaad0d4f84f98f85139bd87627ce",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-measure 127.0.0.1:38853 fanout-32 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-profile/fanout-32-portable/service-0.callgrind",
+          "sha256": "ad9ce56e5b8fbf6443c39a7d16e54d2696d19e40798c355b2d1537a6029a4c10",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "pipelined-read-portable": {
+      "totals": {
+        "Ir": 160479708,
+        "Dr": 44710619,
+        "Dw": 31083260,
+        "I1mr": 10631192,
+        "D1mr": 1179354,
+        "D1mw": 1059695,
+        "ILmr": 23865,
+        "DLmr": 30991,
+        "DLmw": 19523,
+        "Bc": 20876873,
+        "Bcm": 2126736,
+        "Bi": 1304175,
+        "Bim": 603576
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-profile/pipelined-read-portable/client.callgrind",
+          "sha256": "029c62d67fb0f2154e61a76406588a26ede4f2c209b37c5b7e3254ac30c193c4",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-measure 127.0.0.1:38611 pipelined-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-profile/pipelined-read-portable/service-0.callgrind",
+          "sha256": "7a81d5a0d15c0aefed9adac54530250b379373dd4f684c946472caba07049b5d",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-server 127.0.0.1:0"
+        }
+      ]
+    }
+  },
+  "baseline-quic": {
+    "dependent-read-portable": {
+      "totals": {
+        "Ir": 244647998,
+        "Dr": 67933103,
+        "Dw": 46863916,
+        "I1mr": 17896106,
+        "D1mr": 2490377,
+        "D1mw": 2068548,
+        "ILmr": 29109,
+        "DLmr": 31305,
+        "DLmw": 24376,
+        "Bc": 32866480,
+        "Bcm": 3451993,
+        "Bi": 1913215,
+        "Bim": 758039
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-quic-profile/dependent-read-portable/client.callgrind",
+          "sha256": "c71cf5ab37835f2fe173fabbf4ef7bafcaaf9e46ac3da15ab1a0b88f8b55135b",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-measure 127.0.0.1:55172 dependent-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-quic-profile/dependent-read-portable/service-0.callgrind",
+          "sha256": "e2f4aee796c385963589fa8d7c4674772d34ca1b053df3d60158c3f2c9b9e7f6",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "fanout-32-portable": {
+      "totals": {
+        "Ir": 1486852055,
+        "Dr": 500928530,
+        "Dw": 366509870,
+        "I1mr": 39856719,
+        "D1mr": 14464683,
+        "D1mw": 11175646,
+        "ILmr": 29020,
+        "DLmr": 31296,
+        "DLmw": 29678,
+        "Bc": 296043897,
+        "Bcm": 6951202,
+        "Bi": 6349739,
+        "Bim": 696797
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-quic-profile/fanout-32-portable/client.callgrind",
+          "sha256": "2f1121372bdd46f9cef26b24eeb55717fc34544dc612584aac4a2a0e66667a99",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-measure 127.0.0.1:41803 fanout-32 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-quic-profile/fanout-32-portable/service-0.callgrind",
+          "sha256": "ea3c7bd42e479463d9b708ecd3a23fe8331a259cd57593258fcdba5895fc8f2d",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-server 127.0.0.1:0"
+        }
+      ]
+    },
+    "pipelined-read-portable": {
+      "totals": {
+        "Ir": 205371292,
+        "Dr": 57066800,
+        "Dw": 39643193,
+        "I1mr": 13582073,
+        "D1mr": 1748916,
+        "D1mw": 1569476,
+        "ILmr": 29516,
+        "DLmr": 31313,
+        "DLmw": 24478,
+        "Bc": 27731645,
+        "Bcm": 3201216,
+        "Bi": 1545124,
+        "Bim": 713343
+      },
+      "files": [
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-quic-profile/pipelined-read-portable/client.callgrind",
+          "sha256": "a6b6b2329f3611fa8623107380c958b78d17aef2c4b53d66a0b19892ee5093de",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-measure 127.0.0.1:59683 pipelined-read 10 1000"
+        },
+        {
+          "path": "/tmp/capntproto-build-cache/secure53/step5-quic-profile/pipelined-read-portable/service-0.callgrind",
+          "sha256": "35bf90ac539e4d93d01d4d3f0fab2a1ab0a9158edce7b02bd049a6bb56eb5e03",
+          "creator": "callgrind-3.24.0",
+          "command": "/tmp/capntproto-build-cache/secure53/bundle/step5 workflow-server 127.0.0.1:0"
+        }
+      ]
+    }
+  }
+}

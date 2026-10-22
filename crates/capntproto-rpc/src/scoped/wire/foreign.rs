@@ -11,6 +11,7 @@ struct Entry<'id> {
     // A weak, generational graph identity, not a retained capability. Abandoned
     // registrations cannot keep their promise or its protocol exports alive.
     key: clients::Key<'id>,
+    subscription: clients::Subscription<'id>,
     state: State,
     wake: Waker,
 }
@@ -23,7 +24,7 @@ enum State {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Progress {
-    /// Ready work or the bounded retirement sweep has more slots; poll again.
+    /// Exact ready work remains after the supplied budget; poll again.
     Yield,
     Idle,
     Advanced,
@@ -40,9 +41,8 @@ pub enum Progress {
 #[must_use = "poll imported promises and terminate before driver teardown"]
 pub struct ForeignPromises<'id> {
     entries: Vec<Option<Entry<'id>>>,
+    listener: Option<clients::Listener<'id>>,
     maximum: usize,
-    cursor: usize,
-    remaining: usize,
     ready: ready::Queue,
     live: usize,
     prefer_ready: bool,
@@ -52,9 +52,8 @@ impl<'id> ForeignPromises<'id> {
     pub fn new(maximum: usize) -> Self {
         Self {
             entries: Vec::new(),
+            listener: None,
             maximum,
-            cursor: 0,
-            remaining: 0,
             ready: ready::Queue::default(),
             live: 0,
             prefer_ready: true,
@@ -113,6 +112,9 @@ impl<'id> ForeignPromises<'id> {
                 .try_reserve(1)
                 .map_err(|_| Error::overloaded("foreign promise allocation failed".into()))?;
         }
+        if self.listener.is_none() {
+            self.listener = Some(graph.listen().map_err(graph_error)?);
+        }
         let mut route = Some(
             graph
                 .endpoint(Route::local(original.clone()), Location::Local)
@@ -125,9 +127,22 @@ impl<'id> ForeignPromises<'id> {
                 return Err(graph_error(error));
             }
         };
+        let subscription = match graph.subscribe(
+            self.listener.as_ref().unwrap(),
+            client.key(),
+            index,
+            clients::Watch::Abandonment,
+        ) {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                graph.release(client);
+                return Err(graph_error(error));
+            }
+        };
         let entry = Some(Entry {
             wake: self.ready.insert(index),
             key: client.key(),
+            subscription,
             state: State::Waiting {
                 _hook: original,
                 future,
@@ -138,14 +153,9 @@ impl<'id> ForeignPromises<'id> {
         } else {
             self.entries[index] = entry;
         }
-        self.remaining = 0;
         self.live += 1;
         self.ready.notify_parent();
         Ok(client)
-    }
-
-    pub(super) fn invalidate_scan(&mut self) {
-        self.remaining = 0;
     }
 
     pub fn poll<'p, P: Copy + Eq, const H: usize, G>(
@@ -162,32 +172,44 @@ impl<'id> ForeignPromises<'id> {
         if self.is_empty() {
             return Poll::Ready(Ok(Progress::Idle));
         }
-        if self.remaining == 0 {
-            self.remaining = self.entries.len();
-        }
         for _ in 0..budget.get() {
-            let ready = if self.prefer_ready || self.remaining == 0 {
+            let mut ready = if self.prefer_ready {
                 self.ready.pop()
             } else {
                 None
             };
             self.prefer_ready = !self.prefer_ready;
-            let index = if let Some(index) = ready {
-                index
-            } else {
-                let index = self.cursor % self.entries.len();
-                self.cursor = (index + 1) % self.entries.len();
-                self.remaining -= 1;
-                index
+            if ready.is_none() {
+                if let Some(event) = self
+                    .listener
+                    .as_ref()
+                    .and_then(|listener| graph.next_event(listener))
+                {
+                    let index = event.owner;
+                    if self
+                        .entries
+                        .get(index)
+                        .and_then(Option::as_ref)
+                        .is_some_and(|entry| {
+                            entry.key == event.client
+                                && entry.subscription.key() == event.subscription
+                        })
+                    {
+                        self.remove(index, graph);
+                        return Poll::Ready(Ok(Progress::Abandoned));
+                    }
+                    continue;
+                }
+                ready = self.ready.pop();
+            }
+            let Some(index) = ready else {
+                return Poll::Pending;
             };
             if let Some(entry) = self.entries[index].as_mut() {
                 let source = match graph.retain_key(entry.key) {
                     Ok(source) => source,
                     Err(clients::Error::Stale) => {
-                        self.entries[index] = None;
-                        self.ready.remove(index);
-                        self.live -= 1;
-                        self.remaining = 0;
+                        self.remove(index, graph);
                         return Poll::Ready(Ok(Progress::Abandoned));
                     }
                     Err(error) => {
@@ -197,36 +219,26 @@ impl<'id> ForeignPromises<'id> {
                         return Poll::Ready(Err(graph_error(error)));
                     }
                 };
-                // Protocol changes still require a bounded weak-key retirement
-                // sweep, but only a per-promise wake may poll an opaque future.
-                let progress = if ready.is_some() {
-                    let mut operation_cx = Context::from_waker(&entry.wake);
-                    advance(
-                        entry.key,
-                        &mut entry.state,
-                        &source,
-                        graph,
-                        &mut operation_cx,
-                        self.introductions.as_ref(),
-                    )
-                } else {
-                    Ok(None)
-                };
+                let mut operation_cx = Context::from_waker(&entry.wake);
+                let progress = advance(
+                    entry.key,
+                    &mut entry.state,
+                    &source,
+                    graph,
+                    &mut operation_cx,
+                    self.introductions.as_ref(),
+                );
                 graph.release(source);
                 match progress {
                     Ok(Some(Progress::Settled)) => {
-                        self.entries[index] = None;
-                        self.ready.remove(index);
-                        self.live -= 1;
+                        self.remove(index, graph);
                         // Publish full failure details before ordinary collection
                         // can signal an awaiting generated client.
                         hooks.collect_with_metadata(graph, metadata);
-                        self.remaining = 0;
                         return Poll::Ready(Ok(Progress::Settled));
                     }
                     Ok(Some(progress)) => {
                         self.ready.push(index);
-                        self.remaining = 0;
                         return Poll::Ready(Ok(progress));
                     }
                     Err(error) => {
@@ -236,13 +248,29 @@ impl<'id> ForeignPromises<'id> {
                     Ok(None) => (),
                 }
             }
-            if self.remaining == 0 && self.ready.is_empty() {
+            if self.ready.is_empty()
+                && !self
+                    .listener
+                    .as_ref()
+                    .is_some_and(|listener| graph.has_events(listener))
+            {
                 return Poll::Pending;
             }
         }
         Poll::Ready(Ok(Progress::Yield))
     }
-    pub fn terminate(self) {}
+    fn remove<G: Capabilities<'id>>(&mut self, index: usize, graph: &mut G) {
+        if let Some(entry) = self.entries[index].take() {
+            graph.unsubscribe(entry.subscription);
+            self.ready.remove(index);
+            self.live -= 1;
+        }
+    }
+    pub fn terminate<G: Capabilities<'id>>(mut self, graph: &mut G) {
+        if let Some(listener) = self.listener.take() {
+            graph.close_listener(listener);
+        }
+    }
 }
 
 fn advance<'p, 'id, P: Copy + Eq, const H: usize, G>(

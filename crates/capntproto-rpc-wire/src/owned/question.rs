@@ -63,7 +63,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
     ) -> Result<Self, super::Error> {
         let local = if owned_output {
             let local = reservation.accept();
-            queue.accept_owned(frame.lease);
+            queue.accept_owned(messages, frame.lease);
             local
         } else {
             let offer = frame.offer(messages)?;

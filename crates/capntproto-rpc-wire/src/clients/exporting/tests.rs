@@ -21,6 +21,10 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
         messages::with_messages(&mut buffers, &mut [messages::SendSlot::EMPTY], |messages| {
             clients::with_graph(
                 &mut [const { clients::Slot::EMPTY }; 6],
+                capntproto_rpc_engine::clients::NotificationStorage {
+                    listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                },
                 |graph: &mut Graph<'_, '_, Endpoint<'_, u8, u32>, u8>| {
                     exports::with_exports(&mut [const { exports::Slot::EMPTY }; 2], |exports| {
                         let source = graph.promise(&mut None).unwrap();
@@ -74,6 +78,30 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
                             )))
                         ));
                         assert!(queue.is_empty());
+                        // Consume the exact resolution notification, then the
+                        // buffer wait sleeps without revisiting this owner.
+                        while let Some(index) =
+                            bindings.next_ready(graph, exports, messages, &queue)
+                        {
+                            assert!(matches!(
+                                bindings.poll_one(
+                                    index,
+                                    graph,
+                                    exports,
+                                    messages,
+                                    &mut queue,
+                                    512,
+                                    Default::default(),
+                                    &mut [0; 2]
+                                ),
+                                Err(Error::Output(owned::Error::Storage(
+                                    messages::Error::NoBuffer
+                                )))
+                            ));
+                        }
+                        for _ in 0..32 {
+                            assert!(!bindings.has_ready(graph, exports, messages, &queue));
+                        }
                         // Retry still owns the observer.
                         assert!(!bindings.is_empty());
                         // A nested promise resolves again while output is blocked.
@@ -91,6 +119,11 @@ fn exported_promise_freezes_once_before_retrying_resolve_output() {
                         assert_eq!(owner(graph, exports.get(&lease)), 10);
                         assert!(exports.release_local(lease).is_none());
                         messages.discard(busy);
+                        assert!(bindings.has_ready(graph, exports, messages, &queue));
+                        assert_eq!(
+                            bindings.next_ready(graph, exports, messages, &queue),
+                            Some(0)
+                        );
                         assert_eq!(
                             bindings.poll_one(
                                 0,
@@ -182,6 +215,10 @@ fn released_or_aborted_export_does_not_keep_its_producer_alive() {
     for published in [false, true] {
         clients::with_graph(
             &mut [const { clients::Slot::EMPTY }; 2],
+            capntproto_rpc_engine::clients::NotificationStorage {
+                listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+            },
             |graph: &mut Graph<'_, '_, Endpoint<'_, u8, ()>, u8>| {
                 exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
                     let source = graph.promise(&mut None).unwrap();
@@ -232,6 +269,10 @@ fn callable_local_promise_publishes_sender_promise_then_failed_owner_exception()
         messages::with_messages(&mut buffers, &mut [messages::SendSlot::EMPTY], |messages| {
             clients::with_graph(
                 &mut [const { clients::Slot::EMPTY }; 4],
+                capntproto_rpc_engine::clients::NotificationStorage {
+                    listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                },
                 |graph: &mut Graph<'_, '_, Endpoint<'_, u8, u32>, u8>| {
                     exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
                         let route = graph.endpoint(Endpoint::Local(7), Location::Local).unwrap();

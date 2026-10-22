@@ -142,6 +142,7 @@ pub fn owned_rpc_conversation(chunk: usize, cancel: bool) -> Result<()> {
                 let mut graph_slots = [clients::Slot::EMPTY];
                 clients::with_graph(
                     &mut graph_slots,
+                    capntproto_rpc_engine::clients::NotificationStorage::empty(),
                     |graph: &mut clients::Graph<'_, '_, u32, u8>| {
                         let service_client = graph.endpoint(41, clients::Location::Local).unwrap();
                         let mut exports = [exports::Slot::EMPTY];

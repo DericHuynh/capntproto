@@ -5,6 +5,7 @@ use super::{
     portable_capnp::{api::echo::CapabilityResults, echo},
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     completion,
     ids::{AnswerId, ImportId, WireId},
@@ -82,14 +83,14 @@ pub fn tracked_reply_delivery(mode: u8) {
             } else {
                 assert_eq!(replies.poll_one(index, &mut peer, messages, &mut cx).unwrap(), ReplyProgress::Delivered);
                 assert_eq!(replies.poll_one(index, &mut peer, messages, &mut cx).unwrap(), ReplyProgress::Pending);
-                for i in 0..4 { assert!(peer.ledgers.imports.pending_release(i).is_none(), "delivered response retains capability receipts"); }
+                for i in 0..4 { assert!(peer.pending_import_release(i).is_none(), "delivered response retains capability receipts"); }
                 match mode {
                     0 | 6 => {
                         let Poll::Ready(Ok(response)) = Pin::new(receiver.as_mut().unwrap()).poll(&mut cx) else {panic!("reply future")};
                         response.with(messages, |reply| {
                             let owned::Reply::Results(payload) = reply else {panic!("result")};
                             let pointer = echo::Owned::CAPABILITY.read_results(payload.content()).unwrap().value().unwrap();
-                            assert!(matches!(payload.capability(pointer).unwrap(), capntproto_rpc_wire::reception::full::Capability::Remote(reference) if peer.ledgers.imports.wire_id(reference) == ImportId::from_wire(101)));
+                            assert!(matches!(payload.capability(pointer).unwrap(), capntproto_rpc_wire::reception::full::Capability::Remote(reference) if peer.ledgers().imports.wire_id(reference) == ImportId::from_wire(101)));
                         }).unwrap();
                         if mode == 6 {assert!(replies.cancel(index, &mut peer, messages).unwrap());}
                         else {assert_eq!(replies.poll_one(index, &mut peer, messages, &mut cx).unwrap(), ReplyProgress::Consumed);}
@@ -110,7 +111,7 @@ pub fn tracked_reply_delivery(mode: u8) {
                     _ => panic!("reply scenario"),
                 }
                 let mut released = 0;
-                for i in 0..4 { if let Some(release) = peer.ledgers.imports.pending_release(i) { assert_eq!(release.id(), ImportId::from_wire(101)); released += release.count(); } }
+                for i in 0..4 { if let Some(release) = peer.pending_import_release(i) { assert_eq!(release.id(), ImportId::from_wire(101)); released += release.count(); } }
                 assert_eq!(released, 1, "reclaimed response releases its exact capability grant");
             }
             assert!(replies.is_empty());
@@ -124,7 +125,7 @@ pub fn tracked_reply_delivery(mode: u8) {
             }
             assert!(reply.take_undelivered().is_none());
             let (_sender, _receiver) = reply.pair().unwrap();
-            peer.runtime.release(target);
+            peer.capabilities().release(target);
             assert_eq!(close(peer, messages, &mut queue), 0);
             let writers = core::array::from_fn::<_,6,_>(|_| messages.reserve(776).unwrap());
             for writer in writers {messages.discard(writer)}

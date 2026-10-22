@@ -46,6 +46,8 @@ pub struct FixedStorage<
     adopted: [questions::AdoptedSlot; ADOPTED],
     answers: [answers::Slot<Answer<'pool, 'id, A, CAPS>>; LEDGERS],
     nodes: [clients::Slot<binding::Route<'id, P, S, PATH>, P>; NODES],
+    listeners: [clients::ListenerSlot; 8],
+    subscriptions: [[clients::SubscriptionSlot; 4]; NODES],
     tasks: [dispatch::TaskSlot<Task<'pool, 'id, I, CAPS, PATH>>; SLOTS],
     import_bindings: [binding::ImportSlot<'id, 'id>; SLOTS],
     pipelines: [pipelines::Slot<'id, 'id, PATH>; SLOTS],
@@ -54,8 +56,8 @@ pub struct FixedStorage<
     loopbacks: [super::super::loopback::Slot<'id>; SLOTS],
     embargoes: [super::super::loopback::ReceiptSlot<'id>; SLOTS],
     exchanges: [ExchangeSlot<'pool, 'id, I, CAPS>; SLOTS],
-    tails: [TailSlot<'id>; SLOTS],
     invocation_pipelines: [InvocationPipelineSlot<'id, PATH>; SLOTS],
+    operations: [OperationSlot<'id>; SLOTS],
 }
 impl<
         'pool,
@@ -80,6 +82,8 @@ impl<
             adopted: [const { questions::AdoptedSlot::EMPTY }; ADOPTED],
             answers: [const { answers::Slot::EMPTY }; LEDGERS],
             nodes: [const { clients::Slot::EMPTY }; NODES],
+            listeners: [const { clients::ListenerSlot::EMPTY }; 8],
+            subscriptions: [const { [const { clients::SubscriptionSlot::EMPTY }; 4] }; NODES],
             tasks: [const { dispatch::TaskSlot::EMPTY }; SLOTS],
             import_bindings: [const { binding::ImportSlot::EMPTY }; SLOTS],
             pipelines: [const { pipelines::Slot::EMPTY }; SLOTS],
@@ -88,8 +92,8 @@ impl<
             loopbacks: [const { super::super::loopback::Slot::EMPTY }; SLOTS],
             embargoes: [const { super::super::loopback::ReceiptSlot::EMPTY }; SLOTS],
             exchanges: [const { ExchangeSlot::EMPTY }; SLOTS],
-            tails: [const { TailSlot::EMPTY }; SLOTS],
             invocation_pipelines: [const { InvocationPipelineSlot::EMPTY }; SLOTS],
+            operations: [const { OperationSlot::EMPTY }; SLOTS],
         }
     }
     pub fn bind<'s>(
@@ -130,6 +134,10 @@ impl<
         let connection = initialize(
             domain,
             connection::GraphStorage {
+                notifications: clients::NotificationStorage {
+                    listeners: &mut self.listeners,
+                    subscriptions: self.subscriptions.as_flattened_mut(),
+                },
                 imports: &mut self.imports,
                 exports: &mut self.exports,
                 questions: &mut self.questions,
@@ -150,8 +158,8 @@ impl<
                 loopbacks: &mut self.loopbacks,
                 embargoes: &mut self.embargoes,
                 exchanges: &mut self.exchanges,
-                tails: &mut self.tails,
                 invocation_pipelines: &mut self.invocation_pipelines,
+                operations: &mut self.operations,
             },
             peer,
         )
@@ -196,6 +204,7 @@ impl<
                 adopted,
                 initial,
                 maximum,
+                clients::NotificationGrowth::bounded(8, maximum.saturating_mul(4)),
             )
         })
     }

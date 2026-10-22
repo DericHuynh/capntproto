@@ -15,6 +15,7 @@ pub enum Error {
     Question(capntproto_rpc_engine::questions::Error),
     Descriptors(exports::DescriptorError),
     Capacity,
+    ObserversFull,
     NonemptyStorage,
     UnsupportedDescriptor,
     Missing,
@@ -275,8 +276,10 @@ impl<'pool, 'graph, const N: usize> Published<'pool, 'graph, N> {
 /// if the peer has meanwhile sent Finish and will receive a canceled Return.
 pub struct Results<'pool, 'graph, A, const N: usize> {
     pub producer: A,
+    pub(crate) queued: Option<capntproto_rpc_engine::clients::dispatch::TaskKey<'graph>>,
     pub(super) value: Option<core::result::Result<Published<'pool, 'graph, N>, capnp::ErrorKind>>,
     pub(crate) network_authority: Option<Client<'graph>>,
+    pub(crate) redirect: Option<capntproto_rpc_engine::questions::Local<'graph>>,
 }
 impl<'pool, 'graph, A, const N: usize> Results<'pool, 'graph, A, N> {
     pub(crate) fn is_pending(&self) -> bool {
@@ -285,8 +288,10 @@ impl<'pool, 'graph, A, const N: usize> Results<'pool, 'graph, A, N> {
     pub fn new(producer: A) -> Self {
         Self {
             producer,
+            queued: None,
             value: None,
             network_authority: None,
+            redirect: None,
         }
     }
     pub fn target<G: Capabilities<'graph>>(
@@ -305,7 +310,11 @@ impl<'pool, 'graph, A, const N: usize> Results<'pool, 'graph, A, N> {
         self,
         messages: &mut messages::Messages<'pool, '_, '_>,
         graph: &mut G,
+        release_question: impl FnOnce(capntproto_rpc_engine::questions::Local<'graph>),
     ) -> A {
+        if let Some(child) = self.redirect {
+            release_question(child);
+        }
         if let Some(Ok(published)) = self.value {
             published.release(messages, graph);
         }
@@ -358,20 +367,31 @@ pub fn complete<'pool, 'graph, 'a, A, const N: usize>(
 struct Waiter<'graph, 'a, const P: usize> {
     answer: answers::Pipeline<'a>,
     client: clients::Key<'graph>,
+    subscription: clients::Subscription<'graph>,
+    previous: Option<usize>,
+    next: Option<usize>,
     path: Buffer<u16, P>,
     length: usize,
 }
 pub struct Slot<'graph, 'a, const P: usize> {
     waiter: Option<Waiter<'graph, 'a, P>>,
+    ready: capntproto_rpc_engine::waiting::Slot,
 }
 impl<const P: usize> Slot<'_, '_, P> {
-    pub const EMPTY: Self = Self { waiter: None };
+    pub const EMPTY: Self = Self {
+        waiter: None,
+        ready: capntproto_rpc_engine::waiting::Slot::EMPTY,
+    };
 }
 
 pub struct Bindings<'slots, 'graph, 'a, const P: usize> {
     pub(crate) path_capacity: Capacity,
     slots: SlotStorage<'slots, Slot<'graph, 'a, P>>,
     live: usize,
+    listener: Option<clients::Listener<'graph>>,
+    registry: Option<answers::PipelineRegistry<'a>>,
+    ready: capntproto_rpc_engine::waiting::Waiting<3>,
+    ready_class: u8,
 }
 pub enum Progress<'graph> {
     Vacant,
@@ -384,14 +404,54 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
     /// This is not a Return observer: the child deliberately keeps its results
     /// on the peer, so ResultsSentElsewhere must not erase this original route.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn poll_redirect<A, Peer: Copy + Eq, S, G>(
+    pub(crate) fn poll_redirect<'pool, A, Peer: Copy + Eq, S, G, const N: usize>(
         &mut self,
         index: usize,
-        parent: answers::Key<'a>,
-        source: &capntproto_rpc_engine::questions::Local<'graph>,
         questions: &mut capntproto_rpc_engine::questions::Questions<'graph, '_>,
         graph: &mut G,
-        answers: &mut answers::Answers<'a, '_, A>,
+        answers: &mut answers::Answers<
+            'a,
+            '_,
+            super::answer::State<'pool, Results<'pool, 'graph, A, N>>,
+        >,
+        peer: Peer,
+    ) -> Result<Option<Progress<'graph>>, Error>
+    where
+        G: Capabilities<'graph, Owner = crate::clients::Route<'graph, Peer, S, P>, Peer = Peer>,
+    {
+        let result = self.poll_redirect_inner(index, questions, graph, answers, peer);
+        if result.is_err()
+            && self
+                .slots
+                .get(index)
+                .is_some_and(|slot| slot.waiter.is_some())
+        {
+            if let Err(Error::Graph(error)) = &result {
+                if let Some(requirement) = crate::resources::graph_wait(*error, graph) {
+                    self.ready
+                        .park(&mut self.slots, index, requirement, |slot| &mut slot.ready);
+                } else {
+                    self.ready
+                        .wake(&mut self.slots, index, |slot| &mut slot.ready);
+                }
+            } else {
+                self.ready
+                    .wake(&mut self.slots, index, |slot| &mut slot.ready);
+            }
+        }
+        result
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn poll_redirect_inner<'pool, A, Peer: Copy + Eq, S, G, const N: usize>(
+        &mut self,
+        index: usize,
+        questions: &mut capntproto_rpc_engine::questions::Questions<'graph, '_>,
+        graph: &mut G,
+        answers: &mut answers::Answers<
+            'a,
+            '_,
+            super::answer::State<'pool, Results<'pool, 'graph, A, N>>,
+        >,
         peer: Peer,
     ) -> Result<Option<Progress<'graph>>, Error>
     where
@@ -403,14 +463,13 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         let Some(waiter) = &slot.waiter else {
             return Ok(None);
         };
-        if waiter.answer.key() != parent {
+        let Some(source) = answers.pipelined(&waiter.answer).owner.redirect.as_ref() else {
             return Ok(None);
-        }
+        };
         let observed = match graph.retain_key(waiter.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
-                self.live -= 1;
-                answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                self.finish(index, answers, graph);
                 return Ok(Some(Progress::Abandoned));
             }
             Err(error) => return Err(Error::Graph(error)),
@@ -440,8 +499,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         graph.release(observed);
         match outcome {
             Ok(barrier) => {
-                self.live -= 1;
-                answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                self.finish(index, answers, graph);
                 Ok(Some(Progress::Resolved(barrier)))
             }
             Err(error) => {
@@ -450,30 +508,142 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
             }
         }
     }
+    pub(crate) fn resource_waiting(&self, index: usize) -> bool {
+        self.slots.get(index).is_some_and(|s| s.ready.is_parked())
+    }
+    pub(crate) fn available(&self) -> usize {
+        self.slots.maximum() - self.live
+    }
+    pub(crate) fn maximum(&self) -> usize {
+        self.slots.maximum()
+    }
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
     /// Occupancy follows observer ownership, independently of retained capacity.
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.live == 0
     }
-    /// Only used when a just-created, unexposed binding fails graph admission.
-    pub(crate) fn discard_unexposed<T>(
+    fn finish<T, G: Capabilities<'graph>>(
+        &mut self,
+        index: usize,
+        answers: &mut answers::Answers<'a, '_, T>,
+        graph: &mut G,
+    ) {
+        self.ready
+            .remove(&mut self.slots, index, |slot| &mut slot.ready);
+        let waiter = self.slots[index]
+            .waiter
+            .take()
+            .expect("live answer observer");
+        graph.unsubscribe(waiter.subscription);
+        if let Some(previous) = waiter.previous {
+            self.slots[previous].waiter.as_mut().unwrap().next = waiter.next;
+        }
+        if let Some(next) = waiter.next {
+            self.slots[next].waiter.as_mut().unwrap().previous = waiter.previous;
+        }
+        answers.unlink_pipeline_observer(
+            self.registry.as_ref().unwrap(),
+            waiter.answer.key(),
+            index,
+            waiter.next,
+        );
+        self.live -= 1;
+        answers.release_pipeline_deferred(waiter.answer);
+    }
+    pub(crate) fn has_ready<T, G: Capabilities<'graph>>(
+        &self,
+        answers: &answers::Answers<'a, '_, T>,
+        graph: &G,
+    ) -> bool {
+        self.ready.has_ready(
+            &self.slots,
+            |slot| &slot.ready,
+            |r| crate::resources::graph_ready(r, graph),
+        ) || (self.registry.is_some() && answers.has_pipeline_work())
+            || self
+                .listener
+                .as_ref()
+                .is_some_and(|listener| graph.has_events(listener))
+    }
+    pub(crate) fn next_ready<T, G: Capabilities<'graph>>(
+        &mut self,
+        answers: &mut answers::Answers<'a, '_, T>,
+        graph: &mut G,
+    ) -> Option<usize> {
+        // Rotate sources as well as owners. A stream of canceled clients or a
+        // capacity-blocked retry cannot starve a ready producer at budget 1.
+        for _ in 0..3 {
+            let class = self.ready_class;
+            self.ready_class = (class + 1) % 3;
+            match class {
+                0 => {
+                    if let Some(event) = self
+                        .listener
+                        .as_ref()
+                        .and_then(|listener| graph.next_event(listener))
+                    {
+                        if self
+                            .slots
+                            .get(event.owner)
+                            .and_then(|s| s.waiter.as_ref())
+                            .is_some_and(|waiter| waiter.subscription.key() == event.subscription)
+                        {
+                            self.ready
+                                .remove(&mut self.slots, event.owner, |slot| &mut slot.ready);
+                            return Some(event.owner);
+                        }
+                    }
+                }
+                1 => {
+                    if let Some(index) = self.ready.pop(
+                        &mut self.slots,
+                        |slot| &mut slot.ready,
+                        |r| crate::resources::graph_ready(r, graph),
+                    ) {
+                        return Some(index);
+                    }
+                }
+                _ => {
+                    if let Some((key, index)) = self
+                        .registry
+                        .as_ref()
+                        .and_then(|registry| answers.next_pipeline_work(registry))
+                    {
+                        let next = self.slots[index]
+                            .waiter
+                            .as_ref()
+                            .expect("ready answer observer")
+                            .next;
+                        answers.advance_pipeline_work(
+                            self.registry.as_ref().unwrap(),
+                            key,
+                            index,
+                            next,
+                        );
+                        self.ready
+                            .remove(&mut self.slots, index, |slot| &mut slot.ready);
+                        return Some(index);
+                    }
+                }
+            }
+        }
+        None
+    }
+    /// Roll back an unexposed binding before releasing its private graph client.
+    pub(crate) fn discard_unexposed<T, G: Capabilities<'graph>>(
         &mut self,
         key: clients::Key<'graph>,
         answers: &mut answers::Answers<'a, '_, T>,
+        graph: &mut G,
     ) {
-        let slot = self
-            .slots
-            .iter_mut()
-            .find(|slot| {
-                slot.waiter
-                    .as_ref()
-                    .is_some_and(|waiter| waiter.client == key)
-            })
-            .expect("unexposed pipeline observer");
-        self.live -= 1;
-        answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+        let index = graph
+            .exclusive_subscription_owner(self.listener.as_ref().expect("pipeline listener"), key)
+            .expect("unexposed live pipeline observer");
+        debug_assert_eq!(self.slots[index].waiter.as_ref().unwrap().client, key);
+        self.finish(index, answers, graph);
     }
     pub fn new(slots: &'slots mut [Slot<'graph, 'a, P>]) -> Result<Self, Error> {
         Self::from_storage(SlotStorage::borrowed(slots))
@@ -493,6 +663,10 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         Ok(Self {
             slots,
             live: 0,
+            listener: None,
+            registry: None,
+            ready: capntproto_rpc_engine::waiting::Waiting::<3>::EMPTY,
+            ready_class: 0,
             path_capacity,
         })
     }
@@ -503,14 +677,17 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         answer: &answers::Pipeline<'a>,
         path: pipeline::Path<'_>,
     ) -> Result<Client<'graph>, Error> {
+        if self.registry.is_none() {
+            self.registry = Some(answers.claim_pipeline_registry().map_err(Error::Answer)?);
+        }
         let fields = self
             .path_capacity
             .copy(path.fields())
             .ok_or(Error::Capacity)?;
-        let slot = self
+        let index = self
             .slots
-            .vacant_mut(|_, slot| slot.waiter.is_none(), || Slot::EMPTY)
-            .ok_or(Error::Capacity)?;
+            .vacant(|_, slot| slot.waiter.is_none(), || Slot::EMPTY)
+            .ok_or(Error::ObserversFull)?;
         let answer = answers.retain_pipeline(answer).map_err(Error::Answer)?;
         let client = match graph.promise(&mut None) {
             Ok(client) => client,
@@ -520,7 +697,35 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
             }
         };
 
-        slot.waiter = Some(Waiter {
+        let subscribed = (|| {
+            if self.listener.is_none() {
+                self.listener = Some(graph.listen()?);
+            }
+            graph.subscribe(
+                self.listener.as_ref().unwrap(),
+                client.key(),
+                index,
+                clients::Watch::Abandonment,
+            )
+        })();
+        let subscription = match subscribed {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                graph.release(client);
+                answers.release_pipeline_deferred(answer);
+                return Err(Error::Graph(error));
+            }
+        };
+        let next = answers
+            .link_pipeline_observer(self.registry.as_ref().unwrap(), answer.key(), index)
+            .expect("retained answer");
+        if let Some(next) = next {
+            self.slots[next].waiter.as_mut().unwrap().previous = Some(index);
+        }
+        self.slots[index].waiter = Some(Waiter {
+            subscription,
+            previous: None,
+            next,
             answer,
             client: client.key(),
             path: fields,
@@ -568,6 +773,46 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
             &mut G,
         ) -> Result<Option<Result<Client<'graph>, capnp::ErrorKind>>, Error>,
     ) -> Result<Progress<'graph>, Error> {
+        if index >= self.slots.len() {
+            return Err(Error::Capacity);
+        }
+        self.ready
+            .remove(&mut self.slots, index, |slot| &mut slot.ready);
+        let result = self.poll_one_inner(index, graph, answers, messages, broken, resolve);
+        if result.is_err() && self.slots[index].waiter.is_some() {
+            if let Err(Error::Graph(error)) = &result {
+                if let Some(requirement) = crate::resources::graph_wait(*error, graph) {
+                    self.ready
+                        .park(&mut self.slots, index, requirement, |slot| &mut slot.ready);
+                } else {
+                    self.ready
+                        .wake(&mut self.slots, index, |slot| &mut slot.ready);
+                }
+            } else {
+                self.ready
+                    .wake(&mut self.slots, index, |slot| &mut slot.ready);
+            }
+        }
+        result
+    }
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn poll_one_inner<'pool, A, const N: usize, G: Capabilities<'graph>>(
+        &mut self,
+        index: usize,
+        graph: &mut G,
+        answers: &mut answers::Answers<
+            'a,
+            '_,
+            super::answer::State<'pool, Results<'pool, 'graph, A, N>>,
+        >,
+        messages: &messages::Messages<'pool, '_, '_>,
+        broken: impl FnOnce(capnp::ErrorKind) -> G::Owner,
+        resolve: impl FnOnce(
+            &A,
+            pipeline::Path<'_>,
+            &mut G,
+        ) -> Result<Option<Result<Client<'graph>, capnp::ErrorKind>>, Error>,
+    ) -> Result<Progress<'graph>, Error> {
         let Some(slot) = self.slots.get_mut(index) else {
             return Err(Error::Capacity);
         };
@@ -577,8 +822,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         let observed = match graph.retain_key(waiter.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
-                self.live -= 1;
-                answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                self.finish(index, answers, graph);
                 return Ok(Progress::Abandoned);
             }
             Err(error) => return Err(Error::Graph(error)),
@@ -625,8 +869,7 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         graph.release(observed);
         match outcome {
             Ok(barrier) => {
-                self.live -= 1;
-                answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+                self.finish(index, answers, graph);
                 Ok(Progress::Resolved(barrier))
             }
             Err(error) => {
@@ -638,12 +881,21 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         }
     }
     /// Detach pending answer dependencies during terminal driver cleanup.
-    pub fn drain_one<T>(&mut self, answers: &mut answers::Answers<'a, '_, T>) -> bool {
-        let Some(slot) = self.slots.iter_mut().find(|s| s.waiter.is_some()) else {
+    pub fn drain_one<T, G: Capabilities<'graph>>(
+        &mut self,
+        answers: &mut answers::Answers<'a, '_, T>,
+        graph: &mut G,
+    ) -> bool {
+        let Some(index) = self.slots.iter().position(|s| s.waiter.is_some()) else {
+            if let Some(registry) = self.registry.take() {
+                answers.release_pipeline_registry(registry);
+            }
+            if let Some(listener) = self.listener.take() {
+                graph.close_listener(listener);
+            }
             return false;
         };
-        self.live -= 1;
-        answers.release_pipeline_deferred(slot.waiter.take().unwrap().answer);
+        self.finish(index, answers, graph);
         true
     }
 }

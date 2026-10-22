@@ -108,6 +108,7 @@ thread_local! {
 }
 
 struct Core {
+    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
     policy: Rc<dyn Policy>,
     debug_name: &'static str,
     root: Rc<dyn Policy>,
@@ -155,6 +156,7 @@ impl Membrane {
                 root,
                 by_inner: RefCell::new(HashMap::new()),
                 by_wrapper: RefCell::new(HashMap::new()),
+                metadata_changes: std::cell::OnceCell::new(),
                 revoked: RefCell::new(None),
                 revocation,
                 waiters: RefCell::new(crate::sender_queue::SenderQueue::new()),
@@ -239,6 +241,9 @@ impl Membrane {
             }
             let old = wrapper.inner.replace(crate::broken::new_cap(error.clone()));
             drop(old);
+        }
+        if let Some(source) = self.0.metadata_changes.get() {
+            source.notify();
         }
     }
     fn check(&self) -> capnp::Result<()> {
@@ -337,6 +342,7 @@ impl Membrane {
             ),
         };
         let wrapper = Rc::new(Wrapper {
+            metadata_changes: std::cell::OnceCell::new(),
             identity: key.0,
             inner: RefCell::new(inner),
             source: RefCell::new(source),
@@ -359,6 +365,7 @@ impl Membrane {
     }
 }
 struct Wrapper {
+    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
     identity: usize,
     inner: RefCell<Box<dyn ClientHook>>,
     // Keep the original cache key alive while a custom substitution is held.
@@ -393,6 +400,33 @@ impl Drop for Wrapper {
 }
 struct Hook(Rc<Wrapper>);
 impl ClientHook for Hook {
+    fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
+        Some(
+            self.0
+                .metadata_changes
+                .get_or_init(|| {
+                    let boundary = self
+                        .0
+                        .membrane
+                        .0
+                        .metadata_changes
+                        .get_or_init(|| {
+                            Rc::new(capnp::private::capability::MetadataChanges::default())
+                        })
+                        .clone();
+                    match self.0.inner().metadata_changes() {
+                        Some(inner) => {
+                            Rc::new(capnp::private::capability::MetadataChanges::combined(vec![
+                                boundary, inner,
+                            ]))
+                        }
+                        None => boundary,
+                    }
+                })
+                .clone(),
+        )
+    }
+
     fn get_failure(&self) -> Option<Error> {
         if !self.0.custom {
             if let Err(error) = self.0.membrane.check() {

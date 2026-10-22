@@ -688,18 +688,16 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         let outcome = runtime
             .prepare_call(&client, &mut call)
             .map(|pending| pending.accept());
+        if outcome.is_err() && observer {
+            bindings.discard_unexposed(key, answers, runtime);
+        }
         runtime.release(client);
         match outcome {
             Ok(task) => Ok(task),
-            Err(error) => {
-                if observer {
-                    bindings.discard_unexposed(key, answers);
-                }
-                Err(EnqueueRejected {
-                    error: EnqueueError::Dispatch(error),
-                    call: unwrap(call.expect("unaccepted request owner")),
-                })
-            }
+            Err(error) => Err(EnqueueRejected {
+                error: EnqueueError::Dispatch(error),
+                call: unwrap(call.expect("unaccepted request owner")),
+            }),
         }
     }
     #[allow(clippy::too_many_arguments)]

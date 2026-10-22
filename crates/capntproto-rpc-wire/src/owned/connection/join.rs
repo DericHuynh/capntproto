@@ -137,7 +137,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 )
                 .unwrap_or_else(|_| unreachable!("pending Join held through publication"));
             }
-            Ok(retired.map(|state| state.release(messages).release(messages, &mut self.runtime)))
+            Ok(retired.map(|state| {
+                state
+                    .release(messages)
+                    .release(messages, &mut self.runtime, |child| {
+                        self.ledgers.questions.release(child)
+                    })
+            }))
         })();
         match outcome {
             Ok(retired) => {
@@ -151,11 +157,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Err(error) => {
                 if let Some(client) = authority {
                     let key = client.key();
-                    self.runtime.release(client);
                     if observer {
-                        self.pipelines
-                            .discard_unexposed(key, &mut self.ledgers.answers);
+                        self.pipelines.discard_unexposed(
+                            key,
+                            &mut self.ledgers.answers,
+                            &mut self.runtime,
+                        );
                     }
+                    self.runtime.release(client);
                 }
                 Err(JoinRejected { error, join })
             }

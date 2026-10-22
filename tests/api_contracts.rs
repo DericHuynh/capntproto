@@ -12,7 +12,8 @@ mod rpc_reply;
 fn bounded_graph_domain_compile_contracts() {
     let prelude = "use capntproto_rpc_engine::{connection, clients, imports, exports, questions, answers, ids::{ImportId, WireId}};";
     let storage = "let mut is = [imports::Slot::<()>::EMPTY]; let mut es = [exports::Slot::EMPTY]; let mut qs = [questions::Slot::EMPTY]; let mut ans = [answers::Slot::<clients::Client<'_>>::EMPTY]; let mut nodes = [clients::Slot::<imports::Local<'_>, u8>::EMPTY];";
-    let bind = "domain.bind(connection::GraphStorage { imports: &mut is, exports: &mut es, questions: &mut qs, answers: &mut ans, clients: &mut nodes }).unwrap()";
+    let bind = "domain.bind(connection::GraphStorage {
+                notifications: capntproto_rpc_engine::clients::NotificationStorage::empty(), imports: &mut is, exports: &mut es, questions: &mut qs, answers: &mut ans, clients: &mut nodes }).unwrap()";
     let body = "let local = connection.ledgers.imports.admit(ImportId::from_wire(7), ()).unwrap(); let client = connection.clients.endpoint(local, clients::Location::Remote(1)).unwrap(); let mut batch = connection.ledgers.exports.batch(); let grant = batch.export(client).unwrap(); batch.commit(); let client = connection.ledgers.exports.release(grant.id(), 1).unwrap().unwrap(); connection.clients.release(client); let local = connection.clients.take_retired().unwrap(); connection.ledgers.imports.release(local);";
     let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ connection::with_domain(|domain| {{ {storage} let mut connection = {bind}; {body} }}); }}"), None)];
     cases.push(("bind-domain-only-once".into(), format!("{prelude} fn main() {{ connection::with_domain(|domain| {{ {storage} let connection = {bind}; drop(connection); let _again = {bind}; }}); }}"), Some("E0382")));
@@ -1589,7 +1590,8 @@ fn check_contracts(
 fn bounded_client_dispatch_compile_contracts() {
     let prelude = "use capntproto_rpc_engine::clients::{self, Client, Location, dispatch::{with_runtime, Storage, TaskSlot}};";
     let storage = "let mut clients = [const { clients::Slot::<u32,u8>::EMPTY }; 3]; let mut tasks = [TaskSlot::<u32>::EMPTY];";
-    let scope = "with_runtime(Storage { clients: &mut clients, tasks: &mut tasks }, |runtime|";
+    let scope = "with_runtime(Storage { notifications: capntproto_rpc_engine::clients::NotificationStorage::empty(),
+                clients: &mut clients, tasks: &mut tasks }, |runtime|";
     let setup = "let client = runtime.endpoint(7, Location::Local).unwrap(); let mut owner = Some(42); let offered = runtime.prepare_call(&client, &mut owner).unwrap();";
     let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {storage} {scope} {{ {setup} offered.accept(); let running = runtime.next_ready().unwrap().unwrap().accept(); assert_eq!(runtime.complete(running), 42); runtime.release(client); assert_eq!(runtime.take_retired(), Some(7)); assert!(runtime.is_empty()); }}).unwrap(); }}"), None)];
     for (name, code, error) in [
@@ -1640,4 +1642,18 @@ fn bounded_generated_server_compile_contracts() {
     check_contracts("bounded-generated-server-contracts", &format!("capnp = {{ package = \"capntproto-core\", path = {:?}, default-features = false }}\ncapntproto-rpc-engine = {{ path = {:?} }}\ncapntproto-rpc-wire = {{ path = {:?} }}\ncapntproto-portable-check = {{ path = {:?} }}\n", root().join("crates/capntproto-core"), root().join("crates/capntproto-rpc-engine"), root().join("crates/capntproto-rpc-wire"), root().join("verification/portable")), cases,
         "generated async server futures retain their service, borrowed parameters and fixed result buffer until completion or cancellation",
         "the connection separately owns capability receipts, publication, tail adoption and scheduling");
+}
+
+#[test]
+fn portable_driver_mutation_is_confined_to_notifying_transitions() {
+    let prelude = "use capntproto_rpc_wire::owned::connection::{Driver, Runtime}; use capntproto_rpc_engine::clients::{Capabilities, Client}; type D<'p,'id,'s> = Driver<'p,'id,'s,(),(),u8,u32,4,4>;";
+    let mut cases = vec![("positive".into(), format!("{prelude} fn use_scope<'p,'id,'s>(driver: &mut D<'p,'id,'s>, client: Client<'id>) {{ let retained = driver.capabilities().retain_key(client.key()).unwrap(); driver.capabilities().release(retained); driver.capabilities().release(client); let _ = driver.ledgers().questions.is_empty(); }} fn main() {{}}"), None)];
+    for field in ["runtime", "ledgers", "imports", "pipelines", "exported"] {
+        cases.push((format!("{field}-private"), format!("{prelude} fn wrong(driver: &mut D<'_,'_,'_>) {{ let _ = &mut driver.{field}; }} fn main() {{}}"), Some("E0616")));
+    }
+    cases.push(("scope-cannot-replace-runtime".into(), format!("{prelude} fn wrong<'p,'id,'s>(driver: &mut D<'p,'id,'s>) {{ let _: &mut Runtime<'p,'id,'s,(),u8,u32,4,4> = &mut driver.capabilities(); }} fn main() {{}}"), Some("E0308")));
+    cases.push(("inspection-is-read-only".into(), format!("{prelude} fn wrong<'p,'id,'s>(driver: &mut D<'p,'id,'s>, client: Client<'id>) {{ driver.runtime().release(client); }} fn main() {{}}"), Some("E0596")));
+    check_contracts("portable-driver-mutation-contracts", &format!("capntproto-rpc-engine = {{ path = {:?} }}\ncapntproto-rpc-wire = {{ path = {:?} }}\n", root().join("crates/capntproto-rpc-engine"), root().join("crates/capntproto-rpc-wire")), cases,
+        "driver-owned runtime and ledgers cannot be replaced; capability transitions and affine publication guards preserve readiness effects",
+        "callbacks must still complete or release the affine owners they receive");
 }

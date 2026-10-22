@@ -31,6 +31,7 @@ pub fn graph_connection() {
             let mut client_slots = [const { clients::Slot::<Endpoint<'_, u8, u32>, u8>::EMPTY }; 3];
             let mut connection = domain
                 .bind(connection::GraphStorage {
+                    notifications: capntproto_rpc_engine::clients::NotificationStorage::empty(),
                     imports: &mut imports_slots,
                     exports: &mut export_slots,
                     questions: &mut question_slots,
@@ -203,6 +204,7 @@ pub fn graph_resolution_retry() {
             let mut nodes = [const { clients::Slot::<Endpoint<'_, u8, u32>, u8>::EMPTY }; 3];
             let mut connection = domain
                 .bind(connection::GraphStorage {
+                    notifications: capntproto_rpc_engine::clients::NotificationStorage::empty(),
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,

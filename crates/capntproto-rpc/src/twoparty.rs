@@ -541,6 +541,13 @@ struct OutgoingStream {
     closed: futures::future::Shared<Promise<(), capnp::Error>>,
 }
 impl crate::OutgoingMessageStream for OutgoingStream {
+    fn reserve(&mut self) -> capnp::Result<()> {
+        self.sender.reserve()
+    }
+    fn cancel_reservation(&mut self) {
+        self.sender.cancel_reservation();
+    }
+
     fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), capnp::Error> {
         let drained = self.sender.terminate(result);
         let closed = self.closed.clone();
@@ -549,14 +556,14 @@ impl crate::OutgoingMessageStream for OutgoingStream {
             closed.await
         })
     }
-    fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+    fn publish_reserved(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
         #[cfg(unix)]
         let frame = {
             let mut frame = frame;
             drop(frame.take_fds());
             frame
         };
-        self.sender.send_buffered(QueuedMessage::Frame(frame))
+        self.sender.publish_reserved(QueuedMessage::Frame(frame))
     }
     fn poll_flush(
         &mut self,

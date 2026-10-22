@@ -600,8 +600,15 @@ impl<VatId: 'static> ConnectionState<VatId> {
 
         // We just received a copy of this import ID, so the remote refcount has gone up.
         import_client.borrow_mut().add_remote_ref()?;
-        if import_client.borrow().fd.is_none() {
-            import_client.borrow_mut().fd = fd;
+        if fd.is_some() && import_client.borrow().fd.is_none() {
+            let changed = {
+                let mut client = import_client.borrow_mut();
+                client.fd = fd;
+                client.metadata_changes.get().cloned()
+            };
+            if let Some(source) = changed {
+                source.notify();
+            }
         }
 
         let mut tmp = state.imports.borrow_mut();

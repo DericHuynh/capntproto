@@ -1,5 +1,6 @@
 //! Third-party Return races with authorization, cancellation and ID reuse.
 use super::{driver::with_owned_peer_storage, driver_invocation::close, ZERO};
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     ids::{AnswerId, QuestionId, WireId},
     messages, questions,
@@ -8,7 +9,7 @@ use capntproto_rpc_wire::{
     calls, network,
     owned::{
         connection::{AdoptionError, Error, NetworkRequest, Received},
-        controls, Frame, Reply,
+        Frame, Reply,
     },
     pipeline,
     rpc_capnp::{
@@ -66,7 +67,7 @@ pub fn owning_network_adoption(mode: u8) {
             let malformed = Frame::build(messages, 776, Default::default(), |b| network::third_party_answer(b, AnswerId::from_wire(ID), |token| token.set_capability_index(0))).unwrap();
             let rejected = peer.receive(malformed,messages,&mut [0;4], |_|panic!("metadata cap"), ||panic!("metadata cap")).err().unwrap();
             rejected.frame.release(messages);
-            assert!(peer.ledgers.questions.is_empty());
+            assert!(peer.ledgers().questions.is_empty());
             let frame = announcement(messages, ID);
             assert!(matches!(peer.receive(frame,messages,&mut [0;4], |_|panic!("adoption"), ||panic!("adoption")).unwrap_or_else(|r|panic!("{}",r.error)), Received::Network));
             // An occupied inline network job must reject before changing IDs.
@@ -123,17 +124,17 @@ pub fn owning_network_adoption(mode: u8) {
                     if mode==7 {Some(peer.pipeline(key,pipeline::Path::new(&[])).unwrap())} else {None}
                 };
                 if mode==6 {
-                    assert!(controls::finish_one(&mut peer.ledgers.questions,messages,&mut queue,776,Default::default()).is_err());
+                    assert!(peer.send_pending_finish(messages,&mut queue,776,Default::default()).is_err());
                     super::owning::exchange(messages,&mut queue,1).release(messages);
                 }
                 if matches!(mode,3|6) {
-                    assert!(controls::finish_one(&mut peer.ledgers.questions,messages,&mut queue,776,Default::default()).unwrap());
+                    assert!(peer.send_pending_finish(messages,&mut queue,776,Default::default()).unwrap());
                     let finish=super::owning::exchange(messages,&mut queue,1);
                     finish.with(messages,|root| {
                         let rpc_capnp::message::Finish(f)=root.which().unwrap() else {panic!("Finish")};
                         let f=f.unwrap(); assert_eq!(f.get_question_id(),ID);assert!(f.get_release_result_caps());
                     }).unwrap();finish.release(messages);
-                    assert!(peer.ledgers.questions.reserve_adoption(QuestionId::from_wire(ID)).is_err(),"early Finish cannot recycle adopted ID");
+                    assert!(peer.reserve_question_adoption(QuestionId::from_wire(ID)).is_err(),"early Finish cannot recycle adopted ID");
                 }
                 if !early_return {
                     let frame=result(messages);
@@ -142,7 +143,7 @@ pub fn owning_network_adoption(mode: u8) {
                 if let Some(observed)=observed {
                     assert_eq!(peer.take_response(key).err(),Some(Error::PendingResponse));
                     for i in 0..peer.outgoing_capacity() {peer.poll_outgoing(i,messages).unwrap();}
-                    peer.runtime.release(observed);
+                    peer.capabilities().release(observed);
                     while let Some(owner) = peer.drain_endpoint() { assert!(owner.is_none()); }
                 }
                 if denied {
@@ -156,7 +157,7 @@ pub fn owning_network_adoption(mode: u8) {
                     peer.release_response(response,messages);
                 }
                 if !matches!(mode,3|6) {
-                    assert!(controls::finish_one(&mut peer.ledgers.questions,messages,&mut queue,776,Default::default()).unwrap());
+                    assert!(peer.send_pending_finish(messages,&mut queue,776,Default::default()).unwrap());
                     let finish=super::owning::exchange(messages,&mut queue,1);
                     finish.with(messages,|root| {
                         let rpc_capnp::message::Finish(f)=root.which().unwrap() else {panic!("Finish")};
@@ -219,17 +220,17 @@ pub fn owning_adopted_capability(mode: u8) {
                 // The same API works when Return beats the rendezvous.
                 let client=peer.pipeline(key,pipeline::Path::new(&[])).unwrap();
                 for index in 0..peer.outgoing_capacity() {peer.poll_outgoing(index,messages).unwrap();}
-                assert!(matches!(peer.runtime.inspect(&client).unwrap(),clients::Destination::Endpoint {owner:binding::Route::Capability(binding::Endpoint::Imported(remote)), ..} if remote.id().to_wire()==77));
+                assert!(matches!(peer.runtime().inspect(&client).unwrap(),clients::Destination::Endpoint {owner:binding::Route::Capability(binding::Endpoint::Imported(remote)), ..} if remote.id().to_wire()==77));
                 let response=peer.take_response(key).unwrap();
                 response.with(messages,|r| {assert!(matches!(r,Reply::Results(_)));}).unwrap();
                 peer.release_response(response,messages);
-                peer.runtime.release(client);
+                peer.capabilities().release(client);
                 while let Some(owner)=peer.drain_endpoint(){assert!(owner.is_none());}
             } else {
                 if let Some(job)=job {peer.release_network(NetworkRequest::Adopt(job),messages);}
                 assert!(peer.drain_canceled_response(messages));
             }
-            assert!(controls::finish_one(&mut peer.ledgers.questions,messages,&mut queue,776,Default::default()).unwrap());
+            assert!(peer.send_pending_finish(messages,&mut queue,776,Default::default()).unwrap());
             let finish=super::owning::exchange(messages,&mut queue,1);
             finish.with(messages,|root| {
                 let rpc_capnp::message::Finish(f)=root.which().unwrap() else {panic!("Finish")};
@@ -237,7 +238,7 @@ pub fn owning_adopted_capability(mode: u8) {
             }).unwrap();finish.release(messages);
             let mut releases=0;
             for _ in 0..4 {
-                if controls::release_one(&mut peer.ledgers.imports,messages,&mut queue,776,Default::default()).unwrap().is_some() {
+                if peer.send_pending_release(messages,&mut queue,776,Default::default()).unwrap().is_some() {
                     releases+=1;
                     let release=super::owning::exchange(messages,&mut queue,1);
                     release.with(messages,|root| {
@@ -247,7 +248,7 @@ pub fn owning_adopted_capability(mode: u8) {
                 }
             }
             assert_eq!(releases,usize::from(mode!=2),"exactly one result grant cleanup owner");
-            assert!(peer.ledgers.questions.is_empty());
+            assert!(peer.ledgers().questions.is_empty());
             assert_eq!(close(peer,messages,&mut queue),0);
             let free:[_;6]=core::array::from_fn(|_|messages.reserve(776).unwrap());
             for writer in free{messages.discard(writer);}

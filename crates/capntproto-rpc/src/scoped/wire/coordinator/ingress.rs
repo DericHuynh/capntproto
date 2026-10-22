@@ -19,8 +19,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // Completion, endpoint retirement and newly enqueued work retain
             // their independent registered wakeups. Restarting the call scan
             // here would revisit every outstanding owner after every reply.
-            if self.driver.runtime.has_retired() {
-                self.driver.invalidate_maintenance();
+            if self.driver.runtime().has_retired() {
                 self.schedule.active |= WorkSet::MAINTENANCE;
             }
         } else {
@@ -48,9 +47,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         waker: &Waker,
     ) -> Poll<Result<Option<usize>, Box<Cause<R::Error, W::Error>>>> {
         loop {
-            if queue.is_empty() && self.output.is_clean() {
-                pump.output_frames = 0;
-            }
             // A Busy envelope is retried intact before reading another one.
             // Its original producer is returned only on non-Busy rejections.
             if pending.is_some() {
@@ -82,7 +78,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Ok(connection::PlainReceived::Delivered(index, message)) => {
                             reader.finish_frame();
                             pump.frames += 1;
-                            pump.output_frames += usize::from(!queue.is_empty());
+
                             pump.blocked = false;
                             self.delivered_plain(index, message, controls);
                             if pump.frames < self.options.budget.get().min(8)
@@ -121,7 +117,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Ok(event) => {
                         reader.finish_frame();
                         pump.frames += 1;
-                        pump.output_frames += usize::from(!queue.is_empty());
+
                         pump.blocked = false;
                         event
                     }
@@ -167,7 +163,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.driver.has_plain_pending_call();
                 let plain_call = was_idle
                     && plain_admission
-                    && self.driver.runtime.queued() == 0
+                    && self.driver.runtime().queued() == 0
                     && self.foreign.is_empty()
                     && self.commands.is_empty();
                 let retirement = was_idle
@@ -181,7 +177,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.calls.is_empty()
                     && self.foreign.is_empty()
                     && self.commands.is_empty()
-                    && self.driver.runtime.queued() == 0
+                    && self.driver.runtime().queued() == 0
                     && !self.driver.has_pending_call()
                     && self.hooks.inbox.queue.borrow().is_empty();
                 let mut context = ControlContext::new(self);
@@ -200,7 +196,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // control commands still invalidate through their wakers.
                     self.schedule.active = WorkSet::MAINTENANCE;
                     self.schedule.cursor = Lane::Maintenance;
-                    self.driver.invalidate_maintenance();
                 } else if plain_call
                     && preserves_application
                     && controls.preserves_idle(Activity::PlainCall)
@@ -254,8 +249,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.schedule.cursor = Lane::Calls;
                     }
                     self.schedule.active |= (WorkSet::CALLS) | (WorkSet::MAINTENANCE);
-                    self.calls.invalidate_scan();
-                    self.driver.invalidate_maintenance();
                 } else {
                     self.resume_at(Lane::Calls);
                 }
@@ -278,22 +271,19 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
-            // Batch replies to already-buffered input across the ordinary
-            // fairness yields. Both output and admitted-input counts bound the
-            // batch, so control-only traffic cannot indefinitely postpone it.
-            // Never wait for new input or hold output across pool pressure.
-            let defer_output = (pump.frames != 0 || pump.output_frames != 0 || !queue.is_empty())
-                && pump.output_frames < 32
-                && queue.len() < 32
-                && messages.can_reserve(
+            // Buffered input can continue within the ordinary frame budget.
+            // Output publication has no separate batching policy here.
+            let buffered_input = reader.has_buffered_next_frame();
+            let end_input_turn = !buffered_input
+                || pump.frames + 1 >= self.options.budget.get().min(8)
+                || !messages.can_reserve(
                     self.options
                         .input_bytes
                         .get()
                         .max(self.options.output_bytes.get()),
                 )
-                && reader.has_buffered_next_frame()
-                && self.policy.poll_ready(cx).is_ready();
-            match self.poll_io_work_batch(
+                || self.policy.poll_ready(cx).is_pending();
+            match self.poll_io_work_turn(
                 messages,
                 queue,
                 writer,
@@ -302,13 +292,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 controls,
                 cx,
                 waker,
-                defer_output,
+                end_input_turn,
             ) {
                 Err(error) => return Poll::Ready(Err(error)),
-                // A completed parent need not suspend before an already
-                // buffered child reply. The frame budget above and readiness
-                // gate below still bound and authorize the next admission.
-                Ok(true) if defer_output => (),
+                Ok(true) if buffered_input => (),
                 Ok(true) => return Poll::Pending,
                 Ok(false) => (),
             }
@@ -361,7 +348,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         .map_err(|error| Box::new(Cause::Protocol(wire_error(error))))?
                     {
                         reader.consume_buffered_frame();
-                        pump.output_frames += usize::from(!queue.is_empty());
+
                         self.delivered_plain(index, message, controls);
                         pump.frames += 1;
                         if pump.frames < self.options.budget.get().min(8)

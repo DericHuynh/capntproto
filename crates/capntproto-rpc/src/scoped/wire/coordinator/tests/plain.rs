@@ -1648,7 +1648,7 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                         coordinator.driver.defer_call_dispatch(false);
                         let event = coordinator
                             .driver
-                            .receive(frame, messages, &mut scratch, |_| (), server::Results::new)
+                            .receive(frame, messages, &mut scratch, |_| (), server::Producer::new)
                             .map_err(|e| e.error)
                             .unwrap();
                         assert!(matches!(event, connection::Received::Queued(_)));
@@ -1688,6 +1688,7 @@ fn plain_calls_preserve_control_wakes_fairness_and_output_backpressure() {
                         poll!();
                         received.extend(output.borrow_mut().bytes.drain(..));
                         if pending.is_none()
+                            && queue.is_empty()
                             && coordinator.schedule.active == WorkSet::NONE
                             && coordinator.output.is_clean()
                         {
@@ -1939,7 +1940,6 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
                         let before = polls.get();
                         if busy && method == 1 {
                             coordinator.schedule.active |= WorkSet::MAINTENANCE;
-                            coordinator.driver.invalidate_maintenance();
                         }
                         let mut pending = Some(
                             Frame::build(messages, 512, opts.reader, |builder| {

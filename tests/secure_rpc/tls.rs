@@ -214,3 +214,50 @@ async fn handshake_deadlines_release_stalled_sockets() {
         io::ErrorKind::UnexpectedEof
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_tls_wakes_only_one_of_32_parked_calls() {
+    use capnp_rpc::portable::RpcSystem;
+    local(async {
+        let pki = Pki::new();
+        let calls = SparseCalls::new();
+        let bootstrap = calls.bootstrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let config = pki.server(false);
+        let serving = tokio::task::spawn_local(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let stream = tls::accept(socket, config, TIMEOUT).await.unwrap();
+            RpcSystem::new(
+                Box::new(tls::network(stream, Side::Server, Default::default())),
+                Some(bootstrap),
+                portable_options(),
+            )
+            .unwrap()
+            .run()
+            .await
+        });
+        let stream = tls::connect(
+            address,
+            "localhost".try_into().unwrap(),
+            pki.client(false),
+            TIMEOUT,
+        )
+        .await
+        .unwrap();
+        let mut system = RpcSystem::new(
+            Box::new(tls::network(stream, Side::Client, Default::default())),
+            None,
+            portable_options(),
+        )
+        .unwrap();
+        let cap = system.bootstrap(Side::Server);
+        let close = system.get_disconnector();
+        let driving = tokio::task::spawn_local(system.run());
+        calls.exercise(cap).await;
+        close.await.unwrap();
+        driving.await.unwrap().unwrap();
+        serving.await.unwrap().unwrap();
+    })
+    .await;
+}

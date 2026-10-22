@@ -1,0 +1,16 @@
+{
+  "path": "/tmp/portable-architecture-replacements-20261022.tar.zst",
+  "format": "tar.zst",
+  "bytes": 801098925,
+  "sha256": "86b912ad603a78385685b737fe8ff204c0ca6a21f9a54b2f2b0df1373444bb49",
+  "inventory_sha256": "96e21f54a507c8e578cb8c5ac07695ea9eaca9b93effb277026acc2f8c49b8fa",
+  "verified_files": 42440,
+  "reconstructable_stage_binaries": 20,
+  "source_base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+  "frozen_final_binary_sha256": "5639eca2ef60182b48471fefa104360aa93ddebb51f5967f3dcba9c0b4d5d021",
+  "prior_archive_unchanged": true,
+  "controls": "secure53/step5 and secure49/cpp are preserved in earlier evidence; exact binary hashes appear in campaign scope.json files.",
+  "extraction": "tar --zstd -xf portable-architecture-replacements-20261022.tar.zst; gzip -dc secure54/bundle/turn1.gz > turn1; chmod +x turn1",
+  "workspace_link": "/workspace/capntproto/target/portable-architecture-replacements-20261022.tar.zst",
+  "storage_note": "The archive is in the host execution environment /tmp filesystem. The workspace alias resolves there; container-local /tmp is separate."
+}

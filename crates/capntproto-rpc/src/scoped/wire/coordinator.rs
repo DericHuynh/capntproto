@@ -27,7 +27,7 @@ mod pump;
 mod work;
 
 pub type Peer<'p, 'id, 's, I, P, const C: usize, const H: usize> =
-    Driver<'p, 'id, 's, I, server::Results, P, Rc<dyn ClientHook>, C, H>;
+    Driver<'p, 'id, 's, I, server::Producer, P, Rc<dyn ClientHook>, C, H>;
 
 /// Pool capacity and cooperative scheduling are caller policy. Input storage is
 /// the largest contiguous wire frame accepted by this connection, including its
@@ -68,8 +68,6 @@ impl<R: std::fmt::Debug, W: std::fmt::Debug> std::error::Error for RunError<R, W
 #[derive(Default)]
 struct Pump<'id> {
     frames: usize,
-    // Input admitted while output waits, retained across executor yields.
-    output_frames: usize,
     returned: Option<(capntproto_rpc_engine::questions::Key<'id>, Option<usize>)>,
     blocked: bool,
 }
@@ -93,8 +91,6 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     output_blocked: bool,
     calls_waiting_for_output: bool,
     delivered: bool,
-    cleanup_on_enqueue: bool,
-    cleanup_before_call: bool,
     notifications: Notifications,
     control_waker: Waker,
     worker_waker: Waker,
@@ -106,7 +102,6 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     idle: bool,
     control_idle: bool,
     direct_publication: bool,
-    coalescing_output: bool,
 }
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
@@ -158,8 +153,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             output_blocked: false,
             calls_waiting_for_output: false,
             delivered: false,
-            cleanup_on_enqueue: false,
-            cleanup_before_call: false,
             notifications,
             control_waker,
             worker_waker,
@@ -171,7 +164,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             idle: false,
             control_idle: false,
             direct_publication: false,
-            coalescing_output: false,
         })
     }
 
@@ -200,8 +192,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.options.reader,
             )
             .map_err(wire_error)?;
-        let hook = self.hooks.export_client(&mut self.driver.runtime, &client);
-        self.driver.runtime.release(client);
+        let hook = self
+            .hooks
+            .export_client(&mut self.driver.capabilities(), &client);
+        self.driver.capabilities().release(client);
         self.changed();
         hook
     }

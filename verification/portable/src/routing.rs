@@ -21,7 +21,8 @@ enum Work {
 pub fn bounded_dispatch_ordering(chunk: usize) -> Result<()> {
     let mut clients = [const { clients::Slot::EMPTY }; 3];
     let mut tasks = [const { dispatch::TaskSlot::EMPTY }; 4];
-    dispatch::with_runtime(dispatch::Storage { clients: &mut clients, tasks: &mut tasks }, |runtime| -> Result<()> {
+    dispatch::with_runtime(dispatch::Storage { notifications: capntproto_rpc_engine::clients::NotificationStorage::empty(),
+                clients: &mut clients, tasks: &mut tasks }, |runtime| -> Result<()> {
         let mut embargo_slots = [Slot::EMPTY];
         let mut embargoes = embargoes::Embargoes::new(BorrowedSparse::new(&mut embargo_slots)).ok().unwrap();
         let mut question_slots = [const { questions::Slot::EMPTY }; 3];

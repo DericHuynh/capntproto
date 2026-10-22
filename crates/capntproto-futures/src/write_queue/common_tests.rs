@@ -127,7 +127,11 @@ fn buffered_batches_preserve_output_and_notify_on_flush_drop_and_unwind() {
     observed.send_buffered(message()).unwrap();
     drop(observed);
     assert_eq!(count.0.load(Ordering::SeqCst), before + 1);
-    assert_eq!(sender.len(), 1, "dropping the observer retains accepted output");
+    assert_eq!(
+        sender.len(),
+        1,
+        "dropping the observer retains accepted output"
+    );
     assert!(driver.as_mut().poll(&mut cx).is_pending());
     assert_eq!(sender.len(), 0);
 
@@ -186,7 +190,10 @@ fn buffered_output_notifies_when_a_flush_waker_panics_during_observer_drop() {
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(observed))).is_err());
     assert_eq!(count.0.load(Ordering::SeqCst), 1);
     assert_eq!(sender.len(), 1);
-    assert!(sender.observe().is_some(), "observer ownership was released");
+    assert!(
+        sender.observe().is_some(),
+        "observer ownership was released"
+    );
     assert!(driver.as_mut().poll(&mut cx).is_pending());
     assert_eq!(sender.len(), 0, "accepted output still reaches its driver");
 }
@@ -395,4 +402,58 @@ fn contiguous_frame_io_failures_release_owners_and_fail_all_receipts() {
             assert!(sender.is_empty());
         }
     }
+}
+
+#[test]
+fn physical_reservation_survives_reentrant_driver_poll_and_shutdown() {
+    let (sender, driver) = write_queue(futures::io::sink());
+    let mut driver = Box::pin(driver);
+    let mut observed = sender.observe().unwrap();
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    observed.reserve().unwrap();
+    sender.send_detached(message());
+    let capacity = sender.shared.queue.lock().unwrap().messages.capacity();
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    assert_eq!(sender.len(), 1, "reentry cannot take a reserved deque");
+    assert_eq!(
+        sender.shared.queue.lock().unwrap().messages.capacity(),
+        capacity
+    );
+    observed.publish_reserved(message()).unwrap();
+    assert_eq!(sender.len(), 2);
+    assert!(driver.as_mut().poll(&mut cx).is_pending());
+    assert!(matches!(observed.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+    observed.reserve().unwrap();
+    let closed = sender.terminate(Ok(()));
+    assert!(
+        driver.as_mut().poll(&mut cx).is_pending(),
+        "shutdown waits for a live reservation"
+    );
+    observed.cancel_reservation();
+    assert!(matches!(driver.as_mut().poll(&mut cx), Poll::Ready(Ok(()))));
+    assert!(closed.now_or_never().unwrap().is_ok());
+    assert!(observed.reserve().is_err());
+}
+
+#[test]
+fn reservation_releases_on_clock_unwind_and_physical_failure() {
+    use std::sync::atomic::AtomicBool;
+    let fail = Arc::new(AtomicBool::new(true));
+    let clock = fail.clone();
+    let (sender, driver) = write_queue_with_clock(futures::io::sink(), move || {
+        assert!(!clock.swap(false, Ordering::SeqCst), "clock panic");
+        Duration::ZERO
+    });
+    let mut observed = sender.observe().unwrap();
+    observed.reserve().unwrap();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || observed.publish_reserved(message())
+    ))
+    .is_err());
+    assert_eq!(sender.shared.queue.lock().unwrap().reserved, 0);
+    assert!(sender.is_empty());
+    observed.reserve().unwrap();
+    drop(driver);
+    assert!(observed.publish_reserved(message()).is_err());
+    assert_eq!(sender.shared.queue.lock().unwrap().reserved, 0);
 }

@@ -1,11 +1,5 @@
 use super::*;
 
-/// Result of visiting consecutive idle phases without polling any owner.
-enum IdleWalk {
-    Active,
-    Complete,
-}
-
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
@@ -15,101 +9,72 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn maintenance_published_retirement(&self) -> bool {
         self.maintenance_published_retirement
     }
-    /// Check live ownership for an absence of immediately pollable maintenance.
-    /// This bounded check calls no application hooks and changes no scan cursor.
-    /// False requires normal polling; it does not necessarily mean work is ready.
-    pub fn maintenance_is_idle(&self) -> bool {
-        self.disconnected.is_none()
-            && self.call.is_none()
-            && self.resolution.is_none()
-            && self.pipelines.is_empty()
-            && self.outgoing_maintenance_is_idle()
-            && self.ledgers.exports.retirement_is_idle(8)
-            && !self.runtime.has_retired()
-            && self.ledgers.answers.reclamation_is_idle(8)
-            && !self.canceled_exchanges
-            && self.exported.is_empty()
-            && !self.ledgers.questions.has_pending_finish()
-            && !self.ledgers.imports.has_pending_release()
-            && self.runtime.queued() == 0
-            && self.barrier.is_none()
-            && self.echo.is_none()
-            && self.tails.len() <= 8
-            && self.tails.iter().all(|slot| !slot.is_occupied())
-            && self.invocation_pipelines.is_empty()
+    /// Read readiness from producer-owned queues. There is no retained idle
+    /// certificate: changes are visible on the next poll without invalidation.
+    pub fn maintenance_is_idle(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        queue: &messages::Queue<'pool, '_, impl Sized>,
+    ) -> bool {
+        self.disconnected.is_none() && self.ready_work(messages, queue) == 0
     }
-    /// Walk empty phases in order, without repeatedly dispatching on the
-    /// cursor. At most one complete cycle of the fixed phase table is visited.
-    /// Each proof is bounded independently of storage capacity. Stop before an
-    /// active phase: its operation consumes a budget step, and any following
-    /// proofs must observe the state after that operation's callbacks.
-    fn walk_idle_phases(&mut self) -> IdleWalk {
-        // These predicates call no application code. Keep the scan position
-        // local while skipping empty phases, then commit it once before the
-        // next owner poll. No empty phase needs a separate call or state write.
-        let mut phase = self.maintenance_phase;
-        let mut index = self.maintenance_index;
-        let mut remaining = self.scan_remaining;
-        macro_rules! phase {
-            ($phase:literal, $idle:expr) => {
-                if phase == $phase {
-                    if !$idle {
-                        return IdleWalk::Active;
-                    }
-                    let size = self.maintenance_sizes[$phase];
-                    let visited = (size - index).min(remaining);
-                    index += visited;
-                    if index == size {
-                        index = 0;
-                        phase = ($phase + 1) % self.maintenance_sizes.len();
-                    }
-                    remaining -= visited;
-                    if remaining == 0 {
-                        remaining = self.maintenance_total;
-                        return IdleWalk::Complete;
-                    }
-                }
-            };
+    fn ready_work(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        queue: &messages::Queue<'pool, '_, impl Sized>,
+    ) -> u32 {
+        let control = match self.runtime.ready_owner() {
+            Some(Task::Loopback(_) | Task::Echo(_)) => true,
+            Some(Task::ProvisionBarrier(_) | Task::VineBarrier(_)) => self.network.is_none(),
+            _ => false,
+        };
+        let ready = u32::from(self.call.is_some() || self.runtime.dispatch_is_pending())
+            | (u32::from(self.resolution.is_some()) << 1)
+            | (u32::from(
+                self.pipelines
+                    .has_ready(&self.ledgers.answers, &self.runtime),
+            ) << 2)
+            | (u32::from(!self.outgoing_maintenance_is_idle()) << 3)
+            | (u32::from(!self.ledgers.exports.retirement_is_idle()) << 4)
+            | (u32::from(self.runtime.has_retired()) << 5)
+            | (u32::from(!self.ledgers.answers.reclamation_is_idle()) << 6)
+            | (u32::from(!self.canceled_ready.is_empty()) << 7)
+            | (u32::from(self.exported.has_ready(
+                &self.runtime,
+                &self.ledgers.exports,
+                messages,
+                queue,
+            )) << 8)
+            | (u32::from(self.ledgers.questions.has_pending_finish()) << 9)
+            | (u32::from(self.ledgers.imports.has_pending_release()) << 10)
+            | (u32::from(self.ledgers.answers.has_queued_cancellations()) << 11)
+            | (u32::from(control) << 12)
+            | (u32::from(self.barrier.is_some()) << 13)
+            | (u32::from(self.echo.is_some()) << 14)
+            | (u32::from(!self.invocation_work_is_idle()) << 15);
+        self.filter_control_waits(ready, messages, queue)
+    }
+    fn select_work(
+        &mut self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        queue: &messages::Queue<'pool, '_, impl Sized>,
+    ) -> Option<u32> {
+        let ready = self.ready_work(messages, queue);
+        if ready == 0 {
+            return None;
         }
-        let outcome = (|| loop {
-            phase!(0, self.call.is_none());
-            phase!(1, self.resolution.is_none());
-            phase!(2, self.pipelines.is_empty());
-            phase!(3, self.outgoing_maintenance_is_idle());
-            phase!(4, self.ledgers.exports.retirement_is_idle(8));
-            phase!(5, !self.runtime.has_retired());
-            phase!(6, self.ledgers.answers.reclamation_is_idle(8));
-            phase!(7, !self.canceled_exchanges);
-            phase!(8, self.exported.is_empty());
-            phase!(9, !self.ledgers.questions.has_pending_finish());
-            phase!(10, !self.ledgers.imports.has_pending_release());
-            phase!(11, self.call.is_none() && self.runtime.queued() == 0);
-            phase!(12, self.runtime.queued() == 0);
-            phase!(13, self.barrier.is_none());
-            phase!(14, self.echo.is_none());
-            phase!(
-                15,
-                self.tails.len() <= 8 && self.tails.iter().all(|slot| !slot.is_occupied())
-            );
-            phase!(16, self.invocation_pipelines.is_empty());
-            phase!(17, self.runtime.queued() == 0);
-        })();
-        self.maintenance_phase = phase;
-        self.maintenance_index = index;
-        self.scan_remaining = remaining;
-        outcome
+        let following = ready & (u32::MAX << self.work_cursor);
+        let selected = if following != 0 { following } else { ready }.trailing_zeros();
+        self.work_cursor = (selected + 1) % 16;
+        Some(selected)
     }
-    /// Outgoing observers can only progress against an authorized Return.
-    /// Pending questions alone do not require a scan of every observer slot.
-    /// This uses the same prerequisite as poll_outgoing, reads live state on
-    /// every check, and keeps the ordinary scan for larger exchange tables.
     #[inline]
     pub(super) fn outgoing_maintenance_is_idle(&self) -> bool {
-        self.outgoing.is_empty()
-            || (self.exchanges.len() <= 8
-                && !self.exchanges.iter().any(|slot| {
-                    slot.authorized && matches!(&slot.exchange, Some(Exchange::Returned(_)))
-                }))
+        self.outgoing_ready.is_empty()
+            && !self.outgoing.has_events(&self.runtime)
+            && !self
+                .outgoing
+                .retry_ready(|r| self.available_resources().ready(r))
     }
     /// Poll caller-budgeted promise propagation, deferred admission, cleanup and
     /// cancellation. The cursor advances even on resource errors so one blocked
@@ -172,7 +137,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     }
     /// Combined maintenance for application pipelines and optional transport
     /// resources. Use this entry point when a producer supplies an early
-    /// pipeline: every maintenance scan then observes it before the final result.
+    /// pipeline: its owner notification is observed before the final result.
     /// The same caller task drives application futures, IO and these callbacks.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[inline(always)]
@@ -193,7 +158,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         resolve: &mut impl FnMut(
             &A,
             pipeline::Path<'_>,
-            &mut Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+            &mut Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH>,
         ) -> Result<
             Option<Result<clients::Client<'id>, capnp::ErrorKind>>,
             pipelines::Error,
@@ -214,10 +179,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Poll maintenance and subtract only visited work from a shared budget.
     /// A productive transition may stop before exhausting the allowance. The
     /// caller can spend the remainder on more ready work before flushing output.
-    /// Each owner poll costs one step, including a bounded walk over preceding
-    /// empty phases. A complete idle proof also costs one step. These walks
-    /// invoke no callbacks and retain the rotating cursor; retained vacant
-    /// capacity does not consume additional budget. Zero performs no work.
+    /// Each selected owner costs one step. Empty work classes consume no
+    /// steps and require no cursor walk; an entirely idle poll costs one step.
+    /// Selection rotates among ready classes, including on resource errors.
+    /// Zero performs no work. Callbacks may create new work in the same poll.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[inline(never)]
     pub fn poll_maintenance_budget_with<R: Default>(
@@ -237,7 +202,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         resolve: &mut impl FnMut(
             &A,
             pipeline::Path<'_>,
-            &mut Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+            &mut Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH>,
         ) -> Result<
             Option<Result<clients::Client<'id>, capnp::ErrorKind>>,
             pipelines::Error,
@@ -248,103 +213,38 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if *budget == 0 {
             return Ok(Progress::Yield);
         }
-        if self.maintenance_is_idle() {
-            *budget -= 1;
-            self.scan_remaining = self.maintenance_total;
-            return Ok(Progress::Idle);
-        }
-        // Storage growth preserves existing indices. Keep the current cursor so
-        // repeated admissions cannot starve later phases; invalidate only the
-        // idle certificate, which must include the newly admitted slots.
-        let changed = [
-            (2, self.pipelines.capacity().max(1)),
-            (3, self.outgoing.capacity().max(1)),
-            (4, self.ledgers.exports.capacity().max(1)),
-            (6, self.ledgers.answers.capacity().max(1)),
-            (8, self.exported.capacity().max(1)),
-            (10, 1),
-            (15, self.tails.len().max(1)),
-            (16, self.invocation_pipelines.len().max(1)),
-        ];
-        if changed
-            .iter()
-            .any(|&(phase, size)| self.maintenance_sizes[phase] != size)
-        {
-            let mut sizes = self.maintenance_sizes;
-            for (phase, size) in changed {
-                sizes[phase] = size;
-            }
-            let total = sizes
-                .iter()
-                .try_fold(0usize, |sum, size| sum.checked_add(*size))
-                .ok_or(Error::Input(super::super::Error::Capacity))?;
-            self.maintenance_sizes = sizes;
-            self.maintenance_total = total;
-            self.scan_remaining = total;
+        if self.control_minimum != minimum {
+            self.control_minimum = minimum;
+            self.control_waiting = 0;
+            self.control_waits = [None; 16];
         }
         let mut advanced = false;
-        let mut retired_burst = 0;
         while *budget != 0 {
-            match self.walk_idle_phases() {
-                IdleWalk::Active => {}
-                IdleWalk::Complete => {
-                    *budget -= 1;
-                    return Ok(if advanced {
-                        Progress::Advanced
-                    } else {
-                        Progress::Idle
-                    });
-                }
-            }
-            let phase = self.maintenance_phase;
-            let index = self.maintenance_index;
-            *budget -= 1;
-            self.maintenance_index += 1;
-            if self.maintenance_index == self.maintenance_sizes[phase] {
-                self.maintenance_index = 0;
-                self.maintenance_phase = if phase + 1 == self.maintenance_sizes.len() {
-                    0
+            let Some(work) = self.select_work(messages, queue) else {
+                *budget -= 1;
+                return Ok(if advanced {
+                    Progress::Advanced
                 } else {
-                    phase + 1
-                };
-            }
-            let result = self.maintenance_step(
-                phase, index, messages, queue, minimum, options, scratch, resources, attach,
-                resolve,
-            );
-            match result {
-                Ok(Some(Progress::Advanced)) if matches!(phase, 4 | 5) => {
-                    // Export/endpoint retirement publishes no frame and returns
-                    // no application owner. Complete its bounded reference-drop
-                    // cascade here, rather than rebuilding every application
-                    // lane between adjacent cleanup steps. Other progress,
-                    // including returned owners and output, still stops here.
+                    Progress::Idle
+                });
+            };
+            *budget -= 1;
+            self.control_waiting &= !(1 << work);
+            self.control_waits[work as usize] = None;
+            match self.maintenance_step(
+                work, messages, queue, minimum, options, scratch, resources, attach, resolve,
+            ) {
+                Ok(Some(Progress::Advanced)) if matches!(work, 4 | 5) => {
+                    // Continue reference-only retirement while charging each
+                    // owner. Selection still rotates past any other ready work.
                     advanced = true;
-                    self.scan_remaining = self.maintenance_total;
-                    if phase == 5 {
-                        retired_burst += 1;
-                        if retired_burst < 8 && *budget != 0 && self.runtime.has_retired() {
-                            self.maintenance_phase = 5;
-                            self.maintenance_index = 0;
-                        }
-                    }
                 }
-                Ok(None) => {
-                    self.scan_remaining -= 1;
-                    if self.scan_remaining == 0 {
-                        self.scan_remaining = self.maintenance_total;
-                        return Ok(if advanced {
-                            Progress::Advanced
-                        } else {
-                            Progress::Idle
-                        });
-                    }
-                }
+                Ok(None) => {}
+                Err(error) if self.park_control(work, error, messages, queue) => {}
                 outcome => {
-                    self.scan_remaining = self.maintenance_total;
                     self.maintenance_published_retirement =
-                        matches!(phase, 9 | 10) && outcome.is_ok();
-                    return outcome.map(|progress| progress.unwrap());
+                        matches!(work, 9 | 10) && outcome.is_ok();
+                    return outcome.map(|progress| progress.expect("productive work"));
                 }
             }
         }
@@ -354,11 +254,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Progress::Yield
         })
     }
+
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn maintenance_step<R: Default>(
         &mut self,
-        phase: usize,
-        index: usize,
+        work: u32,
         messages: &mut messages::Messages<'pool, '_, '_>,
         queue: &mut messages::Queue<'pool, '_, R>,
         minimum: usize,
@@ -373,38 +273,63 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         resolve: &mut impl FnMut(
             &A,
             pipeline::Path<'_>,
-            &mut Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+            &mut Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH>,
         ) -> Result<
             Option<Result<clients::Client<'id>, capnp::ErrorKind>>,
             pipelines::Error,
         >,
     ) -> Result<Option<Progress<I, A, S>>, Error> {
-        Ok(match phase {
-            0 => self.retry_call()?.map(|_| Progress::Advanced),
+        Ok(match work {
+            0 => {
+                if self
+                    .runtime
+                    .advance_dispatch_one()
+                    .map_err(Error::Dispatch)?
+                {
+                    Some(Progress::Advanced)
+                } else {
+                    self.retry_call()?.map(|_| Progress::Advanced)
+                }
+            }
             1 => self
                 .retry_resolution(messages)?
                 .then_some(Progress::Advanced),
-            2 if index < self.pipelines.capacity() => {
-                match self.poll_pipeline_with(index, messages, &mut *resolve)? {
-                    Propagation::Unrelated | Propagation::Pending => None,
-                    Propagation::Abandoned | Propagation::Resolved => Some(Progress::Advanced),
+            2 => {
+                let Some(index) = self
+                    .pipelines
+                    .next_ready(&mut self.ledgers.answers, &mut self.runtime)
+                else {
+                    return Ok(None);
+                };
+                match self.poll_pipeline_with(index, messages, &mut *resolve) {
+                    Err(_) if self.pipelines.resource_waiting(index) => None,
+                    Err(error) => return Err(error),
+                    Ok(Propagation::Unrelated | Propagation::Pending) => None,
+                    Ok(Propagation::Abandoned | Propagation::Resolved) => Some(Progress::Advanced),
                 }
             }
-            3 if index < self.outgoing.capacity() => match self.poll_outgoing(index, messages)? {
+            3 => match self.poll_next_outgoing(messages)? {
                 Propagation::Unrelated | Propagation::Pending => None,
                 Propagation::Abandoned | Propagation::Resolved => Some(Progress::Advanced),
             },
-            4 => self.drain_export(index).then_some(Progress::Advanced),
+            4 => self.drain_next_export().then_some(Progress::Advanced),
             5 => self
                 .drain_endpoint()
                 .map(|server| server.map_or(Progress::Advanced, Progress::Server)),
-            6 => self.drain_answer(index, messages).map(Progress::Producer),
+            6 => self.drain_next_answer(messages).map(Progress::Producer),
             7 => self
                 .drain_canceled_response(messages)
                 .then_some(Progress::Advanced),
-            8 if index < self.exported.capacity() => match self
-                .exported
-                .poll_one_using(
+            8 => {
+                let Some(index) = self.exported.next_ready(
+                    &mut self.runtime,
+                    &self.ledgers.exports,
+                    messages,
+                    queue,
+                ) else {
+                    return Ok(None);
+                };
+                match self.exported.poll_one_using(
                     index,
                     &mut self.runtime,
                     &mut self.ledgers.exports,
@@ -416,14 +341,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     resources(),
                     |owner, bundle| attach(owner, &self.ledgers.imports, bundle),
                     &self.descriptors,
-                )
-                .map_err(Error::Exported)?
-            {
-                binding::exporting::Progress::Vacant | binding::exporting::Progress::Pending => {
-                    None
+                ) {
+                    Err(_) if self.exported.resource_waiting(index) => None,
+                    Err(error) => return Err(Error::Exported(error)),
+                    Ok(
+                        binding::exporting::Progress::Vacant
+                        | binding::exporting::Progress::Pending,
+                    ) => None,
+                    Ok(_) => Some(Progress::Advanced),
                 }
-                _ => Some(Progress::Advanced),
-            },
+            }
             9 => controls::finish_one(
                 &mut self.ledgers.questions,
                 messages,
@@ -439,20 +366,26 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .map(Progress::Import)
             }
             11 => self.cancel_queued(messages, queue, minimum, options)?,
-            12 => self
-                .send_loopback(messages, queue, minimum, options)?
-                .then_some(Progress::Advanced),
+            12 => {
+                let network = matches!(
+                    self.runtime.ready_owner(),
+                    Some(Task::ProvisionBarrier(_) | Task::VineBarrier(_))
+                );
+                if network {
+                    self.poll_network()?
+                } else {
+                    self.send_loopback(messages, queue, minimum, options)?
+                }
+                .then_some(Progress::Advanced)
+            }
             13 => self.retry_barrier()?.then_some(Progress::Advanced),
             14 => self.retry_echo()?.then_some(Progress::Advanced),
-            15 => self.drain_tail(index).then_some(Progress::Advanced),
-            16 if index < self.invocation_pipelines.len() => {
-                match self.poll_invocation_pipeline(index)? {
-                    Propagation::Unrelated | Propagation::Pending => None,
-                    Propagation::Abandoned | Propagation::Resolved => Some(Progress::Advanced),
-                }
-            }
-            17 => self.poll_network()?.then_some(Progress::Advanced),
-            _ => None,
+
+            15 => match self.poll_next_invocation_pipeline()? {
+                Propagation::Unrelated | Propagation::Pending => None,
+                Propagation::Abandoned | Propagation::Resolved => Some(Progress::Advanced),
+            },
+            _ => unreachable!("selected ready work"),
         })
     }
 
@@ -463,30 +396,33 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         minimum: usize,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Progress<I, A, S>>, Error> {
-        let pending = self
-            .call
-            .as_ref()
-            .filter(|call| {
-                self.ledgers
-                    .answers
-                    .cancellation_requested(call.answer())
-                    .unwrap_or(false)
-            })
-            .map(|call| (call.answer(), None));
-        let queued = pending.or_else(|| {
-            (0..self.runtime.task_capacity()).find_map(|index| {
-                let (task, owner) = self.runtime.queued_at(index)?;
-                let call = owner.as_call()?;
-                self.ledgers
-                    .answers
-                    .cancellation_requested(call.answer())
-                    .unwrap_or(false)
-                    .then_some((call.answer(), Some(task)))
-            })
-        });
-        let Some((key, task)) = queued else {
+        let Some(key) = self.ledgers.answers.next_queued_cancellation() else {
             return Ok(None);
         };
+        let task = self
+            .ledgers
+            .answers
+            .get(key)
+            .expect("queued cancellation")
+            .owner
+            .queued;
+        let retained = self.call.as_ref().is_some_and(|call| call.answer() == key);
+        let queued = task.is_some_and(|task| {
+            self.runtime
+                .queued_owner(task)
+                .and_then(Task::as_call)
+                .is_some_and(|call| call.answer() == key)
+        });
+        if !retained && !queued {
+            // Bootstrap and externally owned producers have their own execution
+            // policy. Charge one notification without walking unrelated tasks.
+            self.ledgers
+                .answers
+                .acknowledge_queued_cancellation(key)
+                .expect("live queued cancellation");
+            return Ok(Some(Progress::Advanced));
+        }
+        let task = if queued { task } else { None };
         let output = queue
             .reserve()
             .map_err(|error| Error::Input(crate::owned::Error::Storage(error)))?;
@@ -508,9 +444,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         self.release_call(call, messages);
         Ok(Some(match retired {
-            Some(state) => {
-                Progress::Producer(state.release(messages).release(messages, &mut self.runtime))
-            }
+            Some(state) => Progress::Producer(state.release(messages).release(
+                messages,
+                &mut self.runtime,
+                |child| self.ledgers.questions.release(child),
+            )),
             None => Progress::Advanced,
         }))
     }

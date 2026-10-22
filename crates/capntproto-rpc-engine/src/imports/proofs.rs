@@ -99,6 +99,7 @@ fn import_receive_is_atomic() {
         }),
     }];
     let mut imports = Imports {
+        binding_revision: 0,
         release_head: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         release_tail: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         #[cfg(feature = "alloc")]
@@ -164,6 +165,7 @@ fn receipt_metadata_preserves_ownership() {
         }),
     }];
     let mut imports = Imports {
+        binding_revision: 0,
         release_head: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         release_tail: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         #[cfg(feature = "alloc")]

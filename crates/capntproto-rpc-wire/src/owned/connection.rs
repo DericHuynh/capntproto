@@ -9,6 +9,12 @@ use capntproto_rpc_engine::{
     storage::Storage as SlotStorage,
 };
 
+mod exchange_work;
+mod operations;
+mod resource_wait;
+use capntproto_rpc_engine::work_queue;
+pub use operations::{InvocationKey, OperationSlot};
+
 pub type Answer<'pool, 'id, A, const CAPS: usize> =
     answer::State<'pool, pipelines::Results<'pool, 'id, A, CAPS>>;
 pub type Request<'pool, 'id, I, const CAPS: usize, const PATH: usize> =
@@ -24,6 +30,10 @@ pub type Runtime<'pool, 'id, 's, I, P, S, const CAPS: usize, const PATH: usize> 
     Task<'pool, 'id, I, CAPS, PATH>,
 >;
 
+/// Restricted capability/dispatch access; the owning runtime cannot be replaced.
+pub type Scope<'borrow, 'pool, 'id, 's, I, P, S, const CAPS: usize, const PATH: usize> =
+    clients::Access<'borrow, Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>>;
+
 pub enum Task<'pool, 'id, I, const CAPS: usize, const PATH: usize> {
     Call(Request<'pool, 'id, I, CAPS, PATH>),
     Invoke(Invocation<'pool, 'id, CAPS>),
@@ -33,6 +43,12 @@ pub enum Task<'pool, 'id, I, const CAPS: usize, const PATH: usize> {
     VineBarrier(QueuedVineBarrier<'pool, 'id>),
 }
 impl<'pool, 'id, I, const CAPS: usize, const PATH: usize> Task<'pool, 'id, I, CAPS, PATH> {
+    pub fn invocation_key(&self) -> Option<InvocationKey<'id>> {
+        match self {
+            Self::Invoke(invocation) => Some(invocation.key()),
+            _ => None,
+        }
+    }
     pub fn as_call(&self) -> Option<&Request<'pool, 'id, I, CAPS, PATH>> {
         match self {
             Self::Call(call) => Some(call),
@@ -76,6 +92,10 @@ pub struct ExchangeSlot<'pool, 'id, I, const CAPS: usize> {
     exchange: Option<Exchange<'pool, 'id, I, CAPS>>,
     authorized: bool,
     completion_owner: Option<core::num::NonZeroUsize>,
+    outgoing_work: work_queue::Link,
+    canceled_work: work_queue::Link,
+    completion_work: work_queue::Link,
+    ordered: bool,
     canceled: bool,
     tail_taken: bool,
     retain_handoff_routes: bool,
@@ -86,6 +106,10 @@ impl<'pool, 'id, I, const CAPS: usize> ExchangeSlot<'pool, 'id, I, CAPS> {
         exchange: None,
         authorized: false,
         completion_owner: None,
+        outgoing_work: work_queue::Link::EMPTY,
+        canceled_work: work_queue::Link::EMPTY,
+        completion_work: work_queue::Link::EMPTY,
+        ordered: false,
         canceled: false,
         tail_taken: false,
         retain_handoff_routes: false,
@@ -132,8 +156,8 @@ pub struct Storage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> {
     pub loopbacks: &'s mut [super::loopback::Slot<'id>],
     pub embargoes: &'s mut [super::loopback::ReceiptSlot<'id>],
     pub exchanges: &'s mut [ExchangeSlot<'pool, 'id, I, CAPS>],
-    pub tails: &'s mut [TailSlot<'id>],
     pub invocation_pipelines: &'s mut [InvocationPipelineSlot<'id, PATH>],
+    pub operations: &'s mut [OperationSlot<'id>],
 }
 
 struct PreparedStorage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> {
@@ -149,8 +173,8 @@ struct PreparedStorage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> 
     loopbacks: SlotStorage<'s, super::loopback::Slot<'id>>,
     embargoes: SlotStorage<'s, super::loopback::ReceiptSlot<'id>>,
     exchanges: SlotStorage<'s, ExchangeSlot<'pool, 'id, I, CAPS>>,
-    tails: SlotStorage<'s, TailSlot<'id>>,
     invocation_pipelines: SlotStorage<'s, InvocationPipelineSlot<'id, PATH>>,
+    operations: SlotStorage<'s, OperationSlot<'id>>,
 }
 
 /// A connection retains every original question through its late Return, even
@@ -163,14 +187,17 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     owned_output: bool,
     // Conservative until the ordinary canceled-response scan proves absence.
     // Exchange capacity alone does not make pending questions pollable.
-    canceled_exchanges: bool,
+    outgoing_ready: work_queue::Queue,
+    outgoing_source: u8,
+    canceled_ready: work_queue::Queue,
+    completion_ready: work_queue::Queue,
+    ordered_propagation: usize,
     descriptors: crate::publication::descriptors::Descriptors<binding::Route<'id, P, S, PATH>>,
-    pub ledgers:
-        connection::Connection<'id, 's, I, clients::Client<'id>, Answer<'pool, 'id, A, CAPS>>,
-    pub runtime: Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
-    pub imports: binding::Imports<'s, 'id, 'id, P>,
-    pub pipelines: pipelines::Bindings<'s, 'id, 'id, PATH>,
-    pub exported: binding::exporting::Bindings<'s, 'id, 'id>,
+    ledgers: connection::Connection<'id, 's, I, clients::Client<'id>, Answer<'pool, 'id, A, CAPS>>,
+    runtime: Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+    imports: binding::Imports<'s, 'id, 'id, P>,
+    pipelines: pipelines::Bindings<'s, 'id, 'id, PATH>,
+    exported: binding::exporting::Bindings<'s, 'id, 'id>,
     outgoing: outgoing::Bindings<'s, 'id, P, PATH>,
     exchanges: SlotStorage<'s, ExchangeSlot<'pool, 'id, I, CAPS>>,
     call: Option<Request<'pool, 'id, I, CAPS, PATH>>,
@@ -180,15 +207,14 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     echo: Option<super::loopback::Echo<'id, PATH>>,
     network: Option<NetworkRequest<'pool, 'id, PATH>>,
     disconnected: Option<capnp::ErrorKind>,
-    tails: SlotStorage<'s, TailSlot<'id>>,
     invocation_pipelines: invocation_pipeline::Bindings<'s, 'id, PATH>,
+    operations: operations::Operations<'s, 'id>,
     message_capabilities: Capacity,
     message_path: Capacity,
-    maintenance_sizes: [usize; 18],
-    maintenance_total: usize,
-    maintenance_phase: usize,
-    maintenance_index: usize,
-    scan_remaining: usize,
+    work_cursor: u32,
+    control_waiting: u32,
+    control_waits: [Option<resource_wait::Blocked<'id>>; 16],
+    control_minimum: usize,
     maintenance_published_retirement: bool,
 }
 
@@ -211,6 +237,7 @@ pub enum Error {
     Enqueue(EnqueueError),
     Resolve(ApplyError),
     Busy,
+    BarrierFull,
     UnknownQuestion,
     PendingResponse,
     PendingAuthorization,
@@ -317,7 +344,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .exchanges
                 .iter()
                 .all(|slot| slot.exchange.is_none() && slot.handoff.is_none())
-            && self.tails.iter().all(|slot| !slot.is_occupied())
     }
     #[allow(clippy::type_complexity, clippy::result_large_err)]
     pub fn new(
@@ -356,8 +382,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 loopbacks: SlotStorage::borrowed(storage.loopbacks),
                 embargoes: SlotStorage::borrowed(storage.embargoes),
                 exchanges: SlotStorage::borrowed(storage.exchanges),
-                tails: SlotStorage::borrowed(storage.tails),
                 invocation_pipelines: SlotStorage::borrowed(storage.invocation_pipelines),
+                operations: SlotStorage::borrowed(storage.operations),
                 message_capabilities: Capacity::Inline,
                 message_path: Capacity::Inline,
             },
@@ -398,7 +424,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             return Err((Error::InsufficientControlStorage, connection));
         }
         if storage.exchanges.iter().any(|slot| slot.exchange.is_some())
-            || storage.tails.iter().any(|slot| slot.is_occupied())
             || storage
                 .invocation_pipelines
                 .iter()
@@ -406,33 +431,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         {
             return Err((Error::NonemptyStorage, connection));
         }
-        let maintenance_sizes = [
-            // The first fifteen phases retain their existing cursor order.
-            1,
-            1,
-            storage.pipelines.len().max(1),
-            storage.outgoing.len().max(1),
-            connection.ledgers.exports.capacity().max(1),
-            1,
-            connection.ledgers.answers.capacity().max(1),
-            1,
-            storage.exported.len().max(1),
-            1,
-            1, // The ready Release queue is independent of table capacity.
-            1,
-            1,
-            1,
-            1,
-            storage.tails.len().max(1),
-            storage.invocation_pipelines.len().max(1),
-            1,
-        ];
-        let Some(scan_remaining) = maintenance_sizes
-            .iter()
-            .try_fold(0usize, |total, size| total.checked_add(*size))
-        else {
-            return Err((Error::Input(super::Error::Capacity), connection));
-        };
         let exported = match binding::exporting::Bindings::from_storage(storage.exported) {
             Ok(value) => value,
             Err(error) => return Err((Error::Exported(error), connection)),
@@ -477,7 +475,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             allow_answer_handoff: false,
             defer_calls: false,
             owned_output: false,
-            canceled_exchanges: false,
+            outgoing_ready: work_queue::Queue::EMPTY,
+            outgoing_source: 0,
+            canceled_ready: work_queue::Queue::EMPTY,
+            completion_ready: work_queue::Queue::EMPTY,
+            ordered_propagation: 0,
             descriptors: Default::default(),
             ledgers: connection.ledgers,
             message_capabilities: storage.message_capabilities,
@@ -495,13 +497,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             echo: None,
             network: None,
             disconnected: None,
-            tails: storage.tails,
             invocation_pipelines: invocation_pipeline::Bindings::new(storage.invocation_pipelines),
-            maintenance_sizes,
-            maintenance_total: scan_remaining,
-            maintenance_phase: 0,
-            maintenance_index: 0,
-            scan_remaining,
+            operations: operations::Operations::new(storage.operations),
+            work_cursor: 0,
+            control_waiting: 0,
+            control_waits: [None; 16],
+            control_minimum: 0,
             maintenance_published_retirement: false,
         })
     }
@@ -660,6 +661,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             core::num::NonZeroUsize::new(owner.checked_add(1).ok_or(Error::Busy)?)
                 .ok_or(Error::Busy)?,
         );
+        self.refresh_exchange(key);
         Ok(())
     }
     /// An application must still validate its own slot against the full key.
@@ -683,7 +685,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if !slot.authorized {
             return Err(Error::PendingAuthorization);
         }
-        match slot.exchange.as_ref().unwrap() {
+        let result = match slot.exchange.as_ref().unwrap() {
             Exchange::Pending(question) => self.outgoing.bind(
                 question,
                 &mut self.ledgers.questions,
@@ -697,7 +699,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 path,
             ),
         }
-        .map_err(Error::Outgoing)
+        .map_err(Error::Outgoing);
+        self.refresh_exchange(key);
+        result
     }
 
     pub fn cancel(&mut self, key: questions::Key<'id>) -> Result<(), Error> {
@@ -713,7 +717,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             }
         }
         slot.canceled = true;
-        self.canceled_exchanges = true;
+        self.refresh_exchange(key);
         Ok(())
     }
 
@@ -750,6 +754,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let Some(Exchange::Returned(response)) = slot.exchange.take() else {
             unreachable!()
         };
+        self.clear_exchange_work(key);
         self.ledgers.questions.release_owner(key);
         Ok(response)
     }
@@ -769,31 +774,40 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn outgoing_capacity(&self) -> usize {
         self.outgoing.capacity()
     }
-    /// Invalidate a partial idle scan after external work changes. Preserve the
-    /// rotating cursor so repeated invalidation cannot starve later phases.
-    pub fn invalidate_maintenance(&mut self) {
-        self.scan_remaining = self.maintenance_total;
-    }
-
-    /// Without observers, no retained result can impose a propagation fence.
-    /// Check that small set before walking every outstanding exchange. When
-    /// observers exist, preserve the exact response/observer ownership test.
     fn has_ordered_propagation(&self) -> bool {
-        if self.outgoing.is_empty() && self.invocation_pipelines.is_empty() {
-            return false;
-        }
-        self.exchanges.iter().any(|slot| {
-            matches!(&slot.exchange, Some(Exchange::Returned(response))
-                if (response.requires_ordered_propagation() || slot.handoff.is_some())
-                    && (self.outgoing.pending_for(response.key(), &self.ledgers.questions)
-                        || self.invocation_pipelines.pending_for(response.key(), &self.ledgers.questions)))
-        })
+        self.ordered_propagation != 0
     }
 
     /// Poll one outgoing observer across the retained responses. Unrelated
     /// replies cannot settle it. Reflected routes retain their barrier inside
     /// the driver until ordered loopback output and its matching echo complete.
     pub fn poll_outgoing(
+        &mut self,
+        index: usize,
+        messages: &messages::Messages<'pool, '_, '_>,
+    ) -> Result<Propagation, Error> {
+        let question = self.outgoing.question(index);
+        self.outgoing.remove_wait(index);
+        let next = self.outgoing.next_observer(index);
+        let result = self.poll_outgoing_inner(index, messages);
+        if !matches!(result, Ok(Propagation::Unrelated)) {
+            if let Some(question) = question {
+                self.ledgers
+                    .questions
+                    .advance_observer_work(question, false, index, next);
+            }
+        }
+        if let Err(error) = result {
+            if let Some(requirement) = self.resource_wait(error) {
+                self.outgoing.park(index, requirement);
+            }
+        }
+        if let Some(question) = question {
+            self.refresh_exchange(question);
+        }
+        result
+    }
+    fn poll_outgoing_inner(
         &mut self,
         index: usize,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -891,7 +905,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         resolve: impl FnOnce(
             &A,
             pipeline::Path<'_>,
-            &mut Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+            &mut Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH>,
         ) -> Result<
             Option<Result<clients::Client<'id>, capnp::ErrorKind>>,
             pipelines::Error,
@@ -908,7 +922,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     &mut self.ledgers.answers,
                     messages,
                     binding::Route::broken,
-                    resolve,
+                    |owner, path, runtime| resolve(owner, path, &mut clients::Access::new(runtime)),
                 )
                 .map_err(Error::Pipeline)?
         };
@@ -1034,7 +1048,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .unwrap_or_else(|_| unreachable!("unaccepted Call"))
             },
         ) {
-            Ok(_) => Ok(Some(key)),
+            Ok(task) => {
+                self.ledgers
+                    .answers
+                    .get_mut(key)
+                    .expect("admitted queued answer")
+                    .owner
+                    .queued = Some(task);
+                Ok(Some(key))
+            }
             Err(rejected) => {
                 self.call = Some(rejected.call);
                 Err(Error::Enqueue(rejected.error))
@@ -1206,7 +1228,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         error: Error::Input(error),
                         frame,
                         producer: owner.map(|owner| {
-                            owner.release(messages).release(messages, &mut self.runtime)
+                            owner
+                                .release(messages)
+                                .release(messages, &mut self.runtime, |child| {
+                                    self.ledgers.questions.release(child)
+                                })
                         }),
                     })
                 }
@@ -1388,8 +1414,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 return Err(Rejected {
                     error: Error::Input(error),
                     frame,
-                    producer: call_owner
-                        .map(|owner| owner.release(messages).release(messages, &mut self.runtime)),
+                    producer: call_owner.map(|owner| {
+                        owner
+                            .release(messages)
+                            .release(messages, &mut self.runtime, |child| {
+                                self.ledgers.questions.release(child)
+                            })
+                    }),
                 })
             }
         };
@@ -1485,13 +1516,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                             }
                         }
                         slot.exchange = Some(Exchange::Returned(response));
+                        let owner = slot.completion_owner.map(|owner| owner.get() - 1);
+                        self.refresh_exchange(key);
                         if awaiting {
                             Ok(Received::Network)
                         } else {
-                            Ok(Received::Returned(
-                                key,
-                                slot.completion_owner.map(|owner| owner.get() - 1),
-                            ))
+                            Ok(Received::Returned(key, owner))
                         }
                     }
                     Err(rejected) => {
@@ -1632,12 +1662,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     Err(rejected) => Err(Rejected {
                         error: Error::Input(rejected.error),
                         frame: rejected.frame,
-                        producer: Some(
-                            rejected
-                                .owner
-                                .release(messages)
-                                .release(messages, &mut self.runtime),
-                        ),
+                        producer: Some(rejected.owner.release(messages).release(
+                            messages,
+                            &mut self.runtime,
+                            |child| self.ledgers.questions.release(child),
+                        )),
                     }),
                 }
             }
@@ -1699,12 +1728,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         return Err(Rejected {
                             error: Error::Input(rejected.error),
                             frame: rejected.frame,
-                            producer: Some(
-                                rejected
-                                    .owner
-                                    .release(messages)
-                                    .release(messages, &mut self.runtime),
-                            ),
+                            producer: Some(rejected.owner.release(messages).release(
+                                messages,
+                                &mut self.runtime,
+                                |child| self.ledgers.questions.release(child),
+                            )),
                         })
                     }
                 };
@@ -1739,12 +1767,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     Err(rejected) => Err(Rejected {
                         error: Error::Input(rejected.error),
                         frame: rejected.frame,
-                        producer: Some(
-                            rejected
-                                .owner
-                                .release(messages)
-                                .release(messages, &mut self.runtime),
-                        ),
+                        producer: Some(rejected.owner.release(messages).release(
+                            messages,
+                            &mut self.runtime,
+                            |child| self.ledgers.questions.release(child),
+                        )),
                     }),
                 }
             }
@@ -1877,9 +1904,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Ok(finished) => {
                 frame.release(messages);
                 Ok(Received::Finished(
-                    finished
-                        .and_then(|value| value.retired)
-                        .map(|state| state.release(messages).release(messages, &mut self.runtime)),
+                    finished.and_then(|value| value.retired).map(|state| {
+                        state
+                            .release(messages)
+                            .release(messages, &mut self.runtime, |child| {
+                                self.ledgers.questions.release(child)
+                            })
+                    }),
                 ))
             }
             Err(error) => Err(Rejected {
@@ -1895,6 +1926,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         response: Response<'pool, 'id, I, CAPS>,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) {
+        self.clear_exchange_work(response.key());
         self.ledgers.questions.release_owner(response.key());
         response.release(
             messages,
@@ -1921,16 +1953,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         &mut self,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> bool {
-        let mut canceled = false;
-        let slot = self.exchanges.iter_mut().find(|slot| {
-            let live = slot.canceled && slot.exchange.is_some();
-            canceled |= live;
-            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key(), &self.ledgers.questions) && !self.invocation_pipelines.pending_for(response.key(), &self.ledgers.questions))
-        });
-        let Some(slot) = slot else {
-            self.canceled_exchanges = canceled;
+        let Some(index) = self
+            .canceled_ready
+            .pop(&mut self.exchanges, |slot| &mut slot.canceled_work)
+        else {
             return false;
         };
+        let slot = &mut self.exchanges[index];
         slot.canceled = false;
         let Some(Exchange::Returned(response)) = slot.exchange.take() else {
             unreachable!()
@@ -1941,6 +1970,25 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         self.release_response(response, messages);
         true
+    }
+    pub fn drain_next_export(&mut self) -> bool {
+        let Some(client) = self.ledgers.exports.pop_retired() else {
+            return false;
+        };
+        self.runtime.release(client);
+        true
+    }
+    pub fn drain_next_answer(
+        &mut self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Option<A> {
+        self.ledgers.answers.pop_finished().map(|state| {
+            state
+                .release(messages)
+                .release(messages, &mut self.runtime, |child| {
+                    self.ledgers.questions.release(child)
+                })
+        })
     }
     pub fn drain_export(&mut self, index: usize) -> bool {
         let Some(client) = self.ledgers.exports.take_retired(index) else {
@@ -1959,10 +2007,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         index: usize,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> Option<A> {
-        self.ledgers
-            .answers
-            .take_finished(index)
-            .map(|state| state.release(messages).release(messages, &mut self.runtime))
+        self.ledgers.answers.take_finished(index).map(|state| {
+            state
+                .release(messages)
+                .release(messages, &mut self.runtime, |child| {
+                    self.ledgers.questions.release(child)
+                })
+        })
     }
     /// Record the first terminal transport/protocol error. No coordinator
     /// operation may publish or admit further work; existing owners remain
@@ -1996,9 +2047,8 @@ pub use vine_barrier::{QueuedVineBarrier, VineBarrier, VineRejected};
 mod maintenance;
 mod terminated;
 pub use terminated::{Terminating, Termination};
-mod tail;
-pub use tail::TailSlot;
 mod invocation;
+mod tail;
 pub use invocation::{EncodedCall, ImmediateParams, Invocation, InvocationParams, SentInvocation};
 #[cfg(feature = "alloc")]
 pub use invocation::{PreparedCall, PreparedCallTemplate};
@@ -2042,3 +2092,5 @@ pub use fixed::{FixedStorage, InitializeError};
 mod growing;
 #[cfg(feature = "alloc")]
 pub use growing::GrowingStorage;
+
+mod access;

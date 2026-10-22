@@ -31,11 +31,11 @@ pub(super) fn map_capabilities<'a, 'id, const CAPS: usize>(
 
 #[must_use = "complete or release the invocation through its originating graph and pool"]
 pub struct Invocation<'pool, 'id, const CAPS: usize> {
+    pub(super) key: InvocationKey<'id>,
     frame: Frame<'pool>,
     template: Option<PlainTemplate>,
     capabilities: Buffer<Option<clients::Client<'id>>, CAPS>,
     count: usize,
-    completion_owner: Option<core::num::NonZeroUsize>,
 }
 /// A local invocation's parameters retain their message and capability domain.
 /// The template's placeholder wire IDs are deliberately not exposed.
@@ -134,9 +134,10 @@ impl<'m, 'r, 'id, const CAPS: usize> InvocationParams<'m, 'r, 'id, CAPS> {
     }
 }
 impl<'pool, 'id, const CAPS: usize> Invocation<'pool, 'id, CAPS> {
-    pub fn completion_owner(&self) -> Option<usize> {
-        self.completion_owner.map(|owner| owner.get() - 1)
+    pub fn key(&self) -> InvocationKey<'id> {
+        self.key
     }
+
     pub(super) fn allows_pipeline(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -214,7 +215,7 @@ impl<'pool, 'id, const CAPS: usize> Invocation<'pool, 'id, CAPS> {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SentInvocation<'id> {
-    pub task: dispatch::TaskKey<'id>,
+    pub task: InvocationKey<'id>,
     pub question: questions::Key<'id>,
 }
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
@@ -234,7 +235,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         minimum: usize,
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(FixedStruct<'_, Params>) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, Error> {
+    ) -> Result<InvocationKey<'id>, Error> {
         let mapped = map_capabilities::<CAPS>(capabilities, self.message_capabilities)?;
         self.enqueue_encoded(
             target,
@@ -265,7 +266,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         minimum: usize,
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(FixedStruct<'_, Params>) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, Error> {
+    ) -> Result<InvocationKey<'id>, Error> {
         let mapped = map_capabilities::<CAPS>(capabilities, self.message_capabilities)?;
         self.enqueue_encoded(
             target,
@@ -292,7 +293,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         minimum: usize,
         options: capnp::message::ReaderOptions,
         encode: impl FnOnce(&mut capnp::message::FixedBuilder<'_>) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, Error> {
+    ) -> Result<InvocationKey<'id>, Error> {
         self.check_live()?;
         // Deferred input was already admitted before this application call.
         // Give it a dispatch position before admitting newer ordinary work.
@@ -308,6 +309,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .ok_or(Error::Input(super::super::Error::Capacity))?;
         let count = u32::try_from(capabilities.len())
             .map_err(|_| Error::Input(super::super::Error::Capacity))?;
+        let operation = self.operations.reserve()?;
         let frame = Frame::build(messages, minimum, options, encode).map_err(Error::Input)?;
         let validation = frame
             .with(messages, |root| -> capnp::Result<Option<PlainTemplate>> {
@@ -333,11 +335,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             }
         };
         let mut invocation = Invocation {
+            key: operation,
             frame,
             template,
             capabilities: retained,
             count: capabilities.len(),
-            completion_owner: None,
         };
         for (index, client) in capabilities.iter().enumerate() {
             let Some(client) = client else { continue };
@@ -355,7 +357,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .prepare_call(target, &mut owner)
             .map(|pending| pending.accept())
         {
-            Ok(key) => Ok(key),
+            Ok(key) => {
+                self.operations.insert(operation, key);
+                Ok(operation)
+            }
             Err(error) => {
                 let Some(Task::Invoke(invocation)) = owner else {
                     unreachable!()
@@ -381,7 +386,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, Error> {
+    ) -> Result<InvocationKey<'id>, Error> {
         self.enqueue_dynamic_to(
             target,
             method,
@@ -410,7 +415,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, Error> {
+    ) -> Result<InvocationKey<'id>, Error> {
         if let Some(destination) = destination {
             destination
                 .validate_capability_indices(0)
@@ -443,16 +448,17 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// when dispatch later assigns a wire question.
     pub fn bind_invocation_completion(
         &mut self,
-        task: dispatch::TaskKey<'id>,
+        task: InvocationKey<'id>,
         owner: usize,
     ) -> Result<(), Error> {
-        let Some(Task::Invoke(invocation)) = self.runtime.queued_owner_mut(task) else {
+        let operation = self.operations.get(task)?;
+        if operation.state != operations::State::Queued {
             return Err(Error::UnknownInvocation);
-        };
-        if invocation.completion_owner.is_some() {
+        }
+        if operation.completion_owner.is_some() {
             return Err(Error::Question(questions::Error::AlreadyOwned));
         }
-        invocation.completion_owner = Some(
+        self.operations.get_mut(task)?.completion_owner = Some(
             core::num::NonZeroUsize::new(owner.checked_add(1).ok_or(Error::Busy)?)
                 .ok_or(Error::Busy)?,
         );
@@ -462,22 +468,30 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Release because neither a question nor parameter grant was published.
     pub fn cancel_invocation(
         &mut self,
-        task: dispatch::TaskKey<'id>,
+        task: InvocationKey<'id>,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> bool {
-        if !(0..self.runtime.task_capacity()).any(|index| {
-            self.runtime
-                .queued_at(index)
-                .is_some_and(|(key, owner)| key == task && matches!(owner, Task::Invoke(_)))
-        }) {
+        let Ok(operation) = self.operations.get(task) else {
+            return false;
+        };
+        let dispatch = operation.task;
+        if !matches!(self.runtime.queued_owner(dispatch), Some(Task::Invoke(_))) {
             return false;
         }
-        let Task::Invoke(invocation) = self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())
+        let Task::Invoke(invocation) = self
+            .runtime
+            .cancel(dispatch)
+            .unwrap_or_else(|_| unreachable!())
         else {
             unreachable!()
         };
         invocation.release(messages, &mut self.runtime);
-        self.invocation_pipelines.canceled(task);
+        self.invocation_pipelines.canceled(task, &self.operations);
+        self.operations
+            .get_mut(task)
+            .expect("canceled operation")
+            .state = operations::State::Canceled;
+        self.operations.retire(task);
         true
     }
     /// Send the oldest ready task if it is an outgoing call to this peer. Local
@@ -553,7 +567,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         ) -> u8,
     ) -> Result<Option<SentInvocation<'id>>, Error> {
         self.check_live()?;
-        let Some(ready) = self.runtime.next_ready().map_err(Error::Dispatch)? else {
+        let Some(ready) = self.runtime.ready().map_err(Error::Dispatch)? else {
             return Ok(None);
         };
         let Task::Invoke(invocation) = ready.owner() else {
@@ -588,8 +602,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 (None, Some(question), source.len())
             }
         };
-        let task = ready.key();
-        let completion_owner = invocation.completion_owner;
+        let dispatch = ready.key();
+        let task = invocation.key;
+        let completion_owner = self.operations.get(task)?.completion_owner;
         let count = invocation.count;
         let template = invocation.template.filter(|_| import.is_some());
         if let Some(template) = template {
@@ -652,14 +667,25 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             slot.canceled = false;
             slot.tail_taken = false;
             slot.authorized = true;
-            self.invocation_pipelines
-                .sent(task, key, &mut self.ledgers.questions);
-            let Task::Invoke(invocation) =
-                self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())
+            self.invocation_pipelines.sent(
+                task,
+                key,
+                &mut self.ledgers.questions,
+                &mut self.operations,
+            );
+            let Task::Invoke(invocation) = self
+                .runtime
+                .cancel(dispatch)
+                .unwrap_or_else(|_| unreachable!())
             else {
                 unreachable!()
             };
             invocation.release(messages, &mut self.runtime);
+            self.operations
+                .get_mut(task)
+                .expect("published operation")
+                .state = operations::State::Sent(key);
+            self.operations.retire(task);
             return Ok(Some(SentInvocation {
                 task,
                 question: key,
@@ -762,13 +788,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     capnp::ErrorKind::MessageSizeOverflow,
                 )))?;
         }
-        let (_, owner) = (0..self.runtime.task_capacity())
-            .find_map(|index| {
-                self.runtime
-                    .queued_at(index)
-                    .filter(|(key, _)| *key == task)
-            })
-            .unwrap();
+        let owner = self.runtime.queued_owner(dispatch).unwrap();
         let Task::Invoke(invocation) = owner else {
             unreachable!()
         };
@@ -849,15 +869,27 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         slot.canceled = false;
         slot.tail_taken = false;
         slot.authorized = true;
-        self.invocation_pipelines
-            .sent(task, key, &mut self.ledgers.questions);
+        self.invocation_pipelines.sent(
+            task,
+            key,
+            &mut self.ledgers.questions,
+            &mut self.operations,
+        );
         // No callback or graph resolution occurs between selecting this task
         // and FIFO acceptance. Release its route only after output owns the Call.
-        let Task::Invoke(invocation) = self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())
+        let Task::Invoke(invocation) = self
+            .runtime
+            .cancel(dispatch)
+            .unwrap_or_else(|_| unreachable!())
         else {
             unreachable!()
         };
         invocation.release(messages, &mut self.runtime);
+        self.operations
+            .get_mut(task)
+            .expect("published operation")
+            .state = operations::State::Sent(key);
+        self.operations.retire(task);
         Ok(Some(SentInvocation {
             task,
             question: key,

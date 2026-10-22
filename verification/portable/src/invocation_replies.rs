@@ -8,6 +8,7 @@ use super::{
     },
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{clients, completion, messages};
 use capntproto_rpc_wire::{
     clients as binding,
@@ -29,11 +30,11 @@ pub fn queued_local_reply_bindings(mode: u8) {
         let mut queue = super::driver::message_queue(&mut slots).unwrap();
         with_owned_peer_tasks::<4, _>(|mut peer| {
             let service = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(41), clients::Location::Local)
                 .unwrap();
             let capability = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(43), clients::Location::Local)
                 .unwrap();
             let first_slot = completion::Slot::new();
@@ -160,7 +161,7 @@ pub fn queued_local_reply_bindings(mode: u8) {
                             },
                         )
                         .unwrap();
-                    independent.release(messages, &mut peer.runtime);
+                    independent.release(messages, &mut peer.capabilities());
                     assert!(matches!(future.as_mut().poll(&mut cx), Poll::Ready(Ok(83))));
                 }
                 if mode == 4 {
@@ -174,9 +175,9 @@ pub fn queued_local_reply_bindings(mode: u8) {
                         second_receiver.try_take(),
                         Err(completion::Error::Canceled)
                     ));
-                    peer.runtime.release(pending);
-                    peer.runtime.release(service);
-                    peer.runtime.release(capability);
+                    peer.capabilities().release(pending);
+                    peer.capabilities().release(service);
+                    peer.capabilities().release(capability);
                     assert_eq!(close(peer, messages, &mut queue), 84);
                     let writers =
                         core::array::from_fn::<_, 8, _>(|_| messages.reserve(776).unwrap());
@@ -227,7 +228,7 @@ pub fn queued_local_reply_bindings(mode: u8) {
                     rejected
                         .result
                         .unwrap()
-                        .release(messages, &mut peer.runtime);
+                        .release(messages, &mut peer.capabilities());
                     call = rejected.call;
                 }
                 let result = if mode == 3 {
@@ -282,6 +283,7 @@ pub fn queued_local_reply_bindings(mode: u8) {
                     );
                 }
             }
+            while peer.capabilities().advance_dispatch_one().unwrap() {}
             if mode == 3 || mode == 5 {
                 assert!(replies.accept_local(&mut peer).unwrap().is_none());
                 assert_eq!(
@@ -339,9 +341,9 @@ pub fn queued_local_reply_bindings(mode: u8) {
             );
             assert!(replies.is_empty());
             assert_eq!(replies.terminate(&mut peer, messages), 0);
-            peer.runtime.release(pending);
-            peer.runtime.release(service);
-            peer.runtime.release(capability);
+            peer.capabilities().release(pending);
+            peer.capabilities().release(service);
+            peer.capabilities().release(capability);
             assert_eq!(close(peer, messages, &mut queue), 84);
             let writers = core::array::from_fn::<_, 8, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {
@@ -409,7 +411,7 @@ pub fn queued_remote_reply_bindings(mode: u8) {
                             let CallOutput::Remote(response) = output else {panic!("remote output")};
                             response.with(messages, |reply| {let Reply::Results(payload) = reply else {panic!("result")};
                                 let pointer = echo::Owned::CAPABILITY.read_results(payload.content()).unwrap().value().unwrap();
-                                assert!(matches!(payload.capability(pointer).unwrap(), capntproto_rpc_wire::reception::full::Capability::Remote(reference) if peer.ledgers.imports.wire_id(reference) == ImportId::from_wire(101)));
+                                assert!(matches!(payload.capability(pointer).unwrap(), capntproto_rpc_wire::reception::full::Capability::Remote(reference) if peer.ledgers().imports.wire_id(reference) == ImportId::from_wire(101)));
                             }).unwrap();
                             peer.release_response(response, messages);
                             assert_eq!(replies.as_mut().unwrap().poll_one(0, &mut peer, messages, &mut cx).unwrap(), CallProgress::Consumed);
@@ -422,12 +424,12 @@ pub fn queued_remote_reply_bindings(mode: u8) {
                         _ => panic!("remote reply scenario"),
                     }
                     let mut released = 0;
-                    for i in 0..4 {if let Some(release) = peer.ledgers.imports.pending_release(i) {assert_eq!(release.id(), ImportId::from_wire(101)); released += release.count();}}
+                    for i in 0..4 {if let Some(release) = peer.pending_import_release(i) {assert_eq!(release.id(), ImportId::from_wire(101)); released += release.count();}}
                     assert_eq!(released, 1, "queued remote reply releases its capability grant exactly once");
                 }
                 if let Some(replies) = replies {assert!(replies.is_empty()); assert_eq!(replies.terminate(&mut peer, messages), 0);}
             }
-            peer.runtime.release(target); assert_eq!(close(peer, messages, &mut queue), 0);
+            peer.capabilities().release(target); assert_eq!(close(peer, messages, &mut queue), 0);
             let writers = core::array::from_fn::<_,8,_>(|_| messages.reserve(776).unwrap()); for writer in writers {messages.discard(writer);}
         });
     }).unwrap();

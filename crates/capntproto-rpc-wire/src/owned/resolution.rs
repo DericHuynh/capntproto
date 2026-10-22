@@ -119,10 +119,10 @@ impl<'pool, 'i, 'e, 'a, I> Resolution<'pool, 'i, 'e, 'a, I> {
                 Ok(barrier)
             }
             Err(error) => {
-                graph.release(replacement.expect("rejected resolution preserves replacement"));
                 if observer {
-                    pipelines.discard_unexposed(replacement_key, answers);
+                    pipelines.discard_unexposed(replacement_key, answers, graph);
                 }
+                graph.release(replacement.expect("rejected resolution preserves replacement"));
                 Err(ApplyRejected {
                     error: ApplyError::Graph(error),
                     resolution: self,

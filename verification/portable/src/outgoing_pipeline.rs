@@ -36,8 +36,14 @@ pub fn outgoing_question_pipeline(reflected: bool, cancel: bool) {
             let mut ans =
                 [answers::Slot::<answer::State<'_, pipelines::Results<'_, '_, (), 0>>>::EMPTY];
             let mut nodes = [const { clients::Slot::<Route<'_, u8, u32, 2>, u8>::EMPTY }; 5];
+            let mut listeners = [const { clients::ListenerSlot::EMPTY }; 4];
+            let mut subscriptions = [const { clients::SubscriptionSlot::EMPTY }; 20];
             let mut connection = domain
                 .bind(connection::GraphStorage {
+                    notifications: clients::NotificationStorage {
+                        listeners: &mut listeners,
+                        subscriptions: &mut subscriptions,
+                    },
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,
@@ -70,6 +76,12 @@ pub fn outgoing_question_pipeline(reflected: bool, cancel: bool) {
                 .bind(&question, questions, graph, Path::new(&[]))
                 .unwrap();
             assert_eq!(client.key(), alias.key());
+            let mut other_slots = [outgoing::Slot::<2>::EMPTY];
+            let mut other = outgoing::Bindings::new(&mut other_slots, 1).unwrap();
+            assert!(matches!(
+                other.bind(&question, questions, graph, Path::new(&[])),
+                Err(outgoing::Error::Question(questions::Error::AlreadyObserved))
+            ));
             graph.release(alias);
             // This independently exported original route must continue retaining
             // the peer answer even after the observed promise resolves elsewhere.

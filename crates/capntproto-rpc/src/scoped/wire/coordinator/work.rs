@@ -8,7 +8,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     /// lanes report Yield separately from true Pending, so mismatched scan sizes
     /// cannot continually wake one another on an otherwise idle connection.
     pub(super) fn changed(&mut self) {
-        self.worker.protocol_changed();
         self.progressed();
     }
     /// Local progress and plain Call admission can change routes and cleanup,
@@ -17,7 +16,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     pub(super) fn progressed(&mut self) {
         self.control_idle = false;
         self.schedule.active = WorkSet::FOREIGN | WorkSet::CALLS | WorkSet::MAINTENANCE;
-        if self.driver.runtime.queued() != 0 || self.driver.has_pending_call() {
+        if self.driver.runtime().queued() != 0 || self.driver.has_pending_call() {
             self.schedule.active |= WorkSet::ACCEPT;
         }
         if !self.worker.is_empty() {
@@ -26,9 +25,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         if !self.commands.is_empty() {
             self.schedule.active |= WorkSet::COMMANDS;
         }
-        self.calls.invalidate_scan();
-        self.foreign.invalidate_scan();
-        self.driver.invalidate_maintenance();
     }
     pub(super) fn resume_at(&mut self, lane: Lane) {
         // Once every lane has certified idle, start a new scan at the
@@ -88,35 +84,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     self.schedule.cursor = Lane::Calls;
                 }
                 self.schedule.active |= WorkSet::CALLS;
-                self.calls.invalidate_scan();
             } else {
                 // Coalesced application notifications still carry readiness
                 // in the worker queue. Protocol effects are committed by
                 // ingress and ControlContext, never inferred from a wake.
                 self.schedule.resume_at(Lane::Calls);
                 self.progressed();
-            }
-            if self.cleanup_on_enqueue
-                && self.calls.is_empty()
-                && !self.hooks.inbox.queue.borrow().is_empty()
-            {
-                // A completed capability-bearing call can release its final
-                // public owners before the application enqueues its successor.
-                // Give that cleanup one ordinary maintenance quantum before
-                // admission, as C++ does when those owners are destroyed.
-                // Consume the preference once: repeated wakes or a blocked
-                // cleanup must not keep resetting the rotating cursor.
-                self.cleanup_on_enqueue = false;
-                Self::collect_hooks(&mut self.hooks, &mut self.driver, output);
-                if self.driver.runtime.has_retired()
-                    || self.driver.ledgers.questions.has_pending_finish()
-                    || self.driver.ledgers.imports.has_pending_release()
-                {
-                    self.driver.invalidate_maintenance();
-                    self.schedule.active |= WorkSet::MAINTENANCE;
-                    self.schedule.cursor = Lane::Maintenance;
-                    self.cleanup_before_call = true;
-                }
             }
         }
         if !self
@@ -138,7 +111,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         // Certifying empty cleanup needs no lane adapters or scan state.
         if self.schedule.active == ((WorkSet::CALLS) | (WorkSet::MAINTENANCE))
             && *remaining > 0
-            && self.driver.maintenance_is_idle()
+            && self.driver.maintenance_is_idle(messages, queue)
         {
             self.schedule.active &= !(WorkSet::MAINTENANCE);
             *remaining -= 1;
@@ -183,8 +156,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // may retire graph owners; those alone need cleanup now.
                     // Application/resource notifications already prevent this
                     // branch through WorkWake's changed check above.
-                    if self.driver.runtime.has_retired() {
-                        self.driver.invalidate_maintenance();
+                    if self.driver.runtime().has_retired() {
                         self.schedule.active = WorkSet::MAINTENANCE;
                     } else {
                         self.schedule.active = WorkSet::NONE;
@@ -194,8 +166,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Poll::Ready(Ok(Progress::Idle)) | Poll::Pending => {
                     self.calls_waiting_for_output |= !queue.is_empty() || !self.output.is_clean();
                     self.schedule.active = WorkSet::NONE;
-                    if self.driver.runtime.has_retired() {
-                        self.driver.invalidate_maintenance();
+                    if self.driver.runtime().has_retired() {
                         self.schedule.active = WorkSet::MAINTENANCE;
                     }
                     Poll::Pending
@@ -207,7 +178,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Poll::Ready(Ok(progress)) => {
                     self.progressed();
                     self.delivered |= progress == Progress::Completed;
-                    self.cleanup_on_enqueue |= progress == Progress::Completed;
                     Poll::Ready(Ok(()))
                 }
             };
@@ -218,7 +188,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         if self.schedule.active == ((WorkSet::ACCEPT) | (WorkSet::WORKER)) && *remaining > 1 {
             *remaining -= 1;
             if self.worker.accept(&mut self.driver)?
-                && self.driver.runtime.queued() == 0
+                && self.driver.runtime().queued() == 0
                 && !self.driver.has_pending_call()
                 && self.notifications.pending() == WorkSet::NONE
             {
@@ -247,8 +217,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 output,
                 NonZeroUsize::new(quantum).unwrap(),
             );
-            if self.driver.runtime.has_retired() {
-                self.driver.invalidate_maintenance();
+            if self.driver.runtime().has_retired() {
                 self.schedule.active |= WorkSet::MAINTENANCE;
             }
             return match result {
@@ -259,17 +228,16 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         && self.schedule.active & (WorkSet::CALLS) == WorkSet::NONE
                         && self.foreign.is_empty()
                         && self.commands.is_empty()
-                        && self.driver.runtime.queued() == 0
+                        && self.driver.runtime().queued() == 0
                         && !self.driver.has_pending_call()
                         && self.hooks.inbox.queue.borrow().is_empty()
                         && self.notifications.pending() == WorkSet::NONE =>
                 {
                     self.direct_publication = self.worker.completed_plain();
                     self.control_idle = false;
-                    self.schedule.active = if self.driver.runtime.has_retired()
-                        || !self.driver.maintenance_is_idle()
+                    self.schedule.active = if self.driver.runtime().has_retired()
+                        || !self.driver.maintenance_is_idle(messages, queue)
                     {
-                        self.driver.invalidate_maintenance();
                         WorkSet::MAINTENANCE
                     } else {
                         WorkSet::NONE
@@ -307,7 +275,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     ) -> Poll<capnp::Result<()>> {
         let mut application_cx = Context::from_waker(waker);
         let mut advanced = false;
-        let queued = queue.len();
         let mut completed = false;
         while *remaining > 0 && self.schedule.active != WorkSet::NONE {
             let index = self.schedule.next().expect("active work");
@@ -317,7 +284,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             let empty = match index {
                 Lane::Foreign => self.foreign.is_empty(),
                 Lane::Accept => {
-                    self.driver.runtime.queued() == 0 && !self.driver.has_pending_call()
+                    self.driver.runtime().queued() == 0 && !self.driver.has_pending_call()
                 }
                 // Admission and publication share this lane. A fresh request
                 // in the hook inbox needs the same quantum as an admitted
@@ -325,7 +292,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // just to publish its already-ready frame.
                 Lane::Calls => self.hooks.inbox.queue.borrow().is_empty() && self.calls.is_empty(),
                 Lane::Worker => self.worker.is_empty(),
-                Lane::Maintenance => self.driver.maintenance_is_idle(),
+                Lane::Maintenance => self.driver.maintenance_is_idle(messages, queue),
                 Lane::Commands => self.commands.is_empty(),
             };
             // A queued outgoing call's admission refreshes all hooks before
@@ -340,9 +307,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // wake remains registered before certifying its queue idle.
                 if index == Lane::Calls {
                     self.hooks.register_next(waker);
-                }
-                if index == Lane::Maintenance {
-                    self.cleanup_before_call = false;
                 }
                 *remaining -= 1;
                 self.schedule.active &= !(index.work());
@@ -372,7 +336,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // Each lane publishes at most one frame per successful step. Reserve
             // FIFO capacity before polling a publishing lane. A full live queue
             // sleeps on IO, while a zero-capacity queue is a configuration error.
-            let writable = if index.publishes() && !empty {
+            let writable = if index.publishes() && index != Lane::Maintenance && !empty {
                 let queued = !queue.is_empty();
                 match queue.ensure_capacity() {
                     Ok(()) => true,
@@ -395,7 +359,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Self::collect_hooks(&mut self.hooks, &mut self.driver, output);
                         match self.foreign.poll(
                             &mut self.hooks,
-                            &mut self.driver.runtime,
+                            &mut self.driver.capabilities(),
                             &mut application_cx,
                             quantum,
                         ) {
@@ -425,7 +389,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Poll::Ready(Ok(Progress::Completed)) => {
                             completed = true;
                             self.delivered = true;
-                            self.cleanup_on_enqueue = true;
                             Poll::Ready(Ok(()))
                         }
                         Poll::Ready(Ok(Progress::Published { plain })) => {
@@ -456,8 +419,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         }
                     },
                     Lane::Maintenance => {
-                        let before_call = std::mem::take(&mut self.cleanup_before_call);
-                        let before_cleanup = queue.len();
                         let mut unused = quantum.get();
                         let result = self.driver.poll_maintenance_budget_with(
                             messages,
@@ -481,18 +442,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         );
                         *remaining += unused;
                         published_retirement = self.driver.maintenance_published_retirement();
-                        if before_call
-                            && queue.len() > before_cleanup
-                            && self.driver.ledgers.imports.has_pending_release()
-                        {
-                            // A Finish can leave its already-ready Release
-                            // behind. Allow one further ordinary quantum before
-                            // the next Call, so the peer can reclaim the old
-                            // capability before allocating its replacement.
-                            // The preference was consumed above; busy cleanup
-                            // cannot repeatedly reset the rotating cursor.
-                            self.schedule.cursor = Lane::Maintenance;
-                        }
                         match result {
                             Ok(connection::Progress::Idle) => Poll::Pending,
                             Ok(connection::Progress::Yield) => continue,
@@ -512,15 +461,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // its application lane reports Pending. Maintenance may already
             // have certified idle earlier in this rotation; reactivate it so
             // Release/Finish and provision cleanup do not wait for unrelated IO.
-            if self.driver.runtime.has_retired() {
-                self.driver.invalidate_maintenance();
+            if self.driver.runtime().has_retired() {
                 self.schedule.active |= WorkSet::MAINTENANCE;
             }
             if let Poll::Ready(result) = outcome {
                 result?;
                 if index == Lane::Accept
                     && self.schedule.active == ((WorkSet::ACCEPT) | (WorkSet::WORKER))
-                    && self.driver.runtime.queued() == 0
+                    && self.driver.runtime().queued() == 0
                     && !self.driver.has_pending_call()
                     && self.notifications.pending() == WorkSet::NONE
                 {
@@ -537,7 +485,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.schedule.active & (WorkSet::CALLS) == WorkSet::NONE
                     && self.foreign.is_empty()
                     && self.commands.is_empty()
-                    && self.driver.runtime.queued() == 0
+                    && self.driver.runtime().queued() == 0
                     && !self.driver.has_pending_call()
                     && self.hooks.inbox.queue.borrow().is_empty()
                     && self.notifications.pending() == WorkSet::NONE
@@ -550,10 +498,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // Reentrant callbacks and independent wakes use WorkWake.
                     self.direct_publication = self.worker.completed_plain();
                     self.control_idle = false;
-                    self.schedule.active = if self.driver.runtime.has_retired()
-                        || !self.driver.maintenance_is_idle()
+                    self.schedule.active = if self.driver.runtime().has_retired()
+                        || !self.driver.maintenance_is_idle(messages, queue)
                     {
-                        self.driver.invalidate_maintenance();
                         WorkSet::MAINTENANCE
                     } else {
                         WorkSet::NONE
@@ -574,7 +521,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // Preserve those lanes' idle scans while restarting the
                     // question/cleanup scan that publication actually changed.
                     self.control_idle = false;
-                    self.driver.invalidate_maintenance();
                     self.schedule.active |= WorkSet::MAINTENANCE;
                     self.schedule.active &= !(WorkSet::CALLS);
                     if self.foreign.is_empty() {
@@ -584,7 +530,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.foreign.is_empty()
                     && self.worker.is_empty()
                     && self.commands.is_empty()
-                    && self.driver.runtime.queued() == 0
+                    && self.driver.runtime().queued() == 0
                     && !self.driver.has_pending_call()
                     && self.notifications.pending() == WorkSet::NONE
                 {
@@ -595,21 +541,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // ordinary lanes; controls observe every publication.
                     self.control_idle = false;
                     self.schedule.active |= (WorkSet::CALLS) | (WorkSet::MAINTENANCE);
-                    self.calls.invalidate_scan();
                 } else {
                     self.progressed();
                 }
                 advanced = true;
-                // Publish promptly and give a completed application's waker a
-                // chance to run before scanning unrelated maintenance lanes.
-                let batch_calls = publication.is_some()
-                    && !self.hooks.inbox.queue.borrow().is_empty()
-                    && if self.driver.uses_owned_output_queues() {
-                        queue.len() < 32 && self.can_batch_request(messages)
-                    } else {
-                        queue.len() < 8 && !self.hooks.inbox.queue.borrow().is_empty()
-                    };
-                if completed || (queue.len() > queued && !batch_calls) {
+                // Deliver completion promptly. Publications share the
+                // remaining cooperative allowance before the output boundary.
+                if completed {
                     return Poll::Ready(Ok(()));
                 }
                 continue;
@@ -645,6 +583,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             driver,
             |owner| output.metadata_source(owner),
             foreign::local_metadata,
+            |hook| hook.metadata_changes(),
         );
     }
 
@@ -805,7 +744,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         scratch,
                         output.bundle(),
                         |owner, imports, bundle| output.attach(owner, imports, bundle),
-                        server::Results::write_exception,
+                        server::Producer::write_exception,
                     )
                     .map_err(wire_error)
             },
@@ -824,47 +763,5 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     .map_err(wire_error)
             },
         )
-    }
-
-    pub(super) fn can_batch_request(&self, messages: &messages::Messages<'p, '_, '_>) -> bool {
-        let inbox = self.hooks.inbox.queue.borrow();
-        let Some(call) = inbox.front() else {
-            return false;
-        };
-        if !self.driver.uses_owned_output_queues()
-            || self.calls.has_pending_admission()
-            || self.driver.runtime.queued() != 0
-            || !self.worker.is_empty()
-            || !self.foreign.is_empty()
-            || !self.commands.is_empty()
-        {
-            return false;
-        }
-        if call.third_party.is_some() || call.hints.only_promise_pipeline {
-            return false;
-        }
-        let Some(overhead) = self
-            .driver
-            .path_capacity()
-            .checked_mul(16)
-            .and_then(|n| n.checked_add(256))
-        else {
-            return false;
-        };
-        let bytes = match &call.params {
-            CallParams::Request(params) => params.prepared_call().and_then(|prepared| {
-                prepared
-                    .message()
-                    .get_segments_for_output()
-                    .iter()
-                    .try_fold(0usize, |total, segment| total.checked_add(segment.len()))
-            }),
-            CallParams::OwnedRequest(_, bytes) | CallParams::Hook(_, bytes) => *bytes,
-        };
-        bytes
-            .and_then(|bytes| bytes.checked_add(overhead))
-            .is_some_and(|minimum| {
-                messages.can_reserve(minimum.max(self.options.output_bytes.get()))
-            })
     }
 }

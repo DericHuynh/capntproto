@@ -1,5 +1,6 @@
 //! Protocol Abort and optional-Resolve fallback use the same owning driver.
 use super::{driver::with_owned_peer, portable_capnp::echo, ZERO};
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients,
     ids::{ImportId, QuestionId, WireId},
@@ -27,9 +28,9 @@ pub fn owning_protocol_controls(required_unimplemented: bool) {
         let mut queue_slots = [None];
         let mut queue = super::driver::message_queue(&mut queue_slots).unwrap();
         with_owned_peer(|mut peer| {
-            let service = peer.runtime.endpoint(binding::Route::local(41), clients::Location::Local).unwrap();
-            let mut batch = peer.ledgers.exports.batch();
-            let first = binding::stage(&mut peer.runtime, &mut batch, &service).unwrap();
+            let service = peer.capabilities().endpoint(binding::Route::local(41), clients::Location::Local).unwrap();
+            let (mut graph, mut batch) = peer.export_batch();
+            let first = binding::stage(&mut graph, &mut batch, &service).unwrap();
             let export = first.id();
             let _second_grant = batch.grant(first.key()).unwrap();
             batch.commit();
@@ -49,7 +50,7 @@ pub fn owning_protocol_controls(required_unimplemented: bool) {
                 assert!(matches!(peer.receive(frame, messages, &mut [0; 4], |_| panic!("control"), || panic!("control")).unwrap_or_else(|rejected| panic!("Unimplemented: {}", rejected.error)), Received::Unimplemented));
                 assert!(!peer.drain_export(0), "admitted call keeps its export lease");
             }
-            assert!(peer.ledgers.exports.lookup(export).is_none());
+            assert!(peer.ledgers().exports.lookup(export).is_none());
             // Abort is admissible with an existing queued call and must not
             // invoke a producer, emit cleanup, or admit a later request.
             let frame = Frame::build(messages, 776, Default::default(), |builder| {
@@ -72,7 +73,7 @@ pub fn owning_protocol_controls(required_unimplemented: bool) {
             assert_eq!(rejected.error, owned::connection::Error::Disconnected(reason));
             assert!(rejected.producer.is_none());
             rejected.frame.release(messages);
-            peer.runtime.release(service);
+            peer.capabilities().release(service);
             let mut closing = peer.terminate(&mut queue);
             let mut owners = [false; 2];
             let mut done = false;

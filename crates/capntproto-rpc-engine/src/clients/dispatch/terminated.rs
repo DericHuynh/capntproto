@@ -54,7 +54,9 @@ mod checks {
     use super::*;
     fn check(payload: u8) {
         let mut nodes = [const { Slot::<u8, u8>::EMPTY }; 2];
-        let graph = crate::clients::new_scope(&mut nodes).unwrap();
+        let graph =
+            crate::clients::new_scope(&mut nodes, crate::clients::NotificationStorage::empty())
+                .unwrap();
         let mut tasks = [TaskSlot::EMPTY];
         let mut runtime = own_runtime(graph, &mut tasks).unwrap_or_else(|_| panic!("fresh tasks"));
         let _server = runtime.endpoint(17, Location::Local).unwrap();

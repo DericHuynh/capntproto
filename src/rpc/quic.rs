@@ -77,7 +77,7 @@ impl AsyncRead for Stream {
                 buffer.advance(n);
                 state.read_closed.set(fin);
                 // Reading returns flow-control credit to the packet engine.
-                state.changed.notify_one();
+                state.request_flush();
                 Poll::Ready(Ok(()))
             }
             Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => {
@@ -113,10 +113,13 @@ impl AsyncWrite for Stream {
         // Quiche applies connection/stream flow control and congestion capacity;
         // no second application byte queue or relay task is needed.
         let result = state.conn.borrow_mut().stream_send(0, bytes, false);
-        state.changed.notify_one();
         match result {
-            Ok(n) if n != 0 => Poll::Ready(Ok(n)),
+            Ok(n) if n != 0 => {
+                state.wrote();
+                Poll::Ready(Ok(n))
+            }
             Ok(_) | Err(quiche::Error::Done) => {
+                state.request_flush();
                 state.writer.borrow_mut().replace(cx.waker().clone());
                 Poll::Pending
             }
@@ -124,9 +127,15 @@ impl AsyncWrite for Stream {
         }
     }
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        // Every successful write already queued its bytes in Quiche. As before,
-        // flush does not promise UDP transmission or acknowledgement by the peer.
-        Poll::Ready(Ok(()))
+        // The common physical frame writer ends its batch here. Keep the
+        // packet driver's bounded coalescing fence: RPC batch completion alone
+        // cannot certify that an endpoint receive burst has finished.
+        self.state.finish_output_turn();
+        // Bytes are owned by Quiche; this is not a peer acknowledgement.
+        match self.state.error() {
+            Some(error) => Poll::Ready(Err(error)),
+            None => Poll::Ready(Ok(())),
+        }
     }
     /// Queue FIN in the upstream transport. The receive half stays open.
     /// This is not a peer-delivery or application receipt.
@@ -139,7 +148,7 @@ impl AsyncWrite for Stream {
             return Poll::Ready(Err(error));
         }
         let result = state.conn.borrow_mut().stream_send(0, &[], true);
-        state.changed.notify_one();
+        state.request_flush();
         match result {
             Ok(_) => {
                 state.write_closed.set(true);

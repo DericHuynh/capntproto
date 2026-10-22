@@ -204,6 +204,7 @@ fn partial_send_completion_preserves_ownership() {
         }),
     }];
     let mut messages = Messages {
+        failed_minimum: Cell::new(None),
         buffers: Buffers::Borrowed(&mut buffers),
         sends: crate::storage::Storage::borrowed(&mut sends),
         brand: PhantomData,

@@ -30,6 +30,7 @@ pub fn bounded_imported_clients() -> Result<()> {
         let mut graph_slots = [const { clients::Slot::EMPTY }; 3];
         clients::with_graph(
             &mut graph_slots,
+            capntproto_rpc_engine::clients::NotificationStorage::empty(),
             |graph: &mut clients::Graph<'_, '_, binding::Endpoint<'_, u8, ()>, u8>| -> Result<()> {
                 let mut links = [const { binding::ImportSlot::EMPTY }; 2];
                 let mut bindings = binding::Imports::new(&mut links, 1).unwrap();

@@ -1,0 +1,114 @@
+{
+  "test-core-final.log": [
+    {
+      "passed": 348,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 215,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 159,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "test-root-final2.log": [
+    {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 293,
+      "failed": 0,
+      "ignored": 4
+    }
+  ],
+  "test-api-final.log": [
+    {
+      "passed": 35,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "test-growing-final2.log": [
+    {
+      "passed": 89,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "test-alloc-final.log": [
+    {
+      "passed": 89,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "test-variants-final.log": [
+    {
+      "passed": 86,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "test-turn-integrations2.log": [
+    {
+      "passed": 22,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "compatibility": {
+    "checks": 206,
+    "passed": true
+  },
+  "strict_clippy": {
+    "passed": true,
+    "log": "clippy-affected-final3.log",
+    "scope": "capntproto, core, futures, rpc-engine, rpc-wire, rpc; all targets; quic"
+  },
+  "format": {
+    "passed": true,
+    "log": "fmt-final7.log"
+  },
+  "embedded": {
+    "passed": true,
+    "log": "check-embedded-final.log",
+    "target": "thumbv7em-none-eabi",
+    "warnings": "Three unused standalone fixture functions."
+  },
+  "integration_sections": {
+    "log": "test-turn-integrations.log",
+    "passed": {
+      "native_pipeline_migration": 5,
+      "scoped_unix": 3,
+      "scoped_vat": 6
+    },
+    "note": "These sections passed before the subsequent secure fixture failed on its old 64-node bound. The 256-node fixture passes in test-turn-integrations2.log."
+  },
+  "not_qualified": [
+    "Coverage",
+    "Complete Verus/Kani formal suite; tools absent",
+    "Whole-workspace Clippy; uncached dependencies and download timeouts (clippy-workspace-final.log)."
+  ],
+  "superseded_attempts": [
+    "test-root-final.log: TLC environment unset and parallel storage contention; corrected serial run with TLA2TOOLS_JAR passes all nonignored tests.",
+    "clippy-affected-final.log and clippy-affected-final2.log: test fixture style lints, fixed.",
+    "fmt-final6.log: formatting after fixture lint cleanup, fixed."
+  ]
+}

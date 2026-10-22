@@ -7,9 +7,8 @@ use capntproto_rpc_engine::{
 use capntproto_rpc_wire::{
     calls,
     owned::{
-        answer,
         connection::{Error, NetworkRequest, Received},
-        controls, Frame, Reply,
+        Frame, Reply,
     },
     rpc_capnp::api::{Bootstrap, Call, Message},
 };
@@ -60,7 +59,7 @@ pub fn owning_adoption_sender(mode: u8) {
                         ))
                     );
                     rejected.frame.release(messages);
-                    assert!(callee.ledgers.answers.is_empty());
+                    assert!(callee.ledgers().answers.is_empty());
                 }
                 // Validation failure is invisible to the peer and preserves the producer.
                 let rejected = callee
@@ -75,7 +74,7 @@ pub fn owning_adoption_sender(mode: u8) {
                     .err()
                     .unwrap();
                 assert_eq!(rejected.producer, 41);
-                assert!(callee.ledgers.answers.is_empty());
+                assert!(callee.ledgers().answers.is_empty());
                 assert!(queue.is_empty());
                 let key = callee
                     .send_adopted_answer(
@@ -99,7 +98,7 @@ pub fn owning_adoption_sender(mode: u8) {
                     .err()
                     .unwrap();
                 assert_eq!(rejected.producer, 47);
-                assert_eq!(callee.ledgers.answers.len(), 1);
+                assert_eq!(callee.ledgers().answers.len(), 1);
                 // Return cannot overtake the ThirdPartyAnswer notice.
                 assert!(queue.reserve().is_err());
                 let notice = exchange(messages, &mut queue, 1);
@@ -126,14 +125,9 @@ pub fn owning_adoption_sender(mode: u8) {
                         .unwrap_or_else(|_| panic!("authorization"));
                 } else if mode == 2 {
                     caller.release_network(NetworkRequest::Adopt(job.take().unwrap()), messages);
-                    assert!(controls::finish_one(
-                        &mut caller.ledgers.questions,
-                        messages,
-                        &mut queue,
-                        776,
-                        Default::default()
-                    )
-                    .unwrap());
+                    assert!(caller
+                        .send_pending_finish(messages, &mut queue, 776, Default::default())
+                        .unwrap());
                     let finish = exchange(messages, &mut queue, 1);
                     assert!(matches!(
                         callee
@@ -155,18 +149,11 @@ pub fn owning_adoption_sender(mode: u8) {
                     }
                 })
                 .unwrap();
-                let retired = answer::try_send(
-                    key,
-                    &mut callee.ledgers.answers,
-                    messages,
-                    frame,
-                    queue.reserve().unwrap(),
-                )
-                .unwrap_or_else(|r| panic!("{}", r.error));
+                let retired = callee
+                    .try_publish_answer_frame(key, messages, frame, queue.reserve().unwrap())
+                    .unwrap_or_else(|r| panic!("{}", r.error));
                 assert_eq!(
-                    retired.map(|state| state
-                        .release(messages)
-                        .release(messages, &mut callee.runtime)),
+                    retired.map(|state| callee.release_answer(state, messages)),
                     if mode == 2 { Some(43) } else { None }
                 );
                 let frame = exchange(messages, &mut queue, 1);
@@ -201,14 +188,9 @@ pub fn owning_adoption_sender(mode: u8) {
                         })
                         .unwrap();
                     caller.release_response(response, messages);
-                    assert!(controls::finish_one(
-                        &mut caller.ledgers.questions,
-                        messages,
-                        &mut queue,
-                        776,
-                        Default::default()
-                    )
-                    .unwrap());
+                    assert!(caller
+                        .send_pending_finish(messages, &mut queue, 776, Default::default())
+                        .unwrap());
                     let frame = exchange(messages, &mut queue, 1);
                     assert!(matches!(
                         callee
@@ -217,8 +199,8 @@ pub fn owning_adoption_sender(mode: u8) {
                         Received::Finished(Some(43))
                     ));
                 }
-                assert!(caller.ledgers.questions.is_empty());
-                assert!(callee.ledgers.answers.is_empty());
+                assert!(caller.ledgers().questions.is_empty());
+                assert!(callee.ledgers().answers.is_empty());
                 assert_eq!(close(caller, messages, &mut queue), 0);
                 assert_eq!(close(callee, messages, &mut queue), 0);
                 let free: [_; 8] = core::array::from_fn(|_| messages.reserve(776).unwrap());

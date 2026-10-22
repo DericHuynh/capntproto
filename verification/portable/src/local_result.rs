@@ -5,6 +5,7 @@ use super::{
     portable_capnp::{api::echo::CapabilityResults, echo},
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{clients, completion, messages};
 use capntproto_rpc_wire::{
     clients as binding,
@@ -30,11 +31,11 @@ pub fn local_reply_ownership(mode: u8) {
         let mut queue = super::driver::message_queue(&mut slots).unwrap();
         with_owned_peer_tasks::<4, _>(|mut peer| {
             let service = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(41), clients::Location::Local)
                 .unwrap();
             let capability = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(43), clients::Location::Local)
                 .unwrap();
             let expected = capability.key();
@@ -70,8 +71,9 @@ pub fn local_reply_ownership(mode: u8) {
                         |_| Ok(()),
                     )
                     .unwrap();
-                let ready = peer.runtime.next_ready().unwrap().unwrap();
-                assert_eq!(ready.key(), first);
+                let mut dispatch = peer.capabilities();
+                let ready = dispatch.next_ready().unwrap().unwrap();
+                assert_eq!(ready.owner().invocation_key().unwrap(), first);
                 let running = ready.accept();
                 // Invalid capability tables roll back the new message, not the live call.
                 assert!(peer
@@ -128,8 +130,8 @@ pub fn local_reply_ownership(mode: u8) {
                             .unwrap();
                     })
                     .unwrap();
-                other.release(messages, &mut peer.runtime);
-                peer.runtime.release(capability);
+                other.release(messages, &mut peer.capabilities());
+                peer.capabilities().release(capability);
                 // The pipeline keeps working even if the original reply is canceled.
                 if mode == 1 {
                     drop(receiver.take());
@@ -144,15 +146,15 @@ pub fn local_reply_ownership(mode: u8) {
                     peer.poll_local_result(0, first, &reply, messages).unwrap(),
                     Propagation::Resolved
                 );
-                let Task::Invoke(invocation) = peer.runtime.complete(running) else {
+                let Task::Invoke(invocation) = peer.capabilities().complete(running) else {
                     panic!("Invoke")
                 };
-                invocation.release(messages, &mut peer.runtime);
+                invocation.release(messages, &mut peer.capabilities());
                 assert!(delivery.poll_observed(&mut cx).is_ready() == (mode == 1));
                 match delivery.try_send(reply) {
                     Err(reply) => {
                         assert_eq!(mode, 1);
-                        reply.release(messages, &mut peer.runtime);
+                        reply.release(messages, &mut peer.capabilities());
                     }
                     Ok(()) => match mode {
                         0 => {
@@ -174,28 +176,29 @@ pub fn local_reply_ownership(mode: u8) {
                                     );
                                 })
                                 .unwrap();
-                            reply.release(messages, &mut peer.runtime);
+                            reply.release(messages, &mut peer.capabilities());
                         }
                         2 => {
                             drop(receiver.take());
                             delivery
                                 .take_abandoned()
                                 .unwrap()
-                                .release(messages, &mut peer.runtime);
+                                .release(messages, &mut peer.capabilities());
                         }
                         3 => {
                             core::mem::forget(receiver.take());
                             delivery
                                 .cancel()
                                 .unwrap()
-                                .release(messages, &mut peer.runtime);
+                                .release(messages, &mut peer.capabilities());
                         }
                         _ => panic!("local reply scenario"),
                     },
                 }
                 assert!(delivery.poll_observed(&mut cx).is_ready());
-                let ready = peer.runtime.next_ready().unwrap().unwrap();
-                assert_eq!(ready.key(), second);
+                let mut dispatch = peer.capabilities();
+                let ready = dispatch.next_ready().unwrap().unwrap();
+                assert_eq!(ready.owner().invocation_key().unwrap(), second);
                 assert!(matches!(
                     ready.destination(),
                     clients::Destination::Endpoint {
@@ -204,14 +207,14 @@ pub fn local_reply_ownership(mode: u8) {
                     }
                 ));
                 let running = ready.accept();
-                let Task::Invoke(invocation) = peer.runtime.complete(running) else {
+                let Task::Invoke(invocation) = peer.capabilities().complete(running) else {
                     panic!("Invoke")
                 };
-                invocation.release(messages, &mut peer.runtime);
-                peer.runtime.release(pending);
+                invocation.release(messages, &mut peer.capabilities());
+                peer.capabilities().release(pending);
             }
             assert!(storage.take_undelivered().is_none());
-            peer.runtime.release(service);
+            peer.capabilities().release(service);
             assert_eq!(close(peer, messages, &mut queue), 84);
             let writers = core::array::from_fn::<_, 8, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {

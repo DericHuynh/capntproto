@@ -2,6 +2,18 @@
 //! one sequence before dispatch; opening a barrier cannot let a new call bypass
 //! already queued calls. Unrelated ready targets can progress past blocked ones.
 use super::*;
+mod readiness;
+#[derive(Clone, Copy)]
+pub(super) struct List {
+    pub(super) head: Option<usize>,
+    pub(super) tail: Option<usize>,
+}
+impl List {
+    pub(super) const EMPTY: Self = Self {
+        head: None,
+        tail: None,
+    };
+}
 
 pub struct TaskSlot<C> {
     entry: Option<Queued<C>>,
@@ -12,10 +24,15 @@ impl<C> TaskSlot<C> {
 struct Queued<C> {
     target: Raw,
     sequence: u64,
+    reserved_control: bool,
     owner: C,
+    waiting: Option<Raw>,
+    previous: Option<usize>,
+    next: Option<usize>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TaskKey<'id> {
+    index: usize,
     sequence: u64,
     brand: Brand<'id>,
 }
@@ -35,6 +52,7 @@ impl core::error::Error for DispatchError {}
 
 pub struct Storage<'s, T, P, C> {
     pub clients: &'s mut [Slot<T, P>],
+    pub notifications: NotificationStorage<'s>,
     pub tasks: &'s mut [TaskSlot<C>],
 }
 /// Sealed graph ownership used by the owning and borrowing dispatch scopes.
@@ -78,6 +96,10 @@ pub struct Runtime<
     graph: G,
     tasks: crate::storage::Storage<'tasks, TaskSlot<C>>,
     queued: usize,
+    controls: usize,
+    ready: List,
+    #[cfg(test)]
+    routing_visits: usize,
     brand: Brand<'id>,
     storage: PhantomData<&'nodes (T, P)>,
 }
@@ -91,14 +113,25 @@ fn new_scope<T, P: Copy + Eq, C>(
     }
     Ok(Runtime {
         graph: Graph {
+            unavailable: storage
+                .clients
+                .iter()
+                .filter(|s| s.generation == u64::MAX)
+                .count(),
             slots: crate::storage::Storage::borrowed(storage.clients),
             dispatch_sequence: 0,
             retired_head: None,
             retired_tail: None,
+            dispatch_changes: List::EMPTY,
+            notifications: events::Notifications::new(storage.notifications)?,
             brand: PhantomData,
         },
         tasks: crate::storage::Storage::borrowed(storage.tasks),
         queued: 0,
+        controls: 0,
+        ready: List::EMPTY,
+        #[cfg(test)]
+        routing_visits: 0,
         brand: PhantomData,
         storage: PhantomData,
     })
@@ -135,6 +168,10 @@ pub fn borrow_runtime<'g, 'id, 'nodes, 'tasks, T, P: Copy + Eq, C>(
         graph,
         tasks: crate::storage::Storage::borrowed(tasks),
         queued: 0,
+        controls: 0,
+        ready: List::EMPTY,
+        #[cfg(test)]
+        routing_visits: 0,
         brand: PhantomData,
         storage: PhantomData,
     })
@@ -143,7 +180,8 @@ pub fn borrow_runtime<'g, 'id, 'nodes, 'tasks, T, P: Copy + Eq, C>(
 /// Attach caller-owned task storage to an established graph without borrowing
 /// the graph from its enclosing connection. Its identity, references and task
 /// sequence remain unchanged. Rejection returns the intact graph.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::result_large_err)]
+// Rejection returns the intact caller-owned graph without allocating.
 pub fn own_runtime<'id, 'nodes, 'tasks, T, P: Copy + Eq, C>(
     graph: Graph<'id, 'nodes, T, P>,
     tasks: &'tasks mut [TaskSlot<C>],
@@ -153,7 +191,8 @@ pub fn own_runtime<'id, 'nodes, 'tasks, T, P: Copy + Eq, C>(
 
 /// Attach fixed or fallibly growing task storage. No live graph is consumed on
 /// rejection. Task indices may relocate; accepted sequence identities cannot.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::result_large_err)]
+// Rejection returns the intact caller-owned graph without allocating.
 pub fn own_runtime_with_storage<'id, 'nodes, 'tasks, T, P: Copy + Eq, C>(
     graph: Graph<'id, 'nodes, T, P>,
     tasks: crate::storage::Storage<'tasks, TaskSlot<C>>,
@@ -168,6 +207,10 @@ pub fn own_runtime_with_storage<'id, 'nodes, 'tasks, T, P: Copy + Eq, C>(
         graph,
         tasks,
         queued: 0,
+        controls: 0,
+        ready: List::EMPTY,
+        #[cfg(test)]
+        routing_visits: 0,
         brand: PhantomData,
         storage: PhantomData,
     })
@@ -176,22 +219,45 @@ pub fn own_runtime_with_storage<'id, 'nodes, 'tasks, T, P: Copy + Eq, C>(
 #[must_use]
 pub struct Enqueue<'a, 'id, 's, T, P, C> {
     call: Call<'a, 'id, 's, T, P>,
-    slot: &'a mut TaskSlot<C>,
+    tasks: &'a mut [TaskSlot<C>],
+    ready: &'a mut List,
+    index: usize,
     owner: &'a mut Option<C>,
+    reserved_control: bool,
     queued: &'a mut usize,
+    controls: &'a mut usize,
 }
 impl<'id, T, P: Copy + Eq, C> Enqueue<'_, 'id, '_, T, P, C> {
+    /// Classify protocol work which may occupy the reserved dispatch slot.
+    /// Dropping the ticket changes neither queue membership nor accounting.
+    pub fn reserved_control(mut self) -> Self {
+        self.reserved_control = true;
+        self
+    }
     pub fn accept(self) -> TaskKey<'id> {
         *self.queued += 1;
+        *self.controls += usize::from(self.reserved_control);
         let sequence = self.call.graph.dispatch_sequence;
         self.call.graph.dispatch_sequence += 1;
-        let target = self.call.accept().key.raw;
-        self.slot.entry = Some(Queued {
+        let target = self.call.end;
+        let waiting = self.call.waiting.then_some(target);
+        self.tasks[self.index].entry = Some(Queued {
             target,
             sequence,
+            reserved_control: self.reserved_control,
             owner: self.owner.take().unwrap(),
+            waiting,
+            previous: None,
+            next: None,
         });
+        let list = match waiting {
+            Some(raw) => &mut self.call.graph.slots[raw.index].waiting,
+            None => self.ready,
+        };
+        readiness::append(self.tasks, list, self.index);
+        let _retained = self.call.accept();
         TaskKey {
+            index: self.index,
             sequence,
             brand: PhantomData,
         }
@@ -203,8 +269,11 @@ impl<'id, T, P: Copy + Eq, C> Enqueue<'_, 'id, '_, T, P, C> {
 #[must_use]
 pub struct Ready<'a, 'id, 's, T, P, C> {
     call: Call<'a, 'id, 's, T, P>,
-    slot: &'a mut TaskSlot<C>,
+    tasks: &'a mut [TaskSlot<C>],
+    ready: &'a mut List,
+    index: usize,
     queued: &'a mut usize,
+    controls: &'a mut usize,
 }
 
 /// A routable call admitted without an intermediate queued task. This is only
@@ -288,7 +357,8 @@ impl<'id, C> Running<'id, C> {
 impl<'id, T, P: Copy + Eq, C> Ready<'_, 'id, '_, T, P, C> {
     pub fn key(&self) -> TaskKey<'id> {
         TaskKey {
-            sequence: self.slot.entry.as_ref().unwrap().sequence,
+            index: self.index,
+            sequence: self.tasks[self.index].entry.as_ref().unwrap().sequence,
             brand: PhantomData,
         }
     }
@@ -296,11 +366,13 @@ impl<'id, T, P: Copy + Eq, C> Ready<'_, 'id, '_, T, P, C> {
         self.call.destination()
     }
     pub fn owner(&self) -> &C {
-        &self.slot.entry.as_ref().unwrap().owner
+        &self.tasks[self.index].entry.as_ref().unwrap().owner
     }
     pub fn accept(self) -> Running<'id, C> {
         *self.queued -= 1;
-        let queued = self.slot.entry.take().unwrap();
+        readiness::unlink(self.tasks, self.ready, self.index);
+        let queued = self.tasks[self.index].entry.take().unwrap();
+        *self.controls -= usize::from(queued.reserved_control);
         // Freeze the destination while accepting into caller-owned execution or
         // transport output. Future promise resolution cannot redirect this task.
         let target = self.call.accept_releasing(Some(queued.target));
@@ -373,9 +445,9 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
         if self.graph.graph().dispatch_sequence == u64::MAX {
             return Err(DispatchError::SequencesExhausted);
         }
-        let slot = self
+        let index = self
             .tasks
-            .vacant_mut(|_, s| s.entry.is_none(), || TaskSlot::EMPTY)
+            .vacant(|_, s| s.entry.is_none(), || TaskSlot::EMPTY)
             .ok_or(DispatchError::Full)?;
         let call = self
             .graph
@@ -384,9 +456,13 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
             .map_err(DispatchError::Graph)?;
         Ok(Enqueue {
             call,
-            slot,
+            tasks: &mut self.tasks,
+            ready: &mut self.ready,
+            index,
             owner,
+            reserved_control: false,
             queued: &mut self.queued,
+            controls: &mut self.controls,
         })
     }
     /// Offer direct dispatch only for settled routes with no older queued work.
@@ -444,42 +520,63 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
     /// Select the oldest ready call, without consuming it. Failed output
     /// admission retries the same call; waiting promises do not block other vats.
     pub fn next_ready(&mut self) -> Result<Option<Ready<'_, 'id, 's, T, P, C>>, DispatchError> {
-        if self.queued == 0 {
+        while self.advance_dispatch_one()? {}
+        self.ready()
+    }
+    /// Inspect the head owner without consuming it or walking its route. Route
+    /// changes must drain before this owner can be accepted. This carries no
+    /// authority to dispatch; acceptance still requires the exclusive Ready ticket.
+    pub fn ready_key(&self) -> Option<TaskKey<'id>> {
+        if self.dispatch_is_pending() {
+            return None;
+        }
+        let index = self.ready.head?;
+        Some(TaskKey {
+            index,
+            sequence: self.tasks[index].entry.as_ref()?.sequence,
+            brand: PhantomData,
+        })
+    }
+    pub fn ready_owner(&self) -> Option<&C> {
+        if self.dispatch_is_pending() {
+            return None;
+        }
+        self.ready
+            .head
+            .and_then(|index| self.tasks[index].entry.as_ref().map(|entry| &entry.owner))
+    }
+    /// Select ready work after budgeted route changes have drained. An older
+    /// changed promise cannot be bypassed by a newly admitted endpoint call.
+    pub fn ready(&mut self) -> Result<Option<Ready<'_, 'id, 's, T, P, C>>, DispatchError> {
+        if self.dispatch_is_pending() {
             return Ok(None);
         }
-        let mut selected: Option<(usize, u64, Raw)> = None;
-        for (index, slot) in self.tasks.iter().enumerate() {
-            if let Some(queued) = &slot.entry {
-                let (end, waiting, _) = self
-                    .graph
-                    .graph()
-                    .walk(queued.target)
-                    .map_err(DispatchError::Graph)?;
-                if !waiting && selected.is_none_or(|(_, sequence, _)| queued.sequence < sequence) {
-                    selected = Some((index, queued.sequence, end));
-                }
-            }
-        }
-        let Some((index, _, end)) = selected else {
+        let Some(index) = self.ready.head else {
             return Ok(None);
         };
-        let slot = &mut self.tasks[index];
+        let target = self.tasks[index].entry.as_ref().unwrap().target;
+        let (end, waiting, _) = self
+            .graph
+            .graph()
+            .walk(target)
+            .map_err(DispatchError::Graph)?;
+        debug_assert!(!waiting, "ready dispatch has a callable destination");
         let graph = self.graph.graph_mut();
-        // The scan and this offer share one exclusive runtime borrow. No route
-        // can change between them, so reuse its validated terminal endpoint.
         if graph.live(end).map_err(DispatchError::Graph)?.refs == u32::MAX {
             return Err(DispatchError::Graph(Error::ReferencesExhausted));
         }
-        let call = Call {
-            graph,
-            start: slot.entry.as_ref().unwrap().target,
-            end,
-            waiting: false,
-        };
         Ok(Some(Ready {
-            call,
-            slot,
+            call: Call {
+                graph,
+                start: target,
+                end,
+                waiting: false,
+            },
+            tasks: &mut self.tasks,
+            ready: &mut self.ready,
+            index,
             queued: &mut self.queued,
+            controls: &mut self.controls,
         }))
     }
     #[inline(always)]
@@ -488,13 +585,17 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
         task.owner
     }
     pub fn cancel(&mut self, key: TaskKey<'id>) -> Result<C, DispatchError> {
-        let slot = self
-            .tasks
-            .iter_mut()
-            .find(|s| s.entry.as_ref().is_some_and(|e| e.sequence == key.sequence))
-            .ok_or(DispatchError::Missing)?;
-        let entry = slot.entry.take().unwrap();
+        if !self.tasks.get(key.index).is_some_and(|slot| {
+            slot.entry
+                .as_ref()
+                .is_some_and(|entry| entry.sequence == key.sequence)
+        }) {
+            return Err(DispatchError::Missing);
+        }
+        self.unlink_task(key.index);
+        let entry = self.tasks[key.index].entry.take().unwrap();
         self.queued -= 1;
+        self.controls -= usize::from(entry.reserved_control);
         self.graph.graph_mut().release_raw(entry.target);
         Ok(entry.owner)
     }
@@ -511,14 +612,19 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
         if self.queued == 0 {
             return None;
         }
-        let slot = self.tasks.iter_mut().find(|slot| slot.entry.is_some())?;
-        let entry = slot.entry.take().unwrap();
+        let index = self.tasks.iter().position(|slot| slot.entry.is_some())?;
+        self.unlink_task(index);
+        let entry = self.tasks[index].entry.take().unwrap();
         self.queued -= 1;
+        self.controls -= usize::from(entry.reserved_control);
         self.graph.graph_mut().release_raw(entry.target);
         Some(entry.owner)
     }
     pub fn queued(&self) -> usize {
         self.queued
+    }
+    pub fn ordinary_queued(&self) -> usize {
+        self.queued - self.controls
     }
     /// Inspect one caller-backed task slot without making its target runnable
     /// or changing ordering. The key is generation-safe across slot reuse.
@@ -526,19 +632,31 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
         let entry = self.tasks.get(index)?.entry.as_ref()?;
         Some((
             TaskKey {
+                index,
                 sequence: entry.sequence,
                 brand: PhantomData,
             },
             &entry.owner,
         ))
     }
+    /// Inspect an exact queued owner in constant time, validating its sequence
+    /// as well as its storage position. Reused slots cannot match an old key.
+    pub fn queued_owner(&self, key: TaskKey<'id>) -> Option<&C> {
+        self.tasks
+            .get(key.index)?
+            .entry
+            .as_ref()
+            .filter(|entry| entry.sequence == key.sequence)
+            .map(|entry| &entry.owner)
+    }
     /// Mutate the owner of an exact queued task without changing its route or
     /// dispatch order. Published or reused task identities cannot match.
     pub fn queued_owner_mut(&mut self, key: TaskKey<'id>) -> Option<&mut C> {
         self.tasks
-            .iter_mut()
-            .filter_map(|slot| slot.entry.as_mut())
-            .find(|entry| entry.sequence == key.sequence)
+            .get_mut(key.index)?
+            .entry
+            .as_mut()
+            .filter(|entry| entry.sequence == key.sequence)
             .map(|entry| &mut entry.owner)
     }
     /// Reserve enough slots for the next admission, including protocol headroom.
@@ -548,6 +666,12 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
             || self
                 .tasks
                 .grow(required - self.tasks.len(), || TaskSlot::EMPTY)
+    }
+    pub fn maximum_tasks(&self) -> usize {
+        self.tasks.maximum()
+    }
+    pub fn available_tasks(&self) -> usize {
+        self.tasks.maximum() - self.queued
     }
     pub fn task_capacity(&self) -> usize {
         self.tasks.len()
@@ -560,8 +684,10 @@ impl<'id, 'nodes, T: 'nodes, P: Copy + Eq + 'nodes, C, G: GraphStorage<'id, 'nod
     for Runtime<'id, 'nodes, '_, T, P, C, G>
 {
     fn drop(&mut self) {
-        for slot in &mut *self.tasks {
-            if let Some(entry) = slot.entry.take() {
+        for index in 0..self.tasks.len() {
+            if self.tasks[index].entry.is_some() {
+                self.unlink_task(index);
+                let entry = self.tasks[index].entry.take().unwrap();
                 self.graph.graph_mut().release_raw(entry.target);
                 drop(entry.owner);
             }
@@ -582,35 +708,39 @@ mod proofs {
         let sequence: u64 = kani::any();
         kani::assume(sequence <= u64::MAX - 2);
         let mut nodes = [Slot::EMPTY];
-        with_graph(&mut nodes, |graph: &mut Graph<'_, '_, u8, u8>| {
-            graph.dispatch_sequence = sequence;
-            let client = graph.endpoint(41, Location::Local).unwrap();
-            let mut tasks = [TaskSlot::EMPTY];
-            let old = {
+        with_graph(
+            &mut nodes,
+            crate::clients::NotificationStorage::empty(),
+            |graph: &mut Graph<'_, '_, u8, u8>| {
+                graph.dispatch_sequence = sequence;
+                let client = graph.endpoint(41, Location::Local).unwrap();
+                let mut tasks = [TaskSlot::EMPTY];
+                let old = {
+                    let mut runtime = borrow_runtime(graph, &mut tasks).unwrap();
+                    let key = runtime
+                        .prepare_call(&client, &mut Some(43u8))
+                        .unwrap()
+                        .accept();
+                    assert_eq!(runtime.cancel(key), Ok(43));
+                    key
+                };
                 let mut runtime = borrow_runtime(graph, &mut tasks).unwrap();
                 let key = runtime
-                    .prepare_call(&client, &mut Some(43u8))
+                    .prepare_call(&client, &mut Some(47))
                     .unwrap()
                     .accept();
-                assert_eq!(runtime.cancel(key), Ok(43));
-                key
-            };
-            let mut runtime = borrow_runtime(graph, &mut tasks).unwrap();
-            let key = runtime
-                .prepare_call(&client, &mut Some(47))
-                .unwrap()
-                .accept();
-            kani::assert(
-                key != old,
-                "borrowed dispatcher never reuses prior task identity",
-            );
-            assert_eq!(runtime.cancel(old), Err(DispatchError::Missing));
-            assert_eq!(runtime.cancel(key), Ok(47));
-            drop(runtime);
-            graph.release(client);
-            assert_eq!(graph.take_retired(), Some(41));
-            assert!(graph.is_empty());
-        })
+                kani::assert(
+                    key != old,
+                    "borrowed dispatcher never reuses prior task identity",
+                );
+                assert_eq!(runtime.cancel(old), Err(DispatchError::Missing));
+                assert_eq!(runtime.cancel(key), Ok(47));
+                drop(runtime);
+                graph.release(client);
+                assert_eq!(graph.take_retired(), Some(41));
+                assert!(graph.is_empty());
+            },
+        )
         .unwrap();
     }
     #[kani::proof]
@@ -623,6 +753,7 @@ mod proofs {
         let mut tasks = [const { TaskSlot::EMPTY }; 2];
         with_runtime(
             Storage {
+                notifications: crate::clients::NotificationStorage::empty(),
                 clients: &mut clients,
                 tasks: &mut tasks,
             },
@@ -635,20 +766,34 @@ mod proofs {
                 runtime.tasks[0].entry = Some(Queued {
                     target: client.key.raw,
                     sequence: 2,
+                    reserved_control: false,
                     owner: second,
+                    waiting: None,
+                    previous: Some(1),
+                    next: None,
                 });
                 runtime.tasks[1].entry = Some(Queued {
                     target: client.key.raw,
                     sequence: 1,
+                    reserved_control: false,
                     owner: first,
+                    waiting: None,
+                    previous: None,
+                    next: Some(0),
                 });
                 runtime.graph.dispatch_sequence = 3;
                 runtime.queued = 2;
+                runtime.ready = List {
+                    head: Some(1),
+                    tail: Some(0),
+                };
                 let old = TaskKey {
+                    index: 0,
                     sequence: 0,
                     brand: PhantomData,
                 };
                 let new = TaskKey {
+                    index: 0,
                     sequence: 2,
                     brand: PhantomData,
                 };
@@ -685,6 +830,56 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>> Capab
 {
     type Owner = T;
     type Peer = P;
+    fn resources(&self) -> Resources {
+        self.graph.graph().resources()
+    }
+    fn listen(&mut self) -> Result<Listener<'id>, Error> {
+        self.graph.graph_mut().listen()
+    }
+    fn subscribe(
+        &mut self,
+        listener: &Listener<'id>,
+        client: Key<'id>,
+        owner: usize,
+        watch: Watch,
+    ) -> Result<Subscription<'id>, Error> {
+        self.graph
+            .graph_mut()
+            .subscribe(listener, client, owner, watch)
+    }
+    fn exclusive_subscription_owner(
+        &self,
+        listener: &Listener<'id>,
+        client: Key<'id>,
+    ) -> Option<usize> {
+        self.graph
+            .graph()
+            .exclusive_subscription_owner(listener, client)
+    }
+    fn has_events(&self, listener: &Listener<'id>) -> bool {
+        self.graph.graph().has_events(listener)
+    }
+    fn next_event(&mut self, listener: &Listener<'id>) -> Option<Event<'id>> {
+        self.graph.graph_mut().next_event(listener)
+    }
+    fn unsubscribe(&mut self, subscription: Subscription<'id>) {
+        self.graph.graph_mut().unsubscribe(subscription)
+    }
+    fn rebind_subscription(
+        &mut self,
+        subscription: &Subscription<'id>,
+        client: Key<'id>,
+    ) -> Result<(), Error> {
+        self.graph
+            .graph_mut()
+            .rebind_subscription(subscription, client)
+    }
+    fn close_listener(&mut self, listener: Listener<'id>) {
+        self.graph.graph_mut().close_listener(listener)
+    }
+    fn pending_resolution(&self, client: &Client<'id>) -> Result<Option<Key<'id>>, Error> {
+        self.graph.graph().pending_resolution(client)
+    }
     fn is_settled(&self, client: &Client<'id>) -> Result<bool, Error> {
         self.graph.graph().is_settled(client)
     }

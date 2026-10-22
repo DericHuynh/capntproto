@@ -77,7 +77,7 @@ where
             self.poll_bootstrap(context, messages, queue, scratch, output)
         }
     }
-    fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
+    fn observes_hooks(&self, event: &connection::Received<'id, server::Producer>) -> bool {
         !matches!(
             event,
             connection::Received::Queued(_)
@@ -98,7 +98,7 @@ where
     }
     fn received(
         &mut self,
-        event: connection::Received<'id, server::Results>,
+        event: connection::Received<'id, server::Producer>,
         context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         _: &mut messages::Queue<'p, '_, O::Bundle>,

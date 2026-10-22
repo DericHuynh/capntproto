@@ -19,11 +19,94 @@ enum QueuedMessage<'pool> {
     },
 }
 
+/// Immutable bytes transferred directly into a hosted physical FIFO.
+#[cfg(feature = "alloc")]
+pub enum Publication {
+    Bytes(SharedBytes),
+    Parts(SharedParts),
+}
+/// Publication and flush share these counters, so scheduling reads neither
+/// borrow a transport nor call through its publication interface.
+#[cfg(feature = "alloc")]
+pub struct OutputStatus {
+    pending: Cell<usize>,
+    maximum: Cell<usize>,
+    failed: Cell<bool>,
+    closed: Cell<bool>,
+}
+#[cfg(feature = "alloc")]
+impl OutputStatus {
+    pub fn new(maximum: usize) -> Self {
+        Self {
+            pending: Cell::new(0),
+            maximum: Cell::new(maximum),
+            failed: Cell::new(false),
+            closed: Cell::new(false),
+        }
+    }
+    pub fn pending(&self) -> usize {
+        self.pending.get()
+    }
+    pub fn is_closed(&self) -> bool {
+        self.closed.get()
+    }
+    pub fn close(&self) -> bool {
+        self.closed.replace(true)
+    }
+    pub fn failed(&self) -> bool {
+        self.failed.get()
+    }
+    pub fn fail(&self) {
+        self.failed.set(true);
+    }
+    pub fn published(&self) {
+        self.pending.set(self.pending.get() + 1);
+    }
+    pub fn flushed(&self) {
+        self.pending.set(0);
+    }
+    pub fn full(&self) -> bool {
+        self.pending.get() >= self.maximum.get()
+    }
+    pub fn set_maximum(&self, maximum: usize) -> Result<(), Error> {
+        if self.pending.get() != 0 {
+            return Err(Error::NonemptyStorage);
+        }
+        self.maximum.set(maximum);
+        Ok(())
+    }
+    fn ensure_capacity(&self) -> Result<(), Error> {
+        if self.failed.get() || self.closed.get() {
+            Err(Error::QueueFailed)
+        } else if self.full() {
+            Err(Error::NoSendSlot)
+        } else {
+            Ok(())
+        }
+    }
+}
+/// A single physical output queue. Reservation is exclusive until publication
+/// or cancellation; accepted owners must survive through physical flush.
+#[cfg(feature = "alloc")]
+pub trait PublicationSink<R> {
+    fn status(&self) -> &alloc::rc::Rc<OutputStatus>;
+    fn reserve(&mut self) -> Result<(), Error>;
+    fn cancel_reservation(&mut self);
+    fn publish_reserved(&mut self, frame: Publication, resources: R);
+}
+#[cfg(feature = "alloc")]
+struct Direct<'s, R> {
+    sink: alloc::boxed::Box<dyn PublicationSink<R> + 's>,
+    status: alloc::rc::Rc<OutputStatus>,
+}
+
 pub struct Queue<'pool, 'storage, R = ()> {
     slots: crate::storage::Storage<'storage, Option<QueueEntry<'pool, R>>>,
     head: usize,
     len: usize,
     failed: bool,
+    #[cfg(feature = "alloc")]
+    sink: Option<Direct<'storage, R>>,
 }
 impl<'pool, 'storage> Queue<'pool, 'storage> {
     pub fn new(slots: &'storage mut [Option<QueueEntry<'pool>>]) -> Result<Self, Error> {
@@ -50,6 +133,8 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
             head: 0,
             len: 0,
             failed: false,
+            #[cfg(feature = "alloc")]
+            sink: None,
         })
     }
     #[cfg(feature = "alloc")]
@@ -61,15 +146,74 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
             head: 0,
             len: 0,
             failed: false,
+            #[cfg(feature = "alloc")]
+            sink: None,
         })
     }
+    /// Hosted publication requires an allocating pool whose immutable buffers
+    /// can outlive this scope. Fixed storage continues to use its local FIFO.
+    #[cfg(feature = "alloc")]
+    pub fn hosted(
+        messages: &Messages<'pool, '_, '_>,
+        sink: alloc::boxed::Box<dyn PublicationSink<R> + 'storage>,
+    ) -> Result<Self, Error> {
+        if !matches!(messages.buffers, Buffers::Growing(_)) {
+            return Err(Error::BorrowedBuffer);
+        }
+        Ok(Self {
+            slots: crate::storage::Storage::borrowed(&mut []),
+            head: 0,
+            len: 0,
+            failed: false,
+            sink: Some(Direct {
+                status: sink.status().clone(),
+                sink,
+            }),
+        })
+    }
+    pub(crate) fn is_direct(&self) -> bool {
+        #[cfg(feature = "alloc")]
+        {
+            self.sink.is_some()
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            false
+        }
+    }
     pub fn len(&self) -> usize {
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &self.sink {
+            return sink.status.pending();
+        }
         self.len
     }
+    pub fn maximum(&self) -> usize {
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &self.sink {
+            return sink.status.maximum.get();
+        }
+        self.slots.maximum()
+    }
+    pub fn available(&self) -> usize {
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &self.sink {
+            return sink
+                .status
+                .maximum
+                .get()
+                .saturating_sub(sink.status.pending());
+        }
+        self.slots.maximum().saturating_sub(self.len)
+    }
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.len() == 0
     }
     pub fn is_failed(&self) -> bool {
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &self.sink {
+            return self.failed || sink.status.failed();
+        }
         self.failed
     }
 
@@ -89,9 +233,14 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
         resources: R,
     ) -> Result<QueueSlot<'_, 'pool, 'storage, R>, Error> {
         self.ensure_capacity()?;
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &mut self.sink {
+            sink.sink.reserve()?;
+        }
         Ok(QueueSlot {
             queue: self,
-            resources,
+            resources: Some(resources),
+            accepted: false,
         })
     }
     /// Check room for one publication, growing bounded storage if necessary.
@@ -101,6 +250,10 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
     pub fn ensure_capacity(&mut self) -> Result<(), Error> {
         if self.failed {
             return Err(Error::QueueFailed);
+        }
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &self.sink {
+            return sink.status.ensure_capacity();
         }
         if self.len == self.slots.len() {
             return self.grow_one();
@@ -128,7 +281,7 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
         if self.failed {
             return Err(Error::QueueFailed);
         }
-        if self.is_empty() {
+        if self.is_direct() || self.is_empty() {
             return Ok(None);
         }
         #[cfg(feature = "alloc")]
@@ -182,7 +335,7 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
         if !self.failed {
             return Err(Error::QueueStillLive);
         }
-        if self.is_empty() {
+        if self.is_direct() || self.is_empty() {
             return Ok(false);
         }
         if let QueuedMessage::Tracked(key) = &self.slots[self.head]
@@ -223,25 +376,50 @@ impl<R> Drop for Queue<'_, '_, R> {
 #[must_use]
 pub struct QueueSlot<'a, 'pool, 'storage, R = ()> {
     queue: &'a mut Queue<'pool, 'storage, R>,
-    resources: R,
+    resources: Option<R>,
+    accepted: bool,
+}
+impl<R> Drop for QueueSlot<'_, '_, '_, R> {
+    fn drop(&mut self) {
+        #[cfg(feature = "alloc")]
+        if !self.accepted {
+            if let Some(sink) = &mut self.queue.sink {
+                sink.sink.cancel_reservation();
+            }
+        }
+    }
 }
 impl<'pool, R> QueueSlot<'_, 'pool, '_, R> {
     /// Populate metadata while admission is still private and reversible.
     pub fn resources_mut(&mut self) -> &mut R {
-        &mut self.resources
+        self.resources.as_mut().expect("private output resources")
     }
 
     pub fn accept(
-        self,
+        mut self,
         messages: &mut Messages<'pool, '_, '_>,
         offer: Offer<'pool>,
     ) -> SendKey<'pool> {
         let key = messages.accept(offer);
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &mut self.queue.sink {
+            let window = messages.send_window(key).expect("accepted send");
+            let bytes = window.share().expect("hosted allocating pool");
+            let length = bytes.len();
+            window
+                .advance(length)
+                .expect("complete immutable publication");
+            self.accepted = true;
+            sink.sink
+                .publish_reserved(Publication::Bytes(bytes), self.resources.take().unwrap());
+            return key;
+        }
         let index = policy::ring_offset(self.queue.head, self.queue.len, self.queue.slots.len());
         self.queue.slots[index] = Some(QueueEntry {
             message: QueuedMessage::Tracked(key),
-            resources: self.resources,
+            resources: self.resources.take().unwrap(),
         });
+        self.accepted = true;
         self.queue.len += 1;
         key
     }
@@ -251,24 +429,43 @@ impl<'pool, R> QueueSlot<'_, 'pool, '_, R> {
     /// created. The queue owns progress, resources and terminal cleanup. Partial
     /// writes cannot expose a successor, and dropping a pending window preserves
     /// the lease. Stop IO and discard failed queues before reusing their pool.
-    pub fn accept_owned(self, lease: Lease<'pool>) {
+    pub fn accept_owned(mut self, messages: &mut Messages<'pool, '_, '_>, lease: Lease<'pool>) {
+        #[cfg(feature = "alloc")]
+        if let Some(sink) = &mut self.queue.sink {
+            let bytes = messages.share(&lease).expect("hosted allocating pool");
+            messages.release(lease);
+            self.accepted = true;
+            sink.sink
+                .publish_reserved(Publication::Bytes(bytes), self.resources.take().unwrap());
+            return;
+        }
+        #[cfg(not(feature = "alloc"))]
+        let _ = messages;
         let index = policy::ring_offset(self.queue.head, self.queue.len, self.queue.slots.len());
         self.queue.slots[index] = Some(QueueEntry {
             message: QueuedMessage::Owned { lease, position: 0 },
-            resources: self.resources,
+            resources: self.resources.take().unwrap(),
         });
+        self.accepted = true;
         self.queue.len += 1;
     }
 
     /// Transfer a charged scatter/gather owner into the same ordered FIFO.
     /// Its charge follows all transport aliases through partial writes/flush.
     #[cfg(feature = "alloc")]
-    pub fn accept_parts(self, parts: SharedParts) {
+    pub fn accept_parts(mut self, parts: SharedParts) {
+        if let Some(sink) = &mut self.queue.sink {
+            self.accepted = true;
+            sink.sink
+                .publish_reserved(Publication::Parts(parts), self.resources.take().unwrap());
+            return;
+        }
         let index = policy::ring_offset(self.queue.head, self.queue.len, self.queue.slots.len());
         self.queue.slots[index] = Some(QueueEntry {
             message: QueuedMessage::Parts(parts),
-            resources: self.resources,
+            resources: self.resources.take().unwrap(),
         });
+        self.accepted = true;
         self.queue.len += 1;
     }
 }

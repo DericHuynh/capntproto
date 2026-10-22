@@ -53,7 +53,7 @@ fn idle_is_revoked_before_prequeued_and_same_turn_writes() {
         }
         fn received(
             &mut self,
-            _: connection::Received<'id, server::Results>,
+            _: connection::Received<'id, server::Producer>,
             _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
             _: &mut messages::Messages<'p, '_, '_>,
             _: &mut messages::Queue<'p, '_>,

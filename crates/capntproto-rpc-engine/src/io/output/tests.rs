@@ -387,7 +387,7 @@ fn empty_frames_release_receipts_without_writing_or_flushing() {
         queue
             .reserve_with(Resource(1, &released))
             .unwrap()
-            .accept_owned(lease);
+            .accept_owned(messages, lease);
         let mut sink = Sink::default();
         let mut output = Output::new();
         let mut cx = Context::from_waker(Waker::noop());
@@ -499,7 +499,7 @@ fn zero_progress_from_borrowed_and_shared_adapters_preserves_owners_until_abort(
                     queue
                         .reserve_with(Resource(1, &released))
                         .unwrap()
-                        .accept_owned(lease);
+                        .accept_owned(messages, lease);
                     // A byte owner cannot authorize scatter/gather progress.
                     assert_eq!(
                         queue.window(messages).unwrap().unwrap().advance_parts(1),

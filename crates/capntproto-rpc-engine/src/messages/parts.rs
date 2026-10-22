@@ -218,7 +218,10 @@ mod tests {
                 let mut queue = Queue::with_resources(&mut slots).unwrap();
                 queue.reserve_with(17).unwrap().accept_parts(parts);
                 let successor = messages.copy_from(b"ghi").unwrap();
-                queue.reserve_with(19).unwrap().accept_owned(successor);
+                queue
+                    .reserve_with(19)
+                    .unwrap()
+                    .accept_owned(messages, successor);
                 let window = queue.window(messages).unwrap().unwrap();
                 assert_eq!(window.bytes(), b"abc");
                 assert_eq!(window.resources(), Some(&17));

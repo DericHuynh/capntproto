@@ -200,6 +200,13 @@ mod proofs {
         let parent = AnswerId::from_wire(17);
         let mut slots = [
             Slot {
+                retirement: crate::work_queue::Link::EMPTY,
+                pipeline_work: crate::work_queue::Link::EMPTY,
+                cancellation: crate::work_queue::Link::EMPTY,
+                execution: crate::work_queue::Link::EMPTY,
+                executing: false,
+                pipeline_head: None,
+                pipeline_cursor: None,
                 record: Some(Record {
                     #[cfg(feature = "alloc")]
                     presence: Default::default(),
@@ -217,6 +224,13 @@ mod proofs {
             Slot::EMPTY,
         ];
         let mut answers = Answers {
+            retired: crate::work_queue::Queue::EMPTY,
+            pipeline_ready: crate::work_queue::Queue::EMPTY,
+            pipeline_registry: None,
+            pipeline_registry_generation: 0,
+            pipeline_observers: 0,
+            canceled: crate::work_queue::Queue::EMPTY,
+            execution_ready: crate::work_queue::Queue::EMPTY,
             #[cfg(feature = "alloc")]
             observation: Default::default(),
             slots: crate::storage::Storage::borrowed(&mut slots),

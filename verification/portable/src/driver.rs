@@ -11,12 +11,14 @@ use capntproto_rpc_engine::{
     ids::WireId,
     messages,
 };
+#[cfg(not(feature = "growing"))]
+use capntproto_rpc_wire::owned::pipelines;
 use capntproto_rpc_wire::{
     calls, clients as binding,
     owned::{
-        self, answer,
+        self,
         connection::{Driver, Received},
-        controls, pipelines, Frame,
+        Frame,
     },
     pipeline,
     rpc_capnp::api::{CapDescriptor, Message, Payload, Return},
@@ -117,9 +119,17 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
         #[cfg(not(feature = "growing"))]
         let mut ns = [const { clients::Slot::EMPTY }; 12];
         #[cfg(not(feature = "growing"))]
+        let mut listeners = [const { clients::ListenerSlot::EMPTY }; 8];
+        #[cfg(not(feature = "growing"))]
+        let mut subscriptions = [const { clients::SubscriptionSlot::EMPTY }; 48];
+        #[cfg(not(feature = "growing"))]
         let connection = domain
             .bind_with_adoptions(
                 connection::GraphStorage {
+                    notifications: clients::NotificationStorage {
+                        listeners: &mut listeners,
+                        subscriptions: &mut subscriptions,
+                    },
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,
@@ -138,6 +148,13 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
             domain
                 .bind_growing_adoptions(
                     connection::GrowingStorage {
+                        notifications:
+                            capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                                connection::Growth {
+                                    initial: 0,
+                                    maximum: 12,
+                                },
+                            ),
                         imports: bound,
                         exports: bound,
                         questions: bound,
@@ -171,10 +188,10 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
         #[cfg(not(feature = "growing"))]
         let mut exchanges = [const { ExchangeSlot::EMPTY }; 4];
         #[cfg(not(feature = "growing"))]
-        let mut tails = [const { owned::connection::TailSlot::EMPTY }; 4];
-        #[cfg(not(feature = "growing"))]
         let mut invocation_pipelines =
             [const { owned::connection::InvocationPipelineSlot::EMPTY }; 4];
+        #[cfg(not(feature = "growing"))]
+        let mut operations = [const { owned::connection::OperationSlot::EMPTY }; 16];
         #[cfg(not(feature = "growing"))]
         let driver = Driver::new(
             connection,
@@ -187,8 +204,8 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
                 loopbacks: &mut loopbacks,
                 embargoes: &mut embargoes,
                 exchanges: &mut exchanges,
-                tails: &mut tails,
                 invocation_pipelines: &mut invocation_pipelines,
+                operations: &mut operations,
             },
             1,
         )
@@ -222,14 +239,9 @@ fn finish<'p>(
     queue: &mut messages::Queue<'p, '_>,
     chunk: usize,
 ) {
-    assert!(controls::finish_one(
-        &mut sender.ledgers.questions,
-        messages,
-        queue,
-        776,
-        Default::default()
-    )
-    .unwrap());
+    assert!(sender
+        .send_pending_finish(messages, queue, 776, Default::default())
+        .unwrap());
     assert!(matches!(
         receive(receiver, messages, queue, chunk),
         Received::Finished(_)
@@ -269,7 +281,7 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
         let mut queue_slots = [None, None];
         let mut queue = super::driver::message_queue(&mut queue_slots).unwrap();
         with_peer(|client| with_peer(|server| {
-            let service = server.runtime.endpoint(binding::Route::local(41), clients::Location::Local).unwrap();
+            let service = server.capabilities().endpoint(binding::Route::local(41), clients::Location::Local).unwrap();
             let bootstrap = client.send(messages, &mut queue, 776, Default::default(), calls::bootstrap).unwrap();
             let remote = client.pipeline(bootstrap, pipeline::Path::new(&[])).unwrap();
             let Received::Bootstrap(incoming) = receive(server, messages, &mut queue, chunk) else { panic!("bootstrap") };
@@ -284,7 +296,7 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
             while let Some(server) = client.drain_endpoint() { assert!(server.is_none()); }
             finish(client, server, messages, &mut queue, chunk);
 
-            let target = match client.runtime.inspect(&remote).unwrap() {
+            let target = match client.runtime().inspect(&remote).unwrap() {
                 clients::Destination::Endpoint { owner: binding::Route::Capability(binding::Endpoint::Imported(remote)), .. } => remote.id(),
                 _ => panic!("imported result"),
             };
@@ -320,16 +332,17 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
                     }
                 }
                 assert!(canceled);
-                assert_eq!(server.runtime.queued(), 0);
+                assert_eq!(server.runtime().queued(), 0);
                 assert_eq!(server.retry_call().unwrap(), answers[1]);
                 assert!(matches!(receive(client, messages, &mut queue, chunk), Received::Returned(key, _) if key == calls[0].unwrap()));
                 assert!(client.drain_canceled_response(messages));
             }
             for i in usize::from(cancel)..2 {
-                let running = server.runtime.next_ready().unwrap().unwrap().accept();
+                let mut dispatch = server.capabilities();
+                let running = dispatch.next_ready().unwrap().unwrap().accept();
                 let request = running.owner().as_call().unwrap();
                 assert_eq!(request.answer(), answers[i].unwrap());
-                let active = server.ledgers.answers.dispatch(request.answer(), true).unwrap();
+                let active = server.answers().dispatch(request.answer(), true).unwrap();
                 assert_eq!(active, i != 0 || !cancel);
                 let value = request.with(messages, |view| view.incoming().dispatch(echo::Owned::ECHO).map(|typed| typed.params.value())).unwrap().unwrap();
                 assert_eq!(value, 41 + i as u64);
@@ -338,10 +351,10 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
                         calls::results(builder, request.answer().id(), echo::Owned::ECHO, |mut results| { results.scalar(EchoResults::VALUE).set(value + 1); Ok(()) })
                     } else { calls::cancelled(builder, request.answer().id()) }
                 }).unwrap();
-                if let Some(state) = answer::send(request.answer(), &mut server.ledgers.answers, messages, frame, queue.reserve().unwrap()).unwrap() {
-                    assert_eq!(state.release(messages).release(messages, &mut server.runtime), 43);
+                if let Some(state) = server.publish_answer_frame(request.answer(), messages, frame, queue.reserve().unwrap()).unwrap() {
+                    assert_eq!(server.release_answer(state, messages), 43);
                 }
-                let request = server.runtime.complete(running).into_call().unwrap_or_else(|_| panic!("Call"));
+                let request = server.capabilities().complete(running).into_call().unwrap_or_else(|_| panic!("Call"));
                 server.release_call(request, messages);
                 if i == 0 {
                     assert!(matches!(server.enqueue_call(&service, echo::Owned::ECHO, &[], messages, 776, Default::default(), |_| panic!("new calls cannot bypass deferred input")), Err(owned::connection::Error::Busy)));
@@ -361,16 +374,16 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
                     finish(client, server, messages, &mut queue, chunk);
                 }
             }
-            client.runtime.release(remote);
+            client.capabilities().release(remote);
             while let Some(server) = client.drain_endpoint() { assert!(server.is_none()); }
-            assert!(controls::release_one(&mut client.ledgers.imports, messages, &mut queue, 776, Default::default()).unwrap().is_some());
+            assert!(client.send_pending_release( messages, &mut queue, 776, Default::default()).unwrap().is_some());
             assert!(matches!(receive(server, messages, &mut queue, chunk), Received::Released));
             assert!(server.drain_export(0));
-            server.runtime.release(service);
+            server.capabilities().release(service);
             assert_eq!(server.drain_endpoint(), Some(Some(41)));
-            assert!(client.runtime.is_empty() && server.runtime.is_empty());
-            assert!(client.ledgers.questions.is_empty() && client.ledgers.imports.is_empty());
-            assert!(server.ledgers.answers.is_empty() && server.ledgers.exports.is_empty());
+            assert!(client.runtime().is_empty() && server.runtime().is_empty());
+            assert!(client.ledgers().questions.is_empty() && client.ledgers().imports.is_empty());
+            assert!(server.ledgers().answers.is_empty() && server.ledgers().exports.is_empty());
             // A one-slot polling budget still eventually detects quiescence.
             idle(client, messages, &mut queue);
             idle(server, messages, &mut queue);
@@ -480,7 +493,7 @@ pub fn owning_return_resolve_order() {
             }
             assert!(
                 matches!(
-                    peer.runtime.inspect(&pipeline).unwrap(),
+                    peer.runtime().inspect(&pipeline).unwrap(),
                     clients::Destination::Endpoint {
                         owner: binding::Route::Capability(binding::Endpoint::Broken(
                             capnp::ErrorKind::Overloaded
@@ -492,33 +505,23 @@ pub fn owning_return_resolve_order() {
             );
             let response = peer.take_response(question).unwrap();
             peer.release_response(response, messages);
-            peer.runtime.release(pipeline);
+            peer.capabilities().release(pipeline);
             while let Some(owner) = peer.drain_endpoint() {
                 assert!(owner.is_none());
             }
-            assert!(controls::finish_one(
-                &mut peer.ledgers.questions,
-                messages,
-                &mut queue,
-                776,
-                Default::default()
-            )
-            .unwrap());
+            assert!(peer
+                .send_pending_finish(messages, &mut queue, 776, Default::default())
+                .unwrap());
             super::owning::exchange(messages, &mut queue, 3).release(messages);
-            assert!(controls::release_one(
-                &mut peer.ledgers.imports,
-                messages,
-                &mut queue,
-                776,
-                Default::default()
-            )
-            .unwrap()
-            .is_some());
+            assert!(peer
+                .send_pending_release(messages, &mut queue, 776, Default::default())
+                .unwrap()
+                .is_some());
             super::owning::exchange(messages, &mut queue, 3).release(messages);
             assert!(
-                peer.runtime.is_empty()
-                    && peer.ledgers.imports.is_empty()
-                    && peer.ledgers.questions.is_empty()
+                peer.runtime().is_empty()
+                    && peer.ledgers().imports.is_empty()
+                    && peer.ledgers().questions.is_empty()
             );
             let writers = core::array::from_fn::<_, 4, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {

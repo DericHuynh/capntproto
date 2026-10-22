@@ -77,7 +77,8 @@ fn complete_relay<'p>(
     messages: &mut messages::Messages<'p, '_, '_>,
     local: bool,
 ) -> u32 {
-    let ready = peer.runtime.next_ready().unwrap().unwrap();
+    let mut dispatch = peer.capabilities();
+    let ready = dispatch.next_ready().unwrap().unwrap();
     assert!(
         matches!(
             ready.destination(),
@@ -89,7 +90,7 @@ fn complete_relay<'p>(
     );
     let running = ready.accept();
     let call = peer
-        .runtime
+        .capabilities()
         .complete(running)
         .into_call()
         .unwrap_or_else(|_| panic!("older relay call must precede loopback"));
@@ -98,22 +99,12 @@ fn complete_relay<'p>(
     // The fixture models the relay's already accepted Return/Finish here; the
     // loopback frames themselves travel through real framing and faulted IO.
     assert!(peer
-        .ledgers
-        .answers
-        .prepare_return(answer)
+        .prepare_answer_return(answer)
         .unwrap()
         .accept()
         .is_none());
-    let state = peer
-        .ledgers
-        .answers
-        .finish(answer.id(), false)
-        .retired
-        .unwrap();
-    assert_eq!(
-        state.release(messages).release(messages, &mut peer.runtime),
-        43
-    );
+    let state = peer.finish_answer(answer.id(), false).retired.unwrap();
+    assert_eq!(peer.release_answer(state, messages), 43);
     answer.id().to_wire()
 }
 
@@ -128,11 +119,11 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
         with_peer(|alice| {
             with_peer(|bob| {
                 let service = alice
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::local(41), clients::Location::Local)
                     .unwrap();
-                let mut batch = alice.ledgers.exports.batch();
-                let local_export = binding::stage(&mut alice.runtime, &mut batch, &service)
+                let (mut graph, mut batch) = alice.export_batch();
+                let local_export = binding::stage(&mut graph, &mut batch, &service)
                     .unwrap()
                     .id();
                 batch.commit();
@@ -140,37 +131,22 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
                     ImportId::from_wire(local_export.to_wire()),
                     (),
                 )];
-                bob.ledgers
-                    .imports
-                    .prepare_receive(&mut incoming)
-                    .unwrap()
-                    .commit();
+                bob.prepare_imports(&mut incoming).unwrap().commit();
                 let reflected = incoming[0].take_local().unwrap();
-                let frozen = bob
-                    .imports
-                    .freeze_import(&mut bob.runtime, &mut bob.ledgers.imports, &reflected)
-                    .unwrap();
-                let mut batch = bob.ledgers.exports.batch();
+                let frozen = bob.freeze_import(&reflected).unwrap();
+                let (_graph, mut batch) = bob.export_batch();
                 let original = batch.export_promise(frozen).unwrap().id();
                 batch.commit();
                 let mut incoming = [imports::ReceiveSlot::new_promise(
                     ImportId::from_wire(original.to_wire()),
                     (),
                 )];
-                alice
-                    .ledgers
-                    .imports
-                    .prepare_receive(&mut incoming)
-                    .unwrap()
-                    .commit();
+                alice.prepare_imports(&mut incoming).unwrap().commit();
                 let receipt = incoming[0].take_local().unwrap();
-                let promise = alice
-                    .imports
-                    .bind(&mut alice.runtime, &mut alice.ledgers.imports, &receipt)
-                    .unwrap();
+                let promise = alice.bind_import(&receipt).unwrap();
                 // A relay's local routing entry points at this observed promise.
-                let retained = alice.runtime.retain(&promise).unwrap();
-                let mut batch = alice.ledgers.exports.batch();
+                let retained = alice.capabilities().retain(&promise).unwrap();
+                let (_graph, mut batch) = alice.export_batch();
                 let relay = batch.export(retained).unwrap().id();
                 batch.commit();
                 input_call(alice, messages, relay.to_wire(), 71);
@@ -199,7 +175,7 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
                     Received::Resolved
                 ));
                 assert!(matches!(
-                    alice.runtime.inspect(&promise).unwrap(),
+                    alice.runtime().inspect(&promise).unwrap(),
                     clients::Destination::Waiting(_)
                 ));
                 // The ordinary dispatch slot still owns an older call. A maintenance
@@ -222,40 +198,16 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
                     let offer = messages.offer(&lease).unwrap();
                     queue.reserve().unwrap().accept(messages, offer);
                     messages.release(lease);
-                    let mut rejected = false;
+                    // Exhausted send ownership parks the exact loopback; no
+                    // repeated errors or retry scan are needed before release.
+                    let mut slept = false;
                     for _ in 0..150 {
-                        match alice.poll_maintenance(
-                            messages,
-                            &mut queue,
-                            776,
-                            Default::default(),
-                            &mut [0; 4],
-                            core::num::NonZeroUsize::new(1).unwrap(),
-                        ) {
-                            Err(owned::connection::Error::Input(owned::Error::Storage(
-                                messages::Error::NoSendSlot,
-                            ))) => {
-                                rejected = true;
-                                break;
-                            }
-                            Ok(Progress::Yield | Progress::Advanced | Progress::Idle) => (),
-                            Err(owned::connection::Error::Enqueue(
-                                owned::EnqueueError::Dispatch(
-                                    capntproto_rpc_engine::clients::dispatch::DispatchError::Full,
-                                ),
-                            )) => (),
-                            Err(owned::connection::Error::Dispatch(
-                                capntproto_rpc_engine::clients::dispatch::DispatchError::Full,
-                            )) => (),
-                            _ => panic!("expected send-slot pressure"),
-                        }
+                        tick(alice, messages, &mut queue);
+                        slept |= alice.maintenance_is_idle(messages, &queue);
                     }
-                    assert!(
-                        rejected,
-                        "loopback must reach output while two calls await its echo"
-                    );
+                    assert!(slept, "blocked loopback must eventually sleep");
                     assert!(matches!(
-                        alice.runtime.inspect(&promise).unwrap(),
+                        alice.runtime().inspect(&promise).unwrap(),
                         clients::Destination::Waiting(_)
                     ));
                     let window = queue.window(messages).unwrap().unwrap();
@@ -327,7 +279,7 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
                 assert!(queue.is_empty());
                 complete_relay(bob, messages, false);
                 // A later Alice call remains blocked on the resolved local route.
-                assert!(alice.runtime.next_ready().unwrap().is_none());
+                assert!(alice.capabilities().next_ready().unwrap().is_none());
                 for _ in 0..150 {
                     if !queue.is_empty() {
                         break;
@@ -349,14 +301,14 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
                     Received::Loopback
                 ));
                 for _ in 0..150 {
-                    if alice.runtime.next_ready().unwrap().is_some() {
+                    if alice.capabilities().next_ready().unwrap().is_some() {
                         break;
                     }
                     tick(alice, messages, &mut queue);
                 }
                 assert_eq!(complete_relay(alice, messages, true), 72);
                 for _ in 0..150 {
-                    if alice.runtime.next_ready().unwrap().is_some() {
+                    if alice.capabilities().next_ready().unwrap().is_some() {
                         break;
                     }
                     tick(alice, messages, &mut queue);
@@ -385,24 +337,24 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
                     owned::connection::Error::Loopback(_)
                 ));
                 rejected.frame.release(messages);
-                alice.runtime.release(promise);
-                alice.runtime.release(service);
-                alice.ledgers.imports.release(receipt);
-                bob.ledgers.imports.release(reflected);
+                alice.capabilities().release(promise);
+                alice.capabilities().release(service);
+                alice.release_import(receipt);
+                bob.release_import(reflected);
                 for export in [relay, local_export] {
                     let peer = &mut *alice;
-                    if let Some(client) = peer.ledgers.exports.release(export, 1).unwrap() {
-                        peer.runtime.release(client);
+                    if let Some(client) = peer.release_export(export, 1).unwrap() {
+                        peer.capabilities().release(client);
                     }
                 }
-                if let Some(client) = bob.ledgers.exports.release(original, 1).unwrap() {
-                    bob.runtime.release(client);
+                if let Some(client) = bob.release_export(original, 1).unwrap() {
+                    bob.capabilities().release(client);
                 }
                 while alice.drain_endpoint().is_some() {}
                 while bob.drain_endpoint().is_some() {}
-                assert!(alice.runtime.is_empty() && bob.runtime.is_empty());
-                assert!(alice.ledgers.exports.is_empty() && bob.ledgers.exports.is_empty());
-                assert!(alice.ledgers.answers.is_empty() && bob.ledgers.answers.is_empty());
+                assert!(alice.runtime().is_empty() && bob.runtime().is_empty());
+                assert!(alice.ledgers().exports.is_empty() && bob.ledgers().exports.is_empty());
+                assert!(alice.ledgers().answers.is_empty() && bob.ledgers().answers.is_empty());
                 // All frame ownership is reclaimed independently of pending peer
                 // Release controls, which the fixture's terminal teardown discards.
                 let writers = core::array::from_fn::<_, 12, _>(|_| messages.reserve(776).unwrap());
@@ -419,9 +371,8 @@ pub fn owning_loopback_driver(chunk: usize, reject_output: bool) {
 /// across Finish, and wait for its published reflected route before echoing.
 pub fn owning_loopback_unresolved(chunk: usize) {
     use capntproto_rpc_wire::{
-        owned::{answer, pipelines},
         pipeline,
-        publication::reflected::{Reference, References},
+        publication::reflected::Reference,
         rpc_capnp::api::{Payload, Return},
     };
     let mut words = [[ZERO; 97]; 6];
@@ -444,11 +395,7 @@ pub fn owning_loopback_unresolved(chunk: usize) {
             };
             let key = key.answer();
             let mut incoming = [imports::ReceiveSlot::new(ImportId::from_wire(17), ())];
-            peer.ledgers
-                .imports
-                .prepare_receive(&mut incoming)
-                .unwrap()
-                .commit();
+            peer.prepare_imports(&mut incoming).unwrap().commit();
             let remote = incoming[0].take_local().unwrap();
             let frame = Frame::build(messages, 776, Default::default(), |builder| {
                 calls::sender_loopback(
@@ -476,7 +423,7 @@ pub fn owning_loopback_unresolved(chunk: usize) {
                 tick(peer, messages, &mut queue);
             }
             assert!(queue.is_empty());
-            assert!(peer.runtime.next_ready().unwrap().is_none());
+            assert!(peer.capabilities().next_ready().unwrap().is_none());
             let frame = Frame::build(messages, 776, Default::default(), |builder| {
                 calls::finish(builder, QuestionId::from_wire(7), false)
             })
@@ -493,7 +440,7 @@ pub fn owning_loopback_unresolved(chunk: usize) {
                 Received::Finished(None)
             ));
             assert!(
-                peer.ledgers.answers.dispatch(key, true).unwrap(),
+                peer.answers().dispatch(key, true).unwrap(),
                 "loopback retains producer through Finish"
             );
             let frame = Frame::build(messages, 776, Default::default(), |builder| {
@@ -513,49 +460,27 @@ pub fn owning_loopback_unresolved(chunk: usize) {
                 Ok(())
             })
             .unwrap();
-            let mut refs = [Reference::Hosted(
-                peer.ledgers.imports.retain(&remote).unwrap(),
-            )];
-            let mut references = References {
-                imports: &mut peer.ledgers.imports,
-                questions: &mut peer.ledgers.questions,
-                slots: &mut refs,
-            };
-            let batch = peer.ledgers.exports.batch();
-            let published = pipelines::Published::from_reflected(
-                &frame,
-                messages,
-                &batch,
-                &mut peer.runtime,
-                &peer.imports,
-                &mut references,
-                &mut [0; 4],
-            )
-            .unwrap();
+            let mut refs = [Reference::Hosted(peer.retain_import(&remote).unwrap())];
+            let published = peer
+                .snapshot_reflected_results(&frame, messages, &mut refs, &mut [0; 4])
+                .unwrap();
             // Finish cancels the peer's result, but not its already admitted
             // loopback dependency. Retain results locally and send Canceled.
-            drop(batch);
             frame.release(messages);
-            let Reference::Hosted(retained) =
-                core::mem::replace(&mut references.slots[0], Reference::None)
+            let Reference::Hosted(retained) = core::mem::replace(&mut refs[0], Reference::None)
             else {
                 unreachable!()
             };
-            references.imports.release(retained);
+            peer.release_import(retained);
             let canceled = Frame::build(messages, 776, Default::default(), |builder| {
                 calls::cancelled(builder, key.id())
             })
             .unwrap();
-            assert!(answer::send(
-                key,
-                &mut peer.ledgers.answers,
-                messages,
-                canceled,
-                queue.reserve().unwrap()
-            )
-            .unwrap()
-            .is_none());
-            pipelines::complete(&mut peer.ledgers.answers, key, Ok(published))
+            assert!(peer
+                .publish_answer_frame(key, messages, canceled, queue.reserve().unwrap())
+                .unwrap()
+                .is_none());
+            peer.publish_answer_pipeline(key, Ok(published))
                 .unwrap_or_else(|_| panic!("publish"));
             let returned = super::owning::exchange(messages, &mut queue, chunk);
             returned.release(messages);
@@ -585,9 +510,9 @@ pub fn owning_loopback_unresolved(chunk: usize) {
                 .unwrap();
             frame.release(messages);
             assert_eq!(peer.drain_answer(0, messages), Some(43));
-            peer.ledgers.imports.release(remote);
+            peer.release_import(remote);
             while peer.drain_endpoint().is_some() {}
-            assert!(peer.runtime.is_empty() && peer.ledgers.answers.is_empty());
+            assert!(peer.runtime().is_empty() && peer.ledgers().answers.is_empty());
             let writers = core::array::from_fn::<_, 6, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {
                 messages.discard(writer);

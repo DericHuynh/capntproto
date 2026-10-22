@@ -3,8 +3,17 @@
 //! descriptors retain the advertised endpoint instead of following later remote
 //! promise resolutions (the Cap'n Proto Tribble four-way ordering rule).
 use core::marker::PhantomData;
+mod events;
+#[cfg(feature = "alloc")]
+pub use events::NotificationGrowth;
+pub use events::{
+    Event, EventKind, Listener, ListenerSlot, NotificationStorage, Subscription, SubscriptionKey,
+    SubscriptionSlot, Watch,
+};
+mod access;
 pub mod dispatch;
 mod store;
+pub use access::Access;
 pub use store::Capabilities;
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
@@ -29,6 +38,17 @@ impl<'id> Client<'id> {
     }
 }
 
+/// Currently reusable slots, including permitted growth but excluding exhausted generations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Resources {
+    pub nodes: usize,
+    pub listeners: usize,
+    pub subscriptions: usize,
+    pub node_limit: usize,
+    pub listener_limit: usize,
+    pub subscription_limit: usize,
+}
+
 /// Connection identities belong to the caller's transport registry. A local or
 /// broken endpoint cannot silently become a remote endpoint after publication.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,11 +61,15 @@ pub enum Location<P> {
 pub enum Error {
     NonemptyStorage,
     Full,
+    AllocationFailed,
+    ListenersFull,
+    SubscriptionsFull,
     GenerationsExhausted,
     ReferencesExhausted,
     Stale,
     NotPromise,
     AlreadyResolved,
+    AlreadyObserved,
     Cycle,
     NotEndpoint,
 }
@@ -81,45 +105,64 @@ pub struct Slot<T, P> {
     generation: u64,
     entry: Option<Entry<T, P>>,
     retired_next: Option<usize>,
+    subscribers: Option<usize>,
+    waiting: dispatch::List,
+    dispatch_changed: bool,
+    dispatch_previous: Option<usize>,
+    dispatch_next: Option<usize>,
 }
 impl<T, P> Slot<T, P> {
     pub const EMPTY: Self = Self {
         generation: 0,
         entry: None,
         retired_next: None,
+        subscribers: None,
+        waiting: dispatch::List::EMPTY,
+        dispatch_changed: false,
+        dispatch_previous: None,
+        dispatch_next: None,
     };
 }
 pub struct Graph<'id, 'storage, T, P> {
     slots: crate::storage::Storage<'storage, Slot<T, P>>,
+    unavailable: usize,
     dispatch_sequence: u64,
     retired_head: Option<usize>,
     retired_tail: Option<usize>,
+    dispatch_changes: dispatch::List,
+    notifications: events::Notifications<'storage>,
     brand: Brand<'id>,
 }
 
-pub fn with_graph<T, P: Copy + Eq, R>(
-    slots: &mut [Slot<T, P>],
+pub fn with_graph<'s, T, P: Copy + Eq, R>(
+    slots: &'s mut [Slot<T, P>],
+    notifications: NotificationStorage<'s>,
     f: impl for<'id> FnOnce(&mut Graph<'id, '_, T, P>) -> R,
 ) -> Result<R, Error> {
-    Ok(f(&mut new_scope(slots)?))
+    Ok(f(&mut new_scope(slots, notifications)?))
 }
-pub async fn with_graph_async<T, P: Copy + Eq, R>(
-    slots: &mut [Slot<T, P>],
+pub async fn with_graph_async<'s, T, P: Copy + Eq, R>(
+    slots: &'s mut [Slot<T, P>],
+    notifications: NotificationStorage<'s>,
     f: impl for<'id> core::ops::AsyncFnOnce(&mut Graph<'id, '_, T, P>) -> R,
 ) -> Result<R, Error> {
-    Ok(f(&mut new_scope(slots)?).await)
+    Ok(f(&mut new_scope(slots, notifications)?).await)
 }
-pub(crate) fn new_scope<'id, T, P>(
-    slots: &mut [Slot<T, P>],
-) -> Result<Graph<'id, '_, T, P>, Error> {
+pub(crate) fn new_scope<'id, 's, T, P>(
+    slots: &'s mut [Slot<T, P>],
+    notifications: NotificationStorage<'s>,
+) -> Result<Graph<'id, 's, T, P>, Error> {
     if slots.iter().any(|s| s.entry.is_some()) {
         return Err(Error::NonemptyStorage);
     }
     Ok(Graph {
+        unavailable: slots.iter().filter(|s| s.generation == u64::MAX).count(),
         slots: crate::storage::Storage::borrowed(slots),
         dispatch_sequence: 0,
         retired_head: None,
         retired_tail: None,
+        dispatch_changes: dispatch::List::EMPTY,
+        notifications: events::Notifications::new(notifications)?,
         brand: PhantomData,
     })
 }
@@ -131,22 +174,27 @@ pub(crate) fn new_scope<'id, T, P>(
 pub fn with_growing_graph<T, P: Copy + Eq, R>(
     initial: usize,
     maximum: usize,
+    notifications: NotificationGrowth,
     f: impl for<'id> FnOnce(&mut Graph<'id, '_, T, P>) -> R,
 ) -> Result<R, Error> {
-    Ok(f(&mut new_growing_scope(initial, maximum)?))
+    Ok(f(&mut new_growing_scope(initial, maximum, notifications)?))
 }
 #[cfg(feature = "alloc")]
 pub(crate) fn new_growing_scope<'id, 's, T, P>(
     initial: usize,
     maximum: usize,
+    notifications: NotificationGrowth,
 ) -> Result<Graph<'id, 's, T, P>, Error> {
     let slots =
         crate::storage::Storage::growing(initial, maximum, || Slot::EMPTY).ok_or(Error::Full)?;
     Ok(Graph {
+        unavailable: 0,
         slots,
         dispatch_sequence: 0,
         retired_head: None,
         retired_tail: None,
+        dispatch_changes: dispatch::List::EMPTY,
+        notifications: events::Notifications::growing(notifications)?,
         brand: PhantomData,
     })
 }
@@ -258,6 +306,7 @@ impl<'id, T, P: Copy + Eq> Resolution<'_, 'id, '_, T, P> {
         if self.barrier {
             *prior = old;
             entry.refs += 1; // preflighted, and this borrow excludes other transitions
+            self.graph.notify_changed(self.source.index);
             Some(Barrier {
                 client: Client {
                     key: self.graph.key(self.source),
@@ -267,12 +316,25 @@ impl<'id, T, P: Copy + Eq> Resolution<'_, 'id, '_, T, P> {
             if let Some(old) = old {
                 self.graph.release_raw(old);
             }
+            self.graph.dispatch_changed(self.source.index);
+            self.graph.notify_changed(self.source.index);
             None
         }
     }
 }
 
 impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
+    pub fn resources(&self) -> Resources {
+        Resources {
+            nodes: self.slots.maximum() - self.unavailable,
+            node_limit: self.slots.maximum(),
+            listener_limit: self.notifications.listener_limit(),
+            subscription_limit: self.notifications.subscription_limit(),
+            listeners: self.notifications.listeners_available(),
+            subscriptions: self.notifications.subscriptions_available(),
+        }
+    }
+
     fn key(&self, raw: Raw) -> Key<'id> {
         Key {
             raw,
@@ -304,6 +366,8 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
         Err({
             if self.slots.iter().any(|s| s.entry.is_none()) {
                 Error::GenerationsExhausted
+            } else if self.slots.len() < self.slots.maximum() {
+                Error::AllocationFailed
             } else {
                 Error::Full
             }
@@ -313,6 +377,7 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
         let slot = &mut self.slots[index];
         slot.generation += 1;
         slot.entry = Some(Entry { refs: 1, kind });
+        self.unavailable += 1;
         Client {
             key: Key {
                 raw: Raw {
@@ -321,6 +386,42 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
                 },
                 brand: PhantomData,
             },
+        }
+    }
+    // Only promises with parked dispatch owners enter this journal. Their
+    // queued references pin the node generation until the runtime unlinks them.
+    fn dispatch_changed(&mut self, index: usize) {
+        let slot = &mut self.slots[index];
+        if slot.waiting.head.is_none() || slot.dispatch_changed {
+            return;
+        }
+        slot.dispatch_changed = true;
+        slot.dispatch_previous = self.dispatch_changes.tail;
+        slot.dispatch_next = None;
+        if let Some(tail) = self.dispatch_changes.tail {
+            self.slots[tail].dispatch_next = Some(index);
+        } else {
+            self.dispatch_changes.head = Some(index);
+        }
+        self.dispatch_changes.tail = Some(index);
+    }
+    fn unlink_dispatch_change(&mut self, index: usize) {
+        let slot = &mut self.slots[index];
+        if !slot.dispatch_changed {
+            return;
+        }
+        slot.dispatch_changed = false;
+        let previous = slot.dispatch_previous.take();
+        let next = slot.dispatch_next.take();
+        if let Some(previous) = previous {
+            self.slots[previous].dispatch_next = next;
+        } else {
+            self.dispatch_changes.head = next;
+        }
+        if let Some(next) = next {
+            self.slots[next].dispatch_previous = previous;
+        } else {
+            self.dispatch_changes.tail = previous;
         }
     }
     pub fn endpoint(
@@ -661,6 +762,8 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
         };
         let prior = prior.take().expect("one affine barrier per resolution");
         self.release_raw(prior);
+        self.dispatch_changed(barrier.key().raw.index);
+        self.notify_changed(barrier.key().raw.index);
         self.release(barrier.client);
     }
     pub fn release(&mut self, client: Client<'id>) {
@@ -688,12 +791,15 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
                         self.retired_head = Some(raw.index);
                     }
                     self.retired_tail = Some(raw.index);
+                    self.notify_abandoned(raw.index);
                     return;
                 }
                 Kind::Promise { target, prior, .. } => {
                     debug_assert!(prior.is_none(), "barrier retains a local reference");
                     let next = target.take();
                     self.slots[raw.index].entry = None;
+                    self.unavailable -= usize::from(self.slots[raw.index].generation != u64::MAX);
+                    self.notify_abandoned(raw.index);
                     if let Some(next) = next {
                         raw = next;
                     } else {
@@ -714,6 +820,7 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
         let Kind::Endpoint { owner, .. } = self.slots[index].entry.take().unwrap().kind else {
             unreachable!()
         };
+        self.unavailable -= usize::from(self.slots[index].generation != u64::MAX);
         Some(owner)
     }
     pub fn is_empty(&self) -> bool {
@@ -728,6 +835,11 @@ impl<T, P> Drop for Graph<'_, '_, T, P> {
         for slot in &mut *self.slots {
             slot.entry.take();
             slot.retired_next = None;
+            slot.subscribers = None;
+            slot.waiting = dispatch::List::EMPTY;
+            slot.dispatch_changed = false;
+            slot.dispatch_previous = None;
+            slot.dispatch_next = None;
         }
     }
 }

@@ -17,6 +17,10 @@ pub fn exported_promise_failure() {
     messages::with_messages(&mut buffers, &mut [messages::SendSlot::EMPTY], |messages| {
         clients::with_graph(
             &mut [const { clients::Slot::EMPTY }; 3],
+            clients::NotificationStorage {
+                listeners: &mut [const { clients::ListenerSlot::EMPTY }; 4],
+                subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 12],
+            },
             |graph: &mut clients::Graph<'_, '_, Endpoint<'_, u8, u32>, u8>| {
                 exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
                     let source = graph.promise(&mut None).unwrap();

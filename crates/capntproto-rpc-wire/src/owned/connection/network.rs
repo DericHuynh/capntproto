@@ -157,7 +157,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         .map_err(Error::Input)?;
         let retired = answer::send(key, &mut self.ledgers.answers, messages, frame, output)
             .map_err(Error::Input)?;
-        Ok(retired.map(|state| state.release(messages).release(messages, &mut self.runtime)))
+        Ok(retired.map(|state| {
+            state
+                .release(messages)
+                .release(messages, &mut self.runtime, |child| {
+                    self.ledgers.questions.release(child)
+                })
+        }))
     }
 
     /// Keep the original promised-answer route after ResultsSentElsewhere.
@@ -263,6 +269,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         })();
         match outcome {
             Ok(()) => {
+                self.refresh_exchange(key);
                 adoption.release(messages);
                 Ok(key)
             }
@@ -375,11 +382,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .map_err(|e| RegistrationError::Connection(Error::Input(e)))
                 .and_then(|r| r.map_err(RegistrationError::Network));
             if let Err(error) = registered {
-                self.runtime.release(client);
                 if observer {
-                    self.pipelines
-                        .discard_unexposed(key, &mut self.ledgers.answers);
+                    self.pipelines.discard_unexposed(
+                        key,
+                        &mut self.ledgers.answers,
+                        &mut self.runtime,
+                    );
                 }
+                self.runtime.release(client);
                 return Err(error);
             }
             self.ledgers
@@ -489,8 +499,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                             rejected.frame.release(messages);
                             Error::Input(rejected.error)
                         })?;
-                return Ok(retired
-                    .map(|state| state.release(messages).release(messages, &mut self.runtime)));
+                return Ok(retired.map(|state| {
+                    state
+                        .release(messages)
+                        .release(messages, &mut self.runtime, |child| {
+                            self.ledgers.questions.release(child)
+                        })
+                }));
             }
             let mut batch = self.ledgers.exports.batch();
             let grant = self
@@ -553,11 +568,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 }
                 Ok(Some(retired)) => {
                     published.release(messages, &mut self.runtime);
-                    Ok(Some(
-                        retired
-                            .release(messages)
-                            .release(messages, &mut self.runtime),
-                    ))
+                    Ok(Some(retired.release(messages).release(
+                        messages,
+                        &mut self.runtime,
+                        |child| self.ledgers.questions.release(child),
+                    )))
                 }
                 Ok(None) => {
                     // Preflight checked pending state, the immutable encoder set
@@ -627,7 +642,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 pipelines::complete(&mut self.ledgers.answers, key, Err(reason))
                     .unwrap_or_else(|_| unreachable!("preflighted failed acceptance"));
             }
-            Ok(retired.map(|state| state.release(messages).release(messages, &mut self.runtime)))
+            Ok(retired.map(|state| {
+                state
+                    .release(messages)
+                    .release(messages, &mut self.runtime, |child| {
+                        self.ledgers.questions.release(child)
+                    })
+            }))
         })();
         match outcome {
             Ok(retired) => {

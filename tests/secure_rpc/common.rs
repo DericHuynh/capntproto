@@ -172,3 +172,126 @@ pub async fn exercise(mut driver: TwoPartyClient<'static>) {
     assert!(diagnostics.snapshot().is_empty());
     assert!(echo(&cap, 19).await.is_err());
 }
+
+// Production network diagnostic: grow to 32 parked RPCs, then release one.
+// The counters belong to application futures and therefore detect any broad
+// worker repoll caused by IO, Return, cleanup, or an unrelated application wake.
+#[derive(Clone)]
+pub struct SparseCalls {
+    next_bounce: Rc<std::cell::Cell<usize>>,
+    released: Rc<Vec<std::cell::Cell<bool>>>,
+    polls: Rc<Vec<std::cell::Cell<usize>>>,
+    wakes: Rc<Vec<std::cell::RefCell<Option<std::task::Waker>>>>,
+}
+impl SparseCalls {
+    pub fn new() -> Self {
+        Self {
+            next_bounce: Rc::new(std::cell::Cell::new(0)),
+            released: Rc::new((0..32).map(|_| std::cell::Cell::new(false)).collect()),
+            polls: Rc::new((0..32).map(|_| std::cell::Cell::new(0)).collect()),
+            wakes: Rc::new((0..32).map(|_| std::cell::RefCell::new(None)).collect()),
+        }
+    }
+    pub fn bootstrap(&self) -> capnp::capability::Client {
+        capnp_rpc::new_client::<harness::Client, _>(self.clone()).client
+    }
+    fn release(&self, index: usize) {
+        self.released[index].set(true);
+        if let Some(wake) = self.wakes[index].borrow_mut().take() {
+            wake.wake();
+        }
+    }
+    pub async fn exercise(&self, client: harness::Client) {
+        let mut replies: Vec<_> = (0..32)
+            .map(|value| {
+                let mut request = client.bounce_request();
+                request
+                    .get()
+                    .set_cap(capnp_rpc::new_client::<harness::Client, _>(Echo));
+                let response = request.send();
+                let pipeline = response.pipeline.get_cap();
+                Some(tokio::task::spawn_local(async move {
+                    // Each child is sent through its unresolved parent question.
+                    // Releasing one parent must settle just its own projection.
+                    let result = echo(&pipeline, value).await.unwrap();
+                    response
+                        .promise
+                        .await
+                        .unwrap()
+                        .get()
+                        .unwrap()
+                        .get_cap()
+                        .unwrap();
+                    result
+                }))
+            })
+            .collect();
+        while self.polls.iter().any(|polls| polls.get() == 0) {
+            tokio::task::yield_now().await;
+        }
+        let before: Vec<_> = self.polls.iter().map(|polls| polls.get()).collect();
+        self.release(17);
+        assert_eq!(replies[17].take().unwrap().await.unwrap(), 17);
+        for _ in 0..64 {
+            tokio::task::yield_now().await;
+        }
+        for (index, expected) in before.into_iter().enumerate() {
+            if index != 17 {
+                assert_eq!(
+                    self.polls[index].get(),
+                    expected,
+                    "unrelated parked RPC {index}"
+                );
+                assert!(!replies[index].as_ref().unwrap().is_finished());
+            }
+        }
+        for index in 0..32 {
+            self.release(index);
+        }
+        for (index, reply) in replies.into_iter().enumerate() {
+            if let Some(reply) = reply {
+                assert_eq!(reply.await.unwrap(), index as u32);
+            }
+        }
+    }
+}
+impl harness::Server for SparseCalls {
+    fn bounce(
+        self: Rc<Self>,
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        // Calls on the same capability preserve admission order. The index also
+        // checks that a used pipeline does not reorder its parent's dispatch.
+        let index = self.next_bounce.get();
+        self.next_bounce.set(index + 1);
+        let (params, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            assert!(index < 32);
+            let cap = params.get()?.get_cap()?;
+            std::future::poll_fn(|cx| {
+                self.polls[index].set(self.polls[index].get() + 1);
+                if self.released[index].get() {
+                    std::task::Poll::Ready(())
+                } else {
+                    *self.wakes[index].borrow_mut() = Some(cx.waker().clone());
+                    std::task::Poll::Pending
+                }
+            })
+            .await;
+            results.complete(|mut r| {
+                r.set_cap(cap);
+                Ok(())
+            })
+        })
+    }
+}
+
+pub fn portable_options() -> capnp_rpc::portable::Options {
+    capnp_rpc::portable::Options::bounded(
+        1.try_into().unwrap(),
+        256.try_into().unwrap(),
+        (512 * 1024).try_into().unwrap(),
+        (8 * 1024 * 1024).try_into().unwrap(),
+    )
+    .unwrap()
+}

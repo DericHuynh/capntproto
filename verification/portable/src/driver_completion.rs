@@ -6,6 +6,7 @@ use super::{
     portable_capnp::{api::echo::EchoResults, echo},
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     completion,
     ids::{AnswerId, ImportId, WireId},
@@ -61,7 +62,7 @@ pub fn caller_owned_reply_future(mode: u8) {
                 assert!(reply.take_undelivered().is_none());
                 let (_sender, _receiver) = reply.pair().unwrap();
             }
-            peer.runtime.release(target);
+            peer.capabilities().release(target);
             assert_eq!(close(peer,messages,&mut queue),0);
             let writers=core::array::from_fn::<_,6,_>(|_|messages.reserve(776).unwrap());for writer in writers{messages.discard(writer)}
         });

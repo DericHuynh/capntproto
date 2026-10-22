@@ -36,6 +36,24 @@ impl Output {
         if queue.is_failed() {
             return Poll::Ready(Err(SendError::State(messages::Error::QueueFailed)));
         }
+        if queue.is_direct() {
+            if queue.is_empty() {
+                return Poll::Ready(Ok(()));
+            }
+            for _ in 0..budget.get() {
+                match writer.poll_flush(cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Ok(())) => return Poll::Ready(Ok(())),
+                    Poll::Ready(Err(IoError::Failed(error))) => {
+                        queue.fail();
+                        return Poll::Ready(Err(SendError::Io(error)));
+                    }
+                    Poll::Ready(Err(IoError::Interrupted)) => (),
+                }
+            }
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
         if !self.flushing && queue.is_empty() {
             return Poll::Ready(Ok(()));
         }

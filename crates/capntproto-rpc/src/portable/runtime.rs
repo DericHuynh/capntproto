@@ -48,12 +48,9 @@ struct Activity {
     state: AtomicU8,
     parent: AtomicWaker,
 }
-impl Wake for Activity {
-    fn wake(self: Arc<Self>) {
-        self.wake_by_ref();
-    }
-    fn wake_by_ref(self: &Arc<Self>) {
-        if self.state.fetch_or(READY, Ordering::AcqRel) & POLLING == 0 {
+impl Activity {
+    fn notify(&self, source: u8) {
+        if self.state.fetch_or(READY | source, Ordering::AcqRel) & POLLING == 0 {
             self.parent.wake();
         }
     }
@@ -62,7 +59,8 @@ impl Wake for Activity {
 // sleeping connection, and a writer wake must not speculate on input readiness.
 struct Lane {
     ready: AtomicBool,
-    parent: Waker,
+    parent: Arc<Activity>,
+    source: u8,
 }
 impl Wake for Lane {
     fn wake(self: Arc<Self>) {
@@ -70,19 +68,21 @@ impl Wake for Lane {
     }
     fn wake_by_ref(self: &Arc<Self>) {
         self.ready.store(true, Ordering::Release);
-        self.parent.wake_by_ref();
+        self.parent.notify(self.source);
     }
 }
-fn lane(parent: &Waker) -> (Arc<Lane>, Waker) {
+fn lane(parent: &Arc<Activity>, source: u8) -> (Arc<Lane>, Waker) {
     let lane = Arc::new(Lane {
         ready: AtomicBool::new(true),
         parent: parent.clone(),
+        source,
     });
     let waker = Waker::from(lane.clone());
     (lane, waker)
 }
 const READY: u8 = 1;
 const POLLING: u8 = 2;
+const PROGRESS: u8 = 4;
 struct Turn<'a>(&'a Activity);
 impl Drop for Turn<'_> {
     fn drop(&mut self) {
@@ -96,16 +96,14 @@ impl Drop for Turn<'_> {
 ///
 /// Put related connections in the same runtime, then pass the application to
 /// [`run`](Self::run). Each turn progresses ready systems and drains ready
-/// application continuations before polling transport writers. Buffered input
-/// can resume in the next turn while earlier output travels to the next service.
-/// A bounded number of rounds prevents a
+/// application continuations and ready protocol input before polling writers.
+/// Output-only wakes do not extend the progress phase. A bounded number of rounds prevents a
 /// continuously waking application from starving output or its executor.
 /// Dropping the runtime aborts its systems and closes its handles.
 pub struct Runtime {
     pending: Rc<RefCell<Pending>>,
     systems: Vec<Running>,
     activity: Arc<Activity>,
-    waker: Waker,
     application: Arc<Lane>,
     application_waker: Waker,
 }
@@ -113,8 +111,7 @@ impl Runtime {
     /// Bound the number of systems, including systems queued by a handle.
     pub fn new(maximum: NonZeroUsize) -> Self {
         let activity = Arc::new(Activity::default());
-        let waker = Waker::from(activity.clone());
-        let (application, application_waker) = lane(&waker);
+        let (application, application_waker) = lane(&activity, PROGRESS);
         Self {
             pending: Rc::new(RefCell::new(Pending {
                 queued: Vec::new(),
@@ -123,7 +120,6 @@ impl Runtime {
                 closed: false,
             })),
             systems: Vec::new(),
-            waker,
             activity,
             application,
             application_waker,
@@ -132,7 +128,7 @@ impl Runtime {
     pub fn handle(&self) -> RuntimeHandle {
         RuntimeHandle {
             pending: self.pending.clone(),
-            waker: self.waker.clone(),
+            activity: self.activity.clone(),
         }
     }
     /// Drive the application and all admitted systems together. System errors
@@ -161,7 +157,9 @@ impl Runtime {
         loop {
             loop {
                 rounds += 1;
-                self.activity.state.fetch_and(!READY, Ordering::AcqRel);
+                self.activity
+                    .state
+                    .fetch_and(!(READY | PROGRESS), Ordering::AcqRel);
                 if self.application.ready.swap(false, Ordering::AcqRel) {
                     if let Poll::Ready(result) = application.as_mut().poll(&mut application_cx) {
                         return Poll::Ready(result);
@@ -190,9 +188,16 @@ impl Runtime {
                         }
                     }
                 }
+                // The runtime is the sole hosted batching owner. A buffered
+                // input wake gets another bounded progress round; an output
+                // wake only requests the physical output phase below.
                 if rounds == 32
-                    || !self.application.ready.load(Ordering::Acquire)
-                    || self.activity.state.fetch_and(!READY, Ordering::AcqRel) & READY == 0
+                    || self
+                        .activity
+                        .state
+                        .fetch_and(!(READY | PROGRESS), Ordering::AcqRel)
+                        & PROGRESS
+                        == 0
                 {
                     break;
                 }
@@ -211,7 +216,13 @@ impl Runtime {
             // Output completion can make protocol/application work ready. Run
             // the next turn directly, sharing the same fairness allowance,
             // rather than forcing an otherwise unnecessary executor round trip.
-            if self.activity.state.fetch_and(!READY, Ordering::AcqRel) & READY == 0 {
+            if self
+                .activity
+                .state
+                .fetch_and(!(READY | PROGRESS), Ordering::AcqRel)
+                & READY
+                == 0
+            {
                 return Poll::Pending;
             }
         }
@@ -236,7 +247,7 @@ impl Drop for Runtime {
 #[derive(Clone)]
 pub struct RuntimeHandle {
     pending: Rc<RefCell<Pending>>,
-    waker: Waker,
+    activity: Arc<Activity>,
 }
 impl RuntimeHandle {
     /// Transfer a system into the runtime. Dropping the returned completion
@@ -258,8 +269,8 @@ impl RuntimeHandle {
                 .queued
                 .try_reserve(1)
                 .map_err(|_| Error::overloaded("RPC runtime admission allocation failed".into()))?;
-            let (progress, progress_waker) = lane(&self.waker);
-            let (output, output_waker) = lane(&self.waker);
+            let (progress, progress_waker) = lane(&self.activity, PROGRESS);
+            let (output, output_waker) = lane(&self.activity, 0);
             pending.queued.push(Running {
                 driver,
                 completion,
@@ -270,7 +281,7 @@ impl RuntimeHandle {
             });
             pending.active += 1;
         }
-        self.waker.wake_by_ref();
+        self.activity.notify(PROGRESS);
         Ok(Promise::from_future(async move {
             receiver
                 .await

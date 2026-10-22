@@ -18,7 +18,7 @@ use capntproto_rpc_wire::{
     calls, clients as binding, network,
     owned::{
         connection::{CallOutput, Error, HandoffError, NetworkRequest, Received},
-        controls, Frame,
+        Frame,
     },
     pipeline,
     rpc_capnp::{
@@ -111,14 +111,9 @@ pub fn owning_network_await(mode: u8) {
                     .unwrap_or_else(|r| panic!("{}", r.error));
                 let response = peer.take_response(sent.question).unwrap();
                 peer.release_response(response, messages);
-                assert!(controls::finish_one(
-                    &mut peer.ledgers.questions,
-                    messages,
-                    &mut queue,
-                    776,
-                    Default::default()
-                )
-                .unwrap());
+                assert!(peer
+                    .send_pending_finish(messages, &mut queue, 776, Default::default())
+                    .unwrap());
                 exchange(messages, &mut queue, 1).release(messages);
             }
             if mode == 3 {
@@ -193,7 +188,7 @@ pub fn owning_network_await(mode: u8) {
                     }
                     let authority = if cap {
                         Some(
-                            peer.runtime
+                            peer.capabilities()
                                 .endpoint(binding::Route::local(41), clients::Location::Local)
                                 .unwrap(),
                         )
@@ -239,7 +234,7 @@ pub fn owning_network_await(mode: u8) {
                             HandoffError::Connection(Error::Input(_))
                         ));
                         if let Ok(result) = rejected.result {
-                            result.release(messages, &mut peer.runtime);
+                            result.release(messages, &mut peer.capabilities());
                         }
                         awaiting = rejected.awaiting;
                         result = Err(capnp::ErrorKind::Failed);
@@ -266,7 +261,7 @@ pub fn owning_network_await(mode: u8) {
                             HandoffError::Connection(Error::Input(_))
                         ));
                         if let Ok(result) = rejected.result {
-                            result.release(messages, &mut peer.runtime);
+                            result.release(messages, &mut peer.capabilities());
                         }
                         awaiting = rejected.awaiting;
                     }
@@ -299,7 +294,7 @@ pub fn owning_network_await(mode: u8) {
                             .err()
                             .unwrap();
                         if let Ok(result) = rejected.result {
-                            result.release(messages, &mut peer.runtime);
+                            result.release(messages, &mut peer.capabilities());
                         }
                         peer.release_network(NetworkRequest::Await(rejected.awaiting), messages);
                         if !matches!(mode, 5 | 12) {
@@ -336,7 +331,7 @@ pub fn owning_network_await(mode: u8) {
                                 }
                                 assert!(
                                     matches!(
-                                        peer.runtime.inspect(observer).unwrap(),
+                                        peer.runtime().inspect(observer).unwrap(),
                                         clients::Destination::Waiting(_)
                                     ),
                                     "handoff cannot overtake old route"
@@ -389,7 +384,7 @@ pub fn owning_network_await(mode: u8) {
                                 )
                                 .unwrap_or_else(|r| panic!("{}", r.error));
                                 assert!(matches!(
-                                    peer.runtime.inspect(observer).unwrap(),
+                                    peer.runtime().inspect(observer).unwrap(),
                                     clients::Destination::Endpoint {
                                         owner: binding::Route::Capability(
                                             binding::Endpoint::Local(41)
@@ -448,12 +443,12 @@ pub fn owning_network_await(mode: u8) {
                         }
                     }
                     if let Some(authority) = authority {
-                        peer.runtime.release(authority);
+                        peer.capabilities().release(authority);
                     }
                 }
             }
             if let Some(observer) = observer {
-                peer.runtime.release(observer);
+                peer.capabilities().release(observer);
             }
             let mut servers = 0;
             while let Some(server) = peer.drain_endpoint() {
@@ -463,21 +458,15 @@ pub fn owning_network_await(mode: u8) {
             }
             if !matches!(mode, 5 | 12) {
                 assert_eq!(
-                    controls::finish_one(
-                        &mut peer.ledgers.questions,
-                        messages,
-                        &mut queue,
-                        776,
-                        Default::default()
-                    )
-                    .unwrap(),
+                    peer.send_pending_finish(messages, &mut queue, 776, Default::default())
+                        .unwrap(),
                     mode < 14
                 );
                 if mode < 14 {
                     exchange(messages, &mut queue, 1).release(messages);
                 }
                 assert!(
-                    peer.ledgers.questions.is_empty(),
+                    peer.ledgers().questions.is_empty(),
                     "handoff releases original ID exactly once"
                 );
             }

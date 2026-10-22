@@ -226,8 +226,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         self.calls
             .terminate_with_error(&mut self.driver, messages, client_reason);
         self.worker.terminate(&mut self.driver, messages);
-        self.foreign.terminate();
-        self.hooks.close(&mut self.driver.runtime, reason);
+        self.foreign.terminate(&mut self.driver.capabilities());
+        self.hooks.close(&mut self.driver.capabilities(), reason);
         let mut closing = self.driver.terminate(queue);
         let cleanup =
             std::future::poll_fn(|cx| match closing.poll(messages, self.options.budget) {

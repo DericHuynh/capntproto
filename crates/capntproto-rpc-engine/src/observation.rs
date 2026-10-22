@@ -18,11 +18,6 @@ pub(crate) struct Counter(Option<Rc<Cell<usize>>>);
 #[derive(Default)]
 pub(crate) struct Presence(Option<Rc<Cell<usize>>>);
 impl Counter {
-    /// Unknown occupancy is conservative: creating an observer remains explicit.
-    pub(crate) fn known_empty(&self) -> bool {
-        self.0.as_ref().is_some_and(|count| count.get() == 0)
-    }
-
     pub(crate) fn enter(&self) -> Presence {
         if let Some(count) = &self.0 {
             count.set(count.get().checked_add(1).expect("live record count"));
@@ -63,40 +58,40 @@ mod tests {
     fn observed_empty_tables_skip_retained_capacity_but_not_pending_cleanup() {
         let mut storage = [const { answers::Slot::EMPTY }; 32];
         answers::with_answers(&mut storage, |answers| {
-            assert!(!answers.reclamation_is_idle(0));
+            assert!(answers.reclamation_is_idle());
             let count = answers.observe_len();
-            assert!(answers.reclamation_is_idle(0));
+            assert!(answers.reclamation_is_idle());
             let id = AnswerId::from_wire(7);
             let key = answers.admit(id, 41).unwrap();
             let pipeline = answers.pipeline(id).unwrap();
-            assert!(!answers.reclamation_is_idle(0));
+            assert!(answers.reclamation_is_idle());
             answers.finish(id, false);
             assert!(answers.prepare_return(key).unwrap().accept().is_none());
             answers.release_pipeline_deferred(pipeline);
             assert_eq!(count.get(), 1);
-            assert!(!answers.reclamation_is_idle(0));
+            assert!(!answers.reclamation_is_idle());
             assert_eq!(answers.take_finished(0), Some(41));
-            assert!(answers.reclamation_is_idle(0));
+            assert!(answers.reclamation_is_idle());
         })
         .unwrap();
 
         let mut storage = [const { exports::Slot::EMPTY }; 32];
         exports::with_exports(&mut storage, |exports| {
-            assert!(!exports.retirement_is_idle(0));
+            assert!(exports.retirement_is_idle());
             let count = exports.observe_len();
-            assert!(exports.retirement_is_idle(0));
+            assert!(exports.retirement_is_idle());
             // Even an empty forgotten batch must be recovered by maintenance.
             core::mem::forget(exports.batch());
             assert_eq!(count.get(), 0);
-            assert!(!exports.retirement_is_idle(0));
+            assert!(!exports.retirement_is_idle());
             assert_eq!(exports.take_retired(0), None::<u32>);
-            assert!(exports.retirement_is_idle(0));
+            assert!(exports.retirement_is_idle());
             let mut batch = exports.batch();
             let _ = batch.export(43).unwrap();
             drop(batch);
-            assert!(!exports.retirement_is_idle(0));
+            assert!(!exports.retirement_is_idle());
             assert_eq!(exports.take_retired(0), Some(43));
-            assert!(exports.retirement_is_idle(0));
+            assert!(exports.retirement_is_idle());
         })
         .unwrap();
     }

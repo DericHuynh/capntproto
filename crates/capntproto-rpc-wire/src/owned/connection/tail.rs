@@ -1,18 +1,5 @@
 //! Retain same-connection tail children until the original answer is retired.
 use super::*;
-struct Entry<'id> {
-    parent: answers::Key<'id>,
-    source: questions::Local<'id>,
-}
-pub struct TailSlot<'id> {
-    entry: Option<Entry<'id>>,
-}
-impl TailSlot<'_> {
-    pub const EMPTY: Self = Self { entry: None };
-    pub(super) fn is_occupied(&self) -> bool {
-        self.entry.is_some()
-    }
-}
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
@@ -28,10 +15,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<A>, Error> {
         self.check_live()?;
-        let tail = self
-            .tails
-            .vacant_mut(|_, slot| slot.entry.is_none(), || TailSlot::EMPTY)
-            .ok_or(Error::Busy)?;
         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, child)
             .ok_or(Error::UnknownQuestion)?;
         let exchange = &mut self.exchanges[index];
@@ -71,12 +54,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         ) {
             Ok(retired) => {
                 exchange.tail_taken = true;
-                tail.entry = Some(Entry {
-                    parent,
-                    source: retained,
-                });
-                Ok(retired
-                    .map(|state| state.release(messages).release(messages, &mut self.runtime)))
+                if let Some(mut retired) = retired {
+                    retired.owner.redirect = Some(retained);
+                    Ok(Some(retired.release(messages).release(
+                        messages,
+                        &mut self.runtime,
+                        |child| self.ledgers.questions.release(child),
+                    )))
+                } else {
+                    self.ledgers
+                        .answers
+                        .get_mut(parent)
+                        .expect("retained tail parent")
+                        .owner
+                        .redirect = Some(retained);
+                    Ok(None)
+                }
             }
             Err(rejected) => {
                 self.ledgers.questions.release(retained);
@@ -85,55 +78,18 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             }
         }
     }
-    pub(super) fn drain_tail(&mut self, index: usize) -> bool {
-        let Some(slot) = self.tails.get_mut(index) else {
-            return false;
-        };
-        // A finished parent may still own accepted pipeline dependencies. Keep
-        // the redirect until that exact generation has actually been retired.
-        if slot
-            .entry
-            .as_ref()
-            .is_some_and(|entry| self.ledgers.answers.get(entry.parent).is_err())
-        {
-            self.ledgers
-                .questions
-                .release(slot.entry.take().unwrap().source);
-            true
-        } else {
-            false
-        }
-    }
     pub(super) fn poll_redirect(
         &mut self,
         index: usize,
     ) -> Result<Option<pipelines::Progress<'id>>, Error> {
-        for slot in &*self.tails {
-            if let Some(entry) = &slot.entry {
-                let progress = self
-                    .pipelines
-                    .poll_redirect(
-                        index,
-                        entry.parent,
-                        &entry.source,
-                        &mut self.ledgers.questions,
-                        &mut self.runtime,
-                        &mut self.ledgers.answers,
-                        self.imports.peer(),
-                    )
-                    .map_err(Error::Pipeline)?;
-                if progress.is_some() {
-                    return Ok(progress);
-                }
-            }
-        }
-        Ok(None)
-    }
-    pub(super) fn drain_terminal_tail(&mut self) -> bool {
-        let Some(entry) = self.tails.iter_mut().find_map(|slot| slot.entry.take()) else {
-            return false;
-        };
-        self.ledgers.questions.release(entry.source);
-        true
+        self.pipelines
+            .poll_redirect(
+                index,
+                &mut self.ledgers.questions,
+                &mut self.runtime,
+                &mut self.ledgers.answers,
+                self.imports.peer(),
+            )
+            .map_err(Error::Pipeline)
     }
 }

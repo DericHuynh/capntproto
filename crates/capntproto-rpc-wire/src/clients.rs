@@ -158,6 +158,9 @@ impl<'slots, 'graph, 'imports, P: Copy + Eq> Imports<'slots, 'graph, 'imports, P
             slot.link = None;
         }
     }
+    pub(crate) fn maximum(&self) -> usize {
+        self.slots.maximum()
+    }
     pub(crate) fn peer(&self) -> P {
         self.peer
     }

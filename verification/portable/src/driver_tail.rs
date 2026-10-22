@@ -12,9 +12,9 @@ use capntproto_rpc_engine::{
 use capntproto_rpc_wire::{
     calls, clients as binding,
     owned::{
-        self, answer,
+        self,
         connection::{Driver, Propagation, Received, Termination},
-        controls, pipelines, Frame,
+        pipelines, Frame,
     },
     pipeline,
     rpc_capnp::api::{CapDescriptor, Message, Payload, Return},
@@ -63,36 +63,38 @@ pub fn owning_tail_driver(chunk: usize) {
         let mut queue = super::driver::message_queue(&mut queue_slots).unwrap();
         with_owned_peer(|mut alice| with_owned_peer(|mut bob| {
             // Seed the two peers' already advertised service grants.
-            let local_a = alice.runtime.endpoint(binding::Route::local(41), clients::Location::Local).unwrap();
-            let mut batch = alice.ledgers.exports.batch();
-            let a = binding::stage(&mut alice.runtime, &mut batch, &local_a).unwrap().id();
+            let local_a = alice.capabilities().endpoint(binding::Route::local(41), clients::Location::Local).unwrap();
+            let (mut graph, mut batch) = alice.export_batch();
+            let a = binding::stage(&mut graph, &mut batch, &local_a).unwrap().id();
             batch.commit();
-            let local_b = bob.runtime.endpoint(binding::Route::local(43), clients::Location::Local).unwrap();
-            let mut batch = bob.ledgers.exports.batch();
-            let b = binding::stage(&mut bob.runtime, &mut batch, &local_b).unwrap().id();
+            let local_b = bob.capabilities().endpoint(binding::Route::local(43), clients::Location::Local).unwrap();
+            let (mut graph, mut batch) = bob.export_batch();
+            let b = binding::stage(&mut graph, &mut batch, &local_b).unwrap().id();
             batch.commit();
             let original = alice.send(messages, &mut queue, 776, Default::default(), |builder,id| calls::call(builder,id,ImportId::from_wire(b.to_wire()),echo::Owned::CAPABILITY, |_| Ok(()))).unwrap();
             let pipeline = alice.pipeline(original, pipeline::Path::new(&[0])).unwrap();
             let Received::Queued(parent) = receive(&mut bob,messages,&mut queue,chunk,47) else { panic!("original Call") };
-            let running_parent = bob.runtime.next_ready().unwrap().unwrap().accept();
-            assert!(bob.ledgers.answers.dispatch(parent,true).unwrap());
+            let mut dispatch = bob.capabilities();
+                let running_parent = dispatch.next_ready().unwrap().unwrap().accept();
+            assert!(bob.answers().dispatch(parent,true).unwrap());
             let child = bob.send_redirected(messages,&mut queue,776,Default::default(),|builder,id| calls::tail_call_to(builder,id,calls::Target::Imported(ImportId::from_wire(a.to_wire())),echo::Owned::CAPABILITY, |_| Ok(()))).unwrap();
             assert!(matches!(bob.tail_answer(parent,child,messages,&mut queue,776,Default::default()),Err(owned::connection::Error::Input(owned::Error::Storage(messages::Error::NoSendSlot)))));
             let Received::Queued(producer) = receive(&mut alice,messages,&mut queue,chunk,49) else { panic!("redirected Call") };
-            let running_child = alice.runtime.next_ready().unwrap().unwrap().accept();
-            assert!(alice.ledgers.answers.dispatch(producer,true).unwrap());
+            let mut dispatch = alice.capabilities();
+                let running_child = dispatch.next_ready().unwrap().unwrap().accept();
+            assert!(alice.answers().dispatch(producer,true).unwrap());
             assert!(bob.tail_answer(parent,child,messages,&mut queue,776,Default::default()).unwrap().is_none());
             assert!(matches!(bob.tail_answer(parent,child,messages,&mut queue,776,Default::default()),Err(owned::connection::Error::TailAlreadyUsed)));
-            let request = bob.runtime.complete(running_parent).into_call().unwrap_or_else(|_| panic!("Call"));
+            let request = bob.capabilities().complete(running_parent).into_call().unwrap_or_else(|_| panic!("Call"));
             bob.release_call(request,messages);
             assert!(matches!(receive(&mut alice,messages,&mut queue,chunk,0),Received::Returned(key, _) if key == original));
             assert_eq!(alice.poll_outgoing(0,messages).unwrap(),Propagation::Pending);
             assert!(matches!(alice.take_response(original),Err(owned::connection::Error::PendingResponse)));
             // The redirected service keeps its actual result locally. No
             // capability grants are sent in ResultsSentElsewhere.
-            let result_service = alice.runtime.endpoint(binding::Route::local(67),clients::Location::Local).unwrap();
-            let mut batch = alice.ledgers.exports.batch();
-            let grant = binding::stage(&mut alice.runtime,&mut batch,&result_service).unwrap();
+            let result_service = alice.capabilities().endpoint(binding::Route::local(67),clients::Location::Local).unwrap();
+            let (mut graph, mut batch) = alice.export_batch();
+            let grant = binding::stage(&mut graph,&mut batch,&result_service).unwrap();
             let result = Frame::build(messages,776,Default::default(),|builder| {
                 let mut root=builder.try_init_root::<Message>()?;
                 let mut result=root.field(Message::RETURN).init()?;
@@ -103,28 +105,28 @@ pub fn owning_tail_driver(chunk: usize) {
                 payload.field(Payload::CAP_TABLE).init(1)?.get_mut(0).unwrap().scalar(CapDescriptor::SENDER_HOSTED).set(grant.id().to_wire());
                 Ok(())
             }).unwrap();
-            let published=pipelines::Published::from_exports(&result,messages,&batch,&mut alice.runtime,&mut [0;4]).unwrap();
+            let published=pipelines::Published::from_exports(&result,messages,&batch,&mut graph,&mut [0;4]).unwrap();
             drop(batch);
             result.release(messages);
             let elsewhere=Frame::build(messages,776,Default::default(),|builder| calls::results_sent_elsewhere(builder,producer.id())).unwrap();
-            assert!(answer::send(producer,&mut alice.ledgers.answers,messages,elsewhere,queue.reserve().unwrap()).unwrap().is_none());
-            pipelines::complete(&mut alice.ledgers.answers,producer,Ok(published)).unwrap_or_else(|_| panic!("publish"));
-            let request=alice.runtime.complete(running_child).into_call().unwrap_or_else(|_| panic!("Call"));
+            assert!(alice.publish_answer_frame(producer,messages,elsewhere,queue.reserve().unwrap()).unwrap().is_none());
+            alice.publish_answer_pipeline(producer,Ok(published)).unwrap_or_else(|_| panic!("publish"));
+            let request=alice.capabilities().complete(running_child).into_call().unwrap_or_else(|_| panic!("Call"));
             alice.release_call(request,messages);
             assert!(matches!(receive(&mut bob,messages,&mut queue,chunk,0),Received::Returned(key, _) if key==child));
             let child_response=bob.take_response(child).unwrap();
             child_response.with(messages,|reply| assert!(matches!(reply,owned::Reply::ResultsSentElsewhere))).unwrap();
             bob.release_response(child_response,messages);
-            assert!(bob.ledgers.questions.pending_finish().is_none(),"tail parent retains child through its Finish");
+            assert!(!bob.ledgers().questions.has_pending_finish(),"tail parent retains child through its Finish");
             assert_eq!(alice.poll_outgoing(0,messages).unwrap(),Propagation::Resolved);
-            assert!(matches!(alice.runtime.inspect(&pipeline).unwrap(),clients::Destination::Endpoint{owner:binding::Route::Capability(binding::Endpoint::Local(67)),..}));
+            assert!(matches!(alice.runtime().inspect(&pipeline).unwrap(),clients::Destination::Endpoint{owner:binding::Route::Capability(binding::Endpoint::Local(67)),..}));
             let response=alice.take_response(original).unwrap();
             response.with(messages,|reply| assert!(matches!(reply,owned::Reply::Adopted(_)))).unwrap();
             alice.release_response(response,messages);
-            alice.runtime.release(pipeline);
+            alice.capabilities().release(pipeline);
             // Retiring the original outgoing route releases its question ref.
             while let Some(server)=alice.drain_endpoint() { assert!(server.is_none()); }
-            assert!(controls::finish_one(&mut alice.ledgers.questions,messages,&mut queue,776,Default::default()).unwrap());
+            assert!(alice.send_pending_finish(messages,&mut queue,776,Default::default()).unwrap());
             assert!(matches!(receive(&mut bob,messages,&mut queue,chunk,0),Received::Finished(Some(47))));
             for _ in 0..200 {
                 if !queue.is_empty(){break}
@@ -135,9 +137,9 @@ pub fn owning_tail_driver(chunk: usize) {
             }
             assert!(!queue.is_empty(),"Finish releases retained tail child");
             assert!(matches!(receive(&mut alice,messages,&mut queue,chunk,0),Received::Finished(Some(49))));
-            alice.runtime.release(local_a);
-            alice.runtime.release(result_service);
-            bob.runtime.release(local_b);
+            alice.capabilities().release(local_a);
+            alice.capabilities().release(result_service);
+            bob.capabilities().release(local_b);
             assert_eq!(close(alice,messages,&mut queue),41+67);
             assert_eq!(close(bob,messages,&mut queue),43);
             let writers=core::array::from_fn::<_,12,_>(|_| messages.reserve(776).unwrap());
@@ -206,7 +208,7 @@ pub fn owning_tail_pipeline() {
             else {
                 panic!("pipeline Call")
             };
-            assert!(peer.runtime.next_ready().unwrap().is_none());
+            assert!(peer.capabilities().next_ready().unwrap().is_none());
             peer.tail_answer(parent, child, messages, &mut queue, 776, Default::default())
                 .unwrap();
             super::owning::exchange(messages, &mut queue, 3).release(messages);
@@ -231,21 +233,15 @@ pub fn owning_tail_pipeline() {
             };
             let reused = reused.answer();
             assert_ne!(parent, reused);
-            let lease = peer.ledgers.answers.pipeline(reused.id()).unwrap();
+            let lease = peer.answer_pipeline(reused.id()).unwrap();
             let unrelated = peer
-                .pipelines
-                .bind(
-                    &mut peer.runtime,
-                    &mut peer.ledgers.answers,
-                    &lease,
-                    pipeline::Path::new(&[0, 1]),
-                )
+                .project_answer(&lease, pipeline::Path::new(&[0, 1]))
                 .unwrap();
-            peer.ledgers.answers.release_pipeline_deferred(lease);
+            peer.release_answer_pipeline_deferred(lease);
             let mut held = [const { None }; 12];
             for slot in &mut held {
                 match peer
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::local(999), clients::Location::Local)
                 {
                     Ok(client) => *slot = Some(client),
@@ -258,9 +254,9 @@ pub fn owning_tail_pipeline() {
                     clients::Error::Full
                 )))
             ));
-            assert!(peer.runtime.next_ready().unwrap().is_none());
+            assert!(peer.capabilities().next_ready().unwrap().is_none());
             for client in held.into_iter().flatten() {
-                peer.runtime.release(client)
+                peer.capabilities().release(client)
             }
             while let Some(server) = peer.drain_endpoint() {
                 assert_eq!(server, Some(999))
@@ -274,7 +270,8 @@ pub fn owning_tail_pipeline() {
                 Propagation::Pending,
                 "reused wire ID is a different producer"
             );
-            let ready = peer.runtime.next_ready().unwrap().unwrap();
+            let (mut dispatch, ledgers) = peer.split_graph();
+            let ready = dispatch.next_ready().unwrap().unwrap();
             let clients::Destination::Endpoint {
                 owner: binding::Route::Question(route),
                 ..
@@ -282,12 +279,12 @@ pub fn owning_tail_pipeline() {
             else {
                 panic!("tail question route")
             };
-            let (id, path) = route.target(&peer.ledgers.questions).unwrap();
+            let (id, path) = route.target(&ledgers.questions).unwrap();
             assert_eq!(id, child.id());
             assert_eq!(path.fields(), &[0, 1]);
             let running = ready.accept();
             let call = peer
-                .runtime
+                .capabilities()
                 .complete(running)
                 .into_call()
                 .unwrap_or_else(|_| panic!("Call"));
@@ -299,14 +296,8 @@ pub fn owning_tail_pipeline() {
                 calls::results(builder, call_key.id(), echo::Owned::ECHO, |_| Ok(()))
             })
             .unwrap();
-            answer::send(
-                call_key,
-                &mut peer.ledgers.answers,
-                messages,
-                result,
-                queue.reserve().unwrap(),
-            )
-            .unwrap();
+            peer.publish_answer_frame(call_key, messages, result, queue.reserve().unwrap())
+                .unwrap();
             super::owning::exchange(messages, &mut queue, 3).release(messages);
             let frame = Frame::build(messages, 776, Default::default(), |builder| {
                 calls::finish(builder, QuestionId::from_wire(72), false)
@@ -317,7 +308,7 @@ pub fn owning_tail_pipeline() {
                     .unwrap_or_else(|_| panic!("Finish")),
                 Received::Finished(Some(88))
             ));
-            peer.runtime.release(unrelated);
+            peer.capabilities().release(unrelated);
             let mut closing = peer.terminate(&mut queue);
             let mut producer = false;
             let mut done = false;

@@ -35,6 +35,7 @@ pub enum Error {
     GenerationExhausted,
     StaleKey,
     AlreadyDispatched,
+    AlreadyObserved,
     AlreadyReturned,
     NotRedirected,
     AlreadyAdopted,
@@ -168,9 +169,25 @@ impl<T> Record<T> {
 /// local pipeline leases. A retired record no longer reserves its peer ID.
 pub struct Slot<T> {
     record: Option<Record<T>>,
+    retirement: crate::work_queue::Link,
+    pipeline_head: Option<usize>,
+    pipeline_cursor: Option<usize>,
+    pipeline_work: crate::work_queue::Link,
+    cancellation: crate::work_queue::Link,
+    execution: crate::work_queue::Link,
+    executing: bool,
 }
 impl<T> Slot<T> {
-    pub const EMPTY: Self = Self { record: None };
+    pub const EMPTY: Self = Self {
+        record: None,
+        retirement: crate::work_queue::Link::EMPTY,
+        pipeline_head: None,
+        pipeline_cursor: None,
+        pipeline_work: crate::work_queue::Link::EMPTY,
+        cancellation: crate::work_queue::Link::EMPTY,
+        execution: crate::work_queue::Link::EMPTY,
+        executing: false,
+    };
     pub fn is_empty(&self) -> bool {
         self.record.is_none()
     }
@@ -207,6 +224,13 @@ pub struct Answers<'id, 'storage, T> {
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
+    retired: crate::work_queue::Queue,
+    pipeline_ready: crate::work_queue::Queue,
+    pipeline_registry: Option<u64>,
+    pipeline_registry_generation: u64,
+    pipeline_observers: usize,
+    canceled: crate::work_queue::Queue,
+    execution_ready: crate::work_queue::Queue,
     generation: u64,
     brand: Brand<'id>,
 }
@@ -233,6 +257,13 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Answers<'id, '_
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(slots),
         generation: 0,
+        retired: crate::work_queue::Queue::EMPTY,
+        pipeline_ready: crate::work_queue::Queue::EMPTY,
+        pipeline_registry: None,
+        pipeline_registry_generation: 0,
+        pipeline_observers: 0,
+        canceled: crate::work_queue::Queue::EMPTY,
+        execution_ready: crate::work_queue::Queue::EMPTY,
         brand: PhantomData,
     })
 }
@@ -249,6 +280,13 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
         observation: Default::default(),
         slots,
         generation: 0,
+        retired: crate::work_queue::Queue::EMPTY,
+        pipeline_ready: crate::work_queue::Queue::EMPTY,
+        pipeline_registry: None,
+        pipeline_registry_generation: 0,
+        pipeline_observers: 0,
+        canceled: crate::work_queue::Queue::EMPTY,
+        execution_ready: crate::work_queue::Queue::EMPTY,
         brand: PhantomData,
     })
 }
@@ -265,22 +303,100 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
-    /// Conservatively certify that no finished answer can be reclaimed,
-    /// examining at most `maximum` slots unless observed occupancy proves empty.
-    /// Other larger tables return false and must use the budgeted scan. Returned
-    /// answers awaiting Finish or a local pipeline lease retain their owner and
-    /// do not require reclamation work.
-    pub fn reclamation_is_idle(&self, maximum: usize) -> bool {
-        #[cfg(feature = "alloc")]
-        if self.observation.known_empty() {
-            return true;
+    pub fn reclamation_is_idle(&self) -> bool {
+        self.retired.is_empty()
+    }
+    /// Return one finished owner without inspecting unrelated answers.
+    pub fn pop_finished(&mut self) -> Option<T> {
+        let index = self.retired.head()?;
+        self.reclaim(index)
+    }
+    fn enqueue_retired(&mut self, index: usize) {
+        if self.slots[index]
+            .record
+            .as_ref()
+            .is_some_and(Record::reclaimable)
+        {
+            self.retired
+                .push(&mut self.slots, index, |slot| &mut slot.retirement);
         }
-        self.slots.len() <= maximum
-            && self.slots.iter().all(|slot| {
-                slot.record
-                    .as_ref()
-                    .is_none_or(|record| !record.reclaimable())
-            })
+    }
+    fn enqueue_cancellation(&mut self, index: usize) {
+        if self.slots[index]
+            .record
+            .as_ref()
+            .is_some_and(|record| record.state == State::Queued && record.cancellation_requested())
+        {
+            self.canceled
+                .push(&mut self.slots, index, |slot| &mut slot.cancellation);
+        }
+    }
+    pub fn has_queued_cancellations(&self) -> bool {
+        !self.canceled.is_empty()
+    }
+    /// Inspect the exact queued operation affected by Finish or final lease
+    /// release. Keep the notification until its canceled Return is admitted.
+    pub fn next_queued_cancellation(&self) -> Option<Key<'id>> {
+        let index = self.canceled.head()?;
+        let record = self.slots[index]
+            .record
+            .as_ref()
+            .expect("queued cancellation");
+        Some(Key {
+            index,
+            id: record.id,
+            generation: record.generation,
+            brand: PhantomData,
+        })
+    }
+    /// A caller may handle a non-dispatch producer separately. Removing this
+    /// notification does not remove the protocol cancellation obligation.
+    pub fn acknowledge_queued_cancellation(&mut self, key: Key<'id>) -> Result<(), Error> {
+        self.record(key)?;
+        self.canceled
+            .remove(&mut self.slots, key.index, |slot| &mut slot.cancellation);
+        Ok(())
+    }
+    /// Observe protocol changes for one running producer. No application
+    /// callbacks run under the ledger borrow; take the changed owner explicitly.
+    pub fn watch_execution(&mut self, key: Key<'id>) -> Result<(), Error> {
+        self.record(key)?;
+        assert!(
+            !self.slots[key.index].executing,
+            "producer already executing"
+        );
+        self.slots[key.index].executing = true;
+        Ok(())
+    }
+    pub fn unwatch_execution(&mut self, key: Key<'id>) -> Result<(), Error> {
+        self.record(key)?;
+        self.slots[key.index].executing = false;
+        self.execution_ready
+            .remove(&mut self.slots, key.index, |slot| &mut slot.execution);
+        Ok(())
+    }
+    fn notify_execution(&mut self, index: usize) {
+        if self.slots[index].executing {
+            self.execution_ready
+                .push(&mut self.slots, index, |slot| &mut slot.execution);
+        }
+    }
+    /// One changed producer, with no search through unrelated running answers.
+    /// Clone or detach notification state before invoking application callbacks.
+    pub fn take_changed_producer(&mut self) -> Option<&T> {
+        let index = self
+            .execution_ready
+            .pop(&mut self.slots, |slot| &mut slot.execution)?;
+        Some(
+            &self.slots[index]
+                .record
+                .as_ref()
+                .expect("executing producer")
+                .value,
+        )
+    }
+    pub fn has_changed_producers(&self) -> bool {
+        !self.execution_ready.is_empty()
     }
     /// Includes detached records retained by already-admitted pipeline calls.
     #[cfg(feature = "alloc")]
@@ -324,8 +440,124 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     pub fn get(&self, key: Key<'id>) -> Result<&T, Error> {
         Ok(&self.record(key)?.value)
     }
+    /// Mutable producer access makes only this answer's observers ready.
     pub fn get_mut(&mut self, key: Key<'id>) -> Result<&mut T, Error> {
+        self.notify_pipeline(key)?;
         Ok(&mut self.record_mut(key)?.value)
+    }
+    pub fn notify_pipeline(&mut self, key: Key<'id>) -> Result<(), Error> {
+        self.record(key)?;
+        let slot = &mut self.slots[key.index];
+        slot.pipeline_cursor = slot.pipeline_head;
+        if slot.pipeline_cursor.is_some() {
+            self.pipeline_ready
+                .push(&mut self.slots, key.index, |slot| &mut slot.pipeline_work);
+        }
+        Ok(())
+    }
+    pub fn claim_pipeline_registry(&mut self) -> Result<PipelineRegistry<'id>, Error> {
+        if self.pipeline_registry.is_some() {
+            return Err(Error::AlreadyObserved);
+        }
+        let generation = self
+            .pipeline_registry_generation
+            .checked_add(1)
+            .ok_or(Error::GenerationExhausted)?;
+        self.pipeline_registry_generation = generation;
+        self.pipeline_registry = Some(generation);
+        Ok(PipelineRegistry {
+            generation,
+            brand: PhantomData,
+        })
+    }
+    pub fn release_pipeline_registry(&mut self, registry: PipelineRegistry<'id>) {
+        self.validate_registry(&registry);
+        assert_eq!(self.pipeline_observers, 0, "registry still owns observers");
+        self.pipeline_registry = None;
+    }
+    fn validate_registry(&self, registry: &PipelineRegistry<'id>) {
+        assert_eq!(
+            self.pipeline_registry,
+            Some(registry.generation),
+            "live pipeline registry"
+        );
+    }
+    pub fn link_pipeline_observer(
+        &mut self,
+        registry: &PipelineRegistry<'id>,
+        key: Key<'id>,
+        index: usize,
+    ) -> Result<Option<usize>, Error> {
+        self.validate_registry(registry);
+        self.record(key)?;
+        self.pipeline_observers += 1;
+        let previous = self.slots[key.index].pipeline_head.replace(index);
+        self.notify_pipeline(key)?;
+        Ok(previous)
+    }
+    pub fn unlink_pipeline_observer(
+        &mut self,
+        registry: &PipelineRegistry<'id>,
+        key: Key<'id>,
+        index: usize,
+        next: Option<usize>,
+    ) {
+        self.validate_registry(registry);
+        self.pipeline_observers -= 1;
+        self.record(key).expect("retained pipeline observer");
+        let slot = &mut self.slots[key.index];
+        if slot.pipeline_head == Some(index) {
+            slot.pipeline_head = next;
+        }
+        if slot.pipeline_cursor == Some(index) {
+            slot.pipeline_cursor = next;
+        }
+        if slot.pipeline_cursor.is_none() {
+            self.pipeline_ready
+                .remove(&mut self.slots, key.index, |slot| &mut slot.pipeline_work);
+        }
+    }
+    pub fn has_pipeline_work(&self) -> bool {
+        !self.pipeline_ready.is_empty()
+    }
+    pub fn next_pipeline_work(
+        &self,
+        registry: &PipelineRegistry<'id>,
+    ) -> Option<(Key<'id>, usize)> {
+        self.validate_registry(registry);
+        let index = self.pipeline_ready.head()?;
+        let slot = &self.slots[index];
+        let r = slot.record.as_ref().expect("retained answer observer");
+        Some((
+            Key {
+                index,
+                id: r.id,
+                generation: r.generation,
+                brand: PhantomData,
+            },
+            slot.pipeline_cursor.expect("ready observer"),
+        ))
+    }
+    /// Charge and rotate one exact observer. Unsettled siblings sleep until
+    /// their producer changes; other answers retain FIFO fairness at budget 1.
+    pub fn advance_pipeline_work(
+        &mut self,
+        registry: &PipelineRegistry<'id>,
+        key: Key<'id>,
+        index: usize,
+        next: Option<usize>,
+    ) {
+        self.record(key).expect("retained answer observer");
+        let slot = &mut self.slots[key.index];
+        assert_eq!(self.pipeline_registry, Some(registry.generation));
+        assert_eq!(slot.pipeline_cursor, Some(index));
+        slot.pipeline_cursor = next;
+        self.pipeline_ready
+            .remove(&mut self.slots, key.index, |slot| &mut slot.pipeline_work);
+        if next.is_some() {
+            self.pipeline_ready
+                .push(&mut self.slots, key.index, |slot| &mut slot.pipeline_work);
+        }
     }
     pub fn lookup(&self, id: AnswerId) -> Option<Key<'id>> {
         let index = self.wire_index(id)?;
@@ -384,6 +616,12 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     pub fn release_pipeline_deferred(&mut self, lease: Pipeline<'id>) {
         let r = self.record_mut(lease.key).expect("live pipeline lease");
         r.release_pipeline();
+        let canceled = r.cancellation_requested();
+        self.enqueue_cancellation(lease.key.index);
+        if canceled {
+            self.notify_execution(lease.key.index);
+        }
+        self.enqueue_retired(lease.key.index);
     }
     pub fn take_finished(&mut self, index: usize) -> Option<T> {
         self.slots.get(index)?;
@@ -403,6 +641,17 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
             .as_ref()
             .is_some_and(Record::reclaimable)
         {
+            self.retired
+                .remove(&mut self.slots, index, |slot| &mut slot.retirement);
+            self.canceled
+                .remove(&mut self.slots, index, |slot| &mut slot.cancellation);
+            self.execution_ready
+                .remove(&mut self.slots, index, |slot| &mut slot.execution);
+            self.slots[index].executing = false;
+            debug_assert!(self.slots[index].pipeline_head.is_none());
+            self.pipeline_ready
+                .remove(&mut self.slots, index, |slot| &mut slot.pipeline_work);
+            self.slots[index].pipeline_cursor = None;
             self.slots[index].record.take().map(|r| r.value)
         } else {
             None
@@ -412,7 +661,9 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     /// needs the result: skip application execution and publish cancelled Return.
     pub fn dispatch(&mut self, key: Key<'id>, allow_cancellation: bool) -> Result<bool, Error> {
         let r = self.record_mut(key)?;
-        r.dispatch(allow_cancellation)
+        let execute = r.dispatch(allow_cancellation)?;
+        self.acknowledge_queued_cancellation(key)?;
+        Ok(execute)
     }
     /// Unknown/late/duplicate Finish is harmless, as in the hosted runtime.
     /// Result grants may be released only on the first Finish. Returned owners
@@ -425,6 +676,10 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
         let Some((cancel, release_result_caps)) = r.finish(release_result_caps) else {
             return Finished::ignored();
         };
+        self.enqueue_cancellation(index);
+        if cancel {
+            self.notify_execution(index);
+        }
         let retired = self.reclaim(index);
         Finished {
             cancel,
@@ -447,6 +702,13 @@ impl<T> Drop for Answers<'_, '_, T> {
     fn drop(&mut self) {
         for slot in self.slots.iter_mut() {
             drop(slot.record.take());
+            slot.retirement = crate::work_queue::Link::EMPTY;
+            slot.pipeline_work = crate::work_queue::Link::EMPTY;
+            slot.cancellation = crate::work_queue::Link::EMPTY;
+            slot.execution = crate::work_queue::Link::EMPTY;
+            slot.executing = false;
+            slot.pipeline_head = None;
+            slot.pipeline_cursor = None;
         }
     }
 }
@@ -529,6 +791,9 @@ impl<T> Return<'_, '_, '_, T> {
     pub fn accept(self) -> Option<T> {
         let r = self.answers.record_mut(self.key).unwrap();
         r.accept_return(self.no_finish);
+        self.answers
+            .acknowledge_queued_cancellation(self.key)
+            .unwrap();
         self.answers.reclaim(self.key.index)
     }
 }
@@ -545,3 +810,43 @@ mod finish;
 pub use finish::Finish;
 mod provision;
 pub use provision::{ProvisionAdmission, ProvisionPipelines};
+
+/// Execution may observe its producer and commit the listed transitions. It
+/// cannot replace the ledger, alter observer links or take unrelated owners.
+pub struct Execution<'a, 'id, 'storage, T> {
+    answers: &'a mut Answers<'id, 'storage, T>,
+}
+impl<'a, 'id, 'storage, T> Execution<'a, 'id, 'storage, T> {
+    pub fn new(answers: &'a mut Answers<'id, 'storage, T>) -> Self {
+        Self { answers }
+    }
+    pub fn dispatch(&mut self, key: Key<'id>, cancel: bool) -> Result<bool, Error> {
+        self.answers.dispatch(key, cancel)
+    }
+    pub fn watch_execution(&mut self, key: Key<'id>) -> Result<(), Error> {
+        self.answers.watch_execution(key)
+    }
+    pub fn unwatch_execution(&mut self, key: Key<'id>) -> Result<(), Error> {
+        self.answers.unwatch_execution(key)
+    }
+    pub fn notify_pipeline(&mut self, key: Key<'id>) -> Result<(), Error> {
+        self.answers.notify_pipeline(key)
+    }
+    pub fn take_changed_producer(&mut self) -> Option<&T> {
+        self.answers.take_changed_producer()
+    }
+}
+impl<'id, 'storage, T> core::ops::Deref for Execution<'_, 'id, 'storage, T> {
+    type Target = Answers<'id, 'storage, T>;
+    fn deref(&self) -> &Self::Target {
+        self.answers
+    }
+}
+
+/// One observer registry owns all per-answer list indices in this ledger.
+/// Return it only after every observer has detached. Dropping it is terminal.
+#[must_use]
+pub struct PipelineRegistry<'id> {
+    generation: u64,
+    brand: Brand<'id>,
+}

@@ -168,6 +168,7 @@ impl<'id> Local<'id> {
 }
 
 pub struct Imports<'id, 'storage, T> {
+    binding_revision: usize,
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
@@ -234,6 +235,7 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Imports<'id, '_
     Ok(Imports {
         release_head: None,
         release_tail: None,
+        binding_revision: 0,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(slots),
@@ -251,6 +253,7 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
     Ok(Imports {
         release_head: None,
         release_tail: None,
+        binding_revision: 0,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots,
@@ -372,6 +375,7 @@ impl<'id, T> Imports<'id, '_, T> {
         let index = self.index(id).ok_or(Error::Missing)?;
         let slot = &mut self.slots[index];
         if slot.receive()? {
+            self.binding_revision = self.binding_revision.saturating_add(1);
             self.unlink_release(index);
         }
         Ok(self.local(index))
@@ -413,6 +417,7 @@ impl<'id, T> Imports<'id, '_, T> {
             .expect("live local reference");
         entry.local -= 1;
         if entry.local == 0 {
+            self.binding_revision = self.binding_revision.saturating_add(1);
             self.enqueue_release(reference.key.index);
         }
     }
@@ -431,6 +436,7 @@ impl<'id, T> Imports<'id, '_, T> {
             return None;
         }
         Some(Release {
+            binding_revision: &mut self.binding_revision,
             slots: &mut self.slots,
             index,
             head: &mut self.release_head,
@@ -441,6 +447,19 @@ impl<'id, T> Imports<'id, '_, T> {
     /// transport accepts Release; revival unlinks it in constant time.
     pub fn next_release(&mut self) -> Option<Release<'_, T>> {
         self.pending_release(self.release_head?.get() - 1)
+    }
+    /// Changes only when committed ownership invalidates a weak binding key or
+    /// retires its record. Speculative admission and live aliases leave it alone.
+    pub fn binding_revision(&self) -> usize {
+        self.binding_revision
+    }
+    pub fn pending_release_key(&self) -> Option<Key<'id>> {
+        let index = self.release_head?.get() - 1;
+        Some(Key {
+            index,
+            generation: self.slots[index].generation,
+            brand: PhantomData,
+        })
     }
     pub fn has_pending_release(&self) -> bool {
         self.release_head.is_some()
@@ -485,6 +504,7 @@ fn unlink_release<T>(
 /// reference; commit detaches the owner for disposal outside the engine borrow.
 #[must_use = "commit only after output acceptance; dropping retains pending cleanup"]
 pub struct Release<'a, T> {
+    binding_revision: &'a mut usize,
     slots: &'a mut [Slot<T>],
     index: usize,
     head: &'a mut Option<core::num::NonZeroUsize>,
@@ -507,6 +527,7 @@ impl<T> Release<'_, T> {
             .count()
     }
     pub fn commit(self) -> T {
+        *self.binding_revision = self.binding_revision.saturating_add(1);
         unlink_release(self.slots, self.index, self.head, self.tail);
         let mut entry = self.slots[self.index]
             .entry

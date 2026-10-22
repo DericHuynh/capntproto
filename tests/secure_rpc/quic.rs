@@ -430,3 +430,118 @@ async fn stalled_reader_resumes_large_transfer_without_starving_runtime() {
     })
     .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_quic_preserves_a_140_call_batch_and_orderly_shutdown() {
+    use capnp_rpc::portable::{Options, RpcSystem};
+    use capntproto_test_support::structured::runtime_test_capnp::harness;
+    fn options() -> Options {
+        Options::bounded(
+            1.try_into().unwrap(),
+            256.try_into().unwrap(),
+            (512 * 1024).try_into().unwrap(),
+            (8 * 1024 * 1024).try_into().unwrap(),
+        )
+        .unwrap()
+    }
+    local(async {
+        let pki = Pki::new();
+        let server = server(&pki, false);
+        let address = server.local_addr().unwrap();
+        let serving = tokio::task::spawn_local(async move {
+            let stream = quic::accept(server.accept().await.unwrap(), TIMEOUT)
+                .await
+                .unwrap();
+            RpcSystem::new(
+                Box::new(quic::network(stream, Side::Server, Default::default())),
+                Some(bootstrap()),
+                options(),
+            )
+            .unwrap()
+            .run()
+            .await
+        });
+        let endpoint = client(&pki, false, Version::V1);
+        let stream = quic::connect(&endpoint, address, "localhost", TIMEOUT)
+            .await
+            .unwrap();
+        let mut system = RpcSystem::new(
+            Box::new(quic::network(stream, Side::Client, Default::default())),
+            None,
+            options(),
+        )
+        .unwrap();
+        let cap: harness::Client = system.bootstrap(Side::Server);
+        let close = system.get_disconnector();
+        let driving = tokio::task::spawn_local(system.run());
+        assert_eq!(echo(&cap, 7).await.unwrap(), 7);
+        let calls: Vec<_> = (0..140)
+            .map(|value| {
+                let mut call = cap.echo_request();
+                call.get().set_value(value);
+                call.send().promise
+            })
+            .collect();
+        for (value, result) in futures::future::join_all(calls)
+            .await
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(result.unwrap().get().unwrap().get_value(), value as u32);
+        }
+        drop(cap);
+        close.await.unwrap();
+        driving.await.unwrap().unwrap();
+        serving.await.unwrap().unwrap();
+        tokio::time::timeout(TIMEOUT, endpoint.wait_idle())
+            .await
+            .unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_quic_wakes_only_one_of_32_parked_calls() {
+    use capnp_rpc::portable::RpcSystem;
+    local(async {
+        let pki = Pki::new();
+        let calls = SparseCalls::new();
+        let bootstrap = calls.bootstrap();
+        let server = server(&pki, false);
+        let address = server.local_addr().unwrap();
+        let serving = tokio::task::spawn_local(async move {
+            let stream = quic::accept(server.accept().await.unwrap(), TIMEOUT)
+                .await
+                .unwrap();
+            RpcSystem::new(
+                Box::new(quic::network(stream, Side::Server, Default::default())),
+                Some(bootstrap),
+                portable_options(),
+            )
+            .unwrap()
+            .run()
+            .await
+        });
+        let endpoint = client(&pki, false, Version::V1);
+        let stream = quic::connect(&endpoint, address, "localhost", TIMEOUT)
+            .await
+            .unwrap();
+        let mut system = RpcSystem::new(
+            Box::new(quic::network(stream, Side::Client, Default::default())),
+            None,
+            portable_options(),
+        )
+        .unwrap();
+        let cap = system.bootstrap(Side::Server);
+        let close = system.get_disconnector();
+        let driving = tokio::task::spawn_local(system.run());
+        calls.exercise(cap).await;
+        close.await.unwrap();
+        driving.await.unwrap().unwrap();
+        serving.await.unwrap().unwrap();
+        tokio::time::timeout(TIMEOUT, endpoint.wait_idle())
+            .await
+            .unwrap();
+    })
+    .await;
+}

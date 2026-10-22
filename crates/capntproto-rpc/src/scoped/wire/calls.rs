@@ -8,7 +8,7 @@ type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
 type Local<'p, 'id, I, const C: usize, const H: usize> = connection::LocalCall<'p, 'id, I, C, H>;
 
-// Use one callback type for immediate, scanned and locally executed returns.
+// Use one callback type for immediate, notified and locally executed returns.
 // Their wire completion logic is identical and should share generated code.
 fn retain_local_hook(hook: &Rc<dyn ClientHook>) -> Option<Box<dyn ClientHook>> {
     Some(hook.add_ref())
@@ -27,6 +27,13 @@ struct Entry<'p, 'id, I, const C: usize, const H: usize> {
     local: Option<Box<Execution<'p, 'id, I, C, H>>>,
     // Occupancy only; the full generation lives in the existing wire route.
     published: bool,
+    #[cfg(test)]
+    polls: usize,
+    unpublished: bool,
+    completion: Option<connection::InvocationKey<'id>>,
+    binding_turn: bool,
+    closing: bool,
+    waker: Waker,
 }
 
 pub(super) enum Publication<'a, 'id> {
@@ -69,7 +76,7 @@ pub(super) fn publication_error<'id>(
 /// Each successful step either advances work or delivers an owned completion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Progress {
-    /// The bounded scan has more slots to visit; poll again.
+    /// Ready work remains after the shared budget; poll again.
     Yield,
     Idle,
     Advanced,
@@ -88,8 +95,9 @@ pub enum Progress {
 /// Poll alongside the incoming server worker, driver maintenance and IO. Foreign
 /// hook imports must preserve membranes and pending-promise settlement. The caller
 /// supplies an executor for protected local methods. Errors preserve work for
-/// retry or explicit termination. A rotating bounded scan services admission,
-/// output, local execution, projections, cancellation and completion bindings.
+/// retry or explicit termination. Exact operation notifications drive local
+/// execution, projections, cancellation and completion; admission and ordered
+/// dispatch share a bounded rotating turn with those ready owners.
 #[must_use = "poll calls and terminate them before releasing their driver"]
 pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     invocations: connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
@@ -99,17 +107,17 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     published: usize,
     pending: Option<Box<Call>>,
     maximum: usize,
-    cursor: usize,
-    remaining: usize,
-    scan_size: usize,
-    admission_streak: u8,
+    admission_wait: Option<std::sync::Arc<super::ready::Signal>>,
+    admission_parked: bool,
+    ready: super::ready::Queue,
+    lane: u8,
+    notification_turn: bool,
+    question_turn: bool,
+    unpublished: usize,
     publication_blocked: bool,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p, 'id, I, C, H> {
-    pub(super) fn has_pending_admission(&self) -> bool {
-        self.pending.is_some()
-    }
     pub fn new(
         maximum: usize,
         executor: Option<Rc<dyn capability::CallExecutor>>,
@@ -122,16 +130,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             published: 0,
             pending: None,
             maximum,
-            cursor: 0,
-            remaining: 0,
-            scan_size: 0,
-            admission_streak: 0,
+            admission_wait: None,
+            admission_parked: false,
+            ready: super::ready::Queue::default(),
+            lane: 0,
+            notification_turn: true,
+            question_turn: true,
+            unpublished: 0,
             publication_blocked: false,
             executor,
         })
     }
     pub fn is_empty(&self) -> bool {
-        self.pending.is_none() && self.live == 0 && self.invocations.is_empty()
+        self.pending.is_none() && self.live == 0
     }
     /// Capacity exhaustion is waitable only while accepted output can release
     /// storage. Without that fence, preserve the error (including impossible
@@ -147,26 +158,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             result
         }
     }
-    pub(super) fn invalidate_scan(&mut self) {
-        self.remaining = 0;
-    }
     pub(super) fn can_batch_replies(&self) -> bool {
-        self.entries.len() > 8 && self.published != 0
+        self.published != 0
     }
     pub(super) fn has_plain_receivers(&self) -> bool {
         self.published != 0
     }
-    /// Immediately after publication, a lone direct call can only progress on
-    /// input or an application wake (including cancellation). Do not apply this
-    /// certificate to older entries, queued invocations or pipeline work. Call
-    /// only after `Progress::Published`: admission just consumed `pending` and
-    /// installed a direct Sent entry with no task or receiver. If it
-    /// is the sole slot, there cannot also be an older call needing a poll.
     pub(super) fn idle_after_publication(&self) -> bool {
-        self.entries.len() == 1 && self.invocations.is_empty()
+        self.pending.is_none() && self.ready.is_empty()
     }
-    /// Deliver an already-admitted reply to its immediate owner. Large bursts
-    /// use the owner index; mixed/pipelined work retains the rotating scanner.
+    /// Deliver an already-admitted reply directly to its registered owner.
+    /// Pipelined work waits for the same exact completion notification.
     /// The caller yields after completion and resumes ordinary maintenance
     /// before reading another frame, preserving cooperative fairness.
     #[inline(always)]
@@ -176,7 +178,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         hooks: &mut ClientHooks<'id>,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
         mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> capnp::Result<Option<bool>> {
         let (key, owner) = completion;
@@ -192,11 +194,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             self.retire_entry(index);
             return Ok(Some(true));
         }
+        let waker = self.entries[index].as_ref().unwrap().waker.clone();
         match self.entries[index].as_mut().unwrap().wire.poll_using(
             hooks,
             driver,
             messages,
-            cx,
+            &mut Context::from_waker(&waker),
             true,
             &mut refresh,
             retain_local_hook,
@@ -238,14 +241,27 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         key: capntproto_rpc_engine::questions::Key<'id>,
         owner: Option<usize>,
     ) -> Option<usize> {
-        owner.filter(|&index| self.entries.get(index).and_then(Option::as_ref)
-            .is_some_and(|entry| entry.local.is_none() && entry.wire.task.is_none()
-                && entry.wire.pipeline.as_ref().is_none_or(|state| !state.used.get())
-                && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key)))
+        owner.filter(|&index| {
+            self.entries
+                .get(index)
+                .and_then(Option::as_ref)
+                .is_some_and(|entry| {
+                    entry.local.is_none()
+                        && entry.wire.task().is_none()
+                        && entry
+                            .wire
+                            .pipeline
+                            .as_ref()
+                            .is_none_or(|state| !state.used.get())
+                        && entry.wire.question() == Some(key)
+                })
+        })
     }
     #[inline(always)]
     fn retire_entry(&mut self, index: usize) {
+        self.ready.remove(index);
         let entry = self.entries[index].take().expect("live call owner");
+        self.unpublished -= usize::from(entry.unpublished);
         self.published -= usize::from(entry.published);
         self.live -= 1;
         self.first_free = self.first_free.min(index);
@@ -253,9 +269,36 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     }
     /// Advance allocation only after admission commits. Failed publication
     /// leaves the free position available; retirement restores the lowest
-    /// hole. This preserves scan order without searching from zero each time.
-    fn insert_entry(&mut self, index: usize, entry: Entry<'p, 'id, I, C, H>) {
+    /// hole without searching from zero for every admission.
+    fn insert_entry(&mut self, index: usize, mut entry: Entry<'p, 'id, I, C, H>) {
         debug_assert_eq!(index, self.first_free);
+        entry.waker = self.ready.insert(index);
+        entry.completion = match entry.wire.route {
+            CallRoute::Tracked { task, .. } => Some(task),
+            _ => None,
+        };
+        if let Some(pipeline) = &entry.wire.pipeline {
+            pipeline.bind_owner(entry.waker.clone());
+        }
+        let canceled = entry.wire.call.as_mut().is_some_and(|call| {
+            call.completion
+                .poll_observed(&mut Context::from_waker(&entry.waker))
+                .is_ready()
+        });
+        if entry.published
+            && !canceled
+            && entry
+                .wire
+                .pipeline
+                .as_ref()
+                .is_none_or(|pipeline| pipeline.waiting.borrow().is_empty())
+        {
+            // Publication has registered every source of future readiness:
+            // reply, cancellation and projection interest. No initial poll is
+            // needed merely to discover that the remote reply is still absent.
+            self.ready.park(index);
+        }
+        self.unpublished += usize::from(entry.unpublished);
         self.published += usize::from(entry.published);
         if index == self.entries.len() {
             self.entries.push(Some(entry));
@@ -270,39 +313,34 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             .map_or(self.entries.len(), |offset| index + 1 + offset);
     }
     pub(crate) fn has_unpublished(&self) -> bool {
-        self.pending.is_some()
-            || self.invocations.has_queued()
-            || self.entries.iter().flatten().any(|entry| {
-                matches!(entry.wire.direct, Some(DirectStage::Queued))
-                    || entry
-                        .local
-                        .as_ref()
-                        .is_some_and(|local| matches!(local.stage, Stage::Prepare))
-            })
+        self.pending.is_some() || self.unpublished != 0
     }
-    pub(crate) fn adopt_pipeline(
+    pub(crate) fn adopt_pipeline<A, P: Copy + Eq>(
         &mut self,
+        driver: &Peer<'p, 'id, '_, I, A, P, C, H>,
         key: capntproto_rpc_engine::questions::Key<'id>,
         pipeline: Box<dyn PipelineHook>,
     ) {
-        for entry in self.entries.iter().flatten() {
-            let question = match entry.wire.direct {
-                Some(DirectStage::Sent(question)) => Some(question),
-                _ => entry
-                    .wire
-                    .task
-                    .and_then(|task| self.invocations.question_for(task)),
-            };
-            if question == Some(key) {
-                // Once any path has been used, preserve the original ordering
-                // route. An independent-path Join fence can shorten it later.
-                if let Some(state) = &entry.wire.pipeline {
-                    if !state.used.get() {
-                        let previous = state.adopted.replace(Some(pipeline));
-                        drop(previous);
-                    }
-                }
-                return;
+        let Some(index) = driver.completion_owner(key) else {
+            return;
+        };
+        let Some(entry) = self.entries.get(index).and_then(Option::as_ref) else {
+            return;
+        };
+        let question = entry.wire.question().or_else(|| {
+            entry
+                .wire
+                .task()
+                .and_then(|task| driver.invocation_question(task))
+        });
+        if question != Some(key) {
+            return;
+        }
+        // A used path retains its original ordering route through its fence.
+        if let Some(state) = &entry.wire.pipeline {
+            if !state.used.get() {
+                let previous = state.adopted.replace(Some(pipeline));
+                drop(previous);
             }
         }
     }
@@ -319,7 +357,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         cx: &mut Context<'_>,
         budget: NonZeroUsize,
         import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
@@ -331,7 +379,9 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             cx,
             budget,
             import,
-            |hooks, driver| hooks.collect_with_metadata(&mut driver.runtime, foreign::metadata),
+            |hooks, driver| {
+                hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
+            },
             |invocations, driver, messages, _credit, publication| {
                 let direct = match publication {
                     Publication::Immediate {
@@ -409,7 +459,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         mut imported_resource: impl FnMut(&I) -> Option<R>,
         mut local_resource: impl FnMut(&Rc<dyn ClientHook>) -> Option<R>,
         import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
@@ -421,7 +481,9 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             cx,
             budget,
             import,
-            |hooks, driver| hooks.collect_with_metadata(&mut driver.runtime, foreign::metadata),
+            |hooks, driver| {
+                hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
+            },
             |invocations, driver, messages, _credit, publication| {
                 let direct = match publication {
                     Publication::Immediate {
@@ -496,7 +558,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         cx: &mut Context<'_>,
         budget: NonZeroUsize,
         mut import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
         mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
@@ -512,189 +584,45 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         if let Some(kind) = driver.disconnected() {
             return Poll::Ready(Err(Box::new(Error::from_kind(kind))));
         }
+        self.ready.register(cx.waker());
+        if let Some(wait) = &self.admission_wait {
+            wait.register(cx.waker());
+        }
+        hooks.register_next(cx.waker());
         let mut advanced = false;
-        let mut remaining_budget = budget.get();
-        if self.is_empty() {
-            // With no owned invocation there is no local execution, wire
-            // publication or completion to scan. Admission is the only source
-            // of work; it still registers the inbox waker before returning idle.
-            refresh(hooks, driver);
-            match self.admit(
-                hooks,
-                driver,
-                messages,
-                options,
-                cx,
-                &mut import,
-                &mut send,
-                &mut refresh,
-            )? {
-                Some(Progress::Advanced) => {
-                    // Queued/pipelined calls still need preparation and
-                    // publication. Spend the rest of this same quantum on
-                    // those stages instead of yielding after admission.
-                    advanced = true;
-                    remaining_budget -= 1;
-                    self.remaining = 0;
-                    self.cursor = 1;
-                }
-                progress => return Poll::Ready(Ok(progress.unwrap_or(Progress::Idle))),
-            }
-        }
-        self.poll_nonempty(
-            hooks,
-            driver,
-            messages,
-            options,
-            cx,
-            budget,
-            advanced,
-            remaining_budget,
-            import,
-            refresh,
-            send,
-        )
-    }
-    #[allow(clippy::too_many_arguments)]
-    #[inline(never)]
-    fn poll_nonempty<A, P: Copy + Eq>(
-        &mut self,
-        hooks: &mut ClientHooks<'id>,
-        driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
-        messages: &mut messages::Messages<'p, '_, '_>,
-        options: capnp::message::ReaderOptions,
-        cx: &mut Context<'_>,
-        budget: NonZeroUsize,
-        mut advanced: bool,
-        mut remaining_budget: usize,
-        mut import: impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
-            &dyn ClientHook,
-        ) -> capnp::Result<Client<'id>>,
-        mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
-        mut send: impl FnMut(
-            &mut connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
-            &mut Peer<'p, 'id, '_, I, A, P, C, H>,
-            &mut messages::Messages<'p, '_, '_>,
-            Option<Rc<crate::admission::Permit>>,
-            Publication<'_, 'id>,
-        ) -> capnp::Result<Option<SendOutcome<'id>>>,
-    ) -> Poll<Result<Progress, Box<Error>>> {
-        // A burst need not rescan every outstanding question before publishing
-        // its next request. At most eight admissions precede an ordinary scan
-        // quantum; that scan retains its cursor, including cancellation and
-        // older local/pipelined work. Reserve a step for it on blocked admission.
-        if !advanced
-            && remaining_budget > 1
-            && self.entries.len() > 8
-            && self.admission_streak < 8
-            && !hooks.inbox.queue.borrow().is_empty()
-        {
-            self.admission_streak += 1;
-            remaining_budget -= 1;
-            refresh(hooks, driver);
-            match self.admit(
-                hooks,
-                driver,
-                messages,
-                options,
-                cx,
-                &mut import,
-                &mut send,
-                &mut refresh,
-            )? {
-                Some(progress @ Progress::Published { .. }) => return Poll::Ready(Ok(progress)),
-                Some(_) => advanced = true,
-                None => (),
-            }
-        } else {
-            self.admission_streak = 0;
-        }
-        // Published direct calls have no remaining queued dispatch, local
-        // execution or internal completion channel. Visit their owners and
-        // pending projections plus admission, retaining a rotating cursor and
-        // the caller's budget. Larger/mixed workloads keep the general scan.
-        if !advanced
-            && self.entries.len() <= 8
-            && budget.get() > self.entries.len()
-            && self.invocations.is_empty()
-            && driver.runtime.queued() == 0
-            && self.entries.iter().flatten().all(|entry| {
-                entry.local.is_none() && matches!(entry.wire.direct, Some(DirectStage::Sent(_)))
-            })
-        {
-            let size = self.entries.len() + 1;
-            for _ in 0..size {
-                remaining_budget -= 1;
-                let index = self.cursor % size;
-                self.cursor = (index + 1) % size;
-                if index == 0 {
-                    refresh(hooks, driver);
-                    if let Some(progress) = self.admit(
-                        hooks,
-                        driver,
-                        messages,
-                        options,
-                        cx,
-                        &mut import,
-                        &mut send,
-                        &mut refresh,
-                    )? {
-                        if progress != Progress::Advanced {
-                            return Poll::Ready(Ok(progress));
-                        }
-                        // A new local/pipelined call needs the remaining
-                        // dispatch allowance in this same turn.
-                        advanced = true;
-                        self.remaining = 0;
-                        self.cursor = 1;
-                        break;
-                    }
-                } else if let Some(entry) = self.entries[index - 1].as_mut() {
-                    if entry.wire.pipeline.is_some() {
-                        entry.wire.poll_pipelines_using(
-                            hooks,
-                            driver,
-                            &mut self.invocations,
-                            messages,
-                            |_, _, _, _| Ok(None),
-                            &mut refresh,
-                        )?;
-                    }
-                    if let Poll::Ready(result) = entry.wire.poll_using(
-                        hooks,
-                        driver,
-                        messages,
-                        cx,
-                        true,
-                        &mut refresh,
-                        retain_local_hook,
-                    ) {
-                        result?;
-                        self.retire_entry(index - 1);
-                        return Poll::Ready(Ok(Progress::Completed));
-                    }
-                }
-            }
-            if !advanced {
-                return if self.is_empty() {
+        for _ in 0..budget.get() {
+            let dispatch_ready = driver.runtime().dispatch_is_pending()
+                || driver
+                    .capabilities()
+                    .ready()
+                    .map_err(wire_error)?
+                    .is_some_and(|ready| matches!(ready.owner(), connection::Task::Invoke(_)));
+            let admission_ready = (!self.admission_parked
+                || self
+                    .admission_wait
+                    .as_ref()
+                    .is_some_and(|wait| wait.is_ready()))
+                && self.live < self.maximum
+                && self.invocations.has_capacity()
+                && (self.pending.is_some() || !hooks.inbox.queue.borrow().is_empty());
+            let owner_ready = !self.ready.is_empty()
+                || driver.has_ready_completions()
+                || driver.has_changed_invocations();
+            let active = [admission_ready, dispatch_ready, owner_ready];
+            let Some(lane) = (0..3)
+                .map(|offset| (self.lane + offset) % 3)
+                .find(|lane| active[*lane as usize])
+            else {
+                return if advanced {
+                    Poll::Ready(Ok(Progress::Advanced))
+                } else if self.is_empty() {
                     Poll::Ready(Ok(Progress::Idle))
                 } else {
                     Poll::Pending
                 };
-            }
-        }
-        for _ in 0..remaining_budget {
-            let size = 3 + self.entries.len() + self.invocations.capacity();
-            if self.scan_size != size || self.remaining == 0 {
-                self.scan_size = size;
-                self.remaining = size;
-                self.cursor %= size;
-            }
-            let index = self.cursor;
-            self.cursor = (index + 1) % size;
-            // Advance even on error, allowing cleanup to free exhausted resources.
-            let result = match index {
+            };
+            self.lane = (lane + 1) % 3;
+            let result = match lane {
                 0 => {
                     refresh(hooks, driver);
                     self.admit(
@@ -707,97 +635,100 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         &mut send,
                         &mut refresh,
                     )
-                    .map_err(|error| *error)
+                    .map_err(|e| *e)
                 }
-                1 => self.accept_local(driver, messages),
-                2 => self.send_next(driver, messages, &mut send),
-                // Resolve wire completions before polling their hosted
-                // receivers. Otherwise every reply takes an extra full scan
-                // through admission and dispatch before the caller can see it.
-                index if index >= 3 + self.invocations.capacity() => {
-                    let index = index - 3 - self.invocations.capacity();
-                    match self.entries[index].as_mut() {
-                        None => Ok(None),
-                        Some(entry) => {
-                            let result = step(
-                                entry,
-                                &self.executor,
-                                hooks,
-                                driver,
-                                &mut self.invocations,
-                                messages,
-                                options,
-                                cx,
-                                &mut import,
-                                &mut refresh,
-                            );
-                            if matches!(result, Ok(Some(Progress::Completed))) {
-                                self.retire_entry(index);
+                1 => {
+                    if driver
+                        .capabilities()
+                        .advance_dispatch_one()
+                        .map_err(wire_error)?
+                    {
+                        Ok(Some(Progress::Advanced))
+                    } else {
+                        // A route transition selects its exact operation even
+                        // when it became broken instead of locally callable.
+                        let task =
+                            driver
+                                .capabilities()
+                                .ready()
+                                .map_err(wire_error)?
+                                .and_then(|ready| match ready.owner() {
+                                    connection::Task::Invoke(invocation) => Some(invocation.key()),
+                                    _ => None,
+                                });
+                        if let Some(task) = task {
+                            if let Some(index) = driver.invocation_completion_owner(task) {
+                                if self
+                                    .entries
+                                    .get(index)
+                                    .and_then(Option::as_ref)
+                                    .is_some_and(|entry| entry.wire.task() == Some(task))
+                                {
+                                    self.ready.push(index);
+                                }
                             }
-                            result
+                        }
+                        match self.accept_local(driver, messages)? {
+                            Some(progress) => Ok(Some(progress)),
+                            None => self.send_next(driver, messages, &mut send),
                         }
                     }
                 }
-                index => {
-                    let entries = &self.entries;
-                    // These completion receivers live in entries below and
-                    // are consumed/canceled only by this same bounded scan.
-                    // Progress resets the scan; budget exhaustion yields to
-                    // the caller. Internal transfer needs no application wake.
-                    let mut completion_cx = Context::from_waker(Waker::noop());
-                    self.invocations
-                        .poll_one_with(
-                            index - 3,
-                            driver,
-                            messages,
-                            &mut completion_cx,
-                            |task, path, runtime| {
-                                let results = entries
-                                    .iter()
-                                    .flatten()
-                                    .find(|e| e.wire.task == Some(task))
-                                    .and_then(|e| e.wire.local_results.as_ref());
-                                resolve(hooks, results, path, runtime, &mut import)
-                            },
-                        )
-                        .map(|progress| match progress {
-                            connection::CallProgress::Idle | connection::CallProgress::Pending => {
-                                None
+                _ => {
+                    // Notifications and execution alternate, preserving budget
+                    // one fairness even under continuous incoming replies.
+                    if (self.notification_turn || self.ready.is_empty())
+                        && (driver.has_ready_completions() || driver.has_changed_invocations())
+                    {
+                        self.notification_turn = false;
+                        if (self.question_turn || !driver.has_changed_invocations())
+                            && driver.has_ready_completions()
+                        {
+                            self.question_turn = false;
+                            let (key, index) = driver.take_ready_completion().unwrap();
+                            if self
+                                .entries
+                                .get(index)
+                                .and_then(Option::as_ref)
+                                .is_some_and(|entry| {
+                                    entry.wire.question() == Some(key)
+                                        || entry
+                                            .wire
+                                            .task()
+                                            .and_then(|task| driver.invocation_question(task))
+                                            == Some(key)
+                                })
+                            {
+                                self.ready.push(index);
                             }
-                            _ => Some(Progress::Advanced),
-                        })
-                        .map_err(wire_error)
+                        } else if let Some((task, index)) = driver.take_changed_invocation() {
+                            self.question_turn = true;
+                            if self
+                                .entries
+                                .get(index)
+                                .and_then(Option::as_ref)
+                                .is_some_and(|entry| {
+                                    entry.wire.task() == Some(task)
+                                        || entry.completion == Some(task)
+                                })
+                            {
+                                self.ready.push(index);
+                            }
+                        }
+                        Ok(Some(Progress::Advanced))
+                    } else {
+                        self.notification_turn = true;
+                        self.poll_ready(hooks, driver, messages, options, &mut import, &mut refresh)
+                    }
                 }
             };
             match result {
-                Err(error) => {
-                    self.remaining = size;
-                    return Poll::Ready(Err(Box::new(error)));
+                Err(error) => return Poll::Ready(Err(Box::new(error))),
+                Ok(Some(progress @ (Progress::Completed | Progress::Published { .. }))) => {
+                    return Poll::Ready(Ok(progress))
                 }
-                Ok(Some(progress)) => {
-                    self.remaining = size;
-                    // Use the remaining allowance for ready preparation and
-                    // completion. Stop after publishing: the caller reserved
-                    // FIFO capacity for exactly one outgoing frame.
-                    if index == 2
-                        || matches!(progress, Progress::Completed | Progress::Published { .. })
-                    {
-                        return Poll::Ready(Ok(progress));
-                    }
-                    advanced = true;
-                    continue;
-                }
+                Ok(Some(_)) => advanced = true,
                 Ok(None) => (),
-            }
-            self.remaining -= 1;
-            if self.remaining == 0 {
-                return if advanced {
-                    Poll::Ready(Ok(Progress::Advanced))
-                } else if self.is_empty() {
-                    Poll::Ready(Ok(Progress::Idle))
-                } else {
-                    Poll::Pending
-                };
             }
         }
         Poll::Ready(Ok(if advanced {
@@ -805,6 +736,105 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         } else {
             Progress::Yield
         }))
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn poll_ready<A, P: Copy + Eq>(
+        &mut self,
+        hooks: &mut ClientHooks<'id>,
+        driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        options: capnp::message::ReaderOptions,
+        import: &mut impl FnMut(
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
+            &dyn ClientHook,
+        ) -> capnp::Result<Client<'id>>,
+        refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
+    ) -> capnp::Result<Option<Progress>> {
+        let Some(index) = self.ready.pop() else {
+            return Ok(None);
+        };
+        let entry = self.entries[index].as_mut().expect("notified live call");
+        #[cfg(test)]
+        {
+            entry.polls += 1;
+        }
+        let waker = entry.waker.clone();
+        let mut cx = Context::from_waker(&waker);
+        let result = if entry.binding_turn || entry.closing {
+            entry.binding_turn = false;
+            let binding = entry
+                .completion
+                .and_then(|task| driver.invocation_binding(task).map(|index| (task, index)));
+            if let Some((task, binding)) = binding {
+                let results = entry.wire.local_results.clone();
+                self.invocations
+                    .poll_one_with(binding, driver, messages, &mut cx, |seen, path, runtime| {
+                        debug_assert_eq!(seen, task);
+                        resolve(hooks, results.as_ref(), path, runtime, import)
+                    })
+                    .map_err(wire_error)
+                    .map(|_| Some(Progress::Advanced))
+            } else {
+                entry.completion = None;
+                Ok(Some(if entry.closing {
+                    Progress::Completed
+                } else {
+                    Progress::Advanced
+                }))
+            }
+        } else {
+            entry.binding_turn = entry.completion.is_some();
+            step(
+                entry,
+                &self.executor,
+                hooks,
+                driver,
+                &mut self.invocations,
+                messages,
+                options,
+                &mut cx,
+                import,
+                refresh,
+            )
+        };
+        if entry.unpublished
+            && (entry.published
+                || entry
+                    .local
+                    .as_ref()
+                    .is_some_and(|local| !matches!(local.stage, Stage::Prepare)))
+        {
+            entry.unpublished = false;
+            self.unpublished -= 1;
+        }
+        let result = match result {
+            Ok(Some(Progress::Completed))
+                if entry
+                    .completion
+                    .and_then(|task| driver.invocation_binding(task))
+                    .is_some() =>
+            {
+                entry.closing = true;
+                Ok(Some(Progress::Advanced))
+            }
+            result => result,
+        };
+        match &result {
+            Ok(Some(Progress::Completed)) => self.retire_entry(index),
+            Ok(None) => (),
+            _ => self.ready.push(index),
+        }
+        result
     }
     fn send_next<A, P: Copy + Eq>(
         &mut self,
@@ -818,7 +848,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<SendOutcome<'id>>>,
     ) -> capnp::Result<Option<Progress>> {
-        let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
+        let mut dispatch = driver.capabilities();
+        let Some(ready) = dispatch.ready().map_err(wire_error)? else {
             return Ok(None);
         };
         if !matches!(
@@ -830,28 +861,28 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         ) {
             return Ok(None);
         }
-        let task = ready.key();
         let connection::Task::Invoke(invocation) = ready.owner() else {
             return Ok(None);
         };
-        let Some(index) = invocation.completion_owner() else {
+        let task = invocation.key();
+        drop(ready);
+        let Some(index) = driver.invocation_completion_owner(task) else {
             return Ok(None);
         };
-        drop(ready);
         let Some(entry) = self
             .entries
             .get_mut(index)
             .and_then(Option::as_mut)
-            .filter(|entry| entry.wire.task == Some(task))
+            .filter(|entry| entry.wire.task() == Some(task))
         else {
             return Ok(None);
         };
         let Some(call) = entry.wire.call.as_ref() else {
             return Ok(None);
         };
-        if entry.wire.direct.is_some() && call.is_canceled() {
+        if entry.wire.direct() && call.is_canceled() {
             entry.wire.cancel_direct(driver, messages)?;
-            drop(entry.wire.receiver.take());
+            entry.wire.close_receiver();
             entry
                 .wire
                 .fail(Error::disconnected("wire call canceled".into()));
@@ -867,13 +898,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             Err(error) => {
                 // Refusing one Call is a local reply, not a connection failure.
                 // Close its binding before invocation maintenance can send it.
-                drop(entry.wire.receiver.take());
+                entry.wire.close_receiver();
                 entry.wire.cancel_direct(driver, messages)?;
                 entry.wire.fail(error);
                 return Ok(Some(Progress::Advanced));
             }
         };
-        let direct = entry.wire.direct.is_some();
+        let direct = entry.wire.direct();
         let Some(sent) = send(
             &mut self.invocations,
             driver,
@@ -892,19 +923,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             unreachable!("queued publication")
         };
         entry.published = true;
+        if entry.unpublished {
+            entry.unpublished = false;
+            self.unpublished -= 1;
+        }
         self.published += 1;
+        self.ready.push(index);
         if direct {
             debug_assert_eq!(sent.task, task);
-            entry.wire.direct = Some(DirectStage::Sent(sent.question));
-            // The queued invocation was consumed by publication. Its observers
-            // now belong to the question; keep only the live remote route.
-            entry.wire.task = None;
+            entry.wire.route = CallRoute::Remote(sent.question);
         }
         if let Some(credit) = credit {
             driver
-                .ledgers
-                .questions
-                .retain_credit(sent.question, credit)
+                .retain_call_credit(sent.question, credit)
                 .map_err(wire_error)?;
         }
         Ok(Some(Progress::Advanced))
@@ -914,7 +945,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
         messages: &messages::Messages<'p, '_, '_>,
     ) -> capnp::Result<Option<Progress>> {
-        let Some(ready) = driver.runtime.next_ready().map_err(wire_error)? else {
+        let mut dispatch = driver.capabilities();
+        let Some(ready) = dispatch.ready().map_err(wire_error)? else {
             return Ok(None);
         };
         if !matches!(
@@ -929,27 +961,35 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         ) {
             return Ok(None);
         }
-        let task = ready.key();
+        let connection::Task::Invoke(invocation) = ready.owner() else {
+            return Ok(None);
+        };
+        let task = invocation.key();
         drop(ready);
+        let Some(index) = driver.invocation_completion_owner(task) else {
+            return Ok(None);
+        };
         let Some(entry) = self
             .entries
-            .iter_mut()
-            .flatten()
-            .find(|e| e.wire.task == Some(task) && e.local.is_none())
+            .get_mut(index)
+            .and_then(Option::as_mut)
+            .filter(|entry| entry.wire.task() == Some(task) && entry.local.is_none())
         else {
             return Ok(None);
         };
-        if matches!(entry.wire.direct, Some(DirectStage::Queued)) {
+        if matches!(entry.wire.route, CallRoute::Queued(_)) {
             let (sender, receiver) = shared::channel();
             self.invocations
                 .bind_queued(driver, messages, task, sender.into())
                 .map_err(|rejected| wire_error(rejected.error))?;
-            entry.wire.receiver = Some(receiver);
-            entry.wire.direct = None;
+            entry.wire.route = CallRoute::Tracked { task, receiver };
+            entry.completion = Some(task);
+            entry.binding_turn = true;
         }
         let Some(call) = self.invocations.accept_local(driver).map_err(wire_error)? else {
             return Ok(None);
         };
+        self.ready.push(index);
         entry.wire.local_results = Some(server::Results::new());
         entry.local = Some(Box::new(Execution {
             call,
@@ -967,7 +1007,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         options: capnp::message::ReaderOptions,
         cx: &mut Context<'_>,
         import: &mut impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
         send: &mut impl FnMut(
@@ -980,6 +1030,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> Result<Option<Progress>, Box<Error>> {
         if self.pending.is_none() {
+            self.admission_wait = None;
+            self.admission_parked = false;
             self.pending = match hooks.poll_owned_next(cx) {
                 Poll::Ready(call) => call,
                 Poll::Pending => None,
@@ -988,14 +1040,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             // its owner; no application callback intervenes here.
         } else if self.pending.as_ref().is_some_and(|call| call.is_canceled()) {
             drop(self.pending.take());
+            self.admission_wait = None;
+            self.admission_parked = false;
             return Ok(Some(Progress::Advanced));
         }
         if self.pending.is_none() {
             return Ok(None);
         }
         if !self.invocations.has_capacity() {
-            // The hosted receiver may have just completed while its tracked
-            // binding still awaits cleanup later in this rotating scan.
+            // A tracked completion still owns its hosted slot until its
+            // delivery observation and protocol cleanup have settled.
             // Preserve the new call until that slot is reclaimed.
             return Ok(None);
         }
@@ -1009,6 +1063,50 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             self.entries.try_reserve(1).map_err(wire_error)?;
         }
         let call = self.pending.as_ref().expect("pending call");
+        let failure = call.endpoint.failure.borrow().clone();
+        if let Some(error) = failure {
+            self.pending.take().unwrap().complete_boxed(Err(error));
+            return Ok(Some(Progress::Advanced));
+        }
+        if call.endpoint.needs_binding()
+            || call.params.capability_table().is_some_and(|caps| {
+                caps.iter()
+                    .flatten()
+                    .any(|hook| hooks.has_pending_projection(&**hook))
+            })
+        {
+            let wait = self.admission_wait.get_or_insert_with(Default::default);
+            wait.register(cx.waker());
+            wait.clear();
+            let wake = Waker::from(wait.clone());
+            let mut pending_cx = Context::from_waker(&wake);
+            let call = self.pending.as_mut().expect("pending projection admission");
+            let canceled = call.poll_canceled(&mut pending_cx).is_ready();
+            let endpoint = call.endpoint.binding_pending(&mut pending_cx);
+            let caps = call.params.capability_table().is_some_and(|caps| {
+                caps.iter()
+                    .flatten()
+                    .any(|hook| hooks.projection_pending(&**hook, &mut pending_cx))
+            });
+            self.admission_parked = (endpoint || caps) && !canceled;
+            return Ok(None);
+        }
+        self.admission_parked = false;
+        self.admission_wait = None;
+        let call = self.pending.as_ref().expect("ready admission");
+        if call.endpoint.index.get().is_none() {
+            let forwarded = call
+                .endpoint
+                .introduced
+                .borrow()
+                .clone()
+                .expect("ready projection fallback");
+            let cap = match hooks.try_retain(&mut driver.capabilities(), &*forwarded)? {
+                Some(cap) => cap,
+                None => import(&mut driver.capabilities(), &*forwarded)?,
+            };
+            hooks.bind_projection(&mut driver.capabilities(), cap, call.endpoint.clone())?;
+        }
         let target = hooks.target(call)?;
         if !call.hints.only_promise_pipeline
             && call.third_party.is_none()
@@ -1054,10 +1152,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 (connection::ImmediateParams::Content(content), Some([Some(hook)]))
                     if content.target_size()?.cap_count != 0 =>
                 {
-                    Some(match hooks.try_retain(&mut driver.runtime, &**hook)? {
-                        Some(client) => client,
-                        None => import(&mut driver.runtime, &**hook)?,
-                    })
+                    Some(
+                        match hooks.try_retain(&mut driver.capabilities(), &**hook)? {
+                            Some(client) => client,
+                            None => import(&mut driver.capabilities(), &**hook)?,
+                        },
+                    )
                 }
                 _ => None,
             };
@@ -1078,7 +1178,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 publication,
             );
             if let Some(capability) = retained {
-                driver.runtime.release(capability);
+                driver.capabilities().release(capability);
             }
             if let Some(published) = published? {
                 if let SendOutcome::Blocked(error) = published {
@@ -1090,13 +1190,11 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 };
                 if let Some(credit) = credit {
                     driver
-                        .ledgers
-                        .questions
-                        .retain_credit(question, credit)
+                        .retain_call_credit(question, credit)
                         .map_err(wire_error)?;
                 }
                 let mut call = self.pending.take().expect("published call");
-                if let CallParams::OwnedRequest(request, _) = &mut call.params {
+                if let CallParams::OwnedRequest(request) = &mut call.params {
                     // Like C++ RpcRequest's target, this interest protects the
                     // request through send(). The child now owns its question
                     // and FIFO frame, so a parent Finish cannot overtake it.
@@ -1115,15 +1213,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 let entry = Entry {
                     wire: WireCall {
                         call: Some(call),
-                        task: None,
-                        receiver: None,
-                        direct: Some(DirectStage::Sent(question)),
+                        route: CallRoute::Remote(question),
                         pipeline,
                         local_results: None,
-                        tail_response: None,
                     },
                     local: None,
                     published: true,
+                    #[cfg(test)]
+                    polls: 0,
+                    unpublished: false,
+                    completion: None,
+                    binding_turn: false,
+                    closing: false,
+                    waker: Waker::noop().clone(),
                 };
                 driver
                     .bind_completion_owner(question, index)
@@ -1169,7 +1271,17 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         messages: &mut messages::Messages<'p, '_, '_>,
         options: capnp::message::ReaderOptions,
         import: &mut impl FnMut(
-            &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'p,
+                'id,
+                '_,
+                I,
+                P,
+                Rc<dyn ClientHook>,
+                C,
+                H,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> capnp::Result<Option<Progress>> {
@@ -1191,12 +1303,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             }
         };
         driver
-            .bind_invocation_completion(wire.task.expect("queued invocation"), index)
+            .bind_invocation_completion(wire.task().expect("queued invocation"), index)
             .map_err(wire_error)?;
         let entry = Entry {
             wire,
             local: None,
             published: false,
+            #[cfg(test)]
+            polls: 0,
+            unpublished: true,
+            completion: None,
+            binding_turn: false,
+            closing: false,
+            waker: Waker::noop().clone(),
         };
         self.insert_entry(index, entry);
         Ok(Some(Progress::Advanced))
@@ -1223,6 +1342,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         if let Some(call) = self.pending {
             call.complete_boxed(Err(error.clone()));
         }
+        self.ready.close();
         self.invocations.terminate(driver, messages);
         for mut entry in self.entries.into_iter().flatten() {
             entry.wire.release_tail(driver, messages);
@@ -1239,9 +1359,29 @@ fn resolve<'p, 'id, I, P: Copy + Eq, const C: usize, const H: usize>(
     hooks: &mut ClientHooks<'id>,
     results: Option<&server::Results>,
     path: pipeline::Path<'_>,
-    runtime: &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+    runtime: &mut capntproto_rpc_wire::owned::connection::Scope<
+        '_,
+        'p,
+        'id,
+        '_,
+        I,
+        P,
+        Rc<dyn ClientHook>,
+        C,
+        H,
+    >,
     import: &mut impl FnMut(
-        &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+        &mut capntproto_rpc_wire::owned::connection::Scope<
+            '_,
+            'p,
+            'id,
+            '_,
+            I,
+            P,
+            Rc<dyn ClientHook>,
+            C,
+            H,
+        >,
         &dyn ClientHook,
     ) -> capnp::Result<Client<'id>>,
 ) -> Result<Option<Client<'id>>, connection::Error> {
@@ -1264,7 +1404,17 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
     options: capnp::message::ReaderOptions,
     cx: &mut Context<'_>,
     import: &mut impl FnMut(
-        &mut Runtime<'p, 'id, '_, I, P, Rc<dyn ClientHook>, C, H>,
+        &mut capntproto_rpc_wire::owned::connection::Scope<
+            '_,
+            'p,
+            'id,
+            '_,
+            I,
+            P,
+            Rc<dyn ClientHook>,
+            C,
+            H,
+        >,
         &dyn ClientHook,
     ) -> capnp::Result<Client<'id>>,
     refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
@@ -1299,7 +1449,7 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
     let results = results.as_ref().expect("local result context");
     if completed
         || invocations
-            .poll_local_canceled(local.call.task(), cx)
+            .poll_local_canceled(driver, local.call.task(), cx)
             .map_err(wire_error)?
             .is_ready()
     {
@@ -1309,7 +1459,7 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
     match &mut local.stage {
         Stage::Prepare => {
             let hook = match driver
-                .runtime
+                .runtime()
                 .inspect(local.call.target())
                 .map_err(wire_error)?
             {
@@ -1337,7 +1487,7 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
             local.stage = Stage::Collect;
         }
         Stage::Collect => {
-            if results.poll_completed(cx).is_pending() {
+            if results.poll_completed(cx).is_pending() || results.projections_pending(hooks, cx) {
                 return Ok(None);
             }
             let output =
@@ -1350,7 +1500,7 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
                     stage: local.stage,
                 }));
                 if let Ok(output) = rejected.result {
-                    output.release(messages, &mut driver.runtime);
+                    output.release(messages, &mut driver.capabilities());
                 }
                 return Err(wire_error(rejected.error));
             }

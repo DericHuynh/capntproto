@@ -28,7 +28,7 @@ fn with_peer(
             storage::with_domain(|domain| {
                 let mut slots = connection::FixedStorage::<
                     (),
-                    server::Results,
+                    server::Producer,
                     u8,
                     Rc<dyn ClientHook>,
                     8,
@@ -84,7 +84,7 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
     }
     fn received(
         &mut self,
-        event: connection::Received<'id, server::Results>,
+        event: connection::Received<'id, server::Producer>,
         _: &mut ControlContext<'_, 'p, 'id, 's, (), u8, 8, 8>,
         _: &mut messages::Messages<'p, '_, '_>,
         _: &mut messages::Queue<'p, '_>,
@@ -469,18 +469,18 @@ impl capability::Server for Echo {
 }
 fn expose(driver: &mut TestPeer<'_, '_, '_>, hook: Rc<dyn ClientHook>) -> ImportId {
     let client = driver
-        .runtime
+        .capabilities()
         .endpoint(
             Route::local(hook),
             capntproto_rpc_engine::clients::Location::Local,
         )
         .unwrap_or_else(|e| panic!("{}", e.error));
-    let mut batch = driver.ledgers.exports.batch();
-    let id = capntproto_rpc_wire::clients::stage(&mut driver.runtime, &mut batch, &client)
+    let (mut graph, mut batch) = driver.export_batch();
+    let id = capntproto_rpc_wire::clients::stage(&mut graph, &mut batch, &client)
         .unwrap()
         .id();
     batch.commit();
-    driver.runtime.release(client);
+    driver.capabilities().release(client);
     ImportId::from_wire(id.to_wire())
 }
 fn remote<'p, 'id>(
@@ -489,20 +489,14 @@ fn remote<'p, 'id>(
     id: ImportId,
 ) -> capability::Client {
     let mut received = [imports::ReceiveSlot::new(id, ())];
-    driver
-        .ledgers
-        .imports
-        .prepare_receive(&mut received)
-        .unwrap()
-        .commit();
+    driver.prepare_imports(&mut received).unwrap().commit();
     let receipt = received[0].take_local().unwrap();
-    let cap = driver
-        .imports
-        .bind(&mut driver.runtime, &mut driver.ledgers.imports, &receipt)
+    let cap = driver.bind_import(&receipt).unwrap();
+    driver.release_import(receipt);
+    let client = hooks
+        .export_client(&mut driver.capabilities(), &cap)
         .unwrap();
-    driver.ledgers.imports.release(receipt);
-    let client = hooks.export_client(&mut driver.runtime, &cap).unwrap();
-    driver.runtime.release(cap);
+    driver.capabilities().release(cap);
     client
 }
 
@@ -1279,7 +1273,7 @@ fn transport_releases_unclaimed_resources_on_every_terminal_path() {
             if case == 6 {
                 driver
                     .bootstrap(messages, &mut queue, 512, Default::default())
-                    .map(|client| driver.runtime.release(client))
+                    .map(|client| driver.capabilities().release(client))
                     .unwrap();
             }
             let coordinator = Coordinator::new(
@@ -1396,13 +1390,13 @@ fn foreign_resolution_invalidates_an_idle_lane_during_an_unfinished_scan() {
         });
         let cap = coordinator
             .foreign
-            .import(&mut coordinator.driver.runtime, &*pending.hook)
+            .import(&mut coordinator.driver.capabilities(), &*pending.hook)
             .unwrap();
         let client = coordinator
             .hooks
-            .export_client(&mut coordinator.driver.runtime, &cap)
+            .export_client(&mut coordinator.driver.capabilities(), &cap)
             .unwrap();
-        coordinator.driver.runtime.release(cap);
+        coordinator.driver.capabilities().release(cap);
         let request: capability::Request<any_pointer::Owned, any_pointer::Owned> =
             client.new_call(7, 0, None);
         let mut response = request.send().promise;
@@ -1537,7 +1531,7 @@ fn bootstrap_exception_details_survive_full_fifo_without_repeating_factory() {
                 messages,
                 &mut [0; 16],
                 |_| (),
-                server::Results::new,
+                server::Producer::new,
             )
             .unwrap_or_else(|e| panic!("{}", e.error));
         <TwoParty<'_, _> as Control<'_, '_, '_, (), u8, 8, 8>>::received(
@@ -1895,7 +1889,7 @@ fn two_party_rejects_join_and_accept_after_output_backpressure_without_disconnec
         with_peer(|mut driver, messages| {
             let target = if join {
                 let service = driver
-                    .runtime
+                    .capabilities()
                     .endpoint(
                         Route::local(Rc::from(crate::broken::new_cap(Error::failed(
                             "test target".into(),
@@ -1903,10 +1897,10 @@ fn two_party_rejects_join_and_accept_after_output_backpressure_without_disconnec
                         capntproto_rpc_engine::clients::Location::Local,
                     )
                     .unwrap_or_else(|_| panic!("endpoint capacity"));
-                let mut batch = driver.ledgers.exports.batch();
-                let grant = binding::stage(&mut driver.runtime, &mut batch, &service).unwrap();
+                let (mut graph, mut batch) = driver.export_batch();
+                let grant = binding::stage(&mut graph, &mut batch, &service).unwrap();
                 batch.commit();
-                driver.runtime.release(service);
+                driver.capabilities().release(service);
                 Some(ImportId::from_wire(grant.id().to_wire()))
             } else {
                 None
@@ -1947,7 +1941,7 @@ fn two_party_rejects_join_and_accept_after_output_backpressure_without_disconnec
                     messages,
                     &mut [0; 16],
                     |_| (),
-                    server::Results::new,
+                    server::Producer::new,
                 )
                 .unwrap_or_else(|error| panic!("{}", error.error));
             <TwoParty<'_, _> as Control<'_, '_, '_, (), u8, 8, 8>>::received(
@@ -2037,7 +2031,7 @@ fn two_party_rejects_join_and_accept_after_output_backpressure_without_disconnec
                     messages,
                     &mut [0; 16],
                     |_| (),
-                    server::Results::new,
+                    server::Producer::new,
                 )
                 .unwrap_or_else(|error| panic!("{}", error.error));
             <TwoParty<'_, _> as Control<'_, '_, '_, (), u8, 8, 8>>::received(

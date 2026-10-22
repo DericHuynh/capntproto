@@ -1,6 +1,7 @@
 //! Real C++ TCP interoperability using the caller-backed RPC driver.
 #[path = "support/bounded_driver.rs"]
 mod resources;
+use capnp_rpc::engine::clients::Capabilities;
 use capnp_rpc::{
     bounded::{
         calls,
@@ -385,12 +386,12 @@ fn main() {
                         })
                         .unwrap();
                     driver.release_response(reply, messages);
-                    driver.runtime.release(reflected);
-                    driver.runtime.release(child);
-                    driver.runtime.release(target);
+                    driver.capabilities().release(reflected);
+                    driver.capabilities().release(child);
+                    driver.capabilities().release(target);
                     maintain(&mut driver, &mut io, messages, &mut queue);
                     assert!(
-                        driver.ledgers.questions.is_empty(),
+                        driver.ledgers().questions.is_empty(),
                         "all Return/Finish obligations completed"
                     );
                     let mut closing = driver.terminate(&mut queue);

@@ -347,6 +347,7 @@ fn new_growing_scope<'id, 'storage, 'bytes>(
     let sends = crate::storage::Storage::growing(sends.initial, sends.maximum, || SendSlot::EMPTY)
         .ok_or(Error::NoSendSlot)?;
     Ok(Messages {
+        failed_minimum: Cell::new(None),
         buffers: Buffers::Growing(buffers),
         sends,
         brand: PhantomData,

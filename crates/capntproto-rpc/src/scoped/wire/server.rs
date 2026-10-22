@@ -3,7 +3,7 @@
 //! reply publication finish. These owned parameters do not borrow the driver.
 use super::*;
 mod results;
-pub use results::{Execution, Results};
+pub use results::{Execution, Producer, Results};
 pub(crate) use results::{Transfer, Work};
 mod worker;
 pub use worker::{Progress, Worker};
@@ -93,7 +93,7 @@ impl<'id> ClientHooks<'id> {
                 .map(|cap| {
                     cap.as_ref()
                         .map(|cap| {
-                            self.export_client(&mut driver.runtime, cap)
+                            self.export_client(&mut driver.capabilities(), cap)
                                 .map(|client| client.hook)
                         })
                         .transpose()
@@ -139,19 +139,11 @@ impl<'id> ClientHooks<'id> {
                     None => None,
                     Some(cap) => {
                         let client = driver
-                            .imports
-                            .bind_capability(
-                                cap,
-                                &mut driver.runtime,
-                                &mut driver.ledgers.imports,
-                                &driver.ledgers.exports,
-                                &mut driver.ledgers.answers,
-                                &mut driver.pipelines,
-                            )
+                            .bind_capability(cap)
                             .map_err(wire_error)?
                             .into_client();
-                        let hook = self.export_client(&mut driver.runtime, &client);
-                        driver.runtime.release(client);
+                        let hook = self.export_client(&mut driver.capabilities(), &client);
+                        driver.capabilities().release(client);
                         Some(hook?.hook)
                     }
                 };

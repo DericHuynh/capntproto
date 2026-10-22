@@ -74,7 +74,7 @@ impl<V> Connection<V> {
             outgoing,
             write_finished,
         } = self.connection.borrow_mut().take_frame_io()?;
-        let closing = Rc::new(Cell::new(false));
+        let closing = Rc::new(messages::OutputStatus::new(MAXIMUM_PENDING_FRAMES));
         Ok((
             self.peer,
             Reader {
@@ -93,9 +93,10 @@ impl<V> Connection<V> {
                 shutdown: None,
                 closing: closing.clone(),
                 result: None,
-                failure: None,
-                output: outgoing,
-                pending: 0,
+                state: Rc::new(RefCell::new(OutputState {
+                    output: outgoing,
+                    failure: None,
+                })),
             },
             Failure {
                 finished: write_finished,
@@ -110,7 +111,7 @@ impl<V> Connection<V> {
 /// is expected and does not falsely abort an orderly shutdown.
 pub struct Failure {
     finished: Option<Promise<(), Error>>,
-    closing: Rc<Cell<bool>>,
+    closing: Rc<messages::OutputStatus>,
 }
 impl Future for Failure {
     type Output = Error;
@@ -122,7 +123,7 @@ impl Future for Failure {
         self.finished = None;
         match result {
             Err(error) => Poll::Ready(error),
-            Ok(()) if !self.closing.get() => {
+            Ok(()) if !self.closing.is_closed() => {
                 Poll::Ready(Error::disconnected("transport write queue stopped".into()))
             }
             Ok(()) => Poll::Pending,
@@ -358,43 +359,109 @@ impl Input<resources::Import> for Reader {
 /// coordinator's FIFO supplies such windows; arbitrary stream chunks are rejected.
 pub struct Writer {
     shutdown: Option<Promise<(), Error>>,
-    closing: Rc<Cell<bool>>,
+    closing: Rc<messages::OutputStatus>,
     result: Option<capnp::Result<()>>,
-    failure: Option<Error>,
-    output: Box<dyn crate::OutgoingMessageStream>,
-    pending: usize,
+    state: Rc<RefCell<OutputState>>,
 }
-// Leave room for retirement/control frames alongside an application burst.
-// This count bounds retained frame/receipt overhead independently of the
-// message pool's byte budget and application admission credits.
+struct OutputState {
+    output: Box<dyn crate::OutgoingMessageStream>,
+    failure: Option<Error>,
+}
+// Standalone frame adapters bound their output independently. Hosted connections
+// set the physical publication limit from their configured output queue.
 const MAXIMUM_PENDING_FRAMES: usize = 64;
+impl Writer {
+    pub(crate) fn publication_queue<'p, 's>(
+        &mut self,
+        messages: &messages::Messages<'p, '_, '_>,
+        maximum: usize,
+    ) -> Result<messages::Queue<'p, 's, Bundle>, messages::Error> {
+        self.closing.set_maximum(maximum)?;
+        messages::Queue::hosted(
+            messages,
+            Box::new(PublicationSink {
+                state: self.state.clone(),
+                closing: self.closing.clone(),
+            }),
+        )
+    }
+}
+struct PublicationSink {
+    state: Rc<RefCell<OutputState>>,
+    closing: Rc<messages::OutputStatus>,
+}
+impl messages::PublicationSink<Bundle> for PublicationSink {
+    fn status(&self) -> &Rc<messages::OutputStatus> {
+        &self.closing
+    }
+    fn reserve(&mut self) -> Result<(), messages::Error> {
+        let mut state = self.state.borrow_mut();
+        state.output.reserve().map_err(|error| {
+            self.closing.fail();
+            state.failure = Some(error);
+            messages::Error::QueueFailed
+        })
+    }
+    fn cancel_reservation(&mut self) {
+        self.state.borrow_mut().output.cancel_reservation();
+    }
+    fn publish_reserved(&mut self, frame: messages::Publication, mut resources: Bundle) {
+        let frame = match frame {
+            messages::Publication::Bytes(bytes) => crate::OutgoingFrame::from_shared(bytes),
+            messages::Publication::Parts(parts) => crate::OutgoingFrame::from_parts(parts),
+        };
+        let mut frame = match frame {
+            Ok(frame) => frame,
+            Err(error) => {
+                let mut state = self.state.borrow_mut();
+                state.output.cancel_reservation();
+                self.closing.fail();
+                state.failure = Some(error);
+                return;
+            }
+        };
+        frame.credit = resources.credit.take();
+        #[cfg(unix)]
+        if let Some(fds) = resources.fds.take() {
+            frame.set_fds(fds.iter().cloned().collect());
+        }
+        let mut state = self.state.borrow_mut();
+        self.closing.published();
+        if let Err(error) = state.output.publish_reserved(frame) {
+            self.closing.fail();
+            state.failure = Some(error);
+        }
+    }
+}
 impl Drop for Writer {
     fn drop(&mut self) {
-        if !self.closing.replace(true) {
-            // Error/cancellation ends IO. Enqueue transport shutdown even when
-            // a caller drops the coordinator before its first poll. Completion
-            // is not claimed here; the originating network still owns its driver.
-            let shutdown = self
-                .output
-                .shutdown(Err(self.failure.clone().unwrap_or_else(|| {
-                    Error::disconnected("portable transport IO abandoned".into())
-                })));
-            drop(shutdown);
+        if !self.closing.close() {
+            let mut state = self.state.borrow_mut();
+            let error = state
+                .failure
+                .clone()
+                .unwrap_or_else(|| Error::disconnected("portable transport IO abandoned".into()));
+            drop(state.output.shutdown(Err(error)));
         }
     }
 }
 impl io::Flush for Writer {
     type Error = Error;
     fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Error>>> {
-        if let Some(error) = &self.failure {
+        if self.closing.pending() == 0 && !self.closing.failed() {
+            return Poll::Ready(Ok(()));
+        }
+        let mut state = self.state.borrow_mut();
+        if let Some(error) = &state.failure {
             return Poll::Ready(Err(IoError::Failed(error.clone())));
         }
-        if self.pending != 0 {
-            if let Err(error) = ready!(self.output.poll_flush(cx)) {
-                self.failure = Some(error.clone());
+        if self.closing.pending() != 0 {
+            if let Err(error) = ready!(state.output.poll_flush(cx)) {
+                self.closing.fail();
+                state.failure = Some(error.clone());
                 return Poll::Ready(Err(IoError::Failed(error)));
             }
-            self.pending = 0;
+            self.closing.flushed();
         }
         Poll::Ready(Ok(()))
     }
@@ -406,9 +473,8 @@ impl io::Close for Writer {
         }
         ready!(io::Flush::poll_flush(self, cx))?;
         if self.shutdown.is_none() {
-            self.closing.set(true);
-            let shutdown = self.output.shutdown(Ok(()));
-            self.shutdown = Some(shutdown);
+            self.closing.close();
+            self.shutdown = Some(self.state.borrow_mut().output.shutdown(Ok(())));
         }
         let result = ready!(Pin::new(self.shutdown.as_mut().unwrap()).poll(cx));
         self.shutdown = None;
@@ -480,15 +546,16 @@ impl io::WriteResources<Bundle> for Writer {
 }
 impl Writer {
     fn poll_capacity(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Error>>> {
-        if self.closing.get() {
+        if self.closing.is_closed() {
             return Poll::Ready(Err(IoError::Failed(Error::disconnected(
                 "transport closing".into(),
             ))));
         }
-        if let Some(error) = &self.failure {
+        if let Some(error) = &self.state.borrow().failure {
             return Poll::Ready(Err(IoError::Failed(error.clone())));
         }
-        if self.pending == MAXIMUM_PENDING_FRAMES {
+        let full = self.closing.full();
+        if full {
             ready!(io::Flush::poll_flush(self, cx))?;
         }
         Poll::Ready(Ok(()))
@@ -501,17 +568,12 @@ impl Writer {
     ) -> Result<(), IoError<Error>> {
         frame.credit = resources.and_then(|resources| resources.credit.clone());
         #[cfg(unix)]
-        let frame = {
-            let mut frame = frame;
-            if let Some(fds) = resources.and_then(|resources| resources.fds.as_ref()) {
-                frame.set_fds(fds.iter().cloned().collect());
-            }
-            frame
-        };
-        #[cfg(not(unix))]
-        let _ = resources;
-        self.output.send(frame).map_err(IoError::Failed)?;
-        self.pending += 1;
+        if let Some(fds) = resources.and_then(|resources| resources.fds.as_ref()) {
+            frame.set_fds(fds.iter().cloned().collect());
+        }
+        let mut state = self.state.borrow_mut();
+        state.output.send(frame).map_err(IoError::Failed)?;
+        self.closing.published();
         Ok(())
     }
 }

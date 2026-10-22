@@ -103,11 +103,16 @@ impl crate::IncomingFrameStream for FrameInput {
 }
 struct FrameOutput(Rc<State>);
 impl crate::OutgoingMessageStream for FrameOutput {
+    fn reserve(&mut self) -> capnp::Result<()> {
+        Ok(())
+    }
+    fn cancel_reservation(&mut self) {}
+
     fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
         self.0.shutdowns.borrow_mut().push(result);
         self.0.close.promise()
     }
-    fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+    fn publish_reserved(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
         self.0
             .sends
             .borrow_mut()
@@ -744,4 +749,72 @@ fn call_credit_is_retained_until_physical_flush_or_abandoned_frame_release() {
         assert_eq!(admission.used(), 0);
         assert!(admission.reserve().is_ok());
     }
+}
+
+#[test]
+fn hosted_publication_has_one_queue_and_holds_capacity_through_physical_flush() {
+    let (connection, state) = fixture();
+    let (_reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
+    let bytes = frame();
+    let mut pool = messages::GrowingBuffers::new(1, bytes.len(), bytes.len() + 7);
+    messages::with_growing_messages(
+        &mut pool,
+        capntproto_rpc_engine::connection::Growth {
+            initial: 0,
+            maximum: 1,
+        },
+        |messages| {
+            let mut queue = writer.publication_queue(messages, 1).unwrap();
+            drop(queue.reserve().unwrap());
+            assert!(queue.is_empty());
+            let reserved = messages.reserve(bytes.len()).unwrap();
+            messages.write(&reserved).copy_from_slice(&bytes);
+            let lease = messages.seal(reserved, bytes.len()).unwrap();
+            queue.reserve().unwrap().accept_owned(messages, lease);
+            assert_eq!(
+                state.sends.borrow().len(),
+                1,
+                "publication enters physical FIFO immediately"
+            );
+            assert_eq!(queue.len(), 1);
+            assert!(
+                queue.window(messages).unwrap().is_none(),
+                "no engine FIFO transfer"
+            );
+            assert_eq!(queue.reserve().err(), Some(messages::Error::NoSendSlot));
+            assert_eq!(messages.reserve(1).unwrap_err(), messages::Error::NoBuffer);
+            let mut output = io::Output::new();
+            assert!(output
+                .poll(
+                    &mut writer,
+                    &mut queue,
+                    messages,
+                    &mut cx(),
+                    NonZeroUsize::new(1).unwrap()
+                )
+                .is_pending());
+            assert!(!queue.is_empty(), "acceptance is not flush completion");
+            state.send.complete(Ok(()));
+            assert!(matches!(
+                output.poll(
+                    &mut writer,
+                    &mut queue,
+                    messages,
+                    &mut cx(),
+                    NonZeroUsize::new(1).unwrap()
+                ),
+                Poll::Ready(Ok(()))
+            ));
+            assert!(queue.is_empty());
+            assert_eq!(
+                state.sends.borrow().len(),
+                1,
+                "output poll must not publish twice"
+            );
+            drop(queue.reserve().unwrap());
+            let reused = messages.reserve(bytes.len()).unwrap();
+            messages.discard(reused);
+        },
+    )
+    .unwrap();
 }

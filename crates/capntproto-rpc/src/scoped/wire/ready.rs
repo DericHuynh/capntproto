@@ -3,6 +3,36 @@
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Wake, Waker};
 
+/// A single parked admission. Each new owner receives a fresh signal, so an
+/// escaped notification cannot reactivate a later request in the same lane.
+#[derive(Default)]
+pub(crate) struct Signal {
+    ready: std::sync::atomic::AtomicBool,
+    parent: futures::task::AtomicWaker,
+}
+impl Signal {
+    pub(crate) fn register(&self, wake: &Waker) {
+        self.parent.register(wake);
+    }
+    pub(crate) fn is_ready(&self) -> bool {
+        self.ready.load(std::sync::atomic::Ordering::Acquire)
+    }
+    pub(crate) fn clear(&self) {
+        self.ready
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+impl Wake for Signal {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        if !self.ready.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            self.parent.wake();
+        }
+    }
+}
+
 #[derive(Default)]
 struct Slot {
     generation: u64,
@@ -18,10 +48,6 @@ struct State {
     head: Option<usize>,
     tail: Option<usize>,
     closed: bool,
-    live: usize,
-    protocol_cursor: usize,
-    protocol_remaining: usize,
-    protocol_span: usize,
 }
 impl State {
     fn push(&mut self, index: usize) -> bool {
@@ -89,13 +115,13 @@ impl Wake for Notify {
     }
 }
 #[derive(Default)]
-pub(super) struct Queue(Arc<Shared>);
+pub(crate) struct Queue(Arc<Shared>);
 impl Queue {
-    pub(super) fn insert(&self, index: usize) -> Waker {
+    pub(crate) fn insert(&self, index: usize) -> Waker {
         let mut state = self.0.state.lock().unwrap();
         assert!(!state.closed);
-        if index == state.slots.len() {
-            state.slots.push(Slot::default());
+        if index >= state.slots.len() {
+            state.slots.resize_with(index + 1, Slot::default);
         }
         let slot = &mut state.slots[index];
         assert!(!slot.active && !slot.queued);
@@ -123,63 +149,39 @@ impl Queue {
                 notify
             }
         };
-        state.live += 1;
         state.push(index);
         Waker::from(notify)
     }
 
-    pub(super) fn register(&self, parent: &Waker) {
+    pub(crate) fn register(&self, parent: &Waker) {
         self.0.parent.register(parent);
     }
-    pub(super) fn notify_parent(&self) {
+    pub(crate) fn notify_parent(&self) {
         self.0.parent.wake();
     }
-    pub(super) fn push(&self, index: usize) {
+    pub(crate) fn push(&self, index: usize) {
         self.0.state.lock().unwrap().push(index);
     }
-    /// One ready operation or one protocol slot to inspect. A vacant protocol
-    /// slot still consumes a worker budget unit; never hide a scan in this pop.
-    pub(super) fn pop(&self) -> Option<usize> {
+    /// Remove one notified live operation; inactive slots are never visited.
+    pub(crate) fn pop(&self) -> Option<usize> {
         let mut state = self.0.state.lock().unwrap();
-        let index = if state.protocol_remaining != 0 {
-            state.protocol_remaining -= 1;
-            let index = state.protocol_cursor;
-            state.protocol_cursor = if index + 1 == state.protocol_span {
-                0
-            } else {
-                index + 1
-            };
-            index
-        } else {
-            state.head?
-        };
+        let index = state.head?;
         state.unlink(index);
         Some(index)
     }
-    pub(super) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         let state = self.0.state.lock().unwrap();
-        state.head.is_none() && state.protocol_remaining == 0
+        state.head.is_none()
     }
-    pub(super) fn remove(&self, index: usize) {
+    pub(crate) fn park(&self, index: usize) {
+        self.0.state.lock().unwrap().unlink(index);
+    }
+    pub(crate) fn remove(&self, index: usize) {
         let mut state = self.0.state.lock().unwrap();
         state.unlink(index);
         state.slots[index].active = false;
-        state.live -= 1;
-        if state.live == 0 {
-            state.protocol_remaining = 0;
-        }
     }
-    pub(super) fn invalidate(&self) {
-        let mut state = self.0.state.lock().unwrap();
-        // Preserve the rotating cursor under repeated IO. Freeze the span so
-        // admission during a partial scan cannot cause an old slot to be missed.
-        // Only explicit protocol effects enter this conservative, budgeted scan.
-        if state.live != 0 {
-            state.protocol_span = state.slots.len();
-            state.protocol_remaining = state.protocol_span;
-        }
-    }
-    pub(super) fn close(&self) {
+    pub(crate) fn close(&self) {
         self.0.state.lock().unwrap().closed = true;
         self.0.parent.take();
     }
@@ -215,11 +217,6 @@ mod tests {
         c.wake_by_ref();
         assert_eq!(queue.pop(), Some(1));
         assert_eq!(queue.pop(), Some(0));
-        assert_eq!(queue.pop(), None);
-        queue.invalidate();
-        assert_eq!(queue.pop(), Some(0));
-        assert_eq!(queue.pop(), Some(1));
-        assert_eq!(queue.pop(), Some(2)); // Vacant protocol visits are charged too.
         assert_eq!(queue.pop(), None);
     }
     #[test]
@@ -266,34 +263,4 @@ mod tests {
         assert_eq!(queue.pop(), None);
         assert_eq!(second.0.load(Ordering::SeqCst), 2);
     }
-}
-
-#[cfg(test)]
-#[test]
-fn protocol_visits_keep_their_budget_and_cursor_across_growth_and_reinvalidation() {
-    let queue = Queue::default();
-    let _wakers: Vec<_> = (0..3).map(|index| queue.insert(index)).collect();
-    for index in 0..3 {
-        assert_eq!(queue.pop(), Some(index));
-    }
-    queue.invalidate();
-    assert_eq!(queue.pop(), Some(0));
-    queue.remove(1);
-    let _new = queue.insert(3);
-    assert_eq!(queue.pop(), Some(1)); // One vacant visit, not a hidden loop.
-    assert_eq!(queue.pop(), Some(2)); // Growth did not change the old scan span.
-    assert_eq!(queue.pop(), Some(3));
-    assert!(queue.is_empty());
-    queue.invalidate();
-    assert_eq!(queue.pop(), Some(0));
-    queue.invalidate(); // Repeated IO does not restart at slot zero.
-    for index in [1, 2, 3, 0] {
-        assert_eq!(queue.pop(), Some(index));
-    }
-    assert!(queue.is_empty());
-    queue.invalidate();
-    queue.remove(0);
-    queue.remove(2);
-    queue.remove(3);
-    assert!(queue.is_empty()); // No scan debt survives the final operation.
 }

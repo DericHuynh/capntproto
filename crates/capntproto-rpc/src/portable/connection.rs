@@ -1,7 +1,7 @@
 //! Own the generative protocol/message scopes inside one ordinary 'static task.
 use super::*;
 use crate::scoped::{
-    wire::{resources::Import, server::Results},
+    wire::{resources::Import, server::Producer},
     ClientHooks,
 };
 use capnp::private::capability::ClientHook;
@@ -135,6 +135,10 @@ async fn run<V: 'static>(
                 let graph = domain
                     .bind_growing_adoptions(
                         storage::GrowingStorage {
+                            notifications:
+                                capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                                    bound,
+                                ),
                             imports: bound,
                             exports: bound,
                             answers: bound,
@@ -156,7 +160,7 @@ async fn run<V: 'static>(
                     '_,
                     '_,
                     Import,
-                    Results,
+                    Producer,
                     (),
                     Rc<dyn ClientHook>,
                     0,
@@ -168,11 +172,12 @@ async fn run<V: 'static>(
                     (),
                 )
                 .map_err(|(e, _)| error(e))?;
+                let [questions, answers, imports, exports] = driver.observe_counts();
                 *policy.tables.borrow_mut() = Some(coordinator::policy::Tables {
-                    questions: driver.ledgers.questions.observe_len(),
-                    answers: driver.ledgers.answers.observe_len(),
-                    imports: driver.ledgers.imports.observe_len(),
-                    exports: driver.ledgers.exports.observe_len(),
+                    questions,
+                    answers,
+                    imports,
+                    exports,
                     embargoes: driver.observe_embargoes(),
                 });
                 driver.set_descriptors(coordinator::multiparty::introduction::descriptors());
@@ -210,11 +215,9 @@ async fn run<V: 'static>(
                     options.concurrency,
                 )
                 .with_idle_notifier(move |value| idle(value));
-                let mut queue = messages::Queue::<vat::Bundle>::growing_with_resources(
-                    0,
-                    options.output_queue.get(),
-                )
-                .map_err(error)?;
+                let mut queue = writer
+                    .publication_queue(messages, options.output_queue.get())
+                    .map_err(error)?;
                 let mut aborted = std::pin::pin!(aborted);
                 let mut failure = std::pin::pin!(failure);
                 let abort = std::future::poll_fn(|cx| {

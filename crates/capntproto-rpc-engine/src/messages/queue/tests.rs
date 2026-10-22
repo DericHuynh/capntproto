@@ -40,7 +40,7 @@ fn nonempty_queue_storage_rejection_preserves_its_lease_and_resources() {
         queue
             .reserve_with(Resource(&dropped))
             .unwrap()
-            .accept_owned(lease);
+            .accept_owned(messages, lease);
         assert!(queue.window(messages).unwrap().unwrap().advance(6).unwrap());
         assert_eq!(dropped.get(), 2);
     })
@@ -68,7 +68,7 @@ fn owned_fifo_needs_no_send_slots_and_preserves_resources_through_partial_writes
                 queue
                     .reserve_with(Resource(&dropped))
                     .unwrap()
-                    .accept_owned(lease);
+                    .accept_owned(messages, lease);
             }
             assert!(matches!(
                 queue.reserve_with(Resource(&dropped)),
@@ -96,7 +96,7 @@ fn owned_fifo_needs_no_send_slots_and_preserves_resources_through_partial_writes
             queue
                 .reserve_with(Resource(&dropped))
                 .unwrap()
-                .accept_owned(lease);
+                .accept_owned(messages, lease);
             assert_eq!(queue.window(messages).unwrap().unwrap().bytes(), b"def");
             queue.fail();
             assert!(queue.discard_one(messages).unwrap());
@@ -125,7 +125,7 @@ fn tracked_and_owned_entries_share_one_ordered_fifo() {
             for (index, text) in [b"abc", b"def"].into_iter().enumerate() {
                 let lease = messages.copy_from(text).unwrap();
                 if (index == 0) == owned_first {
-                    queue.reserve().unwrap().accept_owned(lease);
+                    queue.reserve().unwrap().accept_owned(messages, lease);
                 } else {
                     let offer = messages.offer_owned(lease).unwrap();
                     queue.reserve().unwrap().accept(messages, offer);
@@ -162,7 +162,7 @@ fn owned_fifo_shared_output_pins_pool_after_completion_and_failure() {
                 let mut entries = [None];
                 let mut queue = Queue::new(&mut entries).unwrap();
                 let lease = messages.copy_from(b"retained").unwrap();
-                queue.reserve().unwrap().accept_owned(lease);
+                queue.reserve().unwrap().accept_owned(messages, lease);
                 let window = queue.window(messages).unwrap().unwrap();
                 let shared = window.share().unwrap();
                 if failed {
@@ -307,7 +307,7 @@ fn every_mid_frame_io_failure_is_terminal_and_never_exposes_the_next_frame() {
                         let w = messages.reserve(3).unwrap();
                         let l = messages.seal(w, 3).unwrap();
                         if owned {
-                            queue.reserve().unwrap().accept_owned(l);
+                            queue.reserve().unwrap().accept_owned(messages, l);
                         } else {
                             let o = messages.offer(&l).unwrap();
                             queue.reserve().unwrap().accept(messages, o);

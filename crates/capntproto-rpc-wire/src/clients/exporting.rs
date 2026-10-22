@@ -5,11 +5,14 @@ use crate::{
     owned::{self, Frame},
     rpc_capnp::api::{exception::Type, CapDescriptor, Exception, Message, Resolve},
 };
-use capntproto_rpc_engine::storage::Storage as SlotStorage;
 use capntproto_rpc_engine::{
     exports,
     ids::{ExportId, WireId},
     messages,
+};
+use capntproto_rpc_engine::{
+    storage::Storage as SlotStorage,
+    waiting::{Requirement, Slot as WaitSlot, Waiting},
 };
 #[cfg(test)]
 mod tests;
@@ -21,18 +24,27 @@ enum State<'g> {
 struct Entry<'g, 'e> {
     state: State<'g>,
     target: clients::Key<'g>,
+    source_subscription: Option<clients::Subscription<'g>>,
+    target_subscription: clients::Subscription<'g>,
     export: exports::Key<'e>,
     id: ExportId,
 }
 pub struct Slot<'g, 'e> {
     entry: Option<Entry<'g, 'e>>,
+    ready: WaitSlot,
 }
 impl Slot<'_, '_> {
-    pub const EMPTY: Self = Self { entry: None };
+    pub const EMPTY: Self = Self {
+        entry: None,
+        ready: WaitSlot::EMPTY,
+    };
 }
 pub struct Bindings<'s, 'g, 'e> {
     slots: SlotStorage<'s, Slot<'g, 'e>>,
     live: usize,
+    listener: Option<clients::Listener<'g>>,
+    ready: Waiting<{ crate::resources::COUNT }>,
+    prefer_event: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,10 +72,25 @@ pub enum Progress {
 }
 
 impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
+    fn resource_ready<G: clients::Capabilities<'g>>(
+        r: Requirement,
+        graph: &G,
+        exports: &exports::Exports<'e, '_, clients::Client<'g>>,
+        messages: &messages::Messages<'_, '_, '_>,
+        queue: &messages::Queue<'_, '_, impl Sized>,
+    ) -> bool {
+        crate::resources::graph_ready(r, graph)
+            || (r.resource == crate::resources::EXPORTS && exports.available() >= r.minimum)
+            || crate::resources::message_ready(r, messages, queue)
+    }
+    pub(crate) fn resource_waiting(&self, index: usize) -> bool {
+        self.slots.get(index).is_some_and(|s| s.ready.is_parked())
+    }
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
     /// Occupancy follows observer ownership, independently of retained capacity.
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.live == 0
     }
@@ -74,7 +101,70 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         if slots.iter().any(|slot| slot.entry.is_some()) {
             return Err(Error::NonemptyStorage);
         }
-        Ok(Self { slots, live: 0 })
+        Ok(Self {
+            slots,
+            live: 0,
+            listener: None,
+            ready: Waiting::EMPTY,
+            prefer_event: true,
+        })
+    }
+    pub(crate) fn has_ready<G: clients::Capabilities<'g>>(
+        &self,
+        graph: &G,
+        exports: &exports::Exports<'e, '_, clients::Client<'g>>,
+        messages: &messages::Messages<'_, '_, '_>,
+        queue: &messages::Queue<'_, '_, impl Sized>,
+    ) -> bool {
+        self.ready.has_ready(
+            &self.slots,
+            |slot| &slot.ready,
+            |r| Self::resource_ready(r, graph, exports, messages, queue),
+        ) || self
+            .listener
+            .as_ref()
+            .is_some_and(|listener| graph.has_events(listener))
+    }
+    pub(crate) fn next_ready<G: clients::Capabilities<'g>>(
+        &mut self,
+        graph: &mut G,
+        exports: &exports::Exports<'e, '_, clients::Client<'g>>,
+        messages: &messages::Messages<'_, '_, '_>,
+        queue: &messages::Queue<'_, '_, impl Sized>,
+    ) -> Option<usize> {
+        self.prefer_event = !self.prefer_event;
+        if !self.prefer_event {
+            if let Some(index) = self.ready.pop(
+                &mut self.slots,
+                |slot| &mut slot.ready,
+                |r| Self::resource_ready(r, graph, exports, messages, queue),
+            ) {
+                return Some(index);
+            }
+        }
+        if let Some(event) = self
+            .listener
+            .as_ref()
+            .and_then(|listener| graph.next_event(listener))
+        {
+            let index = event.owner;
+            let entry = self.slots.get(index)?.entry.as_ref()?;
+            if entry.target_subscription.key() == event.subscription
+                || entry
+                    .source_subscription
+                    .as_ref()
+                    .is_some_and(|sub| sub.key() == event.subscription)
+            {
+                self.ready
+                    .remove(&mut self.slots, index, |slot| &mut slot.ready);
+                return Some(index);
+            }
+        }
+        self.ready.pop(
+            &mut self.slots,
+            |slot| &mut slot.ready,
+            |r| Self::resource_ready(r, graph, exports, messages, queue),
+        )
     }
     pub fn stage<G: clients::Capabilities<'g>>(
         &mut self,
@@ -89,9 +179,9 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
                 Error::Export(rejected.error)
             });
         }
-        let Some(slot) = self
+        let Some(index) = self
             .slots
-            .vacant_mut(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
+            .vacant(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
         else {
             graph.release(snapshot);
             return Err(Error::Capacity);
@@ -104,15 +194,42 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             }
         };
         let target = promise.key();
+        let subscribed = (|| {
+            if self.listener.is_none() {
+                self.listener = Some(graph.listen()?);
+            }
+            let listener = self.listener.as_ref().unwrap();
+            let target_subscription =
+                graph.subscribe(listener, target, index, clients::Watch::Abandonment)?;
+            match graph.subscribe(listener, snapshot.key(), index, clients::Watch::Changes) {
+                Ok(source_subscription) => Ok((source_subscription, target_subscription)),
+                Err(error) => {
+                    graph.unsubscribe(target_subscription);
+                    Err(error)
+                }
+            }
+        })();
+        let (source_subscription, target_subscription) = match subscribed {
+            Ok(value) => value,
+            Err(error) => {
+                graph.release(snapshot);
+                graph.release(promise);
+                return Err(Error::Graph(error));
+            }
+        };
         let grant = match batch.export_promise(promise) {
             Ok(grant) => grant,
             Err(rejected) => {
+                graph.unsubscribe(source_subscription);
+                graph.unsubscribe(target_subscription);
                 graph.release(snapshot);
                 graph.release(rejected.value);
                 return Err(Error::Export(rejected.error));
             }
         };
-        slot.entry = Some(Entry {
+        self.slots[index].entry = Some(Entry {
+            source_subscription: Some(source_subscription),
+            target_subscription,
             state: State::Pending(snapshot),
             target,
             export: grant.key(),
@@ -166,6 +283,75 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         minimum: usize,
         options: capnp::message::ReaderOptions,
         scratch: &mut [u32],
+        resources: R,
+        attach: impl FnMut(&G::Owner, &mut R) -> u8,
+        descriptors: &crate::publication::descriptors::Descriptors<G::Owner>,
+    ) -> Result<Progress, Error>
+    where
+        G: clients::Capabilities<'g, Peer = P>,
+        G::Owner: EndpointOwner<'i, P>,
+    {
+        if index >= self.slots.len() {
+            return Err(Error::Capacity);
+        }
+        self.ready
+            .remove(&mut self.slots, index, |slot| &mut slot.ready);
+        let result = self.poll_one_inner(
+            index,
+            graph,
+            exports,
+            messages,
+            queue,
+            minimum,
+            options,
+            scratch,
+            resources,
+            attach,
+            descriptors,
+        );
+        if let Err(error) = &result {
+            if self
+                .slots
+                .get(index)
+                .is_some_and(|slot| slot.entry.is_some())
+            {
+                let requirement = match error {
+                    Error::Graph(error) => crate::resources::graph_wait(*error, graph),
+                    Error::Export(exports::Error::Full)
+                        if exports.available() < exports.maximum() =>
+                    {
+                        Some(Requirement {
+                            resource: crate::resources::EXPORTS,
+                            minimum: exports.available().saturating_add(1),
+                        })
+                    }
+                    Error::Storage(error) | Error::Output(owned::Error::Storage(error)) => {
+                        crate::resources::message_wait(*error, messages, queue)
+                    }
+                    _ => None,
+                };
+                if let Some(requirement) = requirement {
+                    self.ready
+                        .park(&mut self.slots, index, requirement, |slot| &mut slot.ready);
+                } else {
+                    self.ready
+                        .wake(&mut self.slots, index, |slot| &mut slot.ready);
+                }
+            }
+        }
+        result
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn poll_one_inner<'i, 'pool, P: Copy + Eq, G, R>(
+        &mut self,
+        index: usize,
+        graph: &mut G,
+        exports: &mut exports::Exports<'e, '_, clients::Client<'g>>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
         mut resources: R,
         mut attach: impl FnMut(&G::Owner, &mut R) -> u8,
         descriptors: &crate::publication::descriptors::Descriptors<G::Owner>,
@@ -201,8 +387,19 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
                 return Err(Error::Graph(clients::Error::Cycle));
             }
             if pending {
+                let rebound = graph
+                    .rebind_subscription(entry.source_subscription.as_ref().unwrap(), frozen.key());
                 graph.release(observed);
-                graph.release(frozen);
+                if let Err(error) = rebound {
+                    graph.release(frozen);
+                    return Err(Error::Graph(error));
+                }
+                let State::Pending(previous) =
+                    core::mem::replace(&mut entry.state, State::Pending(frozen))
+                else {
+                    unreachable!()
+                };
+                graph.release(previous);
                 return Ok(Progress::Pending);
             }
             let candidate = match graph.retain_key(frozen.key()) {
@@ -230,6 +427,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
                 unreachable!()
             };
             graph.release(source);
+            graph.unsubscribe(entry.source_subscription.take().unwrap());
         }
         if exports.lookup(entry.id) != Some(entry.export) {
             self.live -= 1;
@@ -314,15 +512,24 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         Ok(Progress::Published)
     }
     pub fn drain_one<G: clients::Capabilities<'g>>(&mut self, graph: &mut G) -> bool {
-        let Some(slot) = self.slots.iter_mut().find(|slot| slot.entry.is_some()) else {
+        let Some(index) = self.slots.iter().position(|slot| slot.entry.is_some()) else {
+            if let Some(listener) = self.listener.take() {
+                graph.close_listener(listener);
+            }
             return false;
         };
+        self.ready
+            .remove(&mut self.slots, index, |slot| &mut slot.ready);
         self.live -= 1;
-        release_entry(slot.entry.take().unwrap(), graph);
+        release_entry(self.slots[index].entry.take().unwrap(), graph);
         true
     }
 }
 fn release_entry<'g, G: clients::Capabilities<'g>>(entry: Entry<'g, '_>, graph: &mut G) {
+    if let Some(subscription) = entry.source_subscription {
+        graph.unsubscribe(subscription);
+    }
+    graph.unsubscribe(entry.target_subscription);
     let (State::Pending(client) | State::Ready(client)) = entry.state;
     graph.release(client);
 }

@@ -24,6 +24,8 @@
 use crate::any_pointer;
 use crate::capability::{Params, Promise, RemotePromise, Request, Results};
 use crate::MessageSize;
+mod metadata;
+pub use metadata::{MetadataChanges, MetadataWatch};
 
 /// A single promise receiver over an existing shared completion allocation.
 /// Implementations own interior synchronization and must register a task on
@@ -121,6 +123,14 @@ impl DebugInfo {
 }
 
 pub trait ClientHook {
+    /// Changes to this hook's FD or diagnostics, independently of promise
+    /// resolution. None declares metadata immutable while the route is stable.
+    /// Mutable hooks must notify this source after each update. Policy wrappers
+    /// expose their own notifications; this grants no access to an inner hook.
+    fn metadata_changes(&self) -> Option<alloc::rc::Rc<MetadataChanges>> {
+        None
+    }
+
     /// Optional concrete runtime identity for safe in-process adapter lookup.
     /// An adapter must downcast and validate its own private identity; pointer
     /// and connection-brand integers alone are not capability authority.

@@ -6,6 +6,7 @@ use super::{
     portable_capnp::{api::echo::EchoParams, echo},
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients,
     ids::{ImportId, WireId},
@@ -31,16 +32,16 @@ pub fn owning_network_vine(mode: u8) {
         with_owned_peer_storage::<4, 0, _>(|mut proxy| {
             with_owned_peer(|mut upstream| {
                 let vine = proxy
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::Vine(67), clients::Location::Local)
                     .unwrap();
                 let service = proxy
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::local(71), clients::Location::Local)
                     .unwrap();
-                let mut batch = proxy.ledgers.exports.batch();
-                let grant = binding::stage(&mut proxy.runtime, &mut batch, &vine).unwrap();
-                let ordinary = binding::stage(&mut proxy.runtime, &mut batch, &service).unwrap();
+                let (mut graph, mut batch) = proxy.export_batch();
+                let grant = binding::stage(&mut graph, &mut batch, &vine).unwrap();
+                let ordinary = binding::stage(&mut graph, &mut batch, &service).unwrap();
                 batch.commit();
                 let invalid = Frame::build(messages, 776, Default::default(), |b| {
                     network::disembargo_accept(
@@ -109,11 +110,12 @@ pub fn owning_network_vine(mode: u8) {
                         !proxy.poll_network().unwrap(),
                         "vine marker cannot overtake an older call"
                     );
-                    let running = proxy.runtime.next_ready().unwrap().unwrap().accept();
-                    let Task::Invoke(call) = proxy.runtime.complete(running) else {
+                    let mut dispatch = proxy.capabilities();
+                    let running = dispatch.next_ready().unwrap().unwrap().accept();
+                    let Task::Invoke(call) = proxy.capabilities().complete(running) else {
                         panic!("older call")
                     };
-                    call.release(messages, &mut proxy.runtime);
+                    call.release(messages, &mut proxy.capabilities());
                     // The network proxy accepts the older call into upstream FIFO
                     // before it allows the dispatcher to expose the next marker.
                     upstream
@@ -135,15 +137,10 @@ pub fn owning_network_vine(mode: u8) {
                     }
                 }
                 if mode == 3 {
-                    assert!(proxy
-                        .ledgers
-                        .exports
-                        .release(grant.id(), 1)
-                        .unwrap()
-                        .is_none());
-                    assert!(proxy.ledgers.exports.resolve(grant.key()).is_none());
-                    let mut batch = proxy.ledgers.exports.batch();
-                    let newer = binding::stage(&mut proxy.runtime, &mut batch, &service).unwrap();
+                    assert!(proxy.release_export(grant.id(), 1).unwrap().is_none());
+                    assert!(proxy.ledgers().exports.resolve(grant.key()).is_none());
+                    let (mut graph, mut batch) = proxy.export_batch();
+                    let newer = binding::stage(&mut graph, &mut batch, &service).unwrap();
                     assert_ne!(
                         newer.id(),
                         grant.id(),
@@ -281,8 +278,8 @@ pub fn owning_network_vine(mode: u8) {
                         sent.release(messages);
                     }
                 }
-                proxy.runtime.release(vine);
-                proxy.runtime.release(service);
+                proxy.capabilities().release(vine);
+                proxy.capabilities().release(service);
                 upstream.release_provision(provision);
                 assert_eq!(
                     close(proxy, messages, &mut queue),

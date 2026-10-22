@@ -27,9 +27,7 @@ impl<'id, P: Copy + Eq, const PATH: usize> Bindings<'_, 'id, P, PATH> {
         let observed = match graph.retain_key(entry.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
-                questions.remove_observer(question, false);
-                slot.entry = None;
-                self.live -= 1;
+                self.finish(index, questions, graph);
                 return Ok(Progress::Abandoned);
             }
             Err(error) => return Err(Error::Graph(error)),
@@ -77,9 +75,7 @@ impl<'id, P: Copy + Eq, const PATH: usize> Bindings<'_, 'id, P, PATH> {
         graph.release(observed);
         match resolved {
             Ok(barrier) => {
-                questions.remove_observer(question, false);
-                slot.entry = None;
-                self.live -= 1;
+                self.finish(index, questions, graph);
                 Ok(Progress::Resolved(barrier))
             }
             Err(error) => {

@@ -5,6 +5,45 @@ use tokio::{
     time::Instant,
 };
 
+/// The physical frame writer closes a batch through Stream::poll_flush. A
+/// packet flush can also be requested by input, flow control or recovery: an
+/// incomplete application batch must never hold those obligations hostage.
+#[derive(Default)]
+struct OutputTurn {
+    changed: Notify,
+    pending: std::cell::Cell<bool>,
+    dirty: std::cell::Cell<bool>,
+    #[cfg(test)]
+    notifications: std::cell::Cell<usize>,
+}
+impl OutputTurn {
+    fn request(&self) {
+        if !self.pending.replace(true) {
+            #[cfg(test)]
+            self.notifications.set(self.notifications.get() + 1);
+            self.changed.notify_one();
+        }
+    }
+    fn wrote(&self) {
+        self.dirty.set(true);
+        // Raw stream users need progress even when they never call flush.
+        self.request();
+    }
+    fn finish(&self) {
+        if self.dirty.replace(false) {
+            self.request();
+        }
+    }
+    fn begin_flush(&self) {
+        // No await separates consuming this permit from clearing pending. All
+        // producers are local to this task domain. Requests arriving while the
+        // socket or pacing await is pending create the next permit.
+        use futures::FutureExt;
+        let _ = self.changed.notified().now_or_never();
+        self.pending.set(false);
+    }
+}
+
 pub(super) struct State {
     pub conn: RefCell<Box<quiche::Connection>>,
     pub write_closed: std::cell::Cell<bool>,
@@ -13,10 +52,20 @@ pub(super) struct State {
     failure: RefCell<Option<(io::ErrorKind, String)>>,
     pub reader: RefCell<Option<std::task::Waker>>,
     pub writer: RefCell<Option<std::task::Waker>>,
-    pub changed: Notify,
+    turn: OutputTurn,
     defer_flush: std::cell::Cell<bool>,
 }
 impl State {
+    pub fn request_flush(&self) {
+        self.turn.request();
+    }
+    pub fn wrote(&self) {
+        self.turn.wrote();
+    }
+    pub fn finish_output_turn(&self) {
+        self.turn.finish();
+    }
+
     pub fn error(&self) -> Option<io::Error> {
         self.failure
             .borrow()
@@ -55,7 +104,7 @@ impl State {
             self.defer_flush.set(true);
             waker.wake();
         }
-        self.changed.notify_one();
+        self.turn.request();
     }
     fn wake(&self) {
         // Take wakers before invoking them: a wake can schedule application work.
@@ -89,7 +138,7 @@ pub(super) async fn spawn(
         failure: RefCell::new(None),
         reader: RefCell::new(None),
         writer: RefCell::new(None),
-        changed: Notify::new(),
+        turn: OutputTurn::default(),
         defer_flush: false.into(),
     });
     route.activate(&state, core.local);
@@ -245,6 +294,9 @@ async fn pump(
             // turn for the RPC work it schedules before flushing ACK/credit.
             tokio::task::yield_now().await;
         }
+        // Batch completion does not cancel the bounded coalescing fence above.
+        // Adjacent RPC turns and endpoint receive bursts can share this flight.
+        state.turn.begin_flush();
         let exhausted = flush(&state.conn, core, &mut batch, &sender).await?;
         // A flow-blocked writer must not wake itself on its own notification.
         let writable = !matches!(state.conn.borrow_mut().stream_capacity(0), Ok(0));
@@ -268,7 +320,7 @@ async fn pump(
                     Err(error) => return Err(io::Error::other(error)),
                 }
             },
-            _ = state.changed.notified() => (),
+            _ = state.turn.changed.notified() => (),
             _ = tokio::time::sleep_until(deadline) => mtu_recovery.on_timeout(&mut state.conn.borrow_mut()),
             _ = tokio::task::yield_now(), if exhausted => (),
         }
@@ -279,6 +331,39 @@ async fn pump(
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[test]
+    fn output_turn_deduplicates_a_large_batch_and_preserves_independent_progress() {
+        let turn = OutputTurn::default();
+        for _ in 0..140 {
+            turn.wrote();
+            turn.request(); // receive/credit changes can share the same flight
+        }
+        turn.finish();
+        assert!(!turn.dirty.get());
+        assert_eq!(turn.notifications.get(), 1);
+        turn.begin_flush();
+        assert!(!turn.pending.get());
+        // An unfinished output batch, including a flow-blocked raw stream,
+        // never suppresses the next recovery/credit wake.
+        turn.wrote();
+        turn.begin_flush();
+        assert!(turn.dirty.get());
+        turn.request();
+        assert!(turn.pending.get());
+        turn.finish();
+        assert_eq!(turn.notifications.get(), 3);
+        turn.begin_flush();
+        // ACK-only traffic has no application output turn to close.
+        turn.request();
+        assert_eq!(turn.notifications.get(), 4);
+        turn.begin_flush();
+        turn.finish();
+        assert!(
+            !turn.pending.get(),
+            "clean completion cannot reschedule packets"
+        );
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn flush_budget_preserves_queued_packets_and_final_short_datagram() {
         tokio::task::LocalSet::new()

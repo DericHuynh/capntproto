@@ -89,10 +89,15 @@ struct FrameOutput {
     id: usize,
 }
 impl crate::OutgoingMessageStream for FrameOutput {
+    fn reserve(&mut self) -> capnp::Result<()> {
+        Ok(())
+    }
+    fn cancel_reservation(&mut self) {}
+
     fn shutdown(&mut self, _: capnp::Result<()>) -> Promise<(), Error> {
         self.probe.shutdown()
     }
-    fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+    fn publish_reserved(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
         assert!(frame.size_in_words() > 0);
         self.probe.writes.borrow_mut().push(self.id);
         Ok(())

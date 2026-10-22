@@ -464,7 +464,15 @@ pub trait OutgoingMessageStream {
     /// Stop accepting frames and drain/close the physical write half. Enqueue
     /// shutdown synchronously; dropping its observer must not cancel it.
     fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error>;
-    fn send(&mut self, frame: OutgoingFrame) -> Result<(), Error>;
+    /// Reserve one physical FIFO entry before committing protocol state.
+    fn reserve(&mut self) -> Result<(), Error>;
+    fn cancel_reservation(&mut self);
+    /// Consume that reservation. A failure here is a terminal transport failure.
+    fn publish_reserved(&mut self, frame: OutgoingFrame) -> Result<(), Error>;
+    fn send(&mut self, frame: OutgoingFrame) -> Result<(), Error> {
+        self.reserve()?;
+        self.publish_reserved(frame)
+    }
     fn poll_flush(
         &mut self,
         cx: &mut core::task::Context<'_>,

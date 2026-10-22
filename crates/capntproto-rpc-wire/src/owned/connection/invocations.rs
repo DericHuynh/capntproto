@@ -22,7 +22,7 @@ enum Stage<'pool, 'id, const CAPS: usize> {
     Delivered,
 }
 struct Entry<'wait, 'pool, 'id, I, const CAPS: usize> {
-    task: dispatch::TaskKey<'id>,
+    task: InvocationKey<'id>,
     delivery: Delivery<'wait, CallResult<'pool, 'id, I, CAPS>>,
     stage: Stage<'pool, 'id, CAPS>,
     pipeline: usize,
@@ -44,11 +44,11 @@ pub struct RejectedInvocation<'wait, 'pool, 'id, I, const CAPS: usize> {
 /// identity ties completion to its original binding, even after other slot reuse.
 #[must_use = "finish or explicitly release this local invocation"]
 pub struct LocalCall<'pool, 'id, I, const CAPS: usize, const PATH: usize> {
-    task: dispatch::TaskKey<'id>,
+    task: InvocationKey<'id>,
     running: dispatch::Running<'id, Task<'pool, 'id, I, CAPS, PATH>>,
 }
 impl<'pool, 'id, I, const CAPS: usize, const PATH: usize> LocalCall<'pool, 'id, I, CAPS, PATH> {
-    pub fn task(&self) -> dispatch::TaskKey<'id> {
+    pub fn task(&self) -> InvocationKey<'id> {
         self.task
     }
     /// The destination frozen by acceptance, borrowed without another retain.
@@ -74,6 +74,10 @@ impl<'pool, 'id, I, const CAPS: usize, const PATH: usize> LocalCall<'pool, 'id, 
             unreachable!()
         };
         invocation.release(messages, &mut driver.runtime);
+        if let Ok(operation) = driver.operations.get_mut(self.task) {
+            operation.state = operations::State::Completed;
+        }
+        driver.operations.retire(self.task);
     }
     pub fn params_async<'call, 'storage: 'call, R, F>(
         &'call self,
@@ -104,6 +108,8 @@ pub struct RejectedLocal<'pool, 'id, I, const CAPS: usize, const PATH: usize> {
 #[must_use = "drain or terminate invocation bindings before terminating the driver"]
 pub struct Invocations<'s, 'wait, 'pool, 'id, I, const CAPS: usize> {
     slots: SlotStorage<'s, InvocationSlot<'wait, 'pool, 'id, I, CAPS>>,
+    live: usize,
+    queued: usize,
 }
 impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 'id, I, CAPS> {
     pub fn new(slots: &'s mut [InvocationSlot<'wait, 'pool, 'id, I, CAPS>]) -> Result<Self, Error> {
@@ -112,6 +118,8 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         }
         Ok(Self {
             slots: SlotStorage::borrowed(slots),
+            live: 0,
+            queued: 0,
         })
     }
     /// Grow completion bindings independently of dispatch. Reply slots and the
@@ -119,6 +127,8 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
     #[cfg(feature = "alloc")]
     pub fn new_growing(initial: usize, maximum: usize) -> Result<Self, Error> {
         Ok(Self {
+            live: 0,
+            queued: 0,
             slots: SlotStorage::growing(initial, maximum, || InvocationSlot::EMPTY)
                 .ok_or(Error::Input(super::super::Error::Capacity))?,
         })
@@ -127,36 +137,17 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         self.slots.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.slots.iter().all(|slot| slot.entry.is_none())
+        self.live == 0
     }
     /// Whether another completion binding fits the configured bound. A
     /// delivered reply retains its slot until consumption/cancellation is
     /// observed; hosted request capacity alone is not sufficient for admission.
     /// Growing storage may still reject allocation at the actual reservation.
     pub fn has_capacity(&self) -> bool {
-        self.slots.len() < self.slots.maximum()
-            || self.slots.iter().any(|slot| slot.entry.is_none())
+        self.live < self.slots.maximum()
     }
     pub fn has_queued(&self) -> bool {
-        self.slots
-            .iter()
-            .filter_map(|slot| slot.entry.as_ref())
-            .any(|entry| matches!(entry.stage, Stage::Queued))
-    }
-    /// Match a live invocation to its own sent question generation.
-    pub fn question_for(&self, task: dispatch::TaskKey<'id>) -> Option<questions::Key<'id>> {
-        self.slots
-            .iter()
-            .filter_map(|slot| slot.entry.as_ref())
-            .find_map(|entry| {
-                if entry.task != task {
-                    return None;
-                }
-                match entry.stage {
-                    Stage::Sent(key) => Some(key),
-                    _ => None,
-                }
-            })
+        self.queued != 0
     }
     /// Bind a hosted dynamic call before driver admission. The completion
     /// owner is returned unchanged on rejection, including resource pressure.
@@ -174,7 +165,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
         self.enqueue_dynamic_to(
             driver,
             sender,
@@ -205,8 +196,8 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
-        self.enqueue_with(sender, !method.no_promise_pipelining, || {
+    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+        self.enqueue_with(driver, sender, !method.no_promise_pipelining, |driver| {
             driver.enqueue_dynamic_to(
                 target,
                 method,
@@ -239,8 +230,8 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         minimum: usize,
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(FixedStruct<'_, Params>) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
-        self.enqueue_with(sender, !method.no_promise_pipelining(), || {
+    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+        self.enqueue_with(driver, sender, !method.no_promise_pipelining(), |driver| {
             driver.enqueue_call(
                 target,
                 method,
@@ -271,8 +262,8 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         minimum: usize,
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(FixedStruct<'_, Params>) -> capnp::Result<()>,
-    ) -> Result<dispatch::TaskKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
-        self.enqueue_with(sender, false, || {
+    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+        self.enqueue_with(driver, sender, false, |driver| {
             driver.enqueue_streaming(
                 target,
                 method,
@@ -284,33 +275,43 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             )
         })
     }
-    fn enqueue_with(
+    fn enqueue_with<A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
+        driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         sender: Sender<'wait, CallResult<'pool, 'id, I, CAPS>>,
         allows_pipeline: bool,
-        enqueue: impl FnOnce() -> Result<dispatch::TaskKey<'id>, Error>,
-    ) -> Result<dispatch::TaskKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
-        let Some(slot) = self
+        enqueue: impl FnOnce(
+            &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
+        ) -> Result<InvocationKey<'id>, Error>,
+    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+        let Some(index) = self
             .slots
-            .vacant_mut(|_, slot| slot.entry.is_none(), || InvocationSlot::EMPTY)
+            .vacant(|_, slot| slot.entry.is_none(), || InvocationSlot::EMPTY)
         else {
             return Err(RejectedInvocation {
                 error: Error::Busy,
                 sender,
             });
         };
-        let task = match enqueue() {
+        let task = match enqueue(driver) {
             Ok(task) => task,
             Err(error) => return Err(RejectedInvocation { error, sender }),
         };
-        slot.entry = Some(Entry {
+        driver
+            .operations
+            .get_mut(task)
+            .expect("new operation binding")
+            .binding = Some(index);
+        self.slots[index].entry = Some(Entry {
             task,
             delivery: sender.track(),
             stage: Stage::Queued,
-            pipeline: 0,
+            pipeline: usize::MAX,
             pipeline_remaining: 0,
             allows_pipeline,
         });
+        self.live += 1;
+        self.queued += 1;
         Ok(task)
     }
 
@@ -322,38 +323,24 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
     #[allow(clippy::result_large_err)]
     pub fn bind_queued<A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
-        driver: &Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
+        driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         messages: &messages::Messages<'pool, '_, '_>,
-        task: dispatch::TaskKey<'id>,
+        task: InvocationKey<'id>,
         sender: Sender<'wait, CallResult<'pool, 'id, I, CAPS>>,
     ) -> Result<(), RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
         let allowed = (|| {
             driver.check_live()?;
-            if self
-                .slots
-                .iter()
-                .any(|slot| slot.entry.as_ref().is_some_and(|entry| entry.task == task))
-            {
+            if driver.operations.get(task)?.binding.is_some() {
                 return Err(Error::UnknownInvocation);
             }
-            let (_, owner) = (0..driver.runtime.task_capacity())
-                .find_map(|index| {
-                    driver
-                        .runtime
-                        .queued_at(index)
-                        .filter(|(key, _)| *key == task)
-                })
-                .ok_or(Error::UnknownInvocation)?;
-            let Task::Invoke(invocation) = owner else {
-                return Err(Error::UnknownInvocation);
-            };
+            let invocation = driver.queued_invocation(task)?;
             invocation.allows_pipeline(messages).map_err(Error::Input)
         })();
         let allows_pipeline = match allowed {
             Ok(allowed) => allowed,
             Err(error) => return Err(RejectedInvocation { error, sender }),
         };
-        self.enqueue_with(sender, allows_pipeline, || Ok(task))
+        self.enqueue_with(driver, sender, allows_pipeline, |_| Ok(task))
             .map(|_| ())
     }
 
@@ -363,7 +350,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
     pub fn pipeline<A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
-        task: dispatch::TaskKey<'id>,
+        task: InvocationKey<'id>,
         path: pipeline::Path<'_>,
         messages: &messages::Messages<'pool, '_, '_>,
     ) -> Result<clients::Client<'id>, Error> {
@@ -374,21 +361,24 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
     pub fn pipeline_with<A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
-        task: dispatch::TaskKey<'id>,
+        task: InvocationKey<'id>,
         path: pipeline::Path<'_>,
         messages: &messages::Messages<'pool, '_, '_>,
         resolve: impl FnOnce(
-            dispatch::TaskKey<'id>,
+            InvocationKey<'id>,
             pipeline::Path<'_>,
-            &mut Runtime<'pool, 'id, '_, I, P, S, CAPS, PATH>,
+            &mut Scope<'_, 'pool, 'id, '_, I, P, S, CAPS, PATH>,
         ) -> Result<Option<clients::Client<'id>>, Error>,
     ) -> Result<clients::Client<'id>, Error> {
         driver.check_live()?;
+        let index = driver
+            .invocation_binding(task)
+            .ok_or(Error::UnknownInvocation)?;
         let entry = self
             .slots
-            .iter()
-            .filter_map(|slot| slot.entry.as_ref())
-            .find(|entry| entry.task == task)
+            .get(index)
+            .and_then(|slot| slot.entry.as_ref())
+            .filter(|entry| entry.task == task)
             .ok_or(Error::UnknownInvocation)?;
         if !entry.allows_pipeline {
             return Err(Error::Input(super::super::Error::Wire(
@@ -396,7 +386,9 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             )));
         }
         if matches!(entry.stage, Stage::Running | Stage::Completed(_)) {
-            if let Some(client) = resolve(task, path, &mut driver.runtime)? {
+            if let Some(client) =
+                resolve(task, path, &mut clients::Access::new(&mut driver.runtime))?
+            {
                 return Ok(client);
             }
         }
@@ -496,16 +488,22 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         ) -> Result<Option<SentInvocation<'id>>, Error>,
     ) -> Result<Option<SentInvocation<'id>>, Error> {
-        let Some(ready) = driver.runtime.next_ready().map_err(Error::Dispatch)? else {
+        let Some(ready) = driver.runtime.ready().map_err(Error::Dispatch)? else {
             return Ok(None);
         };
-        let task = ready.key();
+        let Task::Invoke(invocation) = ready.owner() else {
+            return Ok(None);
+        };
+        let task = invocation.key;
         drop(ready);
-        let entry = self
-            .slots
-            .iter_mut()
-            .filter_map(|slot| slot.entry.as_mut())
-            .find(|entry| entry.task == task && matches!(entry.stage, Stage::Queued));
+        let entry = driver
+            .operations
+            .get(task)
+            .ok()
+            .and_then(|operation| operation.binding)
+            .and_then(|index| self.slots.get_mut(index))
+            .and_then(|slot| slot.entry.as_mut())
+            .filter(|entry| entry.task == task && matches!(entry.stage, Stage::Queued));
         let Some(entry) = entry else {
             return Ok(None);
         };
@@ -517,6 +515,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         };
         debug_assert_eq!(sent.task, task);
         entry.stage = Stage::Sent(sent.question);
+        self.queued -= 1;
         Ok(Some(sent))
     }
     /// Freeze and accept only the oldest ready registered local invocation.
@@ -526,10 +525,13 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
     ) -> Result<Option<LocalCall<'pool, 'id, I, CAPS, PATH>>, Error> {
         driver.check_live()?;
-        let Some(ready) = driver.runtime.next_ready().map_err(Error::Dispatch)? else {
+        let Some(ready) = driver.runtime.ready().map_err(Error::Dispatch)? else {
             return Ok(None);
         };
-        let task = ready.key();
+        let Task::Invoke(invocation) = ready.owner() else {
+            return Ok(None);
+        };
+        let task = invocation.key;
         if !matches!(
             ready.destination(),
             clients::Destination::Endpoint {
@@ -542,11 +544,14 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         ) {
             return Ok(None);
         }
-        let Some(entry) = self
-            .slots
-            .iter_mut()
-            .filter_map(|slot| slot.entry.as_mut())
-            .find(|entry| entry.task == task && matches!(entry.stage, Stage::Queued))
+        let Some(entry) = driver
+            .operations
+            .get(task)
+            .ok()
+            .and_then(|operation| operation.binding)
+            .and_then(|index| self.slots.get_mut(index))
+            .and_then(|slot| slot.entry.as_mut())
+            .filter(|entry| entry.task == task && matches!(entry.stage, Stage::Queued))
         else {
             return Ok(None);
         };
@@ -554,6 +559,8 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             return Ok(None);
         }
         entry.stage = Stage::Running;
+        self.queued -= 1;
+        driver.operations.get_mut(task)?.state = operations::State::Running;
         Ok(Some(LocalCall {
             task,
             running: ready.accept(),
@@ -567,11 +574,14 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         call: LocalCall<'pool, 'id, I, CAPS, PATH>,
         result: Result<LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
     ) -> Result<(), RejectedLocal<'pool, 'id, I, CAPS, PATH>> {
-        let Some(entry) = self
-            .slots
-            .iter_mut()
-            .filter_map(|slot| slot.entry.as_mut())
-            .find(|entry| entry.task == call.task && matches!(entry.stage, Stage::Running))
+        let Some(entry) = driver
+            .operations
+            .get(call.task)
+            .ok()
+            .and_then(|operation| operation.binding)
+            .and_then(|index| self.slots.get_mut(index))
+            .and_then(|slot| slot.entry.as_mut())
+            .filter(|entry| entry.task == call.task && matches!(entry.stage, Stage::Running))
         else {
             return Err(RejectedLocal {
                 error: Error::UnknownInvocation,
@@ -598,16 +608,17 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
 
     /// Observe dropped local caller interest with the same tracked completion
     /// slot. Application cancellation policy remains with its execution owner.
-    pub fn poll_local_canceled(
+    pub fn poll_local_canceled<A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
-        task: dispatch::TaskKey<'id>,
+        driver: &Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
+        task: InvocationKey<'id>,
         cx: &mut Context<'_>,
     ) -> Result<core::task::Poll<()>, Error> {
-        let entry = self
-            .slots
-            .iter_mut()
-            .filter_map(|s| s.entry.as_mut())
-            .find(|entry| entry.task == task && matches!(entry.stage, Stage::Running))
+        let entry = driver
+            .invocation_binding(task)
+            .and_then(|index| self.slots.get_mut(index))
+            .and_then(|slot| slot.entry.as_mut())
+            .filter(|entry| entry.task == task && matches!(entry.stage, Stage::Running))
             .ok_or(Error::UnknownInvocation)?;
         Ok(entry.delivery.poll_observed(cx))
     }
@@ -646,9 +657,9 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
         messages: &mut messages::Messages<'pool, '_, '_>,
         cx: &mut Context<'_>,
         mut resolve: impl FnMut(
-            dispatch::TaskKey<'id>,
+            InvocationKey<'id>,
             pipeline::Path<'_>,
-            &mut Runtime<'pool, 'id, '_, I, P, S, CAPS, PATH>,
+            &mut Scope<'_, 'pool, 'id, '_, I, P, S, CAPS, PATH>,
         ) -> Result<Option<clients::Client<'id>>, Error>,
     ) -> Result<CallProgress, Error> {
         let Some(slot) = self.slots.get_mut(index) else {
@@ -664,16 +675,20 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                     if !driver.cancel_invocation(entry.task, messages) {
                         return Err(Error::UnknownInvocation);
                     }
-                    slot.entry = None;
+                    if let Some(entry) = slot.entry.take() {
+                        self.live -= 1;
+                        self.queued -= usize::from(matches!(entry.stage, Stage::Queued));
+                        driver.operations.unbind(entry.task);
+                    }
                     return Ok(CallProgress::Canceled);
                 }
                 driver.check_live()?;
                 let broken = driver
                     .runtime
-                    .next_ready()
+                    .ready()
                     .map_err(Error::Dispatch)?
                     .and_then(|ready| {
-                        if ready.key() != entry.task {
+                        if !matches!(ready.owner(), Task::Invoke(invocation) if invocation.key == entry.task) {
                             return None;
                         }
                         match ready.destination() {
@@ -689,20 +704,29 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                         return Err(Error::UnknownInvocation);
                     }
                     entry.stage = Stage::Completed(Err(kind));
+                    self.queued -= 1;
                     return Ok(CallProgress::Advanced);
                 }
                 return Ok(CallProgress::Pending);
             }
             Stage::Running => {
-                let capacity = driver.invocation_pipelines.len();
-                if entry.pipeline_remaining == 0 {
-                    entry.pipeline_remaining = capacity;
+                let operation = driver.operations.get(entry.task)?;
+                if entry.pipeline_remaining == 0
+                    || entry.pipeline_remaining > operation.observer_count
+                {
+                    entry.pipeline_remaining = operation.observer_count;
                 }
-                let next = (0..capacity)
-                    .map(|offset| (entry.pipeline + offset) % capacity)
-                    .find(|index| driver.invocation_pipelines[*index].pending_local(entry.task));
+                let next = driver.invocation_pipelines.local_next(
+                    entry.task,
+                    entry.pipeline,
+                    operation.observers,
+                );
                 if let Some(index) = next {
-                    entry.pipeline = (index + 1) % capacity;
+                    entry.pipeline = driver
+                        .invocation_pipelines
+                        .next(index)
+                        .or(operation.observers)
+                        .unwrap_or(usize::MAX);
                     let progress = driver.poll_local_invocation_pipeline_when_ready(
                         index,
                         entry.task,
@@ -724,7 +748,11 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
             Stage::Sent(question) => {
                 if observed {
                     driver.cancel(*question)?;
-                    slot.entry = None;
+                    if let Some(entry) = slot.entry.take() {
+                        self.live -= 1;
+                        self.queued -= usize::from(matches!(entry.stage, Stage::Queued));
+                        driver.operations.unbind(entry.task);
+                    }
                     return Ok(CallProgress::Canceled);
                 }
                 driver.check_live()?;
@@ -738,15 +766,21 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                 // take_output already waits for remote pipeline observers.
                 // Deliver directly instead of moving the affine response into
                 // Completed and immediately extracting it again below.
-                return Self::deliver_result(slot, driver, messages, result);
+                return Self::deliver_result(slot, &mut self.live, driver, messages, result);
             }
             Stage::Completed(result) => {
-                let capacity = driver.invocation_pipelines.len();
-                let next = (0..capacity)
-                    .map(|offset| (entry.pipeline + offset) % capacity)
-                    .find(|index| driver.invocation_pipelines[*index].pending_local(entry.task));
+                let operation = driver.operations.get(entry.task)?;
+                let next = driver.invocation_pipelines.local_next(
+                    entry.task,
+                    entry.pipeline,
+                    operation.observers,
+                );
                 if let Some(index) = next {
-                    entry.pipeline = (index + 1) % capacity;
+                    entry.pipeline = driver
+                        .invocation_pipelines
+                        .next(index)
+                        .or(operation.observers)
+                        .unwrap_or(usize::MAX);
                     let progress = driver.poll_local_invocation_pipeline_when_ready(
                         index,
                         entry.task,
@@ -782,7 +816,11 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                 } else {
                     CallProgress::Consumed
                 };
-                slot.entry = None;
+                if let Some(entry) = slot.entry.take() {
+                    self.live -= 1;
+                    self.queued -= usize::from(matches!(entry.stage, Stage::Queued));
+                    driver.operations.unbind(entry.task);
+                }
                 return Ok(progress);
             }
         }
@@ -790,12 +828,19 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
         else {
             unreachable!()
         };
-        Self::deliver_result(slot, driver, messages, result.map(CallOutput::Local))
+        Self::deliver_result(
+            slot,
+            &mut self.live,
+            driver,
+            messages,
+            result.map(CallOutput::Local),
+        )
     }
 
     #[inline]
     fn deliver_result<A, P: Copy + Eq, S, const PATH: usize>(
         slot: &mut InvocationSlot<'wait, 'pool, 'id, I, CAPS>,
+        live: &mut usize,
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         result: CallResult<'pool, 'id, I, CAPS>,
@@ -807,7 +852,10 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
             if let Ok(output) = result {
                 driver.release_output(output, messages);
             }
-            slot.entry = None;
+            if let Some(entry) = slot.entry.take() {
+                *live -= 1;
+                driver.operations.unbind(entry.task);
+            }
             Ok(CallProgress::Reclaimed)
         } else {
             Ok(CallProgress::Delivered)
@@ -830,6 +878,7 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
             if let Some(Ok(output)) = entry.delivery.cancel() {
                 driver.release_output(output, messages);
             }
+            driver.operations.unbind(entry.task);
             match entry.stage {
                 Stage::Queued => {
                     driver.cancel_invocation(entry.task, messages);

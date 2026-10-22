@@ -28,6 +28,7 @@ pub struct GraphStorage<'id, 'storage, I, A, T, P> {
     pub questions: &'storage mut [questions::Slot],
     pub answers: &'storage mut [answers::Slot<A>],
     pub clients: &'storage mut [clients::Slot<T, P>],
+    pub notifications: clients::NotificationStorage<'storage>,
 }
 
 pub struct GraphConnection<'id, 'storage, I, A, T, P> {
@@ -55,6 +56,7 @@ pub struct GrowingStorage {
     pub questions: Growth,
     pub answers: Growth,
     pub clients: Growth,
+    pub notifications: clients::NotificationGrowth,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,8 +128,12 @@ impl<'id> Domain<'id> {
                 .map_err(Error::Answers)
                 .map_err(GraphError::Ledgers)?,
         };
-        let clients = clients::new_growing_scope(storage.clients.initial, storage.clients.maximum)
-            .map_err(GraphError::Clients)?;
+        let clients = clients::new_growing_scope(
+            storage.clients.initial,
+            storage.clients.maximum,
+            storage.notifications,
+        )
+        .map_err(GraphError::Clients)?;
         Ok(GraphConnection { ledgers, clients })
     }
     /// Bind a growing capability graph to fixed caller-backed ledgers. The
@@ -140,8 +146,10 @@ impl<'id> Domain<'id> {
         adopted: &'storage mut [questions::AdoptedSlot],
         initial: usize,
         maximum: usize,
+        notifications: clients::NotificationGrowth,
     ) -> Result<GraphConnection<'id, 'storage, I, A, T, P>, GraphError> {
-        let clients = clients::new_growing_scope(initial, maximum).map_err(GraphError::Clients)?;
+        let clients = clients::new_growing_scope(initial, maximum, notifications)
+            .map_err(GraphError::Clients)?;
         let ledgers = new_scope_with_adoptions(storage, adopted).map_err(GraphError::Ledgers)?;
         Ok(GraphConnection { ledgers, clients })
     }
@@ -169,7 +177,8 @@ impl<'id> Domain<'id> {
             adopted,
         )
         .map_err(GraphError::Ledgers)?;
-        let clients = clients::new_scope(storage.clients).map_err(GraphError::Clients)?;
+        let clients = clients::new_scope(storage.clients, storage.notifications)
+            .map_err(GraphError::Clients)?;
         Ok(GraphConnection { ledgers, clients })
     }
 }

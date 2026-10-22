@@ -144,9 +144,11 @@ impl<
                         };
                         *result = AwaitStage::Response(match ready {
                             Ok((answer, guard)) => {
-                                coordinator
-                                    .calls
-                                    .adopt_pipeline(token.key(), answer.pipeline.add_ref());
+                                coordinator.calls.adopt_pipeline(
+                                    &coordinator.driver,
+                                    token.key(),
+                                    answer.pipeline.add_ref(),
+                                );
                                 Promise::from_future(async move {
                                     let result = answer.response.await;
                                     drop((guard, answer.pipeline));
@@ -179,7 +181,7 @@ impl<
                     );
                     if let Err(rejected) = outcome {
                         if let Ok(result) = rejected.result {
-                            result.release(messages, &mut coordinator.driver.runtime);
+                            result.release(messages, &mut coordinator.driver.capabilities());
                         }
                         coordinator.driver.release_network(
                             connection::NetworkRequest::Await(rejected.awaiting),
@@ -228,6 +230,7 @@ impl<
                     let (sender, receiver) = shared::channel();
                     let pipeline = Rc::new(PipelineState {
                         used: Cell::new(false),
+                        owner_wake: RefCell::new(None),
                         adopted: RefCell::default(),
                         cached: RefCell::default(),
                         _credit: Cell::new(None),
@@ -299,14 +302,14 @@ pub(super) fn project<'p, 'id, const C: usize, const H: usize>(
             .and_then(|cap| {
                 let result = coordinator
                     .hooks
-                    .export_client(&mut coordinator.driver.runtime, &cap);
-                coordinator.driver.runtime.release(cap);
+                    .export_client(&mut coordinator.driver.capabilities(), &cap);
+                coordinator.driver.capabilities().release(cap);
                 result.map(|cap| cap.hook)
             });
         if let Ok(hook) = &result {
             pipeline.remember(projection.path, &**hook)?;
         }
-        crate::queued::ClientInner::resolve(&client, result);
+        client.resolve(result);
     }
     Ok(changed)
 }
@@ -337,9 +340,14 @@ fn freeze<'p, 'id, const C: usize, const H: usize>(
             clients.push(match cap {
                 None => None,
                 Some(cap) => Some(
-                    match coordinator.hooks.try_retain(&mut driver.runtime, &**cap)? {
+                    match coordinator
+                        .hooks
+                        .try_retain(&mut driver.capabilities(), &**cap)?
+                    {
                         Some(client) => client,
-                        None => coordinator.foreign.import(&mut driver.runtime, &**cap)?,
+                        None => coordinator
+                            .foreign
+                            .import(&mut driver.capabilities(), &**cap)?,
                     },
                 ),
             });
@@ -363,7 +371,7 @@ fn freeze<'p, 'id, const C: usize, const H: usize>(
             .map_err(wire_error)
     })();
     for client in clients.into_iter().flatten() {
-        driver.runtime.release(client);
+        driver.capabilities().release(client);
     }
     result
 }
@@ -450,6 +458,9 @@ impl ClientHook for Retained {
     }
     fn forward_join(&self, part: any_pointer::Reader<'_>) -> Option<PartResponse> {
         self.inner.forward_join(part)
+    }
+    fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
+        self.inner.metadata_changes()
     }
     #[cfg(unix)]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {

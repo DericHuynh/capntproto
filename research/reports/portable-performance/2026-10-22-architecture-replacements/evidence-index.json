@@ -1,0 +1,230 @@
+{
+  "stages": {
+    "operations1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "b50806b8e5662ab372fbbc530f0a0685a5dba9d46d19b5b5e4395871be443e84",
+      "size": 97209144,
+      "patch_sha256": "87531020b499ac87ad3eea4ae02de30b89f272120fba682fb6723246632fec6c",
+      "manifest": "operations1-manifest.json",
+      "manifest_sha256": "6df8e35dff74c835d6b56cd58d8c59c677012a5a2090a9df8eed24c869d4279d",
+      "source_snapshot": "source-operations1",
+      "campaign": "operations1-focused"
+    },
+    "queues1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "38ef61b71d09e735974631f7bb44898b3f34e7814490d139de0831b4c8e227f5",
+      "size": 97232800,
+      "patch_sha256": "0cdf89d47a6be53b07d6ad390f038f1d23c2b6a216dc3d4b9ab2a270179e0a92",
+      "manifest": "queues1-manifest.json",
+      "manifest_sha256": "b655d95c229d6c1820801a146c30e2b892d6cb6af0fecbfd3d16ed9000dda77a",
+      "source_snapshot": "source-queues1",
+      "campaign": "queues1-focused"
+    },
+    "tail1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "9f3cf86eee3537247157b395798afe3f29ec5fa3e976f53c15a8e023348d2bd4",
+      "size": 97288872,
+      "patch_sha256": "f3e5a78c962d475eda9213e6127df4c6db37a807bd7a97605912683bf766e9e4",
+      "manifest": "tail1-manifest.json",
+      "manifest_sha256": "9109115a37fd4bc2175300843397a51ff12724cd0c8f66bbbf01db55cecc4182",
+      "source_snapshot": "source-tail1",
+      "campaign": "tail1-focused"
+    },
+    "output1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "e991ef6e1dcf90aefbc1980b3cf25d2fac80fdac4b48d2905a29e808d891e058",
+      "size": 97445336,
+      "patch_sha256": "80b74f448d9c72435fcab29b64c954001aec8c4c3dd928200f957557dd863bc9",
+      "manifest": "output1-manifest.json",
+      "manifest_sha256": "2a34e2bc907088e9a4f53b9b8bed625e72d95ebd589f0f3593e938c4a5321db6",
+      "source_snapshot": "source-output1",
+      "campaign": "output1-focused"
+    },
+    "output2": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "291dc8fbcad86df91f5c3d23ec608a27c452e7b5103fd2af54cdc68ffaa0f8d1",
+      "size": 97446560,
+      "patch_sha256": "f1dc4465173fe8467846441e2468afd64332f5ac42c879648ce52605aac53dba",
+      "manifest": "output2-manifest.json",
+      "manifest_sha256": "db6b3e7ebc0389b2c97fa78cc82cca7b6e37ba70890bcdcd17c4455686894b47",
+      "source_snapshot": "source-output2",
+      "campaign": "output2-focused"
+    },
+    "events1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "4a7f235cde90ba51f30a7c5d5fe6a0bf4db9160f8a6742874a7613bb797f61e9",
+      "size": 97567200,
+      "patch_sha256": "7bb750e475db50a97f29669d648fe21e1fc74b936103f24c0ffa56896b5e8c6f",
+      "manifest": "events1-manifest.json",
+      "manifest_sha256": "46c11ef2f08a1d7bc1e908114f67e332187e88fb9e41c22165a96a4b1e114e41",
+      "source_snapshot": "source-events1",
+      "campaign": "events1-focused"
+    },
+    "hooks1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "e92418dc6f2b674326fb9a9cbbe6d80b584c4c2f3e9c6d4930d5cebc642b4a67",
+      "size": 97762520,
+      "patch_sha256": "3079d5c6f6d0c494310fac019544f86c4ed45fa446df3bee65977a2da11001c7",
+      "manifest": "hooks1-manifest.json",
+      "manifest_sha256": "17e3587d9b45c4bb7b3f2b01d59d667fad88b3fbcf14f43ef352b40cfedb8dfd",
+      "source_snapshot": "source-hooks1",
+      "campaign": "hooks1-focused"
+    },
+    "incoming1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "d9323a85e5d01a52ebc3239e4f0e116711d9b2305712163c716c295c25c82924",
+      "size": 97849240,
+      "patch_sha256": "fd239619d53097275ddc8cbd4601bcf9ab1be23f23f2fc1d5eec0cae47cea304",
+      "manifest": "incoming1-manifest.json",
+      "manifest_sha256": "cbf8306cb0bbe9515e5d2200dbd664abf7d911da31d415e68c5acab0a1bba35a",
+      "source_snapshot": "source-incoming1",
+      "campaign": "incoming1-focused"
+    },
+    "cancel1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "5d30b94ae66e547358521eeceb8ec355241e258dbace21fb6c7f3f988689551d",
+      "size": 97860336,
+      "patch_sha256": "2e2e26a87ddd77d1a6d11d26c1c77da3e774038b6090ece7120b52e9056f1419",
+      "manifest": "cancel1-manifest.json",
+      "manifest_sha256": "15e75c6472fa1f8484ea008d68bf0df98bc7cb9f7f0fb2013b8cae8bd642aeba",
+      "source_snapshot": "source-cancel1",
+      "campaign": "cancel1-focused"
+    },
+    "worker1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "2e9bac86efd589c3ca73686878ce29502346dd0543a490e67be85e5e4944c263",
+      "size": 97922216,
+      "patch_sha256": "acc546856ed0f525c3adbe3afdcf6d1aa977279f48b59799684b23a3e85a04af",
+      "manifest": "worker1-manifest.json",
+      "manifest_sha256": "d41c67b3d3abc428e83cffa0c6a93b14c363dc7502ea5ee64a1778db5dbf9cff",
+      "source_snapshot": "source-worker1",
+      "campaign": "worker1-focused"
+    },
+    "calls1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "138b1ff7d5150273e442355a95e4a945a26b85f01d9a77ed5fad36b1875258ef",
+      "size": 97916576,
+      "patch_sha256": "bae21d04eda7fd0ea42256effd069bb1a6ba29438743b516eb969b0806732371",
+      "manifest": "calls1-manifest.json",
+      "manifest_sha256": "4ddc32b198b52271f1c4f032ef7e53f4ee1658fc61609e70a844c43d5df67a37",
+      "source_snapshot": "source-calls1",
+      "campaign": "calls1-focused"
+    },
+    "maintenance1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "86c80df60a9fcfa080ee0c99d090b66e44e2e3dbd4ec7c3dc681108f69f465b7",
+      "size": 97904592,
+      "patch_sha256": "794f12fd50783c60e3984df8dde51e3abb05c3682fd18c6918499642dd08de09",
+      "manifest": "maintenance1-manifest.json",
+      "manifest_sha256": "e90316b81d3da6a4d6ee0cd012a0b572fb1d43abeddfdc975f5d929ddb3d4f7a",
+      "source_snapshot": "source-maintenance1",
+      "campaign": "maintenance1-focused"
+    },
+    "projection1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "31073d99779bced6ca03199bcbf996553a05f2098d56b254dd66720b5cc9ad0a",
+      "size": 98156192,
+      "patch_sha256": "ee1f072b0fe8d9237a551c7afc576365f842ddb0b060ff7d6ef717b4d7d64603",
+      "manifest": "projection1-manifest.json",
+      "manifest_sha256": "922d7161737e4b58e3c408c7148979df6565893091dfae0932588652a9a0be0f",
+      "source_snapshot": "source-projection1",
+      "campaign": "projection1-focused"
+    },
+    "producer1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "0cd880f9450797e343f9cab9ad9144c85e80b2c4d42db17598d00bc62091f6d1",
+      "size": 98156816,
+      "patch_sha256": "35b908a29128ebc8528ac812be68a9d12c6a0ac57387e2b3762b9474070c9531",
+      "manifest": "producer1-manifest.json",
+      "manifest_sha256": "df2893125e2c46baeb87de0e1eee1cabaa479c8ee3976accfa18cba29efa9961",
+      "source_snapshot": "source-producer1",
+      "campaign": "producer1-focused"
+    },
+    "quicturn1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "ea1082b05cbb1a2b76d7cdca4e251b3fe53c8c2fc597f6c7e4a9c3be9cac83f3",
+      "size": 98163704,
+      "patch_sha256": "33d53b5f692c9b5018044e3ffe6ecb2de0cbb73f9029b30914c69f2691a6d6de",
+      "manifest": "quicturn1-manifest.json",
+      "manifest_sha256": "70d1424d0e41aea810352065f8a640300e89808819ca7ad53f6010bf71177f72",
+      "source_snapshot": "source-quicturn1",
+      "campaign": "quicturn1-focused"
+    },
+    "access1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "f5967ea8e4ab676652bebb3c303ba0318185ac15c139a944eaef54dc85a06bfb",
+      "size": 98225080,
+      "patch_sha256": "6a13d63d213db3d8275fb5808898f6793cafc3b43eb684b9412e7363787d9adc",
+      "manifest": "access1-manifest.json",
+      "manifest_sha256": "58bbb9a04623a30a0d6c40238792637471129c42489b0fa58fd1333fd2d7341d",
+      "source_snapshot": "source-access1",
+      "campaign": "access1-focused"
+    },
+    "resource1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "6155b7a23a8defbdd0e3536d696770e67c19bb423cd224c48b2fb400859e71d1",
+      "size": 98342904,
+      "patch_sha256": "feaced9f3c211443dfbddf62daa05914c3aba527a38265f495db25dbfb7606f4",
+      "manifest": "resource1-manifest.json",
+      "manifest_sha256": "4cd86906ff4e1da43538324148e59e3e96163ea1c764657b12a419ee0077467a",
+      "source_snapshot": "source-resource1",
+      "campaign": "resource1-focused"
+    },
+    "resource2": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "25ef2072bed2c6ce8512356250009e5e8725420e99b0e2ec668f541c78f37c26",
+      "size": 98439032,
+      "patch_sha256": "b6d31b07c72dec4c02692262d3e19fb540514b746faac21dcac987c1929d76c4",
+      "manifest": "resource2-manifest.json",
+      "manifest_sha256": "89d52bd7367d563417a8ed38cd497f59d216ab9b1ffa12f4281cc4b50062b477",
+      "source_snapshot": "source-resource2",
+      "campaign": "resource2-focused"
+    },
+    "batch1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "650360a7edaa975ad5923af4cc911c80977233ae82a2bb9329174e0312ab98b4",
+      "size": 98377360,
+      "patch_sha256": "7aa18da4cb861009c1def8dd3e66105bba2527eddbebc486a57267458478cd9f",
+      "manifest": "batch1-manifest.json",
+      "manifest_sha256": "a1b5bc3fdf902a104f2c5c14e0df7d484230163bdc1d362a5609df118f654211",
+      "source_snapshot": "source-batch1",
+      "campaign": "batch1-focused"
+    },
+    "turn1": {
+      "base": "52de546a350a30ff1e6878eab32a33c3964a0b93",
+      "sha256": "5639eca2ef60182b48471fefa104360aa93ddebb51f5967f3dcba9c0b4d5d021",
+      "size": 98370168,
+      "patch_sha256": "a97121c94f36776c54279c035e0d4f451aaa4ec7ef20a8e6054387eb0b84dd80",
+      "manifest": "turn1-manifest.json",
+      "manifest_sha256": "c913d601e284f5188b1f0aeec1aa06d57f336b5858ce620620b194c0823860be",
+      "source_snapshot": "source-turn1",
+      "campaign": "turn1-focused"
+    }
+  },
+  "final_source_qualification": {
+    "frozen_stage": "turn1",
+    "frozen_binary_sha256": "5639eca2ef60182b48471fefa104360aa93ddebb51f5967f3dcba9c0b4d5d021",
+    "source_files": 763,
+    "changes": {
+      "crates/capntproto-rpc-engine/src/clients/tests.rs": {
+        "frozen": "22e921738abab91fcfdd96e8e0a4707c39180226883b2dfb6d306ae0239034b1",
+        "current": "b7d7eaacea3c9fc5b41ba6bc85d8593019ba0911dadc908f2d0a9729a3b72b4d"
+      },
+      "crates/capntproto-rpc/src/scoped/tests.rs": {
+        "frozen": "ed2edef56079b2bdf33d2028ab59bcd04577a7ee58f3805b1e9c306526f9167a",
+        "current": "43c60ea2e6f66fbeeaaeaac7e138a9d8184bfc10434962f0f9f09e4caaa94626"
+      },
+      "crates/capntproto-rpc/src/scoped/wire/calls/tests.rs": {
+        "frozen": "eb75bfb185a4d2819739d76005c3e3667c7d8b9ebd1129ca5e4a8145d18a63d5",
+        "current": "d83b3288a1ec8e89882df1e2b8633c5bddebb109189db18bdffa0fad96797eda"
+      },
+      "crates/capntproto-rpc/src/scoped/wire/foreign/tests.rs": {
+        "frozen": "85016e1649a6ff8356b3cbbc7ce4c4ef39cfaeb150c4dbbe7e8803615e52a71a",
+        "current": "a9e82046790c006de7f3bda8f33856aa12c1904d3bcbcb564ab8e91afe48d20b"
+      }
+    },
+    "reason": "Only cfg(test) fixture lint cleanup after freezing: typed usize literals, remove usize-to-usize cast, equivalent if-let instead of single-pattern match. Production executable unchanged. Final test source copies are under source-final-qualification.",
+    "test_only_patch": "diff --git a/crates/capntproto-rpc-engine/src/clients/tests.rs b/crates/capntproto-rpc-engine/src/clients/tests.rs\nindex 370a9f4..0210f11 100644\n--- a/crates/capntproto-rpc-engine/src/clients/tests.rs\n+++ b/crates/capntproto-rpc-engine/src/clients/tests.rs\n@@ -38,7 +38,7 @@ fn growing_graph_preserves_live_routes_and_stale_generations() {\n     with_growing_graph::<u32, u8, _>(\n         0,\n         64,\n-        crate::clients::NotificationGrowth::bounded(8, (64 as usize).saturating_mul(4)),\n+        crate::clients::NotificationGrowth::bounded(8, 64_usize.saturating_mul(4)),\n         |g| {\n             let route = endpoint(g, 17, Location::Remote(1));\n             let initial = g.retain(&route).unwrap();\n@@ -82,7 +82,7 @@ fn growing_imported_promise_reserves_both_nodes_before_taking_owner() {\n     with_growing_graph::<u32, u8, _>(\n         1,\n         2,\n-        crate::clients::NotificationGrowth::bounded(8, (2 as usize).saturating_mul(4)),\n+        crate::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |g| {\n             let existing = endpoint(g, 17, Location::Local);\n             let rejected = g.imported_promise(19, 1).unwrap_err();\ndiff --git a/crates/capntproto-rpc/src/scoped/tests.rs b/crates/capntproto-rpc/src/scoped/tests.rs\nindex c49d915..a32230f 100644\n--- a/crates/capntproto-rpc/src/scoped/tests.rs\n+++ b/crates/capntproto-rpc/src/scoped/tests.rs\n@@ -73,10 +73,7 @@ fn release_journal_tracks_final_owners_without_growing_on_drop() {\n     clients::with_growing_graph::<usize, u8, _>(\n         0,\n         64,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (64 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 64_usize.saturating_mul(4)),\n         |graph| {\n             let mut hooks = ClientHooks::new(64, 1);\n             let mut owners = Vec::new();\n@@ -170,10 +167,7 @@ fn metadata_callback_can_release_another_endpoint_during_collection() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let mut hooks = ClientHooks::new(2, 1);\n             let first = graph.endpoint(1, Location::Local).unwrap();\n@@ -338,10 +332,7 @@ fn snapshots_deduplicate_reclaim_and_bound_pending_promises() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         4,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (4 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 4_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let other = graph.endpoint(8, Location::Local).unwrap();\n@@ -452,10 +443,7 @@ fn live_import_promise_waits_for_reflected_barrier_but_snapshot_stays_remote() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         5,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (5 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 5_usize.saturating_mul(4)),\n         |graph| {\n             let remote = graph.endpoint(7, Location::Remote(1)).unwrap();\n             let mut route = Some(graph.retain(&remote).unwrap());\n@@ -519,7 +507,7 @@ fn unobserved_promise_routes_settle_before_the_first_resolution_waiter() {\n             2,\n             capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n                 8,\n-                (2 as usize).saturating_mul(4),\n+                2_usize.saturating_mul(4),\n             ),\n             |graph| {\n                 let pending = graph.promise(&mut None).unwrap();\n@@ -562,10 +550,7 @@ fn resolution_observers_retain_routes_and_wake_after_detachment() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let pending = graph.promise(&mut None).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -620,7 +605,7 @@ fn resolution_observers_disconnect_when_the_bridge_is_dropped() {\n             1,\n             capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n                 8,\n-                (1 as usize).saturating_mul(4),\n+                1_usize.saturating_mul(4),\n             ),\n             |graph| {\n                 let pending = graph.promise(&mut None).unwrap();\n@@ -655,10 +640,7 @@ fn unresolved_waiters_retain_the_graph_route_and_observe_shutdown() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let pending = graph.promise(&mut None).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -681,10 +663,7 @@ fn broken_resolution_fails_waiters_and_rejects_later_calls() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let pending = graph.promise(&mut None).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -716,10 +695,7 @@ fn capacity_counts_running_calls_and_cancellation_keeps_fifo() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 2);\n@@ -761,10 +737,7 @@ fn cancellation_wakes_idle_inbox_and_running_call_without_io() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -800,10 +773,7 @@ fn close_rejects_queued_running_and_escaped_clients() {\n     let escaped = clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 2);\n@@ -845,10 +815,7 @@ fn foreign_inbox_cannot_authorize_call_and_terminal_drop_breaks_cycles() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -882,10 +849,7 @@ fn early_pipeline_and_capability_params_survive_parent_failure() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let target = graph.endpoint(8, Location::Local).unwrap();\n@@ -960,7 +924,7 @@ fn prepared_pipeline_interest_survives_response_drop_before_admission() {\n                     2,\n                     capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n                         8,\n-                        (2 as usize).saturating_mul(4),\n+                        2_usize.saturating_mul(4),\n                     ),\n                     |graph| {\n                         let route = graph.endpoint(7, Location::Local).unwrap();\n@@ -1044,10 +1008,7 @@ fn prepared_pipeline_rejection_releases_credit_while_pipeline_is_retained() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Remote(1)).unwrap();\n             let admission = crate::admission::Admission::new(1);\n@@ -1076,10 +1037,7 @@ fn prepared_pipeline_supports_late_projection_after_response_is_consumed() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let target = graph.endpoint(8, Location::Local).unwrap();\n@@ -1120,10 +1078,7 @@ fn deferred_pipeline_requests_preserve_order_and_cancel_before_or_after_forwardi\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let target = graph.endpoint(8, Location::Local).unwrap();\n@@ -1226,7 +1181,7 @@ fn prepared_pipeline_wakes_each_interest_and_cancels_after_the_last_drop() {\n             2,\n             capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n                 8,\n-                (2 as usize).saturating_mul(4),\n+                2_usize.saturating_mul(4),\n             ),\n             |graph| {\n                 let route = graph.endpoint(7, Location::Local).unwrap();\n@@ -1304,10 +1259,7 @@ fn request_hints_and_pipeline_only_interest_reach_worker() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 2);\n@@ -1344,10 +1296,7 @@ fn queued_request_keeps_route_alive_after_all_application_clients_drop() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -1473,10 +1422,7 @@ fn parameter_lookup_preserves_opaque_policy_and_checks_connection_identity() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -1506,10 +1452,7 @@ fn returned_capability_keeps_graph_route_until_final_response_is_dropped() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         2,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (2 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 2_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let target = graph.endpoint(8, Location::Local).unwrap();\n@@ -1563,10 +1506,7 @@ fn wake_callback_can_enqueue_and_drop_clients_without_borrow_panics_or_reorderin\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 2);\n@@ -1605,10 +1545,7 @@ fn zero_limits_reject_before_retaining_or_admitting_work() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut no_clients = ClientHooks::new(0, 1);\n@@ -1641,10 +1578,7 @@ fn unpolled_streaming_send_cannot_be_overtaken_by_ordinary_send() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Local).unwrap();\n             let mut hooks = ClientHooks::new(1, 2);\n@@ -1677,10 +1611,7 @@ fn hosted_endpoint_metadata_preserves_broken_error_kind_and_reason() {\n     clients::with_growing_graph::<Error, u8, _>(\n         0,\n         4,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (4 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 4_usize.saturating_mul(4)),\n         |graph| {\n             let pending = graph.promise(&mut None).unwrap();\n             let mut hooks = ClientHooks::new(4, 4);\n@@ -1765,10 +1696,7 @@ fn response_context_callbacks_cannot_bypass_capacity_or_enqueue_after_close() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(1, Location::Local).unwrap();\n             let admission = crate::admission::Admission::new(1);\n@@ -1813,10 +1741,7 @@ fn prepared_method_headers_preserve_parameters_after_cache_saturation() {\n     clients::with_growing_graph::<u32, u8, _>(\n         0,\n         1,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (1 as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, 1_usize.saturating_mul(4)),\n         |graph| {\n             let route = graph.endpoint(7, Location::Remote(1)).unwrap();\n             let mut hooks = ClientHooks::new(1, 1);\n@@ -1872,7 +1797,7 @@ fn prepared_request_keeps_its_allocation_through_admission_and_final_hint_change\n             4,\n             capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n                 8,\n-                (4 as usize).saturating_mul(4),\n+                4_usize.saturating_mul(4),\n             ),\n             |graph| {\n                 let route = graph.endpoint(7, Location::Remote(1)).unwrap();\n@@ -1934,7 +1859,7 @@ fn forwarding_preserves_parameters_results_errors_and_releases_both_call_permits\n                 4,\n                 capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n                     8,\n-                    (4 as usize).saturating_mul(4),\n+                    4_usize.saturating_mul(4),\n                 ),\n                 |graph| {\n                     let source_route = graph.endpoint(1, Location::Local).unwrap();\n@@ -2018,7 +1943,7 @@ fn general_request_fallback_preserves_envelopes_and_direct_response_ownership()\n             2,\n             capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n                 8,\n-                (2 as usize).saturating_mul(4),\n+                2_usize.saturating_mul(4),\n             ),\n             |graph| {\n                 let route = graph.endpoint(7, Location::Remote(1)).unwrap();\ndiff --git a/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs b/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs\nindex e6622f3..b3092cc 100644\n--- a/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs\n+++ b/crates/capntproto-rpc/src/scoped/wire/calls/tests.rs\n@@ -2228,7 +2228,7 @@ fn one_canceled_remote_operation_does_not_poll_parked_siblings() {\n             .collect();\n         drop(responses[7].take());\n         for _ in 0..64 {\n-            match tick(\n+            if let Poll::Ready(Err(error)) = tick(\n                 &mut calls,\n                 &mut hooks,\n                 &mut driver,\n@@ -2236,8 +2236,7 @@ fn one_canceled_remote_operation_does_not_poll_parked_siblings() {\n                 &mut queue,\n                 &mut Context::from_waker(Waker::noop()),\n             ) {\n-                Poll::Ready(Err(error)) => panic!(\"{error}\"),\n-                _ => (),\n+                panic!(\"{error}\");\n             }\n             if calls.entries[7].is_none() {\n                 break;\ndiff --git a/crates/capntproto-rpc/src/scoped/wire/foreign/tests.rs b/crates/capntproto-rpc/src/scoped/wire/foreign/tests.rs\nindex ac90da7..ebf2c39 100644\n--- a/crates/capntproto-rpc/src/scoped/wire/foreign/tests.rs\n+++ b/crates/capntproto-rpc/src/scoped/wire/foreign/tests.rs\n@@ -10,10 +10,7 @@ fn with_graph(maximum: usize, f: impl for<'id> FnOnce(&mut Graph<'id, '_>)) {\n     clients::with_growing_graph(\n         0,\n         maximum,\n-        capntproto_rpc_engine::clients::NotificationGrowth::bounded(\n-            8,\n-            (maximum as usize).saturating_mul(4),\n-        ),\n+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, maximum.saturating_mul(4)),\n         f,\n     )\n     .unwrap();\n"
+  },
+  "invalid_artifact": "calls1-invalid-stale: identical to worker1 after a failed build; excluded from comparisons."
+}

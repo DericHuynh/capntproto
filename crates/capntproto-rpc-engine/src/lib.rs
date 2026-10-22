@@ -39,6 +39,9 @@ pub mod questions;
 pub mod references;
 #[doc(hidden)]
 pub mod storage;
+pub mod waiting;
+#[doc(hidden)]
+pub mod work_queue;
 
 #[cfg(test)]
 mod async_scopes;

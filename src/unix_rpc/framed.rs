@@ -68,6 +68,7 @@ pub(super) fn take(inner: &Rc<Inner>) -> capnp::Result<capnp_rpc::FrameIo> {
         outgoing: Box::new(Output {
             inner: inner.clone(),
             through: inner.frame_output.next.get(),
+            reservation: None,
         }),
         write_finished: Some(inner.frame_output.finished()),
     })
@@ -126,6 +127,7 @@ impl capnp_rpc::IncomingFrameStream for Input {
 struct Output {
     inner: Rc<Inner>,
     through: u64,
+    reservation: Option<(u64, super::queue::Pending)>,
 }
 impl Drop for Output {
     fn drop(&mut self) {
@@ -138,7 +140,8 @@ impl capnp_rpc::OutgoingMessageStream for Output {
     fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
         Endpoint(self.inner.clone()).shutdown(result)
     }
-    fn send(&mut self, mut frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
+    fn reserve(&mut self) -> capnp::Result<()> {
+        assert!(self.reservation.is_none(), "one Unix frame reservation");
         if self.inner.closed.get() {
             return Err(stopped());
         }
@@ -152,7 +155,17 @@ impl capnp_rpc::OutgoingMessageStream for Output {
             .get()
             .checked_add(1)
             .ok_or_else(|| Error::overloaded("Unix output sequence exhausted".into()))?;
-        let pending = self.inner.metrics.enqueue(frame.size_in_words() * 8)?;
+        let pending = self.inner.metrics.enqueue(0)?;
+        self.inner.frame_output.next.set(sequence);
+        self.reservation = Some((sequence, pending));
+        Ok(())
+    }
+    fn cancel_reservation(&mut self) {
+        self.reservation = None;
+    }
+    fn publish_reserved(&mut self, mut frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
+        let (sequence, pending) = self.reservation.take().expect("reserved Unix publication");
+        pending.set_bytes(frame.size_in_words() * 8);
         let fds = if self.inner.send_fds {
             frame.take_fds().into_iter().take(253).collect()
         } else {

@@ -130,6 +130,8 @@ mod proofs {
     fn receiver_hosted_batch_retains_every_local_reference() {
         let local: u32 = kani::any();
         let mut slots = [Slot {
+            retirement: crate::work_queue::Link::EMPTY,
+            publication: crate::work_queue::Link::EMPTY,
             generation: 1,
             entry: Some(Entry {
                 #[cfg(feature = "alloc")]
@@ -142,6 +144,12 @@ mod proofs {
             }),
         }];
         let mut exports = Exports {
+            unavailable: slots
+                .iter()
+                .filter(|s| s.entry.is_some() || s.generation == u64::MAX)
+                .count(),
+            retired: crate::work_queue::Queue::EMPTY,
+            staged: crate::work_queue::Queue::EMPTY,
             #[cfg(feature = "alloc")]
             observation: Default::default(),
             slots: crate::storage::Storage::borrowed(&mut slots),

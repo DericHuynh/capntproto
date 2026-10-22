@@ -19,6 +19,7 @@ use capnp_rpc::{
         messages,
     },
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use core::{
     future::Future,
     pin::Pin,
@@ -146,7 +147,7 @@ pub fn caller_polled_session(waker: &Waker, abandon: bool, mut checkpoint: impl 
             let (mut peer, messages, calls) = session.into_parts();
             assert!(calls.is_empty());
             assert_eq!(calls.terminate(&mut peer, messages), 0);
-            peer.runtime.release(target);
+            peer.capabilities().release(target);
             assert_eq!(close(peer, messages, &mut queue), 0);
             let writers = core::array::from_fn::<_, 6, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {

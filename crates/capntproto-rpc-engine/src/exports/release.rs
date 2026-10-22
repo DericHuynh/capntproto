@@ -109,17 +109,21 @@ impl<'r, 'id, T> LeasedReleases<'_, '_, 'r, 'id, '_, T> {
     }
 }
 fn apply<T>(exports: &mut Exports<'_, '_, T>, counts: &[u32]) {
-    for (slot, &count) in exports.slots.iter_mut().zip(counts) {
+    for (index, &count) in counts.iter().enumerate() {
         if count == 0 {
             continue;
         }
-        let entry = slot.entry.as_mut().expect("preflight release");
+        let entry = exports.slots[index]
+            .entry
+            .as_mut()
+            .expect("preflight release");
         let State::Live(refs) = &mut entry.state else {
             unreachable!()
         };
         if refs.release(count).expect("preflight reference count") {
             entry.state = State::Retired;
         }
+        exports.enqueue_retired(index);
     }
 }
 

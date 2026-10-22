@@ -13,7 +13,7 @@ use capnp_rpc::{
         wire::{
             coordinator::{network::Network, transport::vat, Coordinator, Options, TwoParty},
             resources::Import,
-            server::Results,
+            server::Producer,
         },
         ClientHooks,
     },
@@ -175,6 +175,10 @@ async fn peer(
                 let graph = domain
                     .bind_growing_adoptions(
                         storage::GrowingStorage {
+                            notifications:
+                                capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                                    bound,
+                                ),
                             imports: bound,
                             exports: bound,
                             answers: bound,
@@ -192,7 +196,7 @@ async fn peer(
                     '_,
                     '_,
                     Import,
-                    Results,
+                    Producer,
                     u8,
                     Rc<dyn ClientHook>,
                     8,
@@ -344,7 +348,7 @@ async fn tcp_vat_adapter_roundtrips_large_payloads_and_promise_capabilities_with
                 bstop.send(()).unwrap();
             };
             futures::join!(
-                peer(
+                Box::pin(peer(
                     Box::new(a),
                     Side::Client,
                     a_portable,
@@ -355,8 +359,8 @@ async fn tcp_vat_adapter_roundtrips_large_payloads_and_promise_capabilities_with
                     },
                     atx,
                     astopped
-                ),
-                peer(
+                )),
+                Box::pin(peer(
                     Box::new(b),
                     Side::Server,
                     b_portable,
@@ -367,7 +371,7 @@ async fn tcp_vat_adapter_roundtrips_large_payloads_and_promise_capabilities_with
                     },
                     btx,
                     bstopped
-                ),
+                )),
                 application,
             );
             assert_eq!(calls.get(), 5);

@@ -19,6 +19,10 @@ fn hosted_aliases_share_pending_resolution_and_preserve_the_import_until_retirem
             let mut nodes = [const { clients::Slot::EMPTY }; 3];
             clients::with_graph(
                 &mut nodes,
+                capntproto_rpc_engine::clients::NotificationStorage {
+                    listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                },
                 |graph: &mut clients::Graph<'_, '_, Endpoint<'_, u8, u32>, u8>| {
                     let mut slots = [ImportSlot::EMPTY];
                     let mut map = Imports::new(&mut slots, 1).unwrap();
@@ -80,6 +84,10 @@ fn capacity_failure_preserves_receipt_and_creates_no_partial_promise() {
         let mut nodes = [clients::Slot::EMPTY];
         clients::with_graph(
             &mut nodes,
+            capntproto_rpc_engine::clients::NotificationStorage {
+                listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+            },
             |graph: &mut clients::Graph<'_, '_, Endpoint<'_, u8, ()>, u8>| {
                 let mut slots = [ImportSlot::EMPTY];
                 let mut map = Imports::new(&mut slots, 1).unwrap();
@@ -104,34 +112,41 @@ fn capacity_failure_preserves_receipt_and_creates_no_partial_promise() {
 fn reflected_client_outlives_both_peer_release_and_its_local_export_lease() {
     use capntproto_rpc_engine::exports;
     let mut nodes = [clients::Slot::EMPTY];
-    clients::with_graph(&mut nodes, |graph: &mut clients::Graph<'_, '_, u32, u8>| {
-        let local = graph.endpoint(41, Location::Local).unwrap();
-        let owned = graph.retain(&local).unwrap();
-        let mut slots = [exports::Slot::EMPTY];
-        exports::with_exports(&mut slots, |exports| {
-            let mut batch = exports.batch();
-            let grant = batch.export(owned).unwrap();
-            batch.commit();
-            let lease = exports.lease(grant.id()).unwrap();
-            let retained = reflected(graph, exports, &lease).unwrap();
-            assert_eq!(local.key(), retained.key());
-            graph.release(local);
-            assert!(exports.release(grant.id(), 1).unwrap().is_none());
-            graph.release(exports.release_local(lease).unwrap());
-            let call = graph.prepare_call(&retained).unwrap();
-            assert!(matches!(
-                call.destination(),
-                Destination::Endpoint { owner: &41, .. }
-            ));
-            let running = call.accept();
-            graph.release(retained);
-            assert!(graph.take_retired().is_none());
-            graph.release(running);
-            assert_eq!(graph.take_retired(), Some(41));
-            assert!(graph.is_empty());
-        })
-        .unwrap();
-    })
+    clients::with_graph(
+        &mut nodes,
+        capntproto_rpc_engine::clients::NotificationStorage {
+            listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+            subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+        },
+        |graph: &mut clients::Graph<'_, '_, u32, u8>| {
+            let local = graph.endpoint(41, Location::Local).unwrap();
+            let owned = graph.retain(&local).unwrap();
+            let mut slots = [exports::Slot::EMPTY];
+            exports::with_exports(&mut slots, |exports| {
+                let mut batch = exports.batch();
+                let grant = batch.export(owned).unwrap();
+                batch.commit();
+                let lease = exports.lease(grant.id()).unwrap();
+                let retained = reflected(graph, exports, &lease).unwrap();
+                assert_eq!(local.key(), retained.key());
+                graph.release(local);
+                assert!(exports.release(grant.id(), 1).unwrap().is_none());
+                graph.release(exports.release_local(lease).unwrap());
+                let call = graph.prepare_call(&retained).unwrap();
+                assert!(matches!(
+                    call.destination(),
+                    Destination::Endpoint { owner: &41, .. }
+                ));
+                let running = call.accept();
+                graph.release(retained);
+                assert!(graph.take_retired().is_none());
+                graph.release(running);
+                assert_eq!(graph.take_retired(), Some(41));
+                assert!(graph.is_empty());
+            })
+            .unwrap();
+        },
+    )
     .unwrap();
 }
 
@@ -145,6 +160,10 @@ fn binding_into_the_dispatcher_cannot_bypass_its_owned_task_queue() {
         let mut tasks = [TaskSlot::EMPTY];
         dispatch::with_runtime(
             dispatch::Storage {
+                notifications: capntproto_rpc_engine::clients::NotificationStorage {
+                    listeners: &mut [const { clients::ListenerSlot::EMPTY }; 8],
+                    subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 64],
+                },
                 clients: &mut clients,
                 tasks: &mut tasks,
             },

@@ -28,3 +28,5 @@ pub mod owned;
 pub mod pipeline;
 pub mod publication;
 pub mod reception;
+
+mod resources;

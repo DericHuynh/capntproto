@@ -279,10 +279,15 @@ impl capnp_rpc::IncomingFrameStream for FrameInput {
 }
 struct FrameOutput(Endpoint);
 impl capnp_rpc::OutgoingMessageStream for FrameOutput {
+    fn reserve(&mut self) -> capnp::Result<()> {
+        Ok(())
+    }
+    fn cancel_reservation(&mut self) {}
+
     fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
         self.0.shutdown(result)
     }
-    fn send(&mut self, frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
+    fn publish_reserved(&mut self, frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
         self.0.publish_frame(frame)
     }
     fn poll_flush(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {

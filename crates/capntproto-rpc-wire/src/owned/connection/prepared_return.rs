@@ -406,11 +406,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         .accept()
                         .expect("no pipeline retains the omitted-Finish answer");
                     output.accept_parts(parts);
-                    return Ok(Some(
-                        retired
-                            .release(messages)
-                            .release(messages, &mut self.runtime),
-                    ));
+                    return Ok(Some(retired.release(messages).release(
+                        messages,
+                        &mut self.runtime,
+                        |child| self.ledgers.questions.release(child),
+                    )));
                 }
             }
         }
@@ -424,7 +424,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let retired = pending
                 .accept()
                 .expect("no pipeline retains the omitted-Finish answer");
-            output.accept_owned(frame.lease);
+            output.accept_owned(messages, frame.lease);
             retired
         } else {
             let offer = frame.offer(messages).map_err(Error::Input)?;
@@ -434,11 +434,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             output.accept(messages, offer);
             retired
         };
-        Ok(Some(
-            retired
-                .release(messages)
-                .release(messages, &mut self.runtime),
-        ))
+        Ok(Some(retired.release(messages).release(
+            messages,
+            &mut self.runtime,
+            |child| self.ledgers.questions.release(child),
+        )))
     }
 
     /// Prepare a data-only hosted answer without walking and rebuilding its

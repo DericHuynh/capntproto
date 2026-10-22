@@ -243,7 +243,7 @@ pub struct PendingReply<
     const CAPS: usize,
 > {
     receiver: completion::Receiver<'wait, CallResult<'pool, 'id, I, CAPS>>,
-    task: dispatch::TaskKey<'id>,
+    task: InvocationKey<'id>,
     method: Method<IF, P, R>,
 }
 // Neither the receiver (a shared slot reference) nor the method metadata has any
@@ -255,7 +255,7 @@ impl<I, IF: Interface, P: Schema, R: Schema, const CAPS: usize> Unpin
 impl<'id, I, IF: Interface, P: Schema, R: Schema, const CAPS: usize>
     PendingReply<'_, '_, 'id, I, IF, P, R, CAPS>
 {
-    pub fn task(&self) -> dispatch::TaskKey<'id> {
+    pub fn task(&self) -> InvocationKey<'id> {
         self.task
     }
 }
@@ -354,10 +354,10 @@ pub struct ReleaseRejected<T> {
 #[must_use = "poll the acknowledgment or drop it to request cancellation"]
 pub struct PendingAck<'wait, 'pool, 'id, I, const CAPS: usize> {
     receiver: completion::Receiver<'wait, CallResult<'pool, 'id, I, CAPS>>,
-    task: dispatch::TaskKey<'id>,
+    task: InvocationKey<'id>,
 }
 impl<'id, I, const CAPS: usize> PendingAck<'_, '_, 'id, I, CAPS> {
-    pub fn task(&self) -> dispatch::TaskKey<'id> {
+    pub fn task(&self) -> InvocationKey<'id> {
         self.task
     }
 }

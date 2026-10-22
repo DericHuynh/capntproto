@@ -35,14 +35,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         cx: &mut Context<'_>,
         waker: &Waker,
     ) -> Result<bool, Box<Cause<R, W::Error>>> {
-        self.poll_io_work_batch(
-            messages, queue, writer, scratch, output, controls, cx, waker, false,
+        self.poll_io_work_turn(
+            messages, queue, writer, scratch, output, controls, cx, waker, true,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(super) fn poll_io_work_batch<R, O: Output<I>, W: io::WriteResources<O::Bundle>>(
+    pub(super) fn poll_io_work_turn<R, O: Output<I>, W: io::WriteResources<O::Bundle>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
@@ -52,7 +52,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
         cx: &mut Context<'_>,
         waker: &Waker,
-        defer_output: bool,
+        end_input_turn: bool,
     ) -> Result<bool, Box<Cause<R, W::Error>>> {
         // IO readiness alone changes no protocol state. Preserve a completed
         // scan while waiting for the next frame, including the parent waker
@@ -68,53 +68,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         {
             return Ok(false);
         }
-        // Publication can end a lane scan early to flush promptly. Continue
-        // its unused budget after flushing, instead of scheduling an otherwise
-        // idle executor turn. All passes share the same cooperative allowance.
+        // Work and output completion share one cooperative allowance. A freed
+        // resource may resume its owner within the same turn.
         let mut remaining = self.options.budget.get();
         loop {
-            let queued = queue.len();
-            if queued != 0 && self.idle {
+            if !queue.is_empty() && self.idle {
                 self.idle = false;
                 controls.set_idle(false);
-            }
-            let deferred_request =
-                self.coalescing_output && queue.len() < 32 && self.can_batch_request(messages);
-            let ready_work = !queue.is_empty()
-                && remaining != 0
-                && (self.schedule.active != WorkSet::NONE
-                    || self.notifications.pending() != WorkSet::NONE)
-                && queue.len() < 32
-                && messages.can_reserve(self.options.output_bytes.get());
-            let mut output_ready = if (defer_output || deferred_request || ready_work)
-                && self.output.is_clean()
-                && !self.output_blocked
-            {
-                false
-            } else {
-                match self
-                    .output
-                    .poll(writer, queue, messages, cx, self.options.budget)
-                {
-                    Poll::Ready(Err(e)) => return Err(Box::new(Cause::Output(e))),
-                    Poll::Ready(Ok(())) => true,
-                    Poll::Pending => false,
-                }
-            };
-            // Publication already committed protocol state and invalidated scans.
-            // Draining bytes only reactivates lanes which waited for FIFO capacity;
-            // resource/application notifications still arrive through WorkWake.
-            // A worker blocked on publication retains its ready key; freeing
-            // FIFO capacity cannot resolve an unrelated sleeping execution.
-            if queue.len() < queued || (output_ready && self.output_blocked) {
-                self.control_idle = false;
-                if std::mem::take(&mut self.output_blocked) {
-                    self.progressed();
-                }
-            }
-            if output_ready && std::mem::take(&mut self.calls_waiting_for_output) {
-                self.schedule.active |= WorkSet::CALLS;
-                self.calls.invalidate_scan();
             }
             // poll_work_budget registers the parent before consuming changed,
             // including on idle polls. A control callback can wake before that
@@ -151,7 +111,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
             let control_was_idle = self.control_idle;
             self.direct_publication = false;
-            let before_work = queue.len();
             if let Poll::Ready(result) =
                 self.poll_work_budget(messages, queue, scratch, output, cx, &mut remaining, waker)
             {
@@ -163,77 +122,44 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             if preserves_control {
                 self.control_idle = true;
             }
-            if preserves_control
-                && self.schedule.active == WorkSet::MAINTENANCE
-                && remaining != 0
-                && self.driver.maintenance_is_idle()
-            {
-                // An unflushed plain publication adds no cleanup obligation.
-                // Certify that before deciding whether its buffered successor
-                // permits a reply batch. Later IO notifications remain live.
-                remaining -= 1;
-                self.schedule.active = WorkSet::NONE;
-            }
-            // Carry a productive burst across cooperative yields, bounded by
-            // frame count and known pool capacity. A quantum that publishes no
-            // frame always flushes, so pending admission cannot hold old output.
-            self.coalescing_output = queue.len() > before_work
-                && !self.hooks.inbox.queue.borrow().is_empty()
-                && queue.len() < 32
-                && !self.delivered
-                && !self.output_blocked
-                && self.output.is_clean()
-                && controls.preserves_idle(Activity::PlainPublication)
-                && self.policy.poll_ready(cx).is_ready()
-                && self.can_batch_request(messages);
-            if !queue.is_empty() && self.idle {
+            // Publication only enqueues immutable frames. This is the sole
+            // coordinator output boundary. Ingress names its bounded turn;
+            // the hosted runtime owns deferred physical output, and fixed byte
+            // IO retains partial flushing here.
+            let queued = queue.len();
+            if queued != 0 && self.idle {
                 self.idle = false;
                 controls.set_idle(false);
             }
-            // Drain immediately ready work before writing, within the same
-            // cooperative allowance. New notifications count as ready work.
-            // Physical flush remains owned by Output, including a Pending receipt.
-            if !queue.is_empty()
-                && !(self.coalescing_output
-                    || (remaining != 0
-                        && (self.schedule.active != WorkSet::NONE
-                            || self.notifications.pending() != WorkSet::NONE)
-                        && queue.len() < 32
-                        && self.output.is_clean()
-                        && !self.output_blocked
-                        && !self.delivered
-                        && messages.can_reserve(self.options.output_bytes.get()))
-                    || (defer_output
-                        && queue.len() < 32
-                        && !self.delivered
-                        && !self.output_blocked
-                        && self.policy.poll_ready(cx).is_ready()))
+            // An input turn is bounded by the ingress frame budget. Capacity
+            // pressure and an unfinished partial flush always force progress.
+            let output_ready = if !end_input_turn
+                && !self.output_blocked
+                && self.output.is_clean()
+                && queue.available() != 0
             {
-                let queued = queue.len();
-                // New publication invalidates the earlier empty-output result.
-                // Queue acceptance can finish while a physical flush is Pending;
-                // advertising idle then could close a transport with live output.
-                output_ready =
-                    match self
-                        .output
-                        .poll(writer, queue, messages, cx, self.options.budget)
-                    {
-                        Poll::Ready(Err(error)) => return Err(Box::new(Cause::Output(error))),
-                        Poll::Ready(Ok(())) => true,
-                        Poll::Pending => false,
-                    };
-                if queue.len() < queued || (output_ready && self.output_blocked) {
-                    if !preserves_control {
-                        self.control_idle = false;
-                    }
-                    if std::mem::take(&mut self.output_blocked) {
-                        self.progressed();
-                    }
+                queue.is_empty()
+            } else {
+                match self
+                    .output
+                    .poll(writer, queue, messages, cx, self.options.budget)
+                {
+                    Poll::Ready(Err(error)) => return Err(Box::new(Cause::Output(error))),
+                    Poll::Ready(Ok(())) => true,
+                    Poll::Pending => false,
+                }
+            };
+            if queue.len() < queued || (output_ready && self.output_blocked) {
+                self.schedule.active |= WorkSet::MAINTENANCE;
+                if !preserves_control {
+                    self.control_idle = false;
+                }
+                if std::mem::take(&mut self.output_blocked) {
+                    self.progressed();
                 }
             }
             if output_ready && std::mem::take(&mut self.calls_waiting_for_output) {
                 self.schedule.active |= WorkSet::CALLS;
-                self.calls.invalidate_scan();
             }
             let idle = self.schedule.active == WorkSet::NONE
                 && output_ready

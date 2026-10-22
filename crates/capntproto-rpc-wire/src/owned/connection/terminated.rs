@@ -179,7 +179,10 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
                     }
                 }
                 7 => {
-                    if !driver.pipelines.drain_one(&mut driver.ledgers.answers) {
+                    if !driver
+                        .pipelines
+                        .drain_one(&mut driver.ledgers.answers, &mut driver.runtime)
+                    {
                         self.phase += 1;
                     }
                 }
@@ -189,12 +192,11 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
                     }
                 }
                 9 => {
-                    if driver.drain_terminal_tail() {
-                        return None;
-                    }
                     driver.imports.clear_terminal();
-                    driver.outgoing.clear_terminal();
-                    driver.invocation_pipelines.clear_terminal();
+                    driver.outgoing.clear_terminal(&mut driver.runtime);
+                    driver
+                        .invocation_pipelines
+                        .clear_terminal(&mut driver.runtime);
                     let Stage::Tasks(driver) = core::mem::replace(&mut self.stage, Stage::Done)
                     else {
                         unreachable!()
@@ -210,53 +212,55 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
                 }
                 _ => unreachable!(),
             },
-            Stage::Ledgers { ledgers, runtime } => match self.phase {
-                10 => {
-                    if self.index < ledgers.answer_capacity() {
-                        let answer = ledgers.take_answer(self.index);
-                        self.index += 1;
-                        if let Some(answer) = answer {
-                            return Some(Termination::Producer(
-                                answer.release(messages).release(messages, runtime),
-                            ));
+            Stage::Ledgers { ledgers, runtime } => {
+                match self.phase {
+                    10 => {
+                        if self.index < ledgers.answer_capacity() {
+                            let answer = ledgers.take_answer(self.index);
+                            self.index += 1;
+                            if let Some(answer) = answer {
+                                return Some(Termination::Producer(
+                                    answer.release(messages).release(messages, runtime, |_| {}),
+                                ));
+                            }
+                        } else {
+                            self.index = 0;
+                            self.phase += 1;
                         }
-                    } else {
-                        self.index = 0;
-                        self.phase += 1;
                     }
-                }
-                11 => {
-                    if self.index < ledgers.export_capacity() {
-                        let client = ledgers.take_export(self.index);
-                        self.index += 1;
-                        if let Some(client) = client {
-                            runtime.release(client);
+                    11 => {
+                        if self.index < ledgers.export_capacity() {
+                            let client = ledgers.take_export(self.index);
+                            self.index += 1;
+                            if let Some(client) = client {
+                                runtime.release(client);
+                            }
+                        } else {
+                            self.index = 0;
+                            self.phase += 1;
                         }
-                    } else {
-                        self.index = 0;
-                        self.phase += 1;
                     }
-                }
-                12 => {
-                    if self.index < ledgers.import_capacity() {
-                        let owner = ledgers.take_import(self.index);
-                        self.index += 1;
-                        if let Some(owner) = owner {
-                            return Some(Termination::Import(owner));
+                    12 => {
+                        if self.index < ledgers.import_capacity() {
+                            let owner = ledgers.take_import(self.index);
+                            self.index += 1;
+                            if let Some(owner) = owner {
+                                return Some(Termination::Import(owner));
+                            }
+                        } else {
+                            let Stage::Ledgers { runtime, .. } =
+                                core::mem::replace(&mut self.stage, Stage::Done)
+                            else {
+                                unreachable!()
+                            };
+                            self.stage = Stage::Endpoints(runtime.terminate());
+                            self.index = 0;
+                            self.phase = 13;
                         }
-                    } else {
-                        let Stage::Ledgers { runtime, .. } =
-                            core::mem::replace(&mut self.stage, Stage::Done)
-                        else {
-                            unreachable!()
-                        };
-                        self.stage = Stage::Endpoints(runtime.terminate());
-                        self.index = 0;
-                        self.phase = 13;
                     }
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
-            },
+            }
             Stage::Endpoints(runtime) => {
                 if self.index < runtime.endpoint_capacity() {
                     let route = runtime

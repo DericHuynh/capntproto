@@ -29,6 +29,7 @@ fn resolution_is_once_and_preserves_promise_references() {
         Slot::EMPTY,
     ];
     let mut imports = Imports {
+        binding_revision: 0,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
@@ -89,6 +90,7 @@ fn duplicate_batch_admission_is_atomic_for_all_reference_counts() {
         }),
     }];
     let mut imports = Imports {
+        binding_revision: 0,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),

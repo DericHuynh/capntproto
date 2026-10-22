@@ -427,6 +427,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             )
         }
         .map_err(Error::Input)?;
-        Ok(retired.map(|state| state.release(messages).release(messages, &mut self.runtime)))
+        Ok(retired.map(|state| {
+            state
+                .release(messages)
+                .release(messages, &mut self.runtime, |child| {
+                    self.ledgers.questions.release(child)
+                })
+        }))
     }
 }

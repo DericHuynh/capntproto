@@ -79,10 +79,15 @@ fn frame_contract_preserves_raw_bytes_and_explicit_flush() {
     #[derive(Default)]
     struct Sink(Vec<crate::OutgoingFrame>);
     impl crate::OutgoingMessageStream for Sink {
+        fn reserve(&mut self) -> capnp::Result<()> {
+            Ok(())
+        }
+        fn cancel_reservation(&mut self) {}
+
         fn shutdown(&mut self, _: capnp::Result<()>) -> Promise<(), capnp::Error> {
             Promise::ok(())
         }
-        fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+        fn publish_reserved(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
             self.0.push(frame);
             Ok(())
         }

@@ -7,6 +7,8 @@ mod tests;
 
 #[derive(Default)]
 struct State {
+    revision: Cell<u64>,
+    protocol_wake: RefCell<Option<Waker>>,
     message_pool: Option<capnp::message::SegmentPool>,
     tail_origin: RefCell<Option<Handle>>,
     network: RefCell<Option<Box<NetworkState>>>,
@@ -76,6 +78,12 @@ struct NetworkState {
 }
 impl State {
     fn notify(&self) {
+        self.revision.set(
+            self.revision
+                .get()
+                .checked_add(1)
+                .expect("results revision exhausted"),
+        );
         let wakes = std::mem::take(&mut *self.wake.borrow_mut());
         for wake in wakes {
             wake.wake();
@@ -130,11 +138,13 @@ impl Cache {
         drop(state.pipeline.get_mut().take());
         drop(state.completion.get_mut().take());
         state.wake.get_mut().clear();
+        debug_assert!(state.protocol_wake.get_mut().is_none());
         drop(state.charge.get_mut().take());
         drop(state.trace.get_mut().take());
         state.transferred.set(false);
         state.method.set(None);
         state.trace_prepared.set(false);
+        state.revision.set(0);
         // Restore an existing cache before dropping the unused, empty owner.
         let cached = self.0.take();
         if cached.is_none() {
@@ -144,7 +154,77 @@ impl Cache {
         }
     }
 }
+/// The affine protocol owner of a hosted answer. Application Results clones
+/// retain payload and early pipelines; only this owner's retirement wakes the
+/// running operation to release its protocol interest.
+#[derive(Default)]
+pub struct Producer(Results);
+impl std::ops::Deref for Producer {
+    type Target = Results;
+    fn deref(&self) -> &Results {
+        &self.0
+    }
+}
+impl Producer {
+    pub fn results(&self) -> Results {
+        self.0.clone()
+    }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn write_exception(
+        &self,
+        output: capnp::field_api::FixedStruct<'_, capntproto_rpc_wire::rpc_capnp::api::Exception>,
+    ) -> capnp::Result<()> {
+        self.0.write_exception(output)
+    }
+}
+impl Drop for Producer {
+    fn drop(&mut self) {
+        self.0.protocol_changed();
+    }
+}
 impl Results {
+    pub(in crate::scoped::wire) fn projections_pending(
+        &self,
+        hooks: &ClientHooks<'_>,
+        cx: &mut Context<'_>,
+    ) -> bool {
+        let payload = match self.0.payload.borrow().as_ref() {
+            Some(CompletedPayload::General(payload)) => Some(payload.clone()),
+            _ => None,
+        };
+        payload.is_some_and(|payload| {
+            payload
+                .caps
+                .iter()
+                .flatten()
+                .any(|hook| hooks.projection_pending(&**hook, cx))
+        })
+    }
+
+    pub fn into_producer(self) -> Producer {
+        Producer(self)
+    }
+    pub(super) fn bind_protocol_waker(&self, waker: Waker) {
+        let previous = self.0.protocol_wake.borrow_mut().replace(waker);
+        assert!(
+            previous.is_none(),
+            "producer already has an execution owner"
+        );
+    }
+    pub(super) fn unbind_protocol_waker(&self) {
+        drop(self.0.protocol_wake.borrow_mut().take());
+    }
+    pub(in crate::scoped::wire) fn protocol_changed(&self) {
+        let wake = self.0.protocol_wake.borrow().clone();
+        if let Some(wake) = wake {
+            wake.wake();
+        }
+    }
+    pub(super) fn revision(&self) -> u64 {
+        self.0.revision.get()
+    }
     pub(crate) fn tail_origin(&self, origin: Option<Handle>) {
         *self.0.tail_origin.borrow_mut() = origin;
     }
@@ -223,6 +303,8 @@ impl Results {
         message_pool: Option<capnp::message::SegmentPool>,
     ) -> Self {
         Self(Rc::new(State {
+            revision: Cell::new(0),
+            protocol_wake: RefCell::new(None),
             message_pool,
             charge: RefCell::new(charge),
             tail_origin: RefCell::new(None),
@@ -864,7 +946,17 @@ impl<'id> ClientHooks<'id> {
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
         import: impl FnMut(
-            &mut connection::Runtime<'pool, 'id, '_, I, P, S, CAPS, PATH>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'pool,
+                'id,
+                '_,
+                I,
+                P,
+                S,
+                CAPS,
+                PATH,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> capnp::Result<Result<connection::LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>> {
@@ -889,7 +981,17 @@ impl<'id> ClientHooks<'id> {
         options: capnp::message::ReaderOptions,
         answer: Option<capntproto_rpc_engine::answers::Key<'id>>,
         mut import: impl FnMut(
-            &mut connection::Runtime<'pool, 'id, '_, I, P, S, CAPS, PATH>,
+            &mut capntproto_rpc_wire::owned::connection::Scope<
+                '_,
+                'pool,
+                'id,
+                '_,
+                I,
+                P,
+                S,
+                CAPS,
+                PATH,
+            >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> capnp::Result<Result<connection::LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>> {
@@ -933,10 +1035,12 @@ impl<'id> ClientHooks<'id> {
             for cap in &payload.caps {
                 let client = match cap {
                     None => None,
-                    Some(hook) => Some(match self.try_retain(&mut driver.runtime, &**hook)? {
-                        Some(client) => client,
-                        None => import(&mut driver.runtime, &**hook)?,
-                    }),
+                    Some(hook) => Some(
+                        match self.try_retain(&mut driver.capabilities(), &**hook)? {
+                            Some(client) => client,
+                            None => import(&mut driver.capabilities(), &**hook)?,
+                        },
+                    ),
                 };
                 retained.push(client);
             }
@@ -999,7 +1103,7 @@ impl<'id> ClientHooks<'id> {
             result.map_err(wire_error)
         })();
         for client in retained.into_iter().flatten() {
-            driver.runtime.release(client);
+            driver.capabilities().release(client);
         }
         result.map(Ok)
     }

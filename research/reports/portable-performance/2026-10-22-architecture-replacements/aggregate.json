@@ -1,0 +1,16 @@
+{
+  "tls": {
+    "cases": 24,
+    "geomean_latency_change_percent": 4.960923497622094,
+    "lower_than_baseline": 6,
+    "lower_than_legacy": 8,
+    "lower_than_cpp": 23
+  },
+  "quic": {
+    "cases": 24,
+    "geomean_latency_change_percent": 4.11228099861507,
+    "lower_than_baseline": 8,
+    "lower_than_legacy": 7,
+    "lower_than_cpp": null
+  }
+}

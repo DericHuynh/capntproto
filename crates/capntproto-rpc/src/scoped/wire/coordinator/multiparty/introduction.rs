@@ -191,6 +191,9 @@ impl ClientHook for Vine {
     fn forward_join(&self, part: any_pointer::Reader<'_>) -> Option<PartResponse> {
         self.inner.forward_join(part)
     }
+    fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
+        self.inner.metadata_changes()
+    }
     #[cfg(unix)]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.inner.get_fd()
@@ -294,7 +297,7 @@ impl<
         if let Some(marker) = marker {
             let target = coordinator
                 .hooks
-                .try_retain(&mut coordinator.driver.runtime, &*marker.target)?
+                .try_retain(&mut coordinator.driver.capabilities(), &*marker.target)?
                 .ok_or_else(|| Error::failed("foreign vine marker".into()))?;
             let result = coordinator.driver.send_accept_embargo(
                 &target,
@@ -304,7 +307,7 @@ impl<
                 marker.id.len().saturating_add(128 + H * 16),
                 coordinator.options.reader,
             );
-            coordinator.driver.runtime.release(target);
+            coordinator.driver.capabilities().release(target);
             result.map_err(wire_error)?;
             return Ok(true);
         }
@@ -382,19 +385,19 @@ pub(super) fn wire_target<'p, 'id, const C: usize, const H: usize>(
     let driver = &mut coordinator.driver;
     let client = coordinator
         .hooks
-        .try_retain(&mut driver.runtime, hook)?
+        .try_retain(&mut driver.capabilities(), hook)?
         .ok_or_else(|| Error::failed("foreign introduction target".into()))?;
     let result = (|| {
         let Destination::Endpoint {
             owner,
             location: Location::Remote(_),
             ..
-        } = driver.runtime.inspect(&client).map_err(wire_error)?
+        } = driver.runtime().inspect(&client).map_err(wire_error)?
         else {
             return Err(Error::failed("introduction target is not remote".into()));
         };
         match owner
-            .target(&driver.ledgers.questions)
+            .target(&driver.ledgers().questions)
             .map_err(wire_error)?
         {
             Some(capntproto_rpc_wire::calls::Target::Imported(id)) => Ok(Target::Imported(id)),
@@ -404,7 +407,7 @@ pub(super) fn wire_target<'p, 'id, const C: usize, const H: usize>(
             None => Err(Error::failed("introduction lost its route".into())),
         }
     })();
-    driver.runtime.release(client);
+    driver.capabilities().release(client);
     result
 }
 pub(super) fn forward(owner: &Rc<dyn ClientHook>, id: &[u8]) -> capnp::Result<()> {

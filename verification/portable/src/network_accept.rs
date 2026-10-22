@@ -75,7 +75,7 @@ pub fn owning_network_acceptance(mode: u8) {
                 };
                 let key = accept.key();
                 let pipeline = if mode == 3 {
-                    Some(peer.ledgers.answers.pipeline(key.id()).unwrap())
+                    Some(peer.answer_pipeline(key.id()).unwrap())
                 } else {
                     None
                 };
@@ -109,7 +109,7 @@ pub fn owning_network_acceptance(mode: u8) {
                     .unwrap_or_else(|r| panic!("{}", r.error))
                 } else {
                     let authority = peer
-                        .runtime
+                        .capabilities()
                         .endpoint(binding::Route::local(41), clients::Location::Local)
                         .unwrap();
                     let pending = accept
@@ -120,7 +120,7 @@ pub fn owning_network_acceptance(mode: u8) {
                         let rejected = pending.poll(embargoes).err().unwrap();
                         assert_eq!(rejected.error, provision::Error::Closed);
                         let (accept, authority) = rejected.pending.cancel(embargoes);
-                        peer.runtime.release(authority);
+                        peer.capabilities().release(authority);
                         assert_eq!(peer.drain_endpoint(), Some(Some(41)));
                         server_count = 41;
                         peer.reject_accept(
@@ -136,7 +136,7 @@ pub fn owning_network_acceptance(mode: u8) {
                         let ready = if mode == 1 {
                             let rejected = pending.poll(embargoes).err().unwrap();
                             assert_eq!(rejected.error, provision::Error::Pending);
-                            assert!(peer.runtime.next_ready().unwrap().is_none());
+                            assert!(peer.capabilities().next_ready().unwrap().is_none());
                             embargoes.release(b"").unwrap();
                             rejected
                                 .pending
@@ -232,29 +232,27 @@ pub fn owning_network_acceptance(mode: u8) {
                     .unwrap();
                 output.release(messages);
                 if let Some(pipeline) = pipeline {
-                    let target = peer
-                        .ledgers
+                    let (mut graph, ledgers) = peer.split_graph();
+                    let target = ledgers
                         .answers
                         .pipelined(&pipeline)
                         .owner
-                        .target(Path::new(&[]), messages, &mut peer.runtime)
+                        .target(Path::new(&[]), messages, &mut graph)
                         .unwrap()
                         .unwrap();
                     assert!(matches!(
-                        peer.runtime.inspect(&target).unwrap(),
+                        peer.runtime().inspect(&target).unwrap(),
                         clients::Destination::Endpoint {
                             owner: binding::Route::Capability(binding::Endpoint::Local(41)),
                             ..
                         }
                     ));
-                    peer.runtime.release(target);
+                    peer.capabilities().release(target);
                     assert_eq!(
-                        peer.ledgers
-                            .answers
-                            .release_pipeline(pipeline)
-                            .unwrap()
-                            .release(messages)
-                            .release(messages, &mut peer.runtime),
+                        {
+                            let answer = peer.release_answer_pipeline(pipeline).unwrap();
+                            peer.release_answer(answer, messages)
+                        },
                         43
                     );
                 }

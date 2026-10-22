@@ -1,5 +1,6 @@
 //! The hosted result bridge ends in this same allocation-free answer path.
 use capnp::{word, Word};
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients::Location,
     connection,
@@ -10,7 +11,7 @@ use capntproto_rpc_wire::{
     calls::{self, DynamicCall, Target},
     clients::{self, Route},
     owned::{
-        connection::{Answer, FixedStorage, Request, Termination},
+        connection::{Answer, FixedStorage, Termination},
         pipelines, Frame,
     },
     pipeline,
@@ -27,12 +28,12 @@ pub fn bounded_server_output() {
             let mut storage = FixedStorage::<(), (), u8, u32, 2, 1, 4, 12>::new();
             let mut driver = storage.bind(domain, 1).unwrap();
             let target = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(73), Location::Local)
                 .unwrap();
             let id = {
-                let mut batch = driver.ledgers.exports.batch();
-                let id = clients::stage(&mut driver.runtime, &mut batch, &target)
+                let (mut graph, mut batch) = driver.export_batch();
+                let id = clients::stage(&mut graph, &mut batch, &target)
                     .unwrap()
                     .id();
                 batch.commit();
@@ -48,29 +49,21 @@ pub fn bounded_server_output() {
                 )
             })
             .unwrap();
-            let call = Request::admit(
-                frame,
-                messages,
-                &mut driver.ledgers.imports,
-                &mut driver.ledgers.exports,
-                &mut driver.ledgers.answers,
-                Answer::new(pipelines::Results::new(())),
-                |_| (),
-            )
-            .unwrap_or_else(|_| panic!("request"));
-            let key = call.answer();
-            assert!(driver.ledgers.answers.dispatch(key, true).unwrap());
-            let parent = driver.ledgers.answers.pipeline(key.id()).unwrap();
-            let observer = driver
-                .pipelines
-                .bind(
-                    &mut driver.runtime,
-                    &mut driver.ledgers.answers,
-                    &parent,
-                    pipeline::Path::new(&[]),
+            let call = driver
+                .admit_request(
+                    frame,
+                    messages,
+                    Answer::new(pipelines::Results::new(())),
+                    |_| (),
                 )
+                .unwrap_or_else(|_| panic!("request"));
+            let key = call.answer();
+            assert!(driver.answers().dispatch(key, true).unwrap());
+            let parent = driver.answer_pipeline(key.id()).unwrap();
+            let observer = driver
+                .project_answer(&parent, pipeline::Path::new(&[]))
                 .unwrap();
-            driver.ledgers.answers.release_pipeline_deferred(parent);
+            driver.release_answer_pipeline_deferred(parent);
             let result = driver
                 .local_result_dynamic(
                     0,
@@ -105,9 +98,9 @@ pub fn bounded_server_output() {
             let output = queue.window(messages).unwrap().unwrap();
             let bytes = output.bytes().len();
             output.advance(bytes).unwrap();
-            driver.runtime.release(observer);
+            driver.capabilities().release(observer);
             driver.release_call(call, messages);
-            driver.runtime.release(target);
+            driver.capabilities().release(target);
             let mut closing = driver.terminate(&mut queue);
             for _ in 0..256 {
                 if matches!(

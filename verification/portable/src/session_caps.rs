@@ -8,6 +8,7 @@ use super::{
     },
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 #[cfg(not(feature = "growing"))]
 use capntproto_rpc_engine::completion;
 use capntproto_rpc_engine::{
@@ -42,12 +43,12 @@ pub fn typed_capability_calls(remote_case: bool) {
             let target = TypedClient::<echo::Owned>::from_client(if remote_case {
                 remote(&mut peer, ImportId::from_wire(91))
             } else {
-                peer.runtime
+                peer.capabilities()
                     .endpoint(binding::Route::local(41), clients::Location::Local)
                     .unwrap()
             });
             let returned = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(43), clients::Location::Local)
                 .unwrap();
             #[cfg(not(feature = "growing"))]
@@ -85,6 +86,7 @@ pub fn typed_capability_calls(remote_case: bool) {
             assert!(Pin::new(&mut second).poll(&mut cx).is_pending());
             session
                 .access(|driver, messages, calls| {
+                    while driver.capabilities().advance_dispatch_one().unwrap() {}
                     if remote_case {
                         let sent = calls
                             .send_one(
@@ -180,6 +182,7 @@ pub fn typed_capability_calls(remote_case: bool) {
                         calls.poll_one(0, driver, messages, &mut cx).unwrap(),
                         CallProgress::Consumed
                     );
+                    while driver.capabilities().advance_dispatch_one().unwrap() {}
                     if remote_case {
                         let sent = calls
                             .send_one(
@@ -285,7 +288,7 @@ pub fn typed_capability_calls(remote_case: bool) {
             let (mut peer, messages, calls) = session.into_parts();
             assert!(calls.is_empty());
             assert_eq!(calls.terminate(&mut peer, messages), 0);
-            peer.runtime.release(returned);
+            peer.capabilities().release(returned);
             assert_eq!(
                 close(peer, messages, &mut queue),
                 if remote_case { 43 } else { 84 }

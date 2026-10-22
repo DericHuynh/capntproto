@@ -80,7 +80,7 @@ fn resumed_plain_results_release_parameter_grants_without_another_input() {
             })
             .unwrap();
             driver
-                .receive(frame, messages, &mut [0; 16], |_| (), server::Results::new)
+                .receive(frame, messages, &mut [0; 16], |_| (), server::Producer::new)
                 .unwrap_or_else(|rejected| panic!("{}", rejected.error));
             let mut opts = options();
             opts.budget = NonZeroUsize::new(budget).unwrap();
@@ -228,7 +228,7 @@ fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
                 })
                 .unwrap();
                 driver
-                    .receive(frame, messages, &mut [0; 16], |_| (), server::Results::new)
+                    .receive(frame, messages, &mut [0; 16], |_| (), server::Producer::new)
                     .unwrap_or_else(|rejected| panic!("{}", rejected.error));
             }
             let mut opts = options();
@@ -413,7 +413,7 @@ fn single_service_wake_never_polls_parked_siblings() {
                                             messages,
                                             &mut [0; 16],
                                             |_| (),
-                                            server::Results::new,
+                                            server::Producer::new,
                                         )
                                         .unwrap_or_else(|rejected| panic!("{}", rejected.error));
                                 }

@@ -31,6 +31,7 @@ pub fn owning_reflected_output(reflect_question: bool) {
             let mut nodes = [const { clients::Slot::<Route<'_, u8, u32, 2>, u8>::EMPTY }; 4];
             let mut connection = domain
                 .bind(connection::GraphStorage {
+                    notifications: capntproto_rpc_engine::clients::NotificationStorage::empty(),
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,

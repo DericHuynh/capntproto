@@ -17,7 +17,7 @@ fn fifo_never_overtakes_partial_frame() {
             messages.write(&writer).copy_from_slice(&bytes);
             let lease = messages.seal(writer, 2).unwrap();
             if owned {
-                queue.reserve().unwrap().accept_owned(lease);
+                queue.reserve().unwrap().accept_owned(messages, lease);
             } else {
                 let offer = messages.offer(&lease).unwrap();
                 queue.reserve().unwrap().accept(messages, offer);
@@ -88,7 +88,10 @@ fn resources_are_offered_only_before_first_accepted_byte() {
         let writer = messages.reserve(3).unwrap();
         let lease = messages.seal(writer, 3).unwrap();
         if owned {
-            queue.reserve_with(71u8).unwrap().accept_owned(lease);
+            queue
+                .reserve_with(71u8)
+                .unwrap()
+                .accept_owned(messages, lease);
         } else {
             let offer = messages.offer(&lease).unwrap();
             queue.reserve_with(71u8).unwrap().accept(messages, offer);

@@ -156,6 +156,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Ok(slot) => {
                 slot.retain_handoff_routes = retain_routes;
                 slot.handoff = Some(result);
+                self.refresh_exchange(awaiting.key);
                 awaiting.frame.release(messages);
                 Ok(())
             }
@@ -257,6 +258,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let Some(Exchange::Returned(response)) = slot.exchange.take() else {
                 unreachable!()
             };
+            self.clear_exchange_work(key);
             self.ledgers.questions.release_owner(key);
             Ok(Ok(CallOutput::Remote(response)))
         }

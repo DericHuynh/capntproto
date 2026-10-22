@@ -54,6 +54,7 @@ pub enum Error {
     NonemptyStorage,
     CapacityTooLarge,
     Full,
+    AllocationFailed,
     GenerationExhausted,
     StaleKey,
     Missing,
@@ -69,6 +70,7 @@ impl fmt::Display for Error {
             Self::NonemptyStorage => "export storage is not empty",
             Self::CapacityTooLarge => "export capacity exceeds the local wire-ID range",
             Self::Full => "export storage is full",
+            Self::AllocationFailed => "export storage allocation failed",
             Self::GenerationExhausted => "export slot generation exhausted",
             Self::StaleKey => "export key is no longer live",
             Self::Missing => "export wire ID is not live",
@@ -160,11 +162,15 @@ impl<T> Entry<T> {
 pub struct Slot<T> {
     generation: u64,
     entry: Option<Entry<T>>,
+    retirement: crate::work_queue::Link,
+    publication: crate::work_queue::Link,
 }
 impl<T> Slot<T> {
     pub const EMPTY: Self = Self {
         generation: 0,
         entry: None,
+        retirement: crate::work_queue::Link::EMPTY,
+        publication: crate::work_queue::Link::EMPTY,
     };
 }
 
@@ -208,6 +214,9 @@ pub struct Exports<'id, 'storage, T> {
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
+    unavailable: usize,
+    retired: crate::work_queue::Queue,
+    staged: crate::work_queue::Queue,
     open_batch: bool,
     pending_resolution: Option<Key<'id>>,
     brand: Brand<'id>,
@@ -242,7 +251,10 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Exports<'id, '_
     Ok(Exports {
         #[cfg(feature = "alloc")]
         observation: Default::default(),
+        unavailable: slots.iter().filter(|s| s.generation == u64::MAX).count(),
         slots: crate::storage::Storage::borrowed(slots),
+        retired: crate::work_queue::Queue::EMPTY,
+        staged: crate::work_queue::Queue::EMPTY,
         open_batch: false,
         pending_resolution: None,
         brand: PhantomData,
@@ -262,7 +274,10 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
     Ok(Exports {
         #[cfg(feature = "alloc")]
         observation: Default::default(),
+        unavailable: 0,
         slots,
+        retired: crate::work_queue::Queue::EMPTY,
+        staged: crate::work_queue::Queue::EMPTY,
         open_batch: false,
         pending_resolution: None,
         brand: PhantomData,
@@ -278,24 +293,34 @@ pub fn with_growing_exports<T, R>(
 }
 
 impl<'id, 'storage, T> Exports<'id, 'storage, T> {
+    pub fn maximum(&self) -> usize {
+        self.slots.maximum()
+    }
+    pub fn available(&self) -> usize {
+        self.slots.maximum() - self.unavailable
+    }
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
-    /// Conservatively certify that retirement has no work, examining at most
-    /// `maximum` slots unless observed occupancy proves empty. Other larger
-    /// tables and forgotten batches still require the budgeted retirement scan.
-    /// This check neither recovers a batch nor releases any owner.
-    pub fn retirement_is_idle(&self, maximum: usize) -> bool {
-        #[cfg(feature = "alloc")]
-        if !self.open_batch && self.observation.known_empty() {
-            return true;
+    /// True when no detached owner or forgotten publication needs recovery.
+    pub fn retirement_is_idle(&self) -> bool {
+        !self.open_batch && self.retired.is_empty()
+    }
+    fn enqueue_retired(&mut self, index: usize) {
+        if self.slots[index]
+            .entry
+            .as_ref()
+            .is_some_and(Entry::reclaimable)
+        {
+            self.retired
+                .push(&mut self.slots, index, |slot| &mut slot.retirement);
         }
-        !self.open_batch
-            && self.slots.len() <= maximum
-            && self
-                .slots
-                .iter()
-                .all(|slot| slot.entry.as_ref().is_none_or(|entry| !entry.reclaimable()))
+    }
+    /// Detach the next exact retirement obligation, independent of capacity.
+    pub fn pop_retired(&mut self) -> Option<T> {
+        self.abort_pending();
+        let index = self.retired.head()?;
+        self.take_retired(index)
     }
     /// Includes unpublished/retired owners awaiting explicit draining.
     #[cfg(feature = "alloc")]
@@ -349,10 +374,16 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         if !self.open_batch {
             return;
         }
-        for slot in &mut *self.slots {
-            if let Some(entry) = &mut slot.entry {
-                entry.abort();
-            }
+        while let Some(index) = self
+            .staged
+            .pop(&mut self.slots, |slot| &mut slot.publication)
+        {
+            self.slots[index]
+                .entry
+                .as_mut()
+                .expect("staged export")
+                .abort();
+            self.enqueue_retired(index);
         }
         self.open_batch = false;
         self.pending_resolution = None;
@@ -413,6 +444,7 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
             .as_mut()
             .expect("live lease")
             .local -= 1;
+        self.enqueue_retired(lease.key.index);
     }
     /// Apply a peer Release only to published grants. Underflow is atomic.
     /// Final peer release invalidates keys/wire lookup immediately; call leases
@@ -438,7 +470,16 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         if !entry.reclaimable() {
             return None;
         }
-        Some(slot.entry.take().expect("retired export").value)
+        self.retired
+            .remove(&mut self.slots, index, |slot| &mut slot.retirement);
+        self.unavailable -= usize::from(self.slots[index].generation != u64::MAX);
+        Some(
+            self.slots[index]
+                .entry
+                .take()
+                .expect("retired export")
+                .value,
+        )
     }
 }
 
@@ -446,17 +487,18 @@ impl<T> Drop for Exports<'_, '_, T> {
     fn drop(&mut self) {
         for slot in &mut *self.slots {
             let entry = slot.entry.take();
+            slot.retirement = crate::work_queue::Link::EMPTY;
+            slot.publication = crate::work_queue::Link::EMPTY;
             drop(entry);
         }
     }
 }
 impl<T> Exports<'_, '_, T> {
     pub(crate) fn take_terminal_owner(&mut self, index: usize) -> Option<T> {
-        self.slots
-            .get_mut(index)?
-            .entry
-            .take()
-            .map(|entry| entry.value)
+        let slot = self.slots.get_mut(index)?;
+        let entry = slot.entry.take()?;
+        self.unavailable -= usize::from(slot.generation != u64::MAX);
+        Some(entry.value)
     }
 }
 
@@ -489,11 +531,14 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
         ) else {
             let error = if self.exports.slots.iter().any(|s| s.entry.is_none()) {
                 Error::GenerationExhausted
+            } else if self.exports.slots.len() < self.exports.slots.maximum() {
+                Error::AllocationFailed
             } else {
                 Error::Full
             };
             return Err(Rejected { error, value });
         };
+        self.exports.unavailable += 1;
         let slot = &mut self.exports.slots[index];
         slot.generation += 1;
         slot.entry = Some(Entry {
@@ -505,6 +550,9 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
             pending: 1,
             promise: promise::ImportState::Hosted,
         });
+        self.exports
+            .staged
+            .push(&mut self.exports.slots, index, |slot| &mut slot.publication);
         Ok(Grant {
             key: self.exports.key(index),
             promise: false,
@@ -560,10 +608,13 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
             return Err(Error::ResolutionConflict);
         }
         entry.grant()?;
-        Ok(Grant {
-            key,
-            promise: entry.promise == promise::ImportState::Pending,
-        })
+        let promise = entry.promise == promise::ImportState::Pending;
+        self.exports
+            .staged
+            .push(&mut self.exports.slots, key.index, |slot| {
+                &mut slot.publication
+            });
+        Ok(Grant { key, promise })
     }
     /// Publish all reserved counts after the output adapter accepts the message.
     /// Cannot fail: reservations already checked all additions under this borrow.
@@ -575,10 +626,16 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
                 .resolution()
                 .expect("reserved pending promise");
         }
-        for slot in &mut *self.exports.slots {
-            if let Some(entry) = &mut slot.entry {
-                entry.commit();
-            }
+        while let Some(index) = self
+            .exports
+            .staged
+            .pop(&mut self.exports.slots, |slot| &mut slot.publication)
+        {
+            self.exports.slots[index]
+                .entry
+                .as_mut()
+                .expect("staged export")
+                .commit();
         }
         self.exports.open_batch = false;
     }

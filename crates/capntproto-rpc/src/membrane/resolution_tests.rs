@@ -90,3 +90,21 @@ fn continuing_resolution_cycle_is_rejected_and_released() {
     assert!(error.to_string().contains("cyclic"));
     assert!(weak.upgrade().is_none());
 }
+
+#[test]
+fn metadata_notification_observes_boundary_revocation_without_exposing_inner_hook() {
+    let membrane = Membrane::new(Rc::new(Allow));
+    let hook = membrane.wrap(
+        Box::new(InPlace {
+            remaining: Rc::new(Cell::new(Some(0))),
+        }),
+        false,
+    );
+    let source = hook.metadata_changes().unwrap();
+    let mut watch = source.subscribe();
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(watch.poll_changed(&mut cx).is_pending());
+    membrane.revoke(Error::disconnected("metadata revocation".into()));
+    assert!(watch.poll_changed(&mut cx).is_ready());
+    assert_eq!(hook.get_failure().unwrap().extra, "metadata revocation");
+}

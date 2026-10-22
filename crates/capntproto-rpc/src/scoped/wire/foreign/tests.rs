@@ -7,7 +7,13 @@ use std::sync::{
 type Owner = Route<'static, u8, Rc<dyn ClientHook>, 8>;
 type Graph<'id, 's> = clients::Graph<'id, 's, Owner, u8>;
 fn with_graph(maximum: usize, f: impl for<'id> FnOnce(&mut Graph<'id, '_>)) {
-    clients::with_growing_graph(0, maximum, f).unwrap();
+    clients::with_growing_graph(
+        0,
+        maximum,
+        capntproto_rpc_engine::clients::NotificationGrowth::bounded(8, maximum.saturating_mul(4)),
+        f,
+    )
+    .unwrap();
 }
 #[derive(Clone)]
 struct Service;
@@ -121,7 +127,7 @@ fn chained_foreign_promise_stays_advertised_and_keeps_original_proxy() {
         graph.release(snapshot);
         graph.release(settled_snapshot);
         hooks.close(graph, Error::disconnected("done".into()));
-        foreign.terminate();
+        foreign.terminate(graph);
         drain(graph);
         assert!(graph.is_empty());
     });
@@ -197,7 +203,7 @@ fn failed_resolution_retries_capacity_once_and_retains_full_diagnostics() {
         drop((source, exported, later, resolved));
         graph.release(client);
         hooks.close(graph, Error::disconnected("done".into()));
-        foreign.terminate();
+        foreign.terminate(graph);
         drain(graph);
         assert!(graph.is_empty());
     });
@@ -229,7 +235,7 @@ fn abandoned_observer_reclaims_capacity_without_retaining_graph_authority() {
         );
         graph.release(client);
         drop(source);
-        foreign.terminate();
+        foreign.terminate(graph);
         hooks.close(graph, Error::disconnected("done".into()));
         drain(graph);
         assert!(graph.is_empty());
@@ -278,7 +284,7 @@ fn budget_yields_fairly_and_idle_promises_sleep_until_notified() {
         graph.release(a);
         graph.release(b);
         drop((pending, ready_client));
-        foreign.terminate();
+        foreign.terminate(graph);
         hooks.close(graph, Error::disconnected("done".into()));
         drain(graph);
         assert!(graph.is_empty());
@@ -311,7 +317,7 @@ fn opaque_hook_identity_does_not_deduplicate_or_unwrap_policy() {
         drop((wrapped, exported, source));
         graph.release(route);
         hooks.close(graph, Error::disconnected("done".into()));
-        foreign.terminate();
+        foreign.terminate(graph);
         drain(graph);
         assert!(graph.is_empty());
     });
@@ -340,7 +346,6 @@ fn unrelated_protocol_changes_do_not_poll_sleeping_foreign_futures() {
         let initial = polls.get();
         assert!(initial > 0);
         for _ in 0..100 {
-            foreign.invalidate_scan();
             let _ = poll_tied(&mut foreign, &mut hooks, graph);
         }
         assert_eq!(polls.get(), initial);
@@ -360,7 +365,7 @@ fn unrelated_protocol_changes_do_not_poll_sleeping_foreign_futures() {
             foreign.is_empty(),
             "sleeping abandoned entries are still reclaimed"
         );
-        foreign.terminate();
+        foreign.terminate(graph);
         hooks.close(graph, Error::disconnected("done".into()));
         drop(source);
         drain(graph);

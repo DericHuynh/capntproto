@@ -9,6 +9,7 @@ use super::{
     ZERO,
 };
 use capnp::{field_api::FixedStruct, wire_capability::Reader};
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{clients, completion, messages};
 use capntproto_rpc_wire::{
     clients as binding,
@@ -67,11 +68,11 @@ pub fn generated_context_nested_call() {
         let mut queue = super::driver::message_queue(&mut sends).unwrap();
         with_owned_peer_tasks::<4, _>(|mut peer| {
             let service = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(41), clients::Location::Local)
                 .unwrap();
             let callback = peer
-                .runtime
+                .capabilities()
                 .endpoint(binding::Route::local(43), clients::Location::Local)
                 .unwrap();
             let expected = callback.key();
@@ -119,11 +120,11 @@ pub fn generated_context_nested_call() {
                                     let output = reply.await.unwrap();
                                     observed.set(session.read(&output, |results| results.value()).unwrap());
                                     session.release(output).unwrap_or_else(|_| panic!("nested reply release"));
-                                    let client = session.access(|peer, _, _| peer.runtime.retain(target)).unwrap().unwrap();
+                                    let client = session.access(|peer, _, _| peer.capabilities().retain(target)).unwrap().unwrap();
                                     if let Err(rejected) = capabilities
                                         .set(results.field(CapabilityResults::VALUE), client)
                                     {
-                                        session.access(|peer, _, _| peer.runtime.release(rejected.client)).unwrap();
+                                        session.access(|peer, _, _| peer.capabilities().release(rejected.client)).unwrap();
                                         return Err(capnp::Error::from_kind(
                                             capnp::ErrorKind::Failed,
                                         ));
@@ -180,7 +181,7 @@ pub fn generated_context_nested_call() {
                 replies.poll_one(1, &mut peer, messages, &mut cx).unwrap(),
                 CallProgress::Consumed
             );
-            let result = draft.finish(messages, &mut peer.runtime).unwrap();
+            let result = draft.finish(messages, &mut peer.capabilities()).unwrap();
             result
                 .with(messages, |payload| {
                     let pointer = payload
@@ -206,8 +207,8 @@ pub fn generated_context_nested_call() {
             );
             assert!(replies.is_empty());
             assert_eq!(replies.terminate(&mut peer, messages), 0);
-            peer.runtime.release(service);
-            peer.runtime.release(callback);
+            peer.capabilities().release(service);
+            peer.capabilities().release(callback);
             assert_eq!(close(peer, messages, &mut queue), 84);
             let writers = core::array::from_fn::<_, 8, _>(|_| messages.reserve(776).unwrap());
             for writer in writers {

@@ -6,6 +6,7 @@ pub struct MetadataSource {
     value: RefCell<Option<EndpointMetadata>>,
     subscribers: RefCell<Vec<Subscription>>,
 }
+#[derive(Clone)]
 struct Subscription {
     endpoint: Weak<Endpoint>,
     generation: u64,
@@ -35,16 +36,18 @@ impl MetadataSource {
         change(value.get_or_insert_with(EndpointMetadata::default));
         let snapshot = value.clone().expect("updated metadata");
         drop(value);
-        // Owned diagnostics cannot call application hooks or resolution wakers.
-        // The endpoint generation disarms old sources when projection changes,
-        // without allocating another lease around each weak subscription.
-        self.subscribers.borrow_mut().retain(|subscriber| {
-            let Some(endpoint) = subscriber.endpoint() else {
-                return false;
-            };
-            endpoint.apply_metadata(snapshot.clone());
-            true
-        });
+        // Publish outside the registry borrow: opaque metadata subscribers can
+        // wake an executor which queries, drops, or updates this source again.
+        let subscribers = {
+            let mut entries = self.subscribers.borrow_mut();
+            entries.retain(|entry| entry.endpoint().is_some());
+            entries.clone()
+        };
+        for subscriber in subscribers {
+            if let Some(endpoint) = subscriber.endpoint() {
+                endpoint.apply_metadata(snapshot.clone());
+            }
+        }
     }
 }
 
@@ -59,15 +62,24 @@ impl Endpoint {
         generation
     }
     pub(super) fn apply_metadata(&self, metadata: EndpointMetadata) {
+        let mut changed = false;
         if metadata.introduction.is_some() && self.introduction.borrow().is_none() {
             *self.introduction.borrow_mut() = metadata.introduction;
+            changed = true;
         }
         if let Some(failure) = metadata.failure {
             *self.failure.borrow_mut() = Some(failure);
+            changed = true;
         }
         #[cfg(unix)]
         if metadata.fd.is_some() && self.fd.borrow().is_none() {
             *self.fd.borrow_mut() = metadata.fd;
+            changed = true;
+        }
+        if changed {
+            if let Some(source) = self.metadata_changes.get() {
+                source.notify();
+            }
         }
     }
 }

@@ -17,7 +17,9 @@
 use capnp::{
     any_pointer,
     capability::{self, CallHints, Promise},
-    private::capability::{ClientHook, DebugInfo, ParamsHook, ResultsHook},
+    private::capability::{
+        ClientHook, DebugInfo, MetadataChanges, MetadataWatch, ParamsHook, ResultsHook,
+    },
     Error,
 };
 use capntproto_rpc_engine::{
@@ -135,13 +137,84 @@ struct Endpoint {
     introduced: RefCell<Option<Rc<dyn ClientHook>>>,
     remote: Cell<bool>,
     inbox: Weak<Inbox>,
-    index: usize,
+    index: Cell<Option<usize>>,
+    binding_wakes: RefCell<Vec<Waker>>,
     settled: Cell<bool>,
     metadata_generation: Cell<u64>,
+    metadata_changes: std::cell::OnceCell<Rc<MetadataChanges>>,
     failure: RefCell<Option<Error>>,
     resolution: RefCell<Option<Resolution>>,
     #[cfg(unix)]
     fd: RefCell<Option<Rc<std::os::fd::OwnedFd>>>,
+}
+impl Endpoint {
+    fn projection(inbox: Weak<Inbox>) -> Rc<Self> {
+        Rc::new(Self {
+            introduction: RefCell::default(),
+            introduced: RefCell::default(),
+            remote: Cell::new(true),
+            inbox,
+            index: Cell::new(None),
+            binding_wakes: RefCell::default(),
+            settled: Cell::new(false),
+            metadata_generation: Cell::new(0),
+            metadata_changes: std::cell::OnceCell::new(),
+            failure: RefCell::default(),
+            resolution: RefCell::default(),
+            #[cfg(unix)]
+            fd: RefCell::default(),
+        })
+    }
+    fn needs_binding(&self) -> bool {
+        self.index.get().is_none()
+            && self.introduced.borrow().is_none()
+            && self.failure.borrow().is_none()
+    }
+    fn binding_pending(&self, cx: &mut Context<'_>) -> bool {
+        if !self.needs_binding() {
+            return false;
+        }
+        let wake = cx.waker().clone();
+        if !self.needs_binding() {
+            return false;
+        }
+        let mut wakes = self.binding_wakes.borrow_mut();
+        if !wakes.iter().any(|old| old.will_wake(&wake)) {
+            wakes.push(wake);
+        } else {
+            drop(wakes);
+            drop(wake);
+        }
+        true
+    }
+    fn notify_binding(&self) {
+        let wakes = core::mem::take(&mut *self.binding_wakes.borrow_mut());
+        for wake in wakes {
+            wake.wake();
+        }
+    }
+    fn forward_projection(&self, result: capnp::Result<Box<dyn ClientHook>>) {
+        match result {
+            Ok(hook) => {
+                *self.introduced.borrow_mut() = Some(Rc::from(hook));
+                let resolution = self.resolution.borrow_mut().take();
+                if let Some(resolution) = resolution {
+                    let _ = resolution.sender.send(Ok(()));
+                }
+            }
+            Err(error) => {
+                *self.failure.borrow_mut() = Some(error.clone());
+                let resolution = self.resolution.borrow_mut().take();
+                if let Some(resolution) = resolution {
+                    let _ = resolution.sender.send(Err(error));
+                }
+            }
+        }
+        self.notify_binding();
+        if let Some(inbox) = self.inbox.upgrade() {
+            inbox.notify();
+        }
+    }
 }
 struct Resolution {
     sender: shared::Sender<capnp::Result<()>>,
@@ -151,8 +224,10 @@ impl Drop for Endpoint {
     fn drop(&mut self) {
         if let Some(inbox) = self.inbox.upgrade() {
             let mut released = inbox.released.borrow_mut();
-            debug_assert!(released.len() < released.capacity());
-            released.push_back(self.index);
+            if let Some(index) = self.index.get() {
+                debug_assert!(released.len() < released.capacity());
+                released.push_back(index);
+            }
             drop(released);
             inbox.notify();
         }
@@ -165,7 +240,9 @@ struct Entry<'id> {
     metadata: Option<Rc<MetadataSource>>,
     // Aliases can converge on the same terminal key after promise resolution.
     same_key_next: Option<usize>,
-    refresh_position: Option<usize>,
+    route_subscription: Option<capntproto_rpc_engine::clients::Subscription<'id>>,
+    metadata_work: capntproto_rpc_engine::work_queue::Link,
+    metadata_watch: Option<(MetadataWatch, Waker)>,
 }
 
 /// Scoped graph ownership paired with ordinary owned generated clients.
@@ -180,7 +257,10 @@ pub struct ClientHooks<'id> {
     unsettled: usize,
     bindings: bindings::Bindings<'id>,
     free: Vec<usize>,
-    refresh: Vec<usize>,
+    sources_bound: bool,
+    listener: Option<capntproto_rpc_engine::clients::Listener<'id>>,
+    metadata_work: capntproto_rpc_engine::work_queue::Queue,
+    metadata_ready: wire::ready::Queue,
     maximum_clients: usize,
 }
 impl<'id> ClientHooks<'id> {
@@ -212,7 +292,10 @@ impl<'id> ClientHooks<'id> {
             unsettled: 0,
             bindings: bindings::Bindings::default(),
             free: Vec::new(),
-            refresh: Vec::new(),
+            sources_bound: false,
+            listener: None,
+            metadata_work: capntproto_rpc_engine::work_queue::Queue::EMPTY,
+            metadata_ready: wire::ready::Queue::default(),
             maximum_clients,
         }
     }
@@ -307,6 +390,16 @@ impl<'id> ClientHooks<'id> {
         pending: bool,
         refresh: bool,
     ) -> capnp::Result<capability::Client> {
+        self.bind_retained(graph, client, pending, refresh, None)
+    }
+    fn bind_retained(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: Client<'id>,
+        pending: bool,
+        refresh: bool,
+        existing: Option<Rc<Endpoint>>,
+    ) -> capnp::Result<capability::Client> {
         if self.inbox.closed.get() {
             graph.release(client);
             return Err(Error::disconnected(
@@ -317,7 +410,11 @@ impl<'id> ClientHooks<'id> {
             self.collect(graph);
         }
         let key = client.key();
-        let mut matching = self.bindings.get(&key).copied();
+        let mut matching = if existing.is_none() {
+            self.bindings.get(&key).copied()
+        } else {
+            None
+        };
         while let Some(index) = matching {
             let entry = self.entries[index].as_ref().expect("indexed endpoint");
             if let Some(endpoint) = entry.endpoint.upgrade() {
@@ -341,10 +438,6 @@ impl<'id> ClientHooks<'id> {
             if index == self.maximum_clients
                 || self.entries.try_reserve(1).is_err()
                 || self.free.try_reserve(index + 1 - self.free.len()).is_err()
-                || self
-                    .refresh
-                    .try_reserve(index + 1 - self.refresh.len())
-                    .is_err()
             {
                 graph.release(client);
                 return Err(Error::overloaded("scoped client capacity exhausted".into()));
@@ -363,43 +456,86 @@ impl<'id> ClientHooks<'id> {
         } else {
             self.free.pop();
         }
-        let endpoint = Rc::new(Endpoint {
-            introduction: RefCell::default(),
-            introduced: RefCell::default(),
-            remote: Cell::new(matches!(
-                graph.inspect(&client),
-                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                    location: capntproto_rpc_engine::clients::Location::Remote(_),
-                    ..
-                })
-            )),
-            inbox: Rc::downgrade(&self.inbox),
-            index,
-            settled: Cell::new(!pending),
-            metadata_generation: Cell::new(0),
-            failure: RefCell::new(match graph.inspect(&client) {
-                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                    location: capntproto_rpc_engine::clients::Location::Broken,
-                    ..
-                }) => Some(Error::failed(
-                    "capability resolved to a broken endpoint".into(),
+        let subscribed = (|| {
+            let Some(key) = graph.pending_resolution(&client)? else {
+                return Ok(None);
+            };
+            if self.listener.is_none() {
+                self.listener = Some(graph.listen()?);
+            }
+            graph
+                .subscribe(
+                    self.listener.as_ref().unwrap(),
+                    key,
+                    index,
+                    capntproto_rpc_engine::clients::Watch::Changes,
+                )
+                .map(Some)
+        })();
+        let route_subscription = match subscribed {
+            Ok(value) => value,
+            Err(error) => {
+                self.free.push(index);
+                graph.release(client);
+                return Err(Error::overloaded(error.to_string()));
+            }
+        };
+        let endpoint = existing.unwrap_or_else(|| {
+            Rc::new(Endpoint {
+                introduction: RefCell::default(),
+                introduced: RefCell::default(),
+                remote: Cell::new(matches!(
+                    graph.inspect(&client),
+                    Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                        location: capntproto_rpc_engine::clients::Location::Remote(_),
+                        ..
+                    })
                 )),
-                _ => None,
-            }),
-            resolution: RefCell::default(),
-            #[cfg(unix)]
-            fd: RefCell::new(None),
+                inbox: Rc::downgrade(&self.inbox),
+                index: Cell::new(None),
+                binding_wakes: RefCell::default(),
+                settled: Cell::new(!pending),
+                metadata_generation: Cell::new(0),
+                metadata_changes: std::cell::OnceCell::new(),
+                failure: RefCell::new(match graph.inspect(&client) {
+                    Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                        location: capntproto_rpc_engine::clients::Location::Broken,
+                        ..
+                    }) => Some(Error::failed(
+                        "capability resolved to a broken endpoint".into(),
+                    )),
+                    _ => None,
+                }),
+                resolution: RefCell::default(),
+                #[cfg(unix)]
+                fd: RefCell::new(None),
+            })
         });
+        assert!(
+            endpoint.index.replace(Some(index)).is_none(),
+            "projection bound once"
+        );
+        endpoint.remote.set(matches!(
+            graph.inspect(&client),
+            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                location: capntproto_rpc_engine::clients::Location::Remote(_),
+                ..
+            })
+        ));
+        endpoint.settled.set(!pending);
         self.entries[index] = Some(Entry {
             endpoint: Rc::downgrade(&endpoint),
             client,
             pending,
             metadata: None,
             same_key_next: self.bindings.insert(key, index),
-            refresh_position: Some(self.refresh.len()),
+            route_subscription,
+            metadata_work: capntproto_rpc_engine::work_queue::Link::EMPTY,
+            metadata_watch: None,
         });
-        self.refresh.push(index);
+        self.queue_metadata(index);
         self.unsettled += usize::from(pending);
+        endpoint.notify_binding();
         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
     }
 
@@ -408,7 +544,7 @@ impl<'id> ClientHooks<'id> {
     /// A retained response/pipeline may still own hooks and deliberately keeps
     /// those entries alive. No fallible release command is enqueued by Drop.
     pub fn collect(&mut self, graph: &mut impl Capabilities<'id>) {
-        self.synchronize(graph, |_| None, |_| None, false, false);
+        self.synchronize(graph, |_| None, |_| None, |_| None, false, false);
     }
 
     /// Release precisely the graph references whose final hosted owner dropped.
@@ -436,18 +572,27 @@ impl<'id> ClientHooks<'id> {
                 .client
                 .key();
             self.unlink_binding(key, index);
-            self.remove_refresh(index);
+            self.metadata_work
+                .remove(&mut self.entries, index, |entry| {
+                    &mut entry.as_mut().unwrap().metadata_work
+                });
             let entry = self.entries[index].take().expect("unreclaimed endpoint");
             self.free.push(index);
             debug_assert_eq!(entry.endpoint.strong_count(), 0);
             self.unsettled -= usize::from(entry.pending);
+            if let Some(subscription) = entry.route_subscription {
+                graph.unsubscribe(subscription);
+            }
+            if entry.metadata_watch.is_some() {
+                self.metadata_ready.remove(index);
+            }
             graph.release(entry.client);
         }
     }
 
-    /// Refresh owned metadata before publishing promise readiness. Call on each
-    /// driver turn, including already-settled routes: a later alias may deliver
-    /// an import's first descriptor. Reflected ordering barriers remain enforced.
+    /// Project immutable metadata at admission and after route changes, before
+    /// publishing resolution. Mutable metadata must use an explicit source via
+    /// `collect_with_sources`; changing this callback does not rescan live hooks.
     pub fn collect_with_metadata<G: Capabilities<'id>>(
         &mut self,
         graph: &mut G,
@@ -462,7 +607,7 @@ impl<'id> ClientHooks<'id> {
         graph: &mut G,
         metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
     ) {
-        self.synchronize(graph, metadata, |_| None, true, false);
+        self.synchronize(graph, metadata, |_| None, |_| None, true, false);
     }
 
     fn unlink_binding(&mut self, key: capntproto_rpc_engine::clients::Key<'id>, index: usize) {
@@ -487,107 +632,203 @@ impl<'id> ClientHooks<'id> {
         }
     }
 
-    fn remove_refresh(&mut self, index: usize) {
-        if let Some(position) = self.entries[index]
-            .as_mut()
-            .unwrap()
-            .refresh_position
-            .take()
-        {
-            self.refresh.swap_remove(position);
-            if let Some(&moved) = self.refresh.get(position) {
-                self.entries[moved].as_mut().unwrap().refresh_position = Some(position);
-            }
-        }
+    fn queue_metadata(&mut self, index: usize) {
+        self.metadata_work.push(&mut self.entries, index, |entry| {
+            &mut entry.as_mut().unwrap().metadata_work
+        });
+    }
+    /// Subscribe to mutable metadata. Sources publish late FD/diagnostic changes
+    /// directly; stable endpoints and unrelated graph owners are never revisited.
+    pub fn collect_with_sources<G: Capabilities<'id>>(
+        &mut self,
+        graph: &mut G,
+        metadata: impl FnMut(&G::Owner) -> EndpointMetadata,
+        source: impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
+        changes: impl FnMut(&G::Owner) -> Option<Rc<MetadataChanges>>,
+    ) {
+        let mut metadata = metadata;
+        self.synchronize(
+            graph,
+            |owner| Some(metadata(owner)),
+            source,
+            changes,
+            true,
+            true,
+        );
     }
 
-    #[inline(always)]
     fn synchronize<G: Capabilities<'id>>(
         &mut self,
         graph: &mut G,
         mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
         mut subscribe: impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
-        refresh_settled: bool,
-        subscriptions: bool,
+        mut changes: impl FnMut(&G::Owner) -> Option<Rc<MetadataChanges>>,
+        project_metadata: bool,
+        bind_sources: bool,
     ) {
         self.reclaim_released(graph);
-        if !refresh_settled && self.unsettled == 0 {
-            return;
-        }
-        if refresh_settled && !subscriptions {
-            // Arbitrary caller projections have no change contract. Re-enable
-            // their live entries and disarm previous source subscriptions.
-            for (index, slot) in self.entries.iter_mut().enumerate() {
-                let Some(entry) = slot else { continue };
-                if entry.metadata.take().is_some() {
-                    if let Some(endpoint) = entry.endpoint.upgrade() {
-                        endpoint.next_metadata_generation();
-                    }
-                }
-                if entry.refresh_position.is_none() {
-                    entry.refresh_position = Some(self.refresh.len());
-                    self.refresh.push(index);
+        if bind_sources && !self.sources_bound {
+            // One-time activation of the source contract. Admission thereafter
+            // queues each new owner itself; stable turns never walk this table.
+            self.sources_bound = true;
+            for index in 0..self.entries.len() {
+                if self.entries[index].is_some() {
+                    self.queue_metadata(index);
                 }
             }
         }
-        let mut position = 0;
-        while position < self.refresh.len() {
-            let index = self.refresh[position];
-            let entry = self.entries[index].as_mut().expect("refresh endpoint");
-            position += 1;
-            if !refresh_settled && !entry.pending {
-                continue;
-            }
-            // Retain through metadata and resolution publication. Reentrant
-            // notification may drop another endpoint; its release is journaled.
-            let Some(endpoint) = entry.endpoint.upgrade() else {
-                continue;
-            };
-            let old_key = entry.client.key();
-            let destination = graph.inspect(&entry.client);
-            endpoint.remote.set(matches!(
-                destination,
-                Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                    location: capntproto_rpc_engine::clients::Location::Remote(_),
-                    ..
+        while let Some(event) = self
+            .listener
+            .as_ref()
+            .and_then(|listener| graph.next_event(listener))
+        {
+            let index = event.owner;
+            if !self
+                .entries
+                .get(index)
+                .and_then(Option::as_ref)
+                .is_some_and(|entry| {
+                    entry
+                        .route_subscription
+                        .as_ref()
+                        .is_some_and(|s| s.key() == event.subscription)
                 })
-            ));
-            if let Some(metadata) = destination.ok().and_then(|destination| match destination {
-                capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. } => {
-                    if subscriptions {
-                        if let Some(source) = subscribe(owner) {
-                            let snapshot = source.snapshot();
-                            if !entry.pending {
-                                source.subscribe(&endpoint);
-                                entry.metadata = Some(source);
-                            }
-                            return snapshot;
-                        }
+            {
+                continue;
+            }
+            self.queue_metadata(index);
+            if !project_metadata || (self.sources_bound && !bind_sources) {
+                self.synchronize_one(
+                    index,
+                    graph,
+                    &mut metadata,
+                    &mut subscribe,
+                    &mut changes,
+                    project_metadata,
+                    false,
+                );
+            }
+        }
+        if project_metadata && (!self.sources_bound || bind_sources) {
+            while let Some(index) = self.metadata_ready.pop() {
+                let Some(entry) = self.entries.get_mut(index).and_then(Option::as_mut) else {
+                    continue;
+                };
+                if let Some((watch, wake)) = &mut entry.metadata_watch {
+                    if watch
+                        .poll_changed(&mut Context::from_waker(wake))
+                        .is_ready()
+                    {
+                        self.queue_metadata(index);
                     }
-                    metadata(owner)
                 }
-                _ => None,
+            }
+            while let Some(index) = self.metadata_work.pop(&mut self.entries, |entry| {
+                &mut entry.as_mut().unwrap().metadata_work
             }) {
-                endpoint.apply_metadata(metadata);
-            }
-            if entry.pending {
-                Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);
-            }
-            let new_key = entry.client.key();
-            let subscribed = entry.metadata.is_some();
-            if new_key != old_key {
-                // Admission reserved hash capacity for every live endpoint,
-                // including aliases that currently share a key.
-                self.unlink_binding(old_key, index);
-                let next = self.bindings.insert(new_key, index);
-                self.entries[index].as_mut().unwrap().same_key_next = next;
-            }
-            if subscribed {
-                self.remove_refresh(index);
-                position -= 1;
+                self.synchronize_one(
+                    index,
+                    graph,
+                    &mut metadata,
+                    &mut subscribe,
+                    &mut changes,
+                    true,
+                    bind_sources,
+                );
             }
         }
         self.reclaim_released(graph);
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn synchronize_one<G: Capabilities<'id>>(
+        &mut self,
+        index: usize,
+        graph: &mut G,
+        metadata: &mut impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
+        subscribe: &mut impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
+        changes: &mut impl FnMut(&G::Owner) -> Option<Rc<MetadataChanges>>,
+        project_metadata: bool,
+        bind_sources: bool,
+    ) {
+        let entry = self.entries[index].as_mut().expect("notified endpoint");
+        let Some(endpoint) = entry.endpoint.upgrade() else {
+            return;
+        };
+        let old_key = entry.client.key();
+        let destination = graph.inspect(&entry.client);
+        endpoint.remote.set(matches!(
+            destination,
+            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                location: capntproto_rpc_engine::clients::Location::Remote(_),
+                ..
+            })
+        ));
+        if project_metadata {
+            if let Ok(capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. }) =
+                destination
+            {
+                if bind_sources {
+                    let changed = changes(owner);
+                    let same = match (&entry.metadata_watch, &changed) {
+                        (Some((watch, _)), Some(source)) => Rc::ptr_eq(watch.source(), source),
+                        (None, None) => true,
+                        _ => false,
+                    };
+                    if !same {
+                        if entry.metadata_watch.take().is_some() {
+                            self.metadata_ready.remove(index);
+                        }
+                        if let Some(source) = changed {
+                            let wake = self.metadata_ready.insert(index);
+                            let mut watch = source.subscribe();
+                            let _ = watch.poll_changed(&mut Context::from_waker(&wake));
+                            entry.metadata_watch = Some((watch, wake));
+                        }
+                    }
+                    let source = subscribe(owner);
+                    let same = match (&entry.metadata, &source) {
+                        (Some(old), Some(new)) => Rc::ptr_eq(old, new),
+                        (None, None) => true,
+                        _ => false,
+                    };
+                    if !same {
+                        endpoint.next_metadata_generation();
+                        if let Some(source) = &source {
+                            source.subscribe(&endpoint);
+                        }
+                        entry.metadata = source;
+                    }
+                }
+                if let Some(value) = entry
+                    .metadata
+                    .as_ref()
+                    .and_then(|source| source.snapshot())
+                    .or_else(|| metadata(owner))
+                {
+                    endpoint.apply_metadata(value);
+                }
+            }
+        }
+        if entry.pending {
+            Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);
+        }
+        if let Some(subscription) = &entry.route_subscription {
+            match graph
+                .pending_resolution(&entry.client)
+                .expect("retained endpoint")
+            {
+                Some(key) => graph
+                    .rebind_subscription(subscription, key)
+                    .expect("live route subscription"),
+                None => graph.unsubscribe(entry.route_subscription.take().unwrap()),
+            }
+        }
+        let new_key = entry.client.key();
+        if new_key != old_key {
+            self.unlink_binding(old_key, index);
+            let next = self.bindings.insert(new_key, index);
+            self.entries[index].as_mut().unwrap().same_key_next = next;
+        }
     }
 
     // Resolve only pending endpoints. Settled import metadata arrives through
@@ -636,6 +877,7 @@ impl<'id> ClientHooks<'id> {
     /// polling another call, so admission preserves the original order.
     /// The bridge has one consumer; the latest poll registers its wake.
     pub(super) fn register_next(&self, waker: &Waker) {
+        self.metadata_ready.register(waker);
         if self
             .inbox
             .wake
@@ -677,6 +919,36 @@ impl<'id> ClientHooks<'id> {
         }
     }
 
+    fn has_pending_projection(&self, hook: &dyn ClientHook) -> bool {
+        let hook = wire::direct_response_hook(hook)
+            .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()));
+        hook.is_some_and(|hook| {
+            hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.needs_binding()
+        })
+    }
+    fn projection_pending(&self, hook: &dyn ClientHook, cx: &mut Context<'_>) -> bool {
+        let hook = wire::direct_response_hook(hook)
+            .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()));
+        hook.is_some_and(|hook| {
+            hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.binding_pending(cx)
+        })
+    }
+    fn bind_projection(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: Client<'id>,
+        endpoint: Rc<Endpoint>,
+    ) -> capnp::Result<Box<dyn ClientHook>> {
+        let pending = match graph.is_settled(&client) {
+            Ok(settled) => !settled,
+            Err(error) => {
+                graph.release(client);
+                return Err(Error::failed(error.to_string()));
+            }
+        };
+        self.bind_retained(graph, client, pending, false, Some(endpoint))
+            .map(|client| client.hook)
+    }
     /// Recover the scoped authority for this call. The private Rc identity is
     /// checked as well as the slot: another bridge or a recycled slot cannot
     /// retarget a call. No branded capability is stored in the owned hook.
@@ -684,9 +956,43 @@ impl<'id> ClientHooks<'id> {
         self.lookup(&call.endpoint)
     }
     fn lookup(&self, endpoint: &Rc<Endpoint>) -> capnp::Result<&Client<'id>> {
+        if endpoint.inbox.as_ptr() != Rc::as_ptr(&self.inbox) {
+            return Err(Error::disconnected("call belongs to another scope".into()));
+        }
+        if endpoint.index.get().is_none() {
+            // Local early publication can forward through another private
+            // projection. Keep this rare path iterative and reject cycles;
+            // ordinary bound endpoints perform no allocation or traversal.
+            let mut seen = vec![Rc::as_ptr(endpoint)];
+            let mut next = endpoint.introduced.borrow().clone();
+            while let Some(forwarded) = next {
+                let hook = wire::direct_response_hook(&*forwarded).or_else(|| {
+                    forwarded
+                        .as_any()
+                        .and_then(|value| value.downcast_ref::<Hook>())
+                });
+                let Some(hook) = hook else {
+                    break;
+                };
+                if hook.0.inbox.as_ptr() != Rc::as_ptr(&self.inbox) {
+                    break;
+                }
+                if hook.0.index.get().is_some() {
+                    return self.lookup(&hook.0);
+                }
+                let identity = Rc::as_ptr(&hook.0);
+                if seen.contains(&identity) {
+                    return Err(Error::failed("cyclic projection forwarding".into()));
+                }
+                seen.push(identity);
+                next = hook.0.introduced.borrow().clone();
+            }
+        }
         let same_inbox = endpoint.inbox.as_ptr() == Rc::as_ptr(&self.inbox);
-        self.entries
-            .get(endpoint.index)
+        endpoint
+            .index
+            .get()
+            .and_then(|index| self.entries.get(index))
             .and_then(Option::as_ref)
             .filter(|entry| same_inbox && entry.endpoint.as_ptr() == Rc::as_ptr(endpoint))
             .map(|entry| &entry.client)
@@ -702,10 +1008,17 @@ impl<'id> ClientHooks<'id> {
         graph: &mut impl Capabilities<'id>,
         hook: &dyn ClientHook,
     ) -> capnp::Result<Option<Client<'id>>> {
-        let Some(hook) = hook.as_any().and_then(|value| value.downcast_ref::<Hook>()) else {
+        let Some(hook) = wire::direct_response_hook(hook)
+            .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()))
+        else {
             return Ok(None);
         };
         if !hook.0.inbox.ptr_eq(&Rc::downgrade(&self.inbox)) {
+            return Ok(None);
+        }
+        // An unbound foreign/local early projection uses the ordinary adapter.
+        // Hosted call/result admission waits for its direct binding separately.
+        if hook.0.index.get().is_none() {
             return Ok(None);
         }
         let client = self.lookup(&hook.0)?;
@@ -769,6 +1082,9 @@ impl<'id> ClientHooks<'id> {
     }
     pub fn close(mut self, graph: &mut impl Capabilities<'id>, error: Error) {
         self.disconnect(error);
+        if let Some(listener) = self.listener.take() {
+            graph.close_listener(listener);
+        }
         for entry in self.entries.drain(..).flatten() {
             graph.release(entry.client);
         }
@@ -802,37 +1118,40 @@ pub struct Call {
 }
 enum CallParams {
     Request(crate::local::Params),
-    OwnedRequest(Box<crate::local::Request>, Option<usize>),
-    Hook(Box<dyn ParamsHook>, Option<usize>),
+    OwnedRequest(Box<crate::local::Request>),
+    Hook(Box<dyn ParamsHook>),
 }
 impl CallParams {
     fn owned_request(mut request: Box<crate::local::Request>) -> Self {
         // This private request keeps its original parameter allocation through
         // forwarding. Retain its concrete type for admission and wire encoding.
-        let bytes = request.batch_content_bytes();
         request.freeze_large_params();
-        Self::OwnedRequest(request, bytes)
+        Self::OwnedRequest(request)
     }
     fn hook(params: Box<dyn ParamsHook>) -> Self {
-        // Inspect hooks before entering the inbox. The scheduling lookahead
-        // below never invokes application code while borrowing that queue.
-        let bytes = params.as_any().and_then(|value| {
-            value
-                .downcast_ref::<crate::local::Params>()
-                .and_then(crate::local::Params::batch_content_bytes)
-                .or_else(|| {
-                    value
-                        .downcast_ref::<crate::local::Request>()
-                        .and_then(crate::local::Request::batch_content_bytes)
-                })
-        });
-        Self::Hook(params, bytes)
+        Self::Hook(params)
+    }
+    fn capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
+        match self {
+            Self::Request(request) => Some(request.capability_table()),
+            Self::OwnedRequest(request) => Some(request.capability_table()),
+            Self::Hook(hook) => hook.as_any().and_then(|params| {
+                params
+                    .downcast_ref::<crate::local::Request>()
+                    .map(crate::local::Request::capability_table)
+                    .or_else(|| {
+                        params
+                            .downcast_ref::<crate::local::Params>()
+                            .map(crate::local::Params::capability_table)
+                    })
+            }),
+        }
     }
     fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
         match self {
             Self::Request(request) => request.single_capability_table(),
-            Self::OwnedRequest(request, _) => request.single_capability_table(),
-            Self::Hook(hook, _) => hook.as_any().and_then(|params| {
+            Self::OwnedRequest(request) => request.single_capability_table(),
+            Self::Hook(hook) => hook.as_any().and_then(|params| {
                 params
                     .downcast_ref::<crate::local::Request>()
                     .and_then(crate::local::Request::single_capability_table)
@@ -852,8 +1171,8 @@ impl CallParams {
     {
         match self {
             Self::Request(request) => request.prepared_call(),
-            Self::OwnedRequest(request, _) => request.prepared_call(),
-            Self::Hook(hook, _) => hook.as_any().and_then(|params| {
+            Self::OwnedRequest(request) => request.prepared_call(),
+            Self::Hook(hook) => hook.as_any().and_then(|params| {
                 params
                     .downcast_ref::<crate::local::Request>()
                     .and_then(crate::local::Request::prepared_call)
@@ -868,8 +1187,8 @@ impl CallParams {
     fn into_hook(self) -> Box<dyn ParamsHook> {
         match self {
             Self::Request(request) => Box::new(request),
-            Self::OwnedRequest(request, _) => request,
-            Self::Hook(hook, _) => hook,
+            Self::OwnedRequest(request) => request,
+            Self::Hook(hook) => hook,
         }
     }
     fn request_mut(&mut self) -> &mut crate::local::Params {
@@ -884,8 +1203,8 @@ impl std::ops::Deref for CallParams {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Request(request) => request,
-            Self::OwnedRequest(request, _) => &**request,
-            Self::Hook(hook, _) => &**hook,
+            Self::OwnedRequest(request) => &**request,
+            Self::Hook(hook) => &**hook,
         }
     }
 }
@@ -1230,6 +1549,15 @@ impl Hook {
     }
 }
 impl ClientHook for Hook {
+    fn metadata_changes(&self) -> Option<Rc<MetadataChanges>> {
+        Some(
+            self.0
+                .metadata_changes
+                .get_or_init(|| Rc::new(MetadataChanges::default()))
+                .clone(),
+        )
+    }
+
     fn get_failure(&self) -> Option<Error> {
         // Inspect an already accepted route without triggering an introduction.
         let introduced = self.0.introduced.borrow().clone();
@@ -1430,15 +1758,20 @@ impl ClientHook for Hook {
         Promise::from_future(async move {
             // The waiter retains its graph route. Bridge close/drop wakes it
             // through shutdown even though notification state is endpoint-owned.
-            let _endpoint = endpoint;
-            match futures::future::select(shutdown, resolved).await {
+            let result = match futures::future::select(shutdown, resolved).await {
                 futures::future::Either::Right((result, _)) => result
                     .map_err(crate::canceled_to_error)
                     .and_then(core::convert::identity),
                 futures::future::Either::Left((reason, _)) => Err(reason.unwrap_or_else(|_| {
                     Error::disconnected("scoped ClientHook driver dropped".into())
                 })),
+            };
+            result?;
+            let forwarded = endpoint.introduced.borrow().clone();
+            if let Some(forwarded) = forwarded {
+                forwarded.when_resolved().await?;
             }
+            Ok(())
         })
     }
 }

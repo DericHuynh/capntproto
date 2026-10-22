@@ -1460,3 +1460,33 @@ fn unobserved_results_publish_answer_state_and_keep_capabilities_through_driven_
         assert_eq!(order, ["return", "release"]);
     }
 }
+
+#[test]
+#[cfg(all(unix, not(miri)))]
+fn import_metadata_changes_signal_late_fd_and_disconnect_without_polling() {
+    let fixture = Fixture::new();
+    let id = ImportId::from_wire(77);
+    let hook = ConnectionState::import(&fixture.state, id, false, None).unwrap();
+    let source = hook.metadata_changes().unwrap();
+    let mut watch = source.subscribe();
+    let mut cx = Context::from_waker(std::task::Waker::noop());
+    assert!(watch.poll_changed(&mut cx).is_pending());
+    let fd = Rc::new(std::os::fd::OwnedFd::from(
+        std::fs::File::open("/dev/null").unwrap(),
+    ));
+    let alias = ConnectionState::import(&fixture.state, id, false, Some(fd.clone())).unwrap();
+    assert!(Rc::ptr_eq(&source, &alias.metadata_changes().unwrap()));
+    assert!(watch.poll_changed(&mut cx).is_ready());
+    assert!(Rc::ptr_eq(&fd, &hook.get_fd().unwrap()));
+    let duplicate = ConnectionState::import(&fixture.state, id, false, Some(fd)).unwrap();
+    assert!(watch.poll_changed(&mut cx).is_pending());
+    fixture
+        .state
+        .disconnect(Error::failed("metadata connection failure".into()));
+    assert!(watch.poll_changed(&mut cx).is_ready());
+    assert_eq!(
+        hook.get_failure().unwrap().extra,
+        "metadata connection failure"
+    );
+    drop((alias, duplicate, hook));
+}

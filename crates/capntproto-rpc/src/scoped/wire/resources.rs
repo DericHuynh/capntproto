@@ -59,10 +59,12 @@ impl<'id> ClientHooks<'id> {
         driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
         mut subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
         mut local: impl FnMut(&S) -> EndpointMetadata,
+        mut local_changes: impl FnMut(&S) -> Option<Rc<MetadataChanges>>,
     ) {
-        let imports = &driver.ledgers.imports;
+        let (mut graph, ledgers) = driver.split_graph();
+        let imports = &ledgers.imports;
         self.synchronize(
-            &mut driver.runtime,
+            &mut graph,
             |route| match route {
                 Route::Capability(Endpoint::Imported(_)) => None,
                 Route::Capability(Endpoint::Local(server)) | Route::Vine(server) => {
@@ -84,6 +86,14 @@ impl<'id> ClientHooks<'id> {
             |route| match route {
                 Route::Capability(Endpoint::Imported(remote)) => {
                     subscribe(imports.get(remote.reference()))
+                }
+                _ => None,
+            },
+            |route| match route {
+                Route::Capability(Endpoint::Local(server))
+                | Route::Vine(server)
+                | Route::Capability(Endpoint::Failed { owner: server, .. }) => {
+                    local_changes(server)
                 }
                 _ => None,
             },
@@ -136,6 +146,10 @@ mod tests {
                     let graph = domain
                         .bind_growing_adoptions(
                             storage::GrowingStorage {
+                                notifications:
+                                    capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                                        bound,
+                                    ),
                                 imports: bound,
                                 exports: bound,
                                 answers: bound,
@@ -152,24 +166,19 @@ mod tests {
                         ImportId::from_wire(7),
                         Import::default(),
                     )];
-                    driver
-                        .ledgers
-                        .imports
-                        .prepare_receive(&mut receipts)
-                        .unwrap()
-                        .commit();
+                    driver.prepare_imports(&mut receipts).unwrap().commit();
                     let local = receipts[0].take_local().unwrap();
-                    let route = driver
-                        .imports
-                        .bind(&mut driver.runtime, &mut driver.ledgers.imports, &local)
-                        .unwrap();
-                    driver.ledgers.imports.release(local);
+                    let route = driver.bind_import(&local).unwrap();
+                    driver.release_import(local);
                     let mut hooks = ClientHooks::new(4, 4);
-                    let client = hooks.export_client(&mut driver.runtime, &route).unwrap();
+                    let client = hooks
+                        .export_client(&mut driver.capabilities(), &route)
+                        .unwrap();
                     hooks.collect_wire(
                         &mut driver,
                         |owner| Some(owner.metadata_source()),
                         |_| EndpointMetadata::default(),
+                        |_| None,
                     );
                     assert!(client.hook.get_fd().is_none());
                     // A late resolution of an abandoned promise gives an existing
@@ -202,10 +211,11 @@ mod tests {
                         &mut driver,
                         |owner| Some(owner.metadata_source()),
                         |_| EndpointMetadata::default(),
+                        |_| None,
                     );
                     let saved = client.hook.get_fd().expect("late alias resource");
                     assert!(Rc::ptr_eq(&saved, &weak.upgrade().unwrap()));
-                    assert!(!driver.runtime.is_settled(&route).unwrap());
+                    assert!(!driver.runtime().is_settled(&route).unwrap());
                     // The promise then settles to another capability, carrying a
                     // redundant descriptor. The owned client keeps its first one.
                     let (other, mut other_peer) = UnixStream::pair().unwrap();
@@ -236,15 +246,16 @@ mod tests {
                         &mut driver,
                         |owner| Some(owner.metadata_source()),
                         |_| EndpointMetadata::default(),
+                        |_| None,
                     );
-                    assert!(driver.runtime.is_settled(&route).unwrap());
+                    assert!(driver.runtime().is_settled(&route).unwrap());
                     assert!(Rc::ptr_eq(&saved, &client.hook.get_fd().unwrap()));
                     drop(client);
                     hooks.close(
-                        &mut driver.runtime,
+                        &mut driver.capabilities(),
                         Error::disconnected("test shutdown".into()),
                     );
-                    driver.runtime.release(route);
+                    driver.capabilities().release(route);
                     let mut queue = messages::Queue::new_growing(0, 8).unwrap();
                     let mut closing = driver.terminate(&mut queue);
                     let mut done = false;

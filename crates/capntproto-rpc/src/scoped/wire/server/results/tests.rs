@@ -524,9 +524,9 @@ fn prepared_return_rejects_capability_content_before_reserving_storage() {
         assert!(driver
             .local_answer_prepared(call.answer(), 7, 9, &source, messages, Default::default())
             .is_err());
-        assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+        assert!(driver.prepare_answer_return(call.answer()).is_ok());
         driver.release_call(call, messages);
-        driver.runtime.release(target);
+        driver.capabilities().release(target);
         let mut slots = [None];
         let mut queue = messages::Queue::new(&mut slots).unwrap();
         close(driver, messages, &mut queue);
@@ -558,7 +558,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
         with_driver(|mut driver, messages| {
             let (call, target) = request(&mut driver, messages, Results::new());
             let value = driver
-                .runtime
+                .capabilities()
                 .endpoint(Route::local(73), clients::Location::Local)
                 .unwrap();
             for references in [
@@ -654,11 +654,11 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                         );
                     })
                     .unwrap();
-                result.release(messages, &mut driver.runtime);
-                assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+                result.release(messages, &mut driver.capabilities());
+                assert!(driver.prepare_answer_return(call.answer()).is_ok());
             }
-            driver.runtime.release(value);
-            driver.runtime.release(target);
+            driver.capabilities().release(value);
+            driver.capabilities().release(target);
             driver.release_call(call, messages);
             let mut slots = [None];
             let mut queue = messages::Queue::new(&mut slots).unwrap();
@@ -760,12 +760,12 @@ fn request<'p, 'id>(
     results: Results,
 ) -> (connection::Request<'p, 'id, (), 4, 4>, Client<'id>) {
     let target = driver
-        .runtime
+        .capabilities()
         .endpoint(Route::local(31), clients::Location::Local)
         .unwrap();
     let id = {
-        let mut batch = driver.ledgers.exports.batch();
-        let id = capntproto_rpc_wire::clients::stage(&mut driver.runtime, &mut batch, &target)
+        let (mut graph, mut batch) = driver.export_batch();
+        let id = capntproto_rpc_wire::clients::stage(&mut graph, &mut batch, &target)
             .unwrap()
             .id();
         batch.commit();
@@ -781,21 +781,15 @@ fn request<'p, 'id>(
         )
     })
     .unwrap();
-    let call = connection::Request::admit(
-        frame,
-        messages,
-        &mut driver.ledgers.imports,
-        &mut driver.ledgers.exports,
-        &mut driver.ledgers.answers,
-        connection::Answer::new(pipelines::Results::new(results)),
-        |_| (),
-    )
-    .unwrap_or_else(|_| panic!("admit"));
-    assert!(driver
-        .ledgers
-        .answers
-        .dispatch(call.answer(), true)
-        .unwrap());
+    let call = driver
+        .admit_request(
+            frame,
+            messages,
+            connection::Answer::new(pipelines::Results::new(results)),
+            |_| (),
+        )
+        .unwrap_or_else(|_| panic!("admit"));
+    assert!(driver.answers().dispatch(call.answer(), true).unwrap());
     (call, target)
 }
 fn close<'p>(
@@ -827,11 +821,13 @@ fn check_hosted_reply(use_prepared: bool) {
         let results = Results::new();
         let (call, target) = request(&mut driver, messages, results.clone());
         let value = driver
-            .runtime
+            .capabilities()
             .endpoint(Route::local(73), clients::Location::Local)
             .unwrap();
         let mut hooks = ClientHooks::new(16, 16);
-        let cap = hooks.export_client(&mut driver.runtime, &value).unwrap();
+        let cap = hooks
+            .export_client(&mut driver.capabilities(), &value)
+            .unwrap();
         let (sender, receiver) = shared::channel::<()>();
         let receiver = Rc::new(RefCell::new(Some(receiver)));
         let service = server(move |mut r| {
@@ -856,17 +852,11 @@ fn check_hosted_reply(use_prepared: bool) {
         assert!(results
             .poll_completed(&mut Context::from_waker(Waker::noop()))
             .is_pending());
-        let parent = driver.ledgers.answers.pipeline(call.answer().id()).unwrap();
+        let parent = driver.answer_pipeline(call.answer().id()).unwrap();
         let observed = driver
-            .pipelines
-            .bind(
-                &mut driver.runtime,
-                &mut driver.ledgers.answers,
-                &parent,
-                pipeline::Path::new(&[]),
-            )
+            .project_answer(&parent, pipeline::Path::new(&[]))
             .unwrap();
-        driver.ledgers.answers.release_pipeline_deferred(parent);
+        driver.release_answer_pipeline_deferred(parent);
         assert_eq!(
             driver
                 .poll_pipeline_with(0, messages, |producer, path, runtime| {
@@ -949,12 +939,15 @@ fn check_hosted_reply(use_prepared: bool) {
         assert_eq!(payload.get_cap_table().unwrap().len(), 1);
         let n = window.bytes().len();
         window.advance(n).unwrap();
-        driver.runtime.release(observed);
-        driver.runtime.release(value);
-        driver.runtime.release(target);
+        driver.capabilities().release(observed);
+        driver.capabilities().release(value);
+        driver.capabilities().release(target);
         driver.release_call(call, messages);
         drop((results, execution, service));
-        hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
+        hooks.close(
+            &mut driver.capabilities(),
+            Error::disconnected("done".into()),
+        );
         close(driver, messages, &mut queue);
     });
 }
@@ -1040,8 +1033,11 @@ fn exception_metadata_and_early_pipeline_survive_method_failure() {
         let n = window.bytes().len();
         window.advance(n).unwrap();
         driver.release_call(call, messages);
-        driver.runtime.release(target);
-        hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
+        driver.capabilities().release(target);
+        hooks.close(
+            &mut driver.capabilities(),
+            Error::disconnected("done".into()),
+        );
         close(driver, messages, &mut queue);
     });
 }
@@ -1170,4 +1166,21 @@ fn tail_forwarding_preserves_child_results() {
             .unwrap(),
         "tail result"
     );
+}
+
+#[test]
+fn only_affine_protocol_retirement_notifies_running_worker() {
+    let queue = super::super::super::ready::Queue::default();
+    let waker = queue.insert(0);
+    let results = Results::new();
+    results.bind_protocol_waker(waker);
+    assert_eq!(queue.pop(), Some(0));
+    let producer = results.clone().into_producer();
+    drop(results.clone());
+    assert_eq!(queue.pop(), None);
+    drop(producer);
+    assert_eq!(queue.pop(), Some(0));
+    results.unbind_protocol_waker();
+    drop(results.into_producer());
+    assert_eq!(queue.pop(), None);
 }

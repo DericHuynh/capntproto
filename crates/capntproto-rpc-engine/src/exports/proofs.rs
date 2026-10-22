@@ -10,6 +10,8 @@ fn exported_resolution_requires_output_acceptance() {
     let mut refs = ExportRefs::new();
     refs.retain(count - 1).unwrap();
     let mut slots = [Slot {
+        retirement: crate::work_queue::Link::EMPTY,
+        publication: crate::work_queue::Link::EMPTY,
         generation: 1,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -22,6 +24,12 @@ fn exported_resolution_requires_output_acceptance() {
         }),
     }];
     let mut exports = Exports {
+        unavailable: slots
+            .iter()
+            .filter(|s| s.entry.is_some() || s.generation == u64::MAX)
+            .count(),
+        retired: crate::work_queue::Queue::EMPTY,
+        staged: crate::work_queue::Queue::EMPTY,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
@@ -79,6 +87,12 @@ fn descriptor_multiset_matches_reservations() {
         }
     }
     let mut exports = Exports {
+        unavailable: slots
+            .iter()
+            .filter(|s| s.entry.is_some() || s.generation == u64::MAX)
+            .count(),
+        retired: crate::work_queue::Queue::EMPTY,
+        staged: crate::work_queue::Queue::EMPTY,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
@@ -86,6 +100,13 @@ fn descriptor_multiset_matches_reservations() {
         pending_resolution: None,
         brand: PhantomData,
     };
+    for index in 0..2 {
+        if exports.slots[index].entry.is_some() {
+            exports
+                .staged
+                .push(&mut exports.slots, index, |slot| &mut slot.publication);
+        }
+    }
     let batch = Batch {
         exports: &mut exports,
     };
@@ -131,6 +152,8 @@ fn descriptor_count_admission_never_wraps() {
     kani::assume(count <= reserved);
     let rejected: bool = kani::any();
     let slots = [Slot {
+        retirement: crate::work_queue::Link::EMPTY,
+        publication: crate::work_queue::Link::EMPTY,
         generation: 1,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -168,6 +191,8 @@ fn export_publication_and_lease_lifecycle() {
     let generation: u64 = kani::any();
     let accept: bool = kani::any();
     let mut slots = [Slot {
+        retirement: crate::work_queue::Link::EMPTY,
+        publication: crate::work_queue::Link::EMPTY,
         generation,
         entry: None,
     }];
@@ -245,6 +270,8 @@ fn export_reservations_preserve_published_counts() {
         State::Live(refs)
     };
     let mut slots = [Slot {
+        retirement: crate::work_queue::Link::EMPTY,
+        publication: crate::work_queue::Link::EMPTY,
         generation: 1,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -257,6 +284,12 @@ fn export_reservations_preserve_published_counts() {
         }),
     }];
     let mut exports = Exports {
+        unavailable: slots
+            .iter()
+            .filter(|s| s.entry.is_some() || s.generation == u64::MAX)
+            .count(),
+        retired: crate::work_queue::Queue::EMPTY,
+        staged: crate::work_queue::Queue::EMPTY,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
@@ -264,6 +297,11 @@ fn export_reservations_preserve_published_counts() {
         pending_resolution: None,
         brand: PhantomData,
     };
+    if pending != 0 {
+        exports
+            .staged
+            .push(&mut exports.slots, 0, |slot| &mut slot.publication);
+    }
     let key = exports.key(0);
     let mut batch = Batch {
         exports: &mut exports,

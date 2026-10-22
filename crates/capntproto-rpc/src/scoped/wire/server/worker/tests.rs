@@ -46,7 +46,7 @@ fn with_peer(
             storage::with_domain(|domain| {
                 let mut slots = connection::FixedStorage::<
                     (),
-                    Results,
+                    Producer,
                     u8,
                     Rc<dyn ClientHook>,
                     4,
@@ -62,18 +62,18 @@ fn with_peer(
 }
 fn expose(driver: &mut TestPeer<'_, '_, '_>, hook: Rc<dyn ClientHook>) -> ImportId {
     let target = driver
-        .runtime
+        .capabilities()
         .endpoint(Route::local(hook), clients::Location::Local)
         .unwrap_or_else(|e| panic!("{}", e.error));
     let id = {
-        let mut batch = driver.ledgers.exports.batch();
-        let id = capntproto_rpc_wire::clients::stage(&mut driver.runtime, &mut batch, &target)
+        let (mut graph, mut batch) = driver.export_batch();
+        let id = capntproto_rpc_wire::clients::stage(&mut graph, &mut batch, &target)
             .unwrap()
             .id();
         batch.commit();
         id
     };
-    driver.runtime.release(target);
+    driver.capabilities().release(target);
     ImportId::from_wire(id.to_wire())
 }
 fn incoming<'p, 'id>(
@@ -163,7 +163,7 @@ fn incoming<'p, 'id>(
     };
     assert_eq!(source.position, source.bytes.len());
     match driver
-        .receive(frame, messages, &mut [0; 16], |_| (), Results::new)
+        .receive(frame, messages, &mut [0; 16], |_| (), Producer::new)
         .unwrap_or_else(|r| panic!("{}", r.error))
     {
         connection::Received::Queued(key) => key,
@@ -180,11 +180,21 @@ fn finish<'p>(
     })
     .unwrap();
     driver
-        .receive(frame, messages, &mut [0; 16], |_| (), Results::new)
+        .receive(frame, messages, &mut [0; 16], |_| (), Producer::new)
         .unwrap_or_else(|r| panic!("{}", r.error));
 }
 fn import<'p, 'id>(
-    runtime: &mut Runtime<'p, 'id, '_, (), u8, Rc<dyn ClientHook>, 4, 4>,
+    runtime: &mut capntproto_rpc_wire::owned::connection::Scope<
+        '_,
+        'p,
+        'id,
+        '_,
+        (),
+        u8,
+        Rc<dyn ClientHook>,
+        4,
+        4,
+    >,
     hook: &dyn ClientHook,
 ) -> capnp::Result<Client<'id>> {
     runtime
@@ -273,7 +283,7 @@ fn imported_metadata_is_ready_during_synchronous_server_dispatch() {
         })
         .unwrap();
         driver
-            .receive(frame, messages, &mut [0; 16], |_| (), Results::new)
+            .receive(frame, messages, &mut [0; 16], |_| (), Producer::new)
             .unwrap_or_else(|_| panic!("admit"));
         let mut worker = Worker::new(1, None);
         let mut hooks = ClientHooks::new(16, 16);
@@ -297,7 +307,8 @@ fn imported_metadata_is_ready_during_synchronous_server_dispatch() {
                     |hooks, driver| hooks.collect_wire(
                         driver,
                         |_| Some(metadata.clone()),
-                        foreign::local_metadata
+                        foreign::local_metadata,
+                        |hook| hook.metadata_changes()
                     ),
                     |_, _, _, _| panic!("dispatch precedes publication"),
                     |_| {},
@@ -385,7 +396,10 @@ fn close<'p, 'id>(
     queue: &mut messages::Queue<'p, '_>,
 ) {
     worker.terminate(&mut driver, messages);
-    hooks.close(&mut driver.runtime, Error::disconnected("closed".into()));
+    hooks.close(
+        &mut driver.capabilities(),
+        Error::disconnected("closed".into()),
+    );
     let mut closing = driver.terminate(queue);
     for _ in 0..1024 {
         if matches!(
@@ -431,9 +445,12 @@ fn worker_retries_large_replies_without_reexecuting_and_preserves_admission() {
         incoming(&mut driver, messages, 0, 3, calls::Target::Imported(id));
         incoming(&mut driver, messages, 1, 7, calls::Target::Imported(id));
         assert!(worker.accept(&mut driver).unwrap());
-        let next = driver.runtime.next_ready().unwrap().unwrap().key();
+        let next = driver.capabilities().next_ready().unwrap().unwrap().key();
         assert!(!worker.accept(&mut driver).unwrap());
-        assert_eq!(driver.runtime.next_ready().unwrap().unwrap().key(), next);
+        assert_eq!(
+            driver.capabilities().next_ready().unwrap().unwrap().key(),
+            next
+        );
         // Fill the FIFO independently; the application must still complete.
         let writer = messages.reserve(16).unwrap();
         messages.write(&writer)[..16].fill(0);
@@ -624,7 +641,6 @@ fn finish_cancels_interest_but_preserves_protected_execution() {
                 }
                 assert!(entered.get());
                 finish(&mut driver, messages, 0);
-                worker.protocol_changed();
             }
             for _ in 0..16 {
                 if matches!(
@@ -945,7 +961,10 @@ fn worker_resources_follow_partial_writes_once_and_survive_capacity_failure() {
             );
         });
         worker.terminate(&mut driver, messages);
-        hooks.close(&mut driver.runtime, Error::disconnected("done".into()));
+        hooks.close(
+            &mut driver.capabilities(),
+            Error::disconnected("done".into()),
+        );
         let mut closing = driver.terminate(&mut queue);
         for _ in 0..1024 {
             if matches!(
@@ -1269,4 +1288,78 @@ fn pending_dispatch_waits_for_a_wake_before_polling_again() {
             });
         }
     }
+}
+
+#[test]
+fn finish_selects_one_parked_worker_without_protocol_invalidation() {
+    with_peer(|mut driver, messages| {
+        let id = expose(
+            &mut driver,
+            server(|_, results| {
+                capability::DispatchCallResult::with_cancellation_policy(
+                    Promise::from_future(futures::future::poll_fn(move |_| {
+                        let _ = &results;
+                        Poll::Pending
+                    })),
+                    false,
+                    true,
+                )
+            }),
+        );
+        let mut worker = Worker::new(4, None);
+        let mut hooks = ClientHooks::new(64, 16);
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        for index in 0..4 {
+            incoming(&mut driver, messages, index, 0, calls::Target::Imported(id));
+            assert!(worker.accept(&mut driver).unwrap());
+        }
+        for _ in 0..32 {
+            if tick(&mut worker, &mut hooks, &mut driver, messages, &mut queue).is_pending() {
+                break;
+            }
+        }
+        let before: Vec<_> = worker
+            .entries
+            .iter()
+            .map(|e| e.as_ref().unwrap().polls)
+            .collect();
+        assert!(!worker.has_undispatched());
+        assert!(worker.ready.is_empty());
+        finish(&mut driver, messages, 2);
+        let mut replied = false;
+        for _ in 0..16 {
+            match worker.poll(
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                &mut [0; 16],
+                &mut Context::from_waker(Waker::noop()),
+                NonZeroUsize::new(1).unwrap(),
+                import,
+            ) {
+                Poll::Ready(Ok(Progress::Replied)) => {
+                    replied = true;
+                    break;
+                }
+                Poll::Ready(Err(error)) => panic!("{error}"),
+                _ => (),
+            }
+        }
+        assert!(replied);
+        assert!(worker.entries[2].is_none());
+        for index in [0, 1, 3] {
+            assert_eq!(worker.entries[index].as_ref().unwrap().polls, before[index]);
+        }
+        check(&drain(&mut queue, messages), |reply| {
+            assert_eq!(reply.get_answer_id(), 2);
+            assert!(matches!(
+                reply.which().unwrap(),
+                rpc_capnp::return_::Canceled(())
+            ));
+        });
+        close(worker, hooks, driver, messages, &mut queue);
+    });
 }

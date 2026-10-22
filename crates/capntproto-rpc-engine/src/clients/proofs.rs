@@ -27,79 +27,83 @@ fn frozen_route_direct_before_call() {
 fn frozen_route_case(called: bool, reflected: bool) {
     let peer: u8 = kani::any();
     let mut slots = [const { Slot::EMPTY }; 3];
-    with_graph(&mut slots, |graph| {
-        let initial = graph.endpoint(11u8, Location::Remote(peer)).unwrap();
-        let p = graph.promise(&mut Some(initial)).unwrap();
-        kani::assert(
-            !graph.is_settled(&p).unwrap(),
-            "routable imported promise still owes resolution",
-        );
-        let frozen = graph.snapshot(&p).unwrap();
-        kani::assert(
-            graph.is_settled(&frozen).unwrap(),
-            "frozen endpoint is independent of promise readiness",
-        );
-        if called {
-            let target = graph.prepare_call(&p).unwrap().accept();
-            graph.release(target);
-        }
-        let replacement = graph.endpoint(22, Location::Remote(peer)).unwrap();
-        let barrier = graph
-            .prepare_resolution(
-                p.key(),
-                &mut Some(replacement),
-                if reflected {
-                    Source::Reflected
-                } else {
-                    Source::Direct
-                },
-            )
-            .unwrap()
-            .accept();
-        kani::assert(
-            barrier.is_some() == (called && reflected),
-            "reflected resolution retains its loopback barrier",
-        );
-        let call = graph.prepare_call(&frozen).unwrap();
-        kani::assert(
-            matches!(call.destination(), Destination::Endpoint { owner: &11, .. }),
-            "frozen route preserves the advertised endpoint",
-        );
-        drop(call);
-        if let Some(barrier) = barrier {
+    with_graph(
+        &mut slots,
+        crate::clients::NotificationStorage::empty(),
+        |graph| {
+            let initial = graph.endpoint(11u8, Location::Remote(peer)).unwrap();
+            let p = graph.promise(&mut Some(initial)).unwrap();
             kani::assert(
                 !graph.is_settled(&p).unwrap(),
-                "readiness cannot bypass a reflected barrier",
+                "routable imported promise still owes resolution",
+            );
+            let frozen = graph.snapshot(&p).unwrap();
+            kani::assert(
+                graph.is_settled(&frozen).unwrap(),
+                "frozen endpoint is independent of promise readiness",
+            );
+            if called {
+                let target = graph.prepare_call(&p).unwrap().accept();
+                graph.release(target);
+            }
+            let replacement = graph.endpoint(22, Location::Remote(peer)).unwrap();
+            let barrier = graph
+                .prepare_resolution(
+                    p.key(),
+                    &mut Some(replacement),
+                    if reflected {
+                        Source::Reflected
+                    } else {
+                        Source::Direct
+                    },
+                )
+                .unwrap()
+                .accept();
+            kani::assert(
+                barrier.is_some() == (called && reflected),
+                "reflected resolution retains its loopback barrier",
+            );
+            let call = graph.prepare_call(&frozen).unwrap();
+            kani::assert(
+                matches!(call.destination(), Destination::Endpoint { owner: &11, .. }),
+                "frozen route preserves the advertised endpoint",
+            );
+            drop(call);
+            if let Some(barrier) = barrier {
+                kani::assert(
+                    !graph.is_settled(&p).unwrap(),
+                    "readiness cannot bypass a reflected barrier",
+                );
+                kani::assert(
+                    matches!(
+                        graph.prepare_call(&p).unwrap().destination(),
+                        Destination::Waiting(_)
+                    ),
+                    "new calls cannot bypass the loopback barrier",
+                );
+                graph.open(barrier);
+            }
+            kani::assert(
+                graph.is_settled(&p).unwrap(),
+                "only the opened route is settled",
             );
             kani::assert(
                 matches!(
                     graph.prepare_call(&p).unwrap().destination(),
-                    Destination::Waiting(_)
+                    Destination::Endpoint { owner: &22, .. }
                 ),
-                "new calls cannot bypass the loopback barrier",
+                "released barrier exposes the replacement",
             );
-            graph.open(barrier);
-        }
-        kani::assert(
-            graph.is_settled(&p).unwrap(),
-            "only the opened route is settled",
-        );
-        kani::assert(
-            matches!(
-                graph.prepare_call(&p).unwrap().destination(),
-                Destination::Endpoint { owner: &22, .. }
-            ),
-            "released barrier exposes the replacement",
-        );
-        graph.release(p);
-        graph.release(frozen);
-        let retired = (graph.take_retired(), graph.take_retired());
-        assert!(matches!(
-            retired,
-            (Some(11), Some(22)) | (Some(22), Some(11))
-        ));
-        assert!(graph.is_empty());
-    })
+            graph.release(p);
+            graph.release(frozen);
+            let retired = (graph.take_retired(), graph.take_retired());
+            assert!(matches!(
+                retired,
+                (Some(11), Some(22)) | (Some(22), Some(11))
+            ));
+            assert!(graph.is_empty());
+        },
+    )
     .unwrap();
 }
 #[kani::proof]
@@ -108,40 +112,44 @@ fn full_width_reference_overflow_preserves_resolution() {
     let refs: u32 = kani::any();
     kani::assume(refs > 0);
     let mut slots = [const { Slot::EMPTY }; 3];
-    with_graph(&mut slots, |graph: &mut Graph<'_, '_, u8, u8>| {
-        let initial = graph.endpoint(11, Location::Remote(1)).unwrap();
-        let p = graph.promise(&mut Some(initial)).unwrap();
-        let call = graph.prepare_call(&p).unwrap().accept();
-        graph.release(call);
-        let mut replacement = Some(graph.endpoint(22, Location::Local).unwrap());
-        graph.slots[p.key.raw.index].entry.as_mut().unwrap().refs = refs;
-        match graph.prepare_resolution(p.key(), &mut replacement, Source::Direct) {
-            Err(e) => {
-                kani::assert(
-                    refs == u32::MAX && e == Error::ReferencesExhausted,
-                    "barrier overflow is rejected exactly at capacity",
-                );
-                assert!(replacement.is_some());
-                assert!(matches!(
-                    graph.prepare_call(&p).unwrap().destination(),
-                    Destination::Endpoint { owner: &11, .. }
-                ));
+    with_graph(
+        &mut slots,
+        crate::clients::NotificationStorage::empty(),
+        |graph: &mut Graph<'_, '_, u8, u8>| {
+            let initial = graph.endpoint(11, Location::Remote(1)).unwrap();
+            let p = graph.promise(&mut Some(initial)).unwrap();
+            let call = graph.prepare_call(&p).unwrap().accept();
+            graph.release(call);
+            let mut replacement = Some(graph.endpoint(22, Location::Local).unwrap());
+            graph.slots[p.key.raw.index].entry.as_mut().unwrap().refs = refs;
+            match graph.prepare_resolution(p.key(), &mut replacement, Source::Direct) {
+                Err(e) => {
+                    kani::assert(
+                        refs == u32::MAX && e == Error::ReferencesExhausted,
+                        "barrier overflow is rejected exactly at capacity",
+                    );
+                    assert!(replacement.is_some());
+                    assert!(matches!(
+                        graph.prepare_call(&p).unwrap().destination(),
+                        Destination::Endpoint { owner: &11, .. }
+                    ));
+                }
+                Ok(prepared) => {
+                    assert!(refs < u32::MAX);
+                    let barrier = prepared.accept().unwrap();
+                    kani::assert(
+                        graph.slots[p.key.raw.index].entry.as_ref().unwrap().refs == refs + 1,
+                        "barrier owns a checked reference",
+                    );
+                    graph.open(barrier);
+                    assert_eq!(
+                        graph.slots[p.key.raw.index].entry.as_ref().unwrap().refs,
+                        refs
+                    );
+                }
             }
-            Ok(prepared) => {
-                assert!(refs < u32::MAX);
-                let barrier = prepared.accept().unwrap();
-                kani::assert(
-                    graph.slots[p.key.raw.index].entry.as_ref().unwrap().refs == refs + 1,
-                    "barrier owns a checked reference",
-                );
-                graph.open(barrier);
-                assert_eq!(
-                    graph.slots[p.key.raw.index].entry.as_ref().unwrap().refs,
-                    refs
-                );
-            }
-        }
-    })
+        },
+    )
     .unwrap();
 }
 
@@ -154,7 +162,7 @@ fn imported_promise_admission_preserves_owner_and_both_slots() {
     let mut slots = [const { Slot::EMPTY }; 2];
     slots[0].generation = first;
     slots[1].generation = second;
-    with_graph(&mut slots, |graph: &mut Graph<'_, '_, u8, u8>| {
+    with_graph(&mut slots, crate::clients::NotificationStorage::empty(), |graph: &mut Graph<'_, '_, u8, u8>| {
         match graph.imported_promise(owner, 1) {
             Ok(client) => {
                 assert!(first != u64::MAX && second != u64::MAX);
@@ -179,47 +187,51 @@ fn callable_proxy_exports_preserve_local_resolution_obligations() {
     let called: bool = kani::any();
     let owner: u8 = kani::any();
     let mut slots = [const { Slot::EMPTY }; 2];
-    with_graph::<u8, u8, _>(&mut slots, |graph| {
-        let route = graph
-            .endpoint(
-                owner,
-                if local {
-                    Location::Local
-                } else {
-                    Location::Remote(1)
-                },
-            )
-            .unwrap();
-        let endpoint = route.key();
-        let promise = graph.promise(&mut Some(route)).unwrap();
-        if called {
-            let call = graph.prepare_call(&promise).unwrap().accept();
-            assert_eq!(call.key(), endpoint);
-            graph.release(call);
-        }
-        let (snapshot, pending) = graph.snapshot_for_export(&promise).unwrap();
-        kani::assert(
-            pending == local,
-            "callable local proxy must retain its resolution obligation",
-        );
-        kani::assert(
-            snapshot.key() == if local { promise.key() } else { endpoint },
-            "remote routes freeze while local observers follow resolution",
-        );
-        let mut replacement = Some(graph.retain_key(endpoint).unwrap());
-        assert!(graph
-            .resolve(promise.key(), &mut replacement, Source::Direct)
-            .unwrap()
-            .is_none());
-        assert!(graph.is_settled(&snapshot).unwrap());
-        let (settled, pending) = graph.snapshot_for_export(&snapshot).unwrap();
-        assert!(!pending);
-        assert_eq!(settled.key(), endpoint);
-        graph.release(settled);
-        graph.release(snapshot);
-        graph.release(promise);
-        assert_eq!(graph.take_retired(), Some(owner));
-        assert!(graph.is_empty());
-    })
+    with_graph::<u8, u8, _>(
+        &mut slots,
+        crate::clients::NotificationStorage::empty(),
+        |graph| {
+            let route = graph
+                .endpoint(
+                    owner,
+                    if local {
+                        Location::Local
+                    } else {
+                        Location::Remote(1)
+                    },
+                )
+                .unwrap();
+            let endpoint = route.key();
+            let promise = graph.promise(&mut Some(route)).unwrap();
+            if called {
+                let call = graph.prepare_call(&promise).unwrap().accept();
+                assert_eq!(call.key(), endpoint);
+                graph.release(call);
+            }
+            let (snapshot, pending) = graph.snapshot_for_export(&promise).unwrap();
+            kani::assert(
+                pending == local,
+                "callable local proxy must retain its resolution obligation",
+            );
+            kani::assert(
+                snapshot.key() == if local { promise.key() } else { endpoint },
+                "remote routes freeze while local observers follow resolution",
+            );
+            let mut replacement = Some(graph.retain_key(endpoint).unwrap());
+            assert!(graph
+                .resolve(promise.key(), &mut replacement, Source::Direct)
+                .unwrap()
+                .is_none());
+            assert!(graph.is_settled(&snapshot).unwrap());
+            let (settled, pending) = graph.snapshot_for_export(&snapshot).unwrap();
+            assert!(!pending);
+            assert_eq!(settled.key(), endpoint);
+            graph.release(settled);
+            graph.release(snapshot);
+            graph.release(promise);
+            assert_eq!(graph.take_retired(), Some(owner));
+            assert!(graph.is_empty());
+        },
+    )
     .unwrap();
 }

@@ -128,7 +128,7 @@ fn completed_pipeline_cleanup_and_successor_calls_survive_small_budgets_and_back
                         .unwrap();
                         coordinator
                             .driver
-                            .receive(frame, messages, &mut scratch, |_| (), server::Results::new)
+                            .receive(frame, messages, &mut scratch, |_| (), server::Producer::new)
                             .unwrap_or_else(|rejected| panic!("{}", rejected.error));
                         coordinator.changed();
                         // As in the transport pump, settle ordered projections

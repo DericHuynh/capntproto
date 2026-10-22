@@ -5,6 +5,7 @@ use super::{
     portable_capnp::{api::echo::EchoResults, echo},
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients, completion,
     ids::{AnswerId, ImportId, WireId},
@@ -40,7 +41,7 @@ pub fn typed_session_calls(mode: u8) {
             let target = if remote_call {
                 remote(&mut peer, ImportId::from_wire(91))
             } else {
-                peer.runtime
+                peer.capabilities()
                     .endpoint(binding::Route::local(43), clients::Location::Local)
                     .unwrap()
             };
@@ -279,7 +280,7 @@ pub fn typed_session_calls(mode: u8) {
             let (mut peer, messages, calls) = session.into_parts();
             assert!(calls.is_empty());
             assert_eq!(calls.terminate(&mut peer, messages), 0);
-            peer.runtime.release(target);
+            peer.capabilities().release(target);
             assert_eq!(
                 close(peer, messages, &mut queue),
                 if remote_call { 0 } else { 43 }

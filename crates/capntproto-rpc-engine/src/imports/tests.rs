@@ -43,6 +43,11 @@ fn local_aliases_wire_grants_and_rejected_cleanup_have_distinct_lifetimes() {
         assert_eq!(imports.get(&received), &19);
         imports.release(first);
         imports.release(clone);
+        assert_eq!(
+            imports.binding_revision(),
+            0,
+            "temporary aliases do not wake blocked bindings"
+        );
         assert!(imports.pending_release(0).is_none());
         assert_eq!(imports.resolve(key), Some(&19));
         imports.release(received);
@@ -52,7 +57,17 @@ fn local_aliases_wire_grants_and_rejected_cleanup_have_distinct_lifetimes() {
             assert_eq!(cleanup.id(), id);
             assert_eq!(cleanup.count(), 2); // Local cloning grants nothing on the wire.
         }
+        let revision = imports.binding_revision();
+        assert!(revision > 0);
+        let mut receipts = [ReceiveSlot::alias(id)];
+        drop(imports.prepare_receive(&mut receipts).unwrap());
+        assert_eq!(
+            imports.binding_revision(),
+            revision,
+            "rejected descriptor admission cannot create a retry cycle"
+        );
         let revived = imports.receive(id).unwrap();
+        assert!(imports.binding_revision() > revision);
         assert_ne!(revived.key(), key);
         assert_eq!(imports.resolve(key), None);
         assert_eq!(imports.get(&revived), &19);

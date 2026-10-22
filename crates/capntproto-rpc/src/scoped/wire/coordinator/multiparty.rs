@@ -279,34 +279,23 @@ impl<
     ) -> capnp::Result<Box<dyn ClientHook>> {
         let driver = &mut coordinator.driver;
         let client = match target {
-            TargetRef::Hosted(lease) => capntproto_rpc_wire::clients::reflected(
-                &mut driver.runtime,
-                &driver.ledgers.exports,
-                lease,
-            )
-            .map_err(wire_error)?,
-            TargetRef::Promised { answer, path } => driver
-                .pipelines
-                .bind(
-                    &mut driver.runtime,
-                    &mut driver.ledgers.answers,
-                    answer,
-                    path,
-                )
-                .map_err(wire_error)?,
+            TargetRef::Hosted(lease) => driver.reflected(lease).map_err(wire_error)?,
+            TargetRef::Promised { answer, path } => {
+                driver.project_answer(answer, path).map_err(wire_error)?
+            }
         };
-        let result = match driver.runtime.inspect(&client) {
+        let result = match driver.runtime().inspect(&client) {
             Ok(Destination::Endpoint {
                 owner:
                     Route::Capability(Endpoint::Local(hook) | Endpoint::Failed { owner: hook, .. }),
                 ..
-            }) if driver.runtime.is_settled(&client).unwrap_or(false) => Ok(hook.add_ref()),
+            }) if driver.runtime().is_settled(&client).unwrap_or(false) => Ok(hook.add_ref()),
             _ => coordinator
                 .hooks
-                .export_client(&mut driver.runtime, &client)
+                .export_client(&mut driver.capabilities(), &client)
                 .map(|c| c.hook),
         };
-        driver.runtime.release(client);
+        driver.capabilities().release(client);
         result
     }
     fn receive_network<'s>(
@@ -650,7 +639,7 @@ impl<
                         let key = job.request.answer_key().unwrap();
                         let canceled = coordinator
                             .driver
-                            .ledgers
+                            .ledgers()
                             .answers
                             .cancellation_requested(key)
                             .unwrap_or(true);
@@ -732,11 +721,11 @@ impl<
             Operation::Join { target, part } => {
                 let client = coordinator
                     .hooks
-                    .try_retain(&mut driver.runtime, &**target)?
+                    .try_retain(&mut driver.capabilities(), &**target)?
                     .ok_or_else(|| Error::failed("foreign Join command target".into()))?;
                 let route = (|| {
                     let Destination::Endpoint { owner, .. } =
-                        driver.runtime.inspect(&client).map_err(wire_error)?
+                        driver.runtime().inspect(&client).map_err(wire_error)?
                     else {
                         return Err(Error::failed("Join target is not settled".into()));
                     };
@@ -747,7 +736,7 @@ impl<
                         return Ok(Err(hook.add_ref()));
                     }
                     match owner
-                        .target(&driver.ledgers.questions)
+                        .target(&driver.ledgers().questions)
                         .map_err(wire_error)?
                     {
                         Some(capntproto_rpc_wire::calls::Target::Imported(id)) => {
@@ -761,7 +750,7 @@ impl<
                         )),
                     }
                 })();
-                driver.runtime.release(client);
+                driver.capabilities().release(client);
                 match route? {
                     Err(hook) => {
                         let network = self.joins.clone().ok_or_else(|| {
@@ -877,21 +866,13 @@ impl<
                             None => None,
                             Some(cap) => {
                                 let client = driver
-                                    .imports
-                                    .bind_capability(
-                                        cap,
-                                        &mut driver.runtime,
-                                        &mut driver.ledgers.imports,
-                                        &driver.ledgers.exports,
-                                        &mut driver.ledgers.answers,
-                                        &mut driver.pipelines,
-                                    )
+                                    .bind_capability(cap)
                                     .map_err(wire_error)?
                                     .into_client();
                                 let result = coordinator
                                     .hooks
-                                    .export_client(&mut driver.runtime, &client);
-                                driver.runtime.release(client);
+                                    .export_client(&mut driver.capabilities(), &client);
+                                driver.capabilities().release(client);
                                 Some(result?.hook)
                             }
                         };
@@ -917,7 +898,7 @@ impl<
     ) -> capnp::Result<()> {
         let key = job.request.answer_key().expect("answer control");
         let driver = &mut coordinator.driver;
-        let producer = match driver.ledgers.answers.get(key) {
+        let producer = match driver.ledgers().answers.get(key) {
             Ok(state) => state.owner.producer.clone(),
             Err(error) => {
                 driver.release_network(job.request, messages);
@@ -972,10 +953,12 @@ impl<
                         Ok(Completion::Capability(hook)) => {
                             let client = match coordinator
                                 .hooks
-                                .try_retain(&mut driver.runtime, &*hook)?
+                                .try_retain(&mut driver.capabilities(), &*hook)?
                             {
                                 Some(client) => client,
-                                None => coordinator.foreign.import(&mut driver.runtime, &*hook)?,
+                                None => coordinator
+                                    .foreign
+                                    .import(&mut driver.capabilities(), &*hook)?,
                             };
                             let result = driver.local_result_dynamic(
                                 0,
@@ -986,7 +969,7 @@ impl<
                                 coordinator.options.reader,
                                 |content| content.set_capability_index(0),
                             );
-                            driver.runtime.release(client);
+                            driver.capabilities().release(client);
                             Ok(result.map_err(wire_error)?)
                         }
                         Err(error) => {
@@ -1000,7 +983,7 @@ impl<
                         .complete_authenticated_accept(&accept, result, messages)
                         .map_err(|rejected| {
                             if let Ok(result) = rejected.result {
-                                result.release(messages, &mut driver.runtime);
+                                result.release(messages, &mut driver.capabilities());
                             }
                             wire_error(rejected.error)
                         })?;
@@ -1160,7 +1143,7 @@ impl<
             self.poll_network(context.network(), messages, queue, scratch, output, cx)
         }
     }
-    fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
+    fn observes_hooks(&self, event: &connection::Received<'id, server::Producer>) -> bool {
         !matches!(
             event,
             connection::Received::Queued(_)
@@ -1206,7 +1189,7 @@ impl<
     }
     fn received(
         &mut self,
-        event: connection::Received<'id, server::Results>,
+        event: connection::Received<'id, server::Producer>,
         context: &mut ControlContext<'_, 'p, 'id, 's, resources::Import, (), C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, vat::Bundle>,

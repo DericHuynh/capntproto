@@ -25,6 +25,9 @@ fn with_driver<R>(
                     maximum: 32,
                 };
                 let tables = connection::GrowingStorage {
+                    notifications: capntproto_rpc_engine::clients::NotificationGrowth::for_clients(
+                        bound,
+                    ),
                     imports: bound,
                     exports: bound,
                     questions: bound,
@@ -79,7 +82,7 @@ fn remote<'p, 'id>(driver: &mut Peer<'p, 'id, '_>) -> clients::Client<'id> {
 }
 
 #[test]
-fn large_pending_exchange_tables_only_scan_after_actual_cancellation() {
+fn canceled_responses_are_queued_by_their_exact_return() {
     with_driver(|mut driver, messages| {
         let mut queue = messages::Queue::new_growing(0, 4).unwrap();
         let mut keys = alloc::vec::Vec::new();
@@ -108,16 +111,16 @@ fn large_pending_exchange_tables_only_scan_after_actual_cancellation() {
             keys.push(key);
         }
         assert_eq!(driver.exchanges.len(), 16);
-        assert!(driver.maintenance_is_idle());
+        assert!(driver.maintenance_is_idle(messages, &queue));
         for index in [0, 15] {
             driver.cancel(keys[index]).unwrap();
             driver.cancel(keys[index]).unwrap();
         }
-        assert!(!driver.maintenance_is_idle());
+        assert!(!driver.maintenance_is_idle(messages, &queue));
         assert!(!driver.drain_canceled_response(messages));
         assert!(
-            driver.canceled_exchanges,
-            "pending cancellation must survive a full scan"
+            driver.canceled_ready.is_empty(),
+            "pending cancellation sleeps until its exact Return"
         );
         for index in [15, 0] {
             let frame = Frame::build(messages, 128, Default::default(), |builder| {
@@ -138,7 +141,7 @@ fn large_pending_exchange_tables_only_scan_after_actual_cancellation() {
             assert!(driver.drain_canceled_response(messages));
         }
         assert!(!driver.drain_canceled_response(messages));
-        assert!(!driver.canceled_exchanges);
+        assert!(driver.canceled_ready.is_empty());
         for _ in 0..256 {
             let progress = driver
                 .poll_maintenance(
@@ -163,10 +166,10 @@ fn large_pending_exchange_tables_only_scan_after_actual_cancellation() {
                 break;
             }
         }
-        assert!(driver.maintenance_is_idle());
+        assert!(driver.maintenance_is_idle(messages, &queue));
         driver.cancel(keys[7]).unwrap();
-        assert!(driver.canceled_exchanges);
-        assert!(!driver.maintenance_is_idle());
+        assert!(driver.canceled_ready.is_empty());
+        assert!(!driver.maintenance_is_idle(messages, &queue));
         close(driver, messages, &mut queue);
         let writers: alloc::vec::Vec<_> = (0..32).map(|_| messages.reserve(128).unwrap()).collect();
         for writer in writers {
@@ -178,19 +181,14 @@ fn large_pending_exchange_tables_only_scan_after_actual_cancellation() {
 #[test]
 fn retained_vacant_pipeline_capacity_does_not_require_maintenance() {
     with_driver(|mut driver, messages| {
-        driver
-            .tails
-            .vacant_mut(|_, _| true, || TailSlot::EMPTY)
-            .unwrap();
         // Large retained capacity is still idle when it has no observers.
         driver.invocation_pipelines = invocation_pipeline::Bindings::new(
             SlotStorage::growing(32, 32, || InvocationPipelineSlot::EMPTY).unwrap(),
         );
-        assert_eq!(driver.tails.len(), 1);
         assert_eq!(driver.invocation_pipelines.len(), 32);
-        assert!(driver.maintenance_is_idle());
         let mut slots = [None];
         let mut queue = messages::Queue::new(&mut slots).unwrap();
+        assert!(driver.maintenance_is_idle(messages, &queue));
         assert!(matches!(
             driver.poll_maintenance(
                 messages,
@@ -248,7 +246,7 @@ fn abandoned_invocation_observers_sleep_after_growth_and_reactivate_on_reuse() {
                 driver.drain_endpoint();
             }
             assert!(
-                !driver.maintenance_is_idle(),
+                !driver.maintenance_is_idle(messages, &queue),
                 "the last observer still needs cancellation"
             );
             driver.runtime.release(last);
@@ -260,7 +258,7 @@ fn abandoned_invocation_observers_sleep_after_growth_and_reactivate_on_reuse() {
                 driver.drain_endpoint();
             }
             assert_eq!(driver.invocation_pipelines.len(), 16);
-            assert!(driver.maintenance_is_idle());
+            assert!(driver.maintenance_is_idle(messages, &queue));
             assert!(matches!(
                 driver.poll_maintenance(
                     messages,
@@ -671,17 +669,17 @@ fn late_completion_binding_preserves_task_and_sender_on_rejection() {
         let mut full = Invocations::new_growing(0, 0).unwrap();
         let (sender, receiver) = shared::channel();
         let rejected = full
-            .bind_queued(&driver, messages, task, sender.into())
+            .bind_queued(&mut driver, messages, task, sender.into())
             .expect_err("zero capacity");
         assert_eq!(rejected.error, Error::Busy);
         assert_eq!(driver.runtime.queued(), 1);
         let mut invocations = Invocations::new_growing(0, 1).unwrap();
         invocations
-            .bind_queued(&driver, messages, task, rejected.sender)
+            .bind_queued(&mut driver, messages, task, rejected.sender)
             .unwrap_or_else(|_| panic!("retry keeps sender"));
         let (duplicate, duplicate_receiver) = shared::channel();
         let rejected = invocations
-            .bind_queued(&driver, messages, task, duplicate.into())
+            .bind_queued(&mut driver, messages, task, duplicate.into())
             .expect_err("duplicate binding");
         assert_eq!(rejected.error, Error::UnknownInvocation);
         let local = invocations.accept_local(&mut driver).unwrap().unwrap();
@@ -691,16 +689,130 @@ fn late_completion_binding_preserves_task_and_sender_on_rejection() {
         // registry with free capacity.
         let mut other = Invocations::new_growing(0, 1).unwrap();
         let rejected = other
-            .bind_queued(&driver, messages, task, rejected.sender)
+            .bind_queued(&mut driver, messages, task, rejected.sender)
             .expect_err("running task is no longer queued");
         assert_eq!(rejected.error, Error::UnknownInvocation);
         assert_eq!(invocations.terminate(&mut driver, messages), 1);
         local.release(&mut driver, messages);
         let rejected = other
-            .bind_queued(&driver, messages, task, rejected.sender)
+            .bind_queued(&mut driver, messages, task, rejected.sender)
             .expect_err("retired task");
         assert_eq!(rejected.error, Error::UnknownInvocation);
         drop((rejected, receiver, duplicate_receiver));
+        driver.runtime.release(target);
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn operation_observers_survive_dispatch_reuse_and_reject_retired_generation() {
+    use capntproto_rpc_engine::completion::shared;
+    with_driver(|mut driver, messages| {
+        let target = driver
+            .runtime
+            .endpoint(binding::Route::local(17), clients::Location::Local)
+            .unwrap();
+        let mut invocations = Invocations::new_growing(0, 4).unwrap();
+        let (sender, receiver) = shared::channel();
+        let first = invocations
+            .enqueue_dynamic(
+                &mut driver,
+                sender.into(),
+                &target,
+                DynamicCall::default(),
+                &[],
+                messages,
+                256,
+                Default::default(),
+                |_| Ok(()),
+            )
+            .unwrap_or_else(|_| panic!("first"));
+        let first_dispatch = driver.operations.get(first).unwrap().task;
+        let observer = driver
+            .invocation_pipeline(first, pipeline::Path::new(&[0]), messages)
+            .unwrap();
+        driver.bind_invocation_completion(first, 7).unwrap();
+        assert_eq!(
+            driver.bind_invocation_completion(first, 8),
+            Err(Error::Question(questions::Error::AlreadyOwned))
+        );
+        let local = invocations.accept_local(&mut driver).unwrap().unwrap();
+        assert_eq!(
+            driver.bind_invocation_completion(first, 9),
+            Err(Error::UnknownInvocation)
+        );
+        assert_eq!(driver.invocation_completion_owner(first), Some(7));
+        let second = driver
+            .enqueue_dynamic(
+                &target,
+                DynamicCall::default(),
+                &[],
+                messages,
+                256,
+                Default::default(),
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert_ne!(first, second);
+        assert!(driver.runtime.queued_owner(first_dispatch).is_none());
+        let other_observer = driver
+            .invocation_pipeline(second, pipeline::Path::new(&[1]), messages)
+            .unwrap();
+        assert!(driver.cancel_invocation(second, messages));
+        let first_index = driver.operations.get(first).unwrap().observers.unwrap();
+        let second_index = driver.operations.get(second).unwrap().observers.unwrap();
+        // Local completion touches only the first operation's observer.
+        assert_eq!(
+            driver
+                .poll_local_invocation_pipeline(first_index, first, |_, runtime| runtime
+                    .endpoint(binding::Route::local(91), clients::Location::Local)
+                    .map_err(|_| capnp::ErrorKind::Failed))
+                .unwrap(),
+            Propagation::Resolved
+        );
+        assert!(matches!(
+            driver.runtime.inspect(&observer).unwrap(),
+            clients::Destination::Endpoint {
+                owner: binding::Route::Capability(binding::Endpoint::Local(91)),
+                ..
+            }
+        ));
+        assert!(matches!(
+            driver.runtime.inspect(&other_observer).unwrap(),
+            clients::Destination::Waiting(_)
+        ));
+        assert_eq!(
+            driver.poll_invocation_pipeline(second_index).unwrap(),
+            Propagation::Resolved
+        );
+        assert!(driver.operations.get(second).is_err());
+        let third = driver
+            .enqueue_dynamic(
+                &target,
+                DynamicCall::default(),
+                &[],
+                messages,
+                256,
+                Default::default(),
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert_ne!(third, second);
+        assert!(!driver.cancel_invocation(second, messages));
+        assert_eq!(
+            driver.bind_invocation_completion(second, 8),
+            Err(Error::UnknownInvocation)
+        );
+        driver.bind_invocation_completion(third, 11).unwrap();
+        assert_eq!(driver.invocation_completion_owner(third), Some(11));
+        assert!(driver.cancel_invocation(third, messages));
+        assert_eq!(invocations.terminate(&mut driver, messages), 1);
+        local.release(&mut driver, messages);
+        assert!(driver.operations.get(first).is_err());
+        drop(receiver);
+        driver.runtime.release(observer);
+        driver.runtime.release(other_observer);
         driver.runtime.release(target);
         let mut queue = messages::Queue::new_growing(0, 8).unwrap();
         close(driver, messages, &mut queue);
@@ -801,7 +913,6 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
         driver.runtime.release(observer);
         // The first one-step poll can now visit the pending observer. This
         // external graph mutation must invalidate that partial idle scan.
-        driver.invalidate_maintenance();
         let mut idle = false;
         for _ in 0..128 {
             if matches!(poll!(), Progress::Idle) {
@@ -850,9 +961,9 @@ fn server_idle_certificate_observes_deferred_answer_and_export_cleanup() {
 fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
     for quantum in [1, 2, 7, 32] {
         with_driver(|mut driver, messages| {
-            // Exceed the bounded vacancy certificate so this still exercises
-            // the general scanner and exact quantum accounting.
-            assert!(driver.tails.grow(9, || TailSlot::EMPTY));
+            driver.invocation_pipelines = invocation_pipeline::Bindings::new(
+                SlotStorage::growing(32, 32, || InvocationPipelineSlot::EMPTY).unwrap(),
+            );
             let mut queue = messages::Queue::new_growing(0, 8).unwrap();
             macro_rules! poll {
                 () => {
@@ -868,7 +979,7 @@ fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
                         .unwrap()
                 };
             }
-            let initial = 1 + driver.tails.len();
+            let initial: usize = 1;
             for _ in 1..initial.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }
@@ -882,17 +993,11 @@ fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
                 .prepare_receive(&mut receipts)
                 .unwrap()
                 .commit();
-            driver.invalidate_maintenance();
-            let total = 17 + driver.tails.len();
-            // Import cleanup selects its queue head, so retained import capacity
-            // never expands the maintenance span. Only individual tail slots
-            // and the final idle proof consume this idle walk's budget.
-            assert_eq!(driver.maintenance_sizes[10], 1);
+            // Neither retained observer capacity nor imports expand idle work.
             for _ in 1..initial.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }
             assert!(matches!(poll!(), Progress::Idle));
-            assert_eq!(driver.maintenance_total, total);
             for receipt in &mut receipts {
                 driver
                     .ledgers
@@ -960,7 +1065,7 @@ fn outgoing_observers_use_only_their_authorized_question_after_slot_reuse() {
         // Waiting observers have no admissible response to inspect. They may
         // certify idle without spending a quantum walking unrelated slots.
         assert!(driver.outgoing_maintenance_is_idle());
-        assert!(driver.maintenance_is_idle());
+        assert!(driver.maintenance_is_idle(messages, &queue));
         assert!(matches!(
             driver
                 .poll_maintenance(
@@ -993,6 +1098,7 @@ fn outgoing_observers_use_only_their_authorized_question_after_slot_reuse() {
                 matches!(&slot.exchange, Some(Exchange::Returned(response)) if response.key() == questions[index])
             }).unwrap();
             driver.exchanges[exchange].authorized = false;
+            driver.refresh_exchange(questions[index]);
             if index == 1 {
                 assert!(driver.outgoing_maintenance_is_idle());
             }
@@ -1002,8 +1108,9 @@ fn outgoing_observers_use_only_their_authorized_question_after_slot_reuse() {
             );
             assert!(!driver.runtime.is_settled(&projections[index]).unwrap());
             driver.exchanges[exchange].authorized = true;
+            driver.refresh_exchange(questions[index]);
             assert!(!driver.outgoing_maintenance_is_idle());
-            assert!(!driver.maintenance_is_idle());
+            assert!(!driver.maintenance_is_idle(messages, &queue));
             if index == 1 {
                 assert_eq!(
                     driver.poll_outgoing(0, messages).unwrap(),
@@ -3320,7 +3427,7 @@ fn direct_retirement_matches_general_validation_ownership_and_callbacks() {
                         driver.ledgers.answers.len(),
                         driver.ledgers.imports.len(),
                         driver.ledgers.exports.len(),
-                        driver.ledgers.exports.retirement_is_idle(32),
+                        driver.ledgers.exports.retirement_is_idle(),
                         driver.has_pending_call(),
                     );
                     driver.runtime.release(target);
@@ -3486,4 +3593,186 @@ fn compact_parameter_grants_keep_authority_after_output_reclamation() {
             close(driver, messages, &mut queue);
         });
     }
+}
+
+#[test]
+fn blocked_projection_does_not_hide_a_ready_sibling_of_the_same_question() {
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let service = driver
+            .runtime
+            .endpoint(binding::Route::local(99), clients::Location::Local)
+            .unwrap();
+        let advertised = driver.runtime.retain_key(service.key()).unwrap();
+        let mut batch = driver.ledgers.exports.batch();
+        let grant = batch.export(advertised).unwrap();
+        let exported = grant.id();
+        batch.commit();
+        driver
+            .enqueue_dynamic(
+                &target,
+                DynamicCall::default(),
+                &[],
+                messages,
+                512,
+                Default::default(),
+                |_| Ok(()),
+            )
+            .unwrap();
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        let sent = driver
+            .send_invocation(messages, &mut queue, 512, Default::default(), &mut [0; 8])
+            .unwrap()
+            .unwrap();
+        drain(&mut queue, messages, |_| {});
+        let good = driver
+            .pipeline(sent.question, pipeline::Path::new(&[]))
+            .unwrap();
+        let bad = driver
+            .pipeline(sent.question, pipeline::Path::new(&[0]))
+            .unwrap();
+        let mut held = alloc::vec::Vec::new();
+        while let Ok(client) = driver.runtime.promise(&mut None) {
+            held.push(client);
+        }
+        assert_eq!(driver.runtime.resources().nodes, 0);
+        let frame = Frame::build(messages, 512, Default::default(), |builder| {
+            calls::dynamic_results(
+                builder,
+                AnswerId::from_wire(sent.question.id().to_wire()),
+                |content| content.set_capability_index(0),
+            )?;
+            builder
+                .try_get_root::<Message>()?
+                .field(Message::RETURN)
+                .edit()?
+                .field(Return::RESULTS)
+                .edit()?
+                .field(Payload::CAP_TABLE)
+                .init(1)?
+                .get_mut(0)
+                .unwrap()
+                .scalar(CapDescriptor::RECEIVER_HOSTED)
+                .set(exported.to_wire());
+            Ok(())
+        })
+        .unwrap();
+        driver
+            .receive(frame, messages, &mut [0; 8], |_| (), || ())
+            .unwrap_or_else(|e| panic!("{}", e.error));
+        assert_eq!(
+            driver.poll_next_outgoing(messages).unwrap(),
+            Propagation::Pending
+        );
+        assert!(!driver.runtime.is_settled(&bad).unwrap());
+        assert_eq!(
+            driver.poll_next_outgoing(messages).unwrap(),
+            Propagation::Resolved
+        );
+        assert!(driver.runtime.is_settled(&good).unwrap());
+        assert!(!driver.runtime.is_settled(&bad).unwrap());
+        assert_eq!(driver.runtime.resources().nodes, 0);
+        for _ in 0..32 {
+            assert!(driver.outgoing_maintenance_is_idle());
+            assert_eq!(
+                driver.poll_next_outgoing(messages).unwrap(),
+                Propagation::Unrelated
+            );
+        }
+        assert!(driver.drain_endpoint().is_some());
+        assert!(!driver.outgoing_maintenance_is_idle());
+        assert_eq!(
+            driver.poll_next_outgoing(messages).unwrap(),
+            Propagation::Resolved
+        );
+        assert!(driver.runtime.is_settled(&bad).unwrap());
+        let response = driver.take_response(sent.question).unwrap();
+        driver.release_response(response, messages);
+        let advertised = driver
+            .ledgers
+            .exports
+            .release(exported, 1)
+            .unwrap()
+            .unwrap();
+        driver.runtime.release(advertised);
+        for client in held {
+            driver.runtime.release(client);
+        }
+        driver.runtime.release(good);
+        driver.runtime.release(bad);
+        driver.runtime.release(service);
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn retained_control_waits_for_output_without_blocking_reference_retirement() {
+    with_driver(|mut driver, messages| {
+        let mut queue = messages::Queue::new_growing(1, 1).unwrap();
+        let receipt = driver
+            .ledgers
+            .imports
+            .admit(ImportId::from_wire(91), ())
+            .unwrap();
+        driver.ledgers.imports.release(receipt);
+        let frame = Frame::build(messages, 256, Default::default(), |b| {
+            calls::acknowledge(b, AnswerId::from_wire(1))
+        })
+        .unwrap();
+        let offer = messages.offer(&frame.lease).unwrap();
+        queue.reserve().unwrap().accept(messages, offer);
+        frame.release(messages);
+        fn poll<'p>(
+            driver: &mut Peer<'p, '_, '_>,
+            messages: &mut messages::Messages<'p, '_, '_>,
+            queue: &mut messages::Queue<'p, '_>,
+        ) -> Result<Progress<(), (), u32>, Error> {
+            driver.poll_maintenance(
+                messages,
+                queue,
+                256,
+                Default::default(),
+                &mut [0; 8],
+                NonZeroUsize::new(1).unwrap(),
+            )
+        }
+        assert!(matches!(
+            poll(&mut driver, messages, &mut queue).unwrap(),
+            Progress::Yield
+        ));
+        for _ in 0..32 {
+            assert!(matches!(
+                poll(&mut driver, messages, &mut queue).unwrap(),
+                Progress::Idle
+            ));
+        }
+        let server = driver
+            .runtime
+            .endpoint(binding::Route::local(42), clients::Location::Local)
+            .unwrap();
+        driver.runtime.release(server);
+        assert!(matches!(
+            poll(&mut driver, messages, &mut queue).unwrap(),
+            Progress::Server(42)
+        ));
+        assert!(matches!(
+            poll(&mut driver, messages, &mut queue).unwrap(),
+            Progress::Idle
+        ));
+        drain(&mut queue, messages, |_| {});
+        assert!(!driver.maintenance_is_idle(messages, &queue));
+        assert!(matches!(
+            poll(&mut driver, messages, &mut queue).unwrap(),
+            Progress::Import(())
+        ));
+        drain(&mut queue, messages, |root| {
+            assert!(matches!(
+                root.which().unwrap(),
+                rpc_capnp::message::Release(_)
+            ))
+        });
+        assert!(driver.ledgers.imports.is_empty());
+        close(driver, messages, &mut queue);
+    });
 }

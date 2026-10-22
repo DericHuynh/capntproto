@@ -4,6 +4,7 @@ use super::{
     portable_capnp::{api::echo::EchoResults, echo},
     ZERO,
 };
+use capntproto_rpc_engine::clients::Capabilities as _;
 use capntproto_rpc_engine::{
     clients,
     ids::{ImportId, QuestionId, WireId},
@@ -12,7 +13,6 @@ use capntproto_rpc_engine::{
 use capntproto_rpc_wire::{
     calls, clients as binding,
     owned::{
-        answer,
         connection::{Propagation, Received, Termination},
         pipelines, Frame,
     },
@@ -33,11 +33,11 @@ pub fn owning_terminal_cleanup(budget: usize) {
             let mut queue = super::driver::message_queue(&mut slots).unwrap();
             with_owned_peer(|mut peer| {
                 let service = peer
-                    .runtime
+                    .capabilities()
                     .endpoint(binding::Route::local(41), clients::Location::Local)
                     .unwrap();
-                let mut batch = peer.ledgers.exports.batch();
-                let target = binding::stage(&mut peer.runtime, &mut batch, &service)
+                let (mut graph, mut batch) = peer.export_batch();
+                let target = binding::stage(&mut graph, &mut batch, &service)
                     .unwrap()
                     .id();
                 batch.commit();
@@ -93,7 +93,7 @@ pub fn owning_terminal_cleanup(budget: usize) {
                 let mut servers = 1;
                 for slot in &mut occupied {
                     match peer
-                        .runtime
+                        .capabilities()
                         .endpoint(binding::Route::local(41), clients::Location::Local)
                     {
                         Ok(client) => {
@@ -155,26 +155,21 @@ pub fn owning_terminal_cleanup(budget: usize) {
                     })
                 })
                 .unwrap();
-                let batch = peer.ledgers.exports.batch();
+                let (mut graph, batch) = peer.export_batch();
                 let published = pipelines::Published::from_exports(
                     &result,
                     messages,
                     &batch,
-                    &mut peer.runtime,
+                    &mut graph,
                     &mut [0; 4],
                 )
                 .unwrap();
                 drop(batch);
-                assert!(answer::send(
-                    answer,
-                    &mut peer.ledgers.answers,
-                    messages,
-                    result,
-                    queue.reserve().unwrap()
-                )
-                .unwrap()
-                .is_none());
-                pipelines::complete(&mut peer.ledgers.answers, answer, Ok(published))
+                assert!(peer
+                    .publish_answer_frame(answer, messages, result, queue.reserve().unwrap())
+                    .unwrap()
+                    .is_none());
+                peer.publish_answer_pipeline(answer, Ok(published))
                     .unwrap_or_else(|_| panic!("published"));
                 // Stop after a partial frame; no cleanup operation may claim the
                 // remainder was sent or permit reuse of the failed output stream.
@@ -185,11 +180,11 @@ pub fn owning_terminal_cleanup(budget: usize) {
                 );
                 // Releasing application clients is optional for terminal graph
                 // extraction, but cannot substitute for dropping their table owners.
-                peer.runtime.release(service);
-                peer.runtime.release(pending_path);
-                peer.runtime.release(returned_path);
+                peer.capabilities().release(service);
+                peer.capabilities().release(pending_path);
+                peer.capabilities().release(returned_path);
                 for client in occupied.into_iter().flatten() {
-                    peer.runtime.release(client);
+                    peer.capabilities().release(client);
                 }
                 let mut closing = peer.terminate(&mut queue);
                 let mut seen_producers = [false; 3];
