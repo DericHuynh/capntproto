@@ -193,7 +193,7 @@ Dedicated producer1/quicturn1 before/after QUIC profiles and five-repeat traces 
 - Compile-time API contracts: **35 passed**, including rejection of raw Driver-field mutation and mutable runtime escape.
 - Encrypted integration: **22 passed**, including sparse parent/pipeline readiness, large bursts, flow control, shared endpoints, stalled writers and shutdown. Pipeline migration 5, Unix 3, scoped vat 6, and tail transfer 5 passed. TLC replay tests are included.
 - Strict Clippy passed for all six affected crates, all their targets, with QUIC enabled; formatting passed. Whole-workspace Clippy was blocked by uncached dependencies and network download timeouts; it is not reported as passed.
-- Root suite: **293 passed, 4 intentional negative controls ignored**. Encrypted compatibility/authentication: **206 checks passed**. Corrected failed attempts and complete scope are recorded in [validation.json](validation.json).
+- Root suite: **293 passed, 4 ignored** (two negative controls and two crash-recovery checks reserved for their isolated gate). Encrypted compatibility/authentication: **206 checks passed**. Corrected failed attempts and complete scope are recorded in [validation.json](validation.json).
 
 ## Reproduction and archive
 

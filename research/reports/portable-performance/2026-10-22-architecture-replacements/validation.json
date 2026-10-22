@@ -110,5 +110,16 @@
     "test-root-final.log: TLC environment unset and parallel storage contention; corrected serial run with TLA2TOOLS_JAR passes all nonignored tests.",
     "clippy-affected-final.log and clippy-affected-final2.log: test fixture style lints, fixed.",
     "fmt-final6.log: formatting after fixture lint cleanup, fixed."
-  ]
+  ],
+  "root_ignored": {
+    "negative_controls": [
+      "native_rpc::session::shutdown_tests::shuttle_detects_lost_shutdown_terminal_wakeup",
+      "native_shutdown::schedule_tests::shuttle_detects_lost_wakeup"
+    ],
+    "isolated_crash_recovery_gate": [
+      "storage::components::crash_tests::child_process_crashes_preserve_components_across_recovery_and_second_crash",
+      "storage::fault_tests::child_process_crashes_preserve_batch_atomicity_across_recovery_and_second_crash"
+    ],
+    "note": "These four tests were ignored by the ordinary root test run, not counted as passed."
+  }
 }
