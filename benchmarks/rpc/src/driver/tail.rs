@@ -39,7 +39,7 @@ pub fn compare(executables: [&Path; 4], destination: &Path) -> Result<()> {
             "cpu_placement":placement, "cpu":output("lscpu", &[])?,
             "clock_reads":clock_diagnostics(&placement)?,
             "warmup":10000, "iterations":ITERATIONS, "repetitions":REPETITIONS,
-            "scope":"Plaintext TCP loopback, separate processes and physical cores. Rotated and alternating peer order. All samples retained, including stalls. Compare per-trial p99 ranges as well as pooled percentiles; local results do not qualify remote performance."
+            "scope":"TLS 1.3 over TCP loopback, separate processes and physical cores. Rotated and alternating peer order. All samples retained, including stalls. Compare per-trial p99 ranges as well as pooled percentiles; local results do not qualify remote performance."
         }))?,
     )?;
     let mut trials = Vec::new();
@@ -161,7 +161,7 @@ mod tests {
                     if variant == "after" {
                         samples[195..].fill(1000 + repetition as u64 * 100);
                     }
-                    trials.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,
+                    trials.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,"security":crate::transport_metadata(protocol).unwrap(),
                         "variant":variant,"protocol":protocol,"payload_bytes":bytes,
                         "repetition":repetition,"warmup":10000,"iterations":200,
                         "elapsed_ns":samples.iter().sum::<u64>(),"latency_ns":samples}));

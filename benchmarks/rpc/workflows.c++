@@ -1,4 +1,5 @@
 #include "echo.capnp.h"
+#include "secure.h"
 #include <capnp/rpc-twoparty.h>
 #include <kj/async-io.h>
 #include <kj/debug.h>
@@ -127,11 +128,12 @@ kj::Promise<void> operation(Workflows::Client& client, Cell::Client& state, Call
 
 int runWorkflows(int argc, char** argv) {
   auto io = kj::setupAsyncIo();
+  BenchmarkTransport transport(io.provider->getTimer());
   if (argc == 3 && std::string(argv[1]) == "workflow-server") {
-    auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
+    auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
     auto listener = address->listen();
     capnp::TwoPartyServer server(kj::heap<Service>());
-    std::cout << "{\"ready\":true}" << std::endl;
+    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"ready\":true,\"address\":\"127.0.0.1:" << listener->getPort() << "\"}" << std::endl;
     server.listen(*listener).wait(io.waitScope);
     return 0;
   }
@@ -150,7 +152,7 @@ int runWorkflows(int argc, char** argv) {
   KJ_REQUIRE(warmup <= 100000 && iterations > 0 && iterations <= 100000);
   std::vector<capnp::byte> payload(bytes);
   for (size_t n = 0; n < bytes; ++n) payload[n] = n % 251;
-  auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
+  auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
   auto stream = address->connect().wait(io.waitScope);
   capnp::TwoPartyClient rpc(*stream);
   auto client = rpc.bootstrap().castAs<Workflows>();
@@ -173,7 +175,7 @@ int runWorkflows(int argc, char** argv) {
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
   auto width = name == "fanout-32" ? 32 : 1;
   auto rpcs = width == 32 ? 32 : (name == "dependent-read" || name == "pipelined-read" || name == "write-read" || name == "callback" ? 2 : 1);
-  std::cout << "{\"workflow_version\":3,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\"" << name << "\",\"payload_bytes\":" << bytes << ",\"width\":" << width << ",\"rpcs_per_iteration\":" << rpcs << "},\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
+  std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"workflow_version\":3,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\"" << name << "\",\"payload_bytes\":" << bytes << ",\"width\":" << width << ",\"rpcs_per_iteration\":" << rpcs << "},\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
   for (size_t n = 0; n < samples.size(); ++n) { if (n) std::cout << ','; std::cout << samples[n]; }
   std::cout << "]}" << std::endl;
   return 0;

@@ -40,7 +40,7 @@ pub(crate) async fn measure_calls(
     }
     println!(
         "{}",
-        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":protocol,"payload_bytes":payload.len(),"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
+        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":protocol,"security":crate::transport_metadata(protocol)?,"payload_bytes":payload.len(),"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
     );
     Ok(())
 }

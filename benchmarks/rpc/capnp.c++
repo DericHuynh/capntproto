@@ -1,4 +1,5 @@
 #include "echo.capnp.h"
+#include "secure.h"
 #include <capnp/rpc-twoparty.h>
 #include <kj/async-io.h>
 #include <kj/debug.h>
@@ -21,14 +22,16 @@ class Service final: public Echo::Server {
   }
 };
 int main(int argc, char** argv) {
+  BenchmarkTransport::setExecutable(argv[0]);
   if (argc > 1 && std::string(argv[1]).starts_with("topology-")) return runTopologies(argc, argv);
   if (argc > 1 && std::string(argv[1]).starts_with("workflow-")) return runWorkflows(argc, argv);
   auto io = kj::setupAsyncIo();
+  BenchmarkTransport transport(io.provider->getTimer());
   if (argc == 2 && std::string(argv[1]) == "server") {
-    auto address = io.provider->getNetwork().parseAddress("127.0.0.1", 0).wait(io.waitScope);
+    auto address = transport.address(io.provider->getNetwork().parseAddress("127.0.0.1", 0).wait(io.waitScope));
     auto listener = address->listen();
     capnp::TwoPartyServer server(kj::heap<Service>());
-    std::cout << "{\"address\":\"127.0.0.1:" << listener->getPort() << "\",\"public\":null}" << std::endl;
+    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"address\":\"127.0.0.1:" << listener->getPort() << "\",\"public\":null}" << std::endl;
     server.listen(*listener).wait(io.waitScope);
   } else {
     KJ_REQUIRE(argc == 6 && std::string(argv[1]) == "measure");
@@ -38,7 +41,7 @@ int main(int argc, char** argv) {
     KJ_REQUIRE(bytes <= 1024 * 1024 && warmup <= 100000 && iterations > 0 && iterations <= 1000000);
     std::vector<capnp::byte> payload(bytes);
     for (size_t n = 0; n < bytes; ++n) payload[n] = n % 251;
-    auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
+    auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
     auto stream = address->connect().wait(io.waitScope);
     capnp::TwoPartyClient client(*stream);
     auto echo = client.bootstrap().castAs<Echo>();
@@ -64,7 +67,7 @@ int main(int argc, char** argv) {
       if (sequence >= warmup) samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - before).count());
     }
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
-    std::cout << "{\"measurement_version\":2,\"protocol\":\"capnp-cpp\",\"payload_bytes\":" << bytes << ",\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
+    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"measurement_version\":2,\"protocol\":\"capnp-cpp\",\"payload_bytes\":" << bytes << ",\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
     for (size_t n = 0; n < samples.size(); ++n) { if (n) std::cout << ','; std::cout << samples[n]; }
     std::cout << "]}" << std::endl;
   }

@@ -17,6 +17,9 @@ mod echo_capnp {
 mod grpc {
     tonic::include_proto!("echo");
 }
+#[path = "../tls.rs"]
+mod benchmark_tls;
+mod secure;
 mod topology;
 mod workflows;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -47,10 +50,10 @@ impl grpc::echo_server::Echo for Echo {
         Ok(tonic::Response::new(request.into_inner()))
     }
 }
-fn ready(address: std::net::SocketAddr, public: Option<[u8; 32]>) -> Result<()> {
+fn ready(address: std::net::SocketAddr, public: Option<[u8; 32]>, protocol: &str) -> Result<()> {
     println!(
         "{}",
-        json!({"address":address.to_string(), "public":public})
+        json!({"address":address.to_string(), "public":public,"security":transport_metadata(protocol)?,"implementation":tcp_driver()?})
     );
     std::io::stdout().flush()?;
     Ok(())
@@ -63,12 +66,12 @@ async fn serve(protocol: &str) -> Result<()> {
         let client = Identity::from_private_key([1; 32])?;
         let session = if protocol == "native" {
             let socket = UdpSocket::bind("127.0.0.1:0").await?;
-            ready(socket.local_addr()?, Some(identity.public_key()))?;
+            ready(socket.local_addr()?, Some(identity.public_key()), protocol)?;
             transport::accept_authenticated(socket, &identity, client.public_key(), None, CONTEXT)
                 .await?
         } else {
             let socket = TcpListener::bind("127.0.0.1:0").await?;
-            ready(socket.local_addr()?, Some(identity.public_key()))?;
+            ready(socket.local_addr()?, Some(identity.public_key()), protocol)?;
             transport::tcp::accept(
                 socket.accept().await?.0,
                 &identity,
@@ -83,41 +86,31 @@ async fn serve(protocol: &str) -> Result<()> {
         handle.attach(session)?;
         let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
         capnp_rpc::RpcSystem::new(Box::new(network), Some(bootstrap.client)).await?;
+    } else if matches!(protocol, "tcp" | "quic") {
+        let listener = secure::Listener::bind("127.0.0.1:0").await?;
+        ready(listener.local_addr()?, None, protocol)?;
+        let network = listener
+            .accept()
+            .await?
+            .network(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+        let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
+        if tcp_driver()? == "portable" {
+            portable_network(
+                network,
+                Some(bootstrap.client),
+                capnp_rpc::rpc_twoparty_capnp::Side::Server,
+            )?
+            .run()
+            .await?;
+        } else {
+            capnp_rpc::RpcSystem::new(network, Some(bootstrap.client)).await?;
+        }
     } else {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
-        ready(listener.local_addr()?, None)?;
+        ready(listener.local_addr()?, None, protocol)?;
         match protocol {
-            "tcp" => {
-                let (socket, _) = listener.accept().await?;
-                socket.set_nodelay(true)?;
-                let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
-                if tcp_driver()? == "portable" {
-                    portable_tcp(
-                        socket,
-                        Some(bootstrap.client),
-                        capnp_rpc::rpc_twoparty_capnp::Side::Server,
-                    )?
-                    .run()
-                    .await?;
-                } else {
-                    capntproto::rpc::tcp::client(
-                        socket,
-                        Some(bootstrap.client),
-                        capnp_rpc::rpc_twoparty_capnp::Side::Server,
-                        Default::default(),
-                    )
-                    .await?;
-                }
-            }
             "grpc" => {
-                // serve_with_incoming bypasses tonic's TCP listener settings.
-                let incoming =
-                    tokio_stream::wrappers::TcpListenerStream::new(listener).map(|socket| {
-                        socket.and_then(|socket| {
-                            socket.set_nodelay(true)?;
-                            Ok(socket)
-                        })
-                    });
+                let incoming = grpc_incoming(listener)?;
                 tonic::transport::Server::builder()
                     .add_service(grpc::echo_server::EchoServer::new(Echo))
                     .serve_with_incoming(incoming)
@@ -126,6 +119,7 @@ async fn serve(protocol: &str) -> Result<()> {
             "websocket" => {
                 let (socket, _) = listener.accept().await?;
                 socket.set_nodelay(true)?;
+                let socket = benchmark_tls::accept(socket, benchmark_tls::server_config()?).await?;
                 let mut stream = tokio_tungstenite::accept_async(socket).await?;
                 while let Some(frame) = stream.next().await {
                     match frame? {
@@ -148,23 +142,21 @@ enum Client {
         capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>,
     ),
     Grpc(grpc::echo_client::EchoClient<tonic::transport::Channel>),
-    WebSocket(Box<WebSocketStream<TcpStream>>),
+    WebSocket(Box<WebSocketStream<tokio_rustls::TlsStream<TcpStream>>>),
 }
 impl Client {
     async fn connect(protocol: &str, address: &str, public: &str) -> Result<Self> {
         match protocol {
-            "tcp" => {
+            "tcp" | "quic" => {
+                let side = capnp_rpc::rpc_twoparty_capnp::Side::Client;
+                let network = secure::connect(address).await?.network(side);
                 if tcp_driver()? == "portable" {
-                    let socket = TcpStream::connect(address).await?;
-                    socket.set_nodelay(true)?;
-                    let mut driver =
-                        portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
+                    let mut driver = portable_network(network, None, side)?;
                     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
                     return Ok(Self::Portable(client, driver));
                 }
-                let mut driver =
-                    capntproto::rpc::connect(address, None, Default::default()).await?;
-                let client = driver.bootstrap();
+                let mut driver = capnp_rpc::RpcSystem::new(network, None);
+                let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
                 tokio::task::spawn_local(driver);
                 Ok(Self::Native(client))
             }
@@ -199,14 +191,13 @@ impl Client {
                 tokio::task::spawn_local(system);
                 Ok(Self::Native(client))
             }
-            "grpc" => Ok(Self::Grpc(
-                grpc::echo_client::EchoClient::connect(format!("http://{address}")).await?,
-            )),
+            "grpc" => Ok(Self::Grpc(grpc::echo_client::EchoClient::new(
+                grpc_channel(address).await?,
+            ))),
             "websocket" => {
-                let socket = TcpStream::connect(address).await?;
-                socket.set_nodelay(true)?;
+                let socket = benchmark_tls::connect(address).await?;
                 let (stream, _) =
-                    tokio_tungstenite::client_async(format!("ws://{address}/"), socket).await?;
+                    tokio_tungstenite::client_async(format!("wss://{address}/"), socket).await?;
                 Ok(Self::WebSocket(Box::new(stream)))
             }
             _ => Err("unknown benchmark protocol".into()),
@@ -235,7 +226,7 @@ impl Roundtrip for grpc::echo_client::EchoClient<tonic::transport::Channel> {
         Ok(())
     }
 }
-impl Roundtrip for WebSocketStream<TcpStream> {
+impl Roundtrip for WebSocketStream<tokio_rustls::TlsStream<TcpStream>> {
     async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
         let mut frame = sequence.to_le_bytes().to_vec();
         frame.extend_from_slice(payload);
@@ -339,6 +330,9 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
             std::path::Path::new(&args[3]),
         );
     }
+    if args.get(1).map(String::as_str) == Some("quic") {
+        std::env::set_var("CAPNTPROTO_BENCH_TRANSPORT", "quic");
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -373,17 +367,17 @@ pub(crate) fn tcp_driver() -> Result<&'static str> {
         _ => Err("CAPNTPROTO_BENCH_PORTABLE must be 0 or 1".into()),
     }
 }
-fn portable_tcp(
-    socket: TcpStream,
+fn portable_network(
+    network: secure::Network,
     bootstrap: Option<capnp::capability::Client>,
     side: capnp_rpc::rpc_twoparty_capnp::Side,
 ) -> Result<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>> {
-    portable_tcp_bounded(socket, bootstrap, side, 512 * 1024, 8 * 1024 * 1024)
+    portable_network_bounded(network, bootstrap, side, 512 * 1024, 8 * 1024 * 1024)
 }
-fn portable_tcp_bounded(
-    socket: TcpStream,
+fn portable_network_bounded(
+    network: secure::Network,
     bootstrap: Option<capnp::capability::Client>,
-    side: capnp_rpc::rpc_twoparty_capnp::Side,
+    _side: capnp_rpc::rpc_twoparty_capnp::Side,
     frame_bytes: usize,
     buffer_bytes: usize,
 ) -> Result<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>> {
@@ -394,12 +388,54 @@ fn portable_tcp_bounded(
         buffer_bytes.try_into()?,
     )?;
     Ok(capnp_rpc::portable::RpcSystem::new(
-        Box::new(capntproto::rpc::tcp::network(
-            socket,
-            side,
-            Default::default(),
-        )),
-        bootstrap,
-        options,
+        network, bootstrap, options,
     )?)
+}
+
+pub(crate) fn transport_metadata(protocol: &str) -> Result<serde_json::Value> {
+    match protocol {
+        "grpc" => {
+            let mut metadata = benchmark_tls::metadata();
+            metadata["alpn"] = "h2".into();
+            Ok(metadata)
+        }
+        "websocket" => Ok(benchmark_tls::metadata()),
+        "native" | "native-tcp" => Ok(
+            json!({"version":1,"transport":protocol,"authentication":"pinned-mutual-identity","setup_timed":false}),
+        ),
+        _ => secure::metadata(),
+    }
+}
+fn grpc_incoming(
+    listener: TcpListener,
+) -> Result<impl futures::Stream<Item = std::io::Result<tokio_rustls::server::TlsStream<TcpStream>>>>
+{
+    let mut config = (*benchmark_tls::server_config()?).clone();
+    config.alpn_protocols = vec![b"h2".to_vec()];
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
+    Ok(tokio_stream::wrappers::TcpListenerStream::new(listener)
+        .map(move |socket| {
+            let acceptor = acceptor.clone();
+            async move {
+                let socket = socket?;
+                socket.set_nodelay(true)?;
+                tokio::time::timeout(benchmark_tls::DEADLINE, acceptor.accept(socket)).await?
+            }
+        })
+        .buffer_unordered(64))
+}
+async fn grpc_channel(address: &str) -> Result<tonic::transport::Channel> {
+    Ok(
+        tonic::transport::Endpoint::from_shared(format!("https://{address}"))?
+            .tls_config(
+                tonic::transport::ClientTlsConfig::new()
+                    .domain_name(benchmark_tls::name())
+                    .ca_certificate(tonic::transport::Certificate::from_pem(
+                        benchmark_tls::read("ca.pem")?,
+                    )),
+            )?
+            .connect_timeout(benchmark_tls::DEADLINE)
+            .connect()
+            .await?,
+    )
 }

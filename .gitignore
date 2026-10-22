@@ -249,3 +249,9 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-21-observer-occupancy/README.md
 !/research/reports/portable-performance/2026-10-21-observer-occupancy/report.json
 !/research/reports/portable-performance/2026-10-21-observer-occupancy/source.patch
+
+!/research/reports/portable-performance/2026-10-22-encrypted-transports/
+/research/reports/portable-performance/2026-10-22-encrypted-transports/*
+!/research/reports/portable-performance/2026-10-22-encrypted-transports/README.md
+!/research/reports/portable-performance/2026-10-22-encrypted-transports/report.json
+!/research/reports/portable-performance/2026-10-22-encrypted-transports/source.patch

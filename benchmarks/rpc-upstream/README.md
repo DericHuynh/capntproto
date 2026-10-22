@@ -1,6 +1,6 @@
 # Upstream Rust RPC benchmark
 
-`capnp-rust` is an independent plaintext TCP baseline built with published
+`capnp-rust` is an independent TLS 1.3 over TCP baseline built with published
 crates.io packages: `capnp` **0.27.2**, `capnp-rpc` **0.27.0**, and the
 `capnpc` **0.27.0** code generator. Its committed lockfile also selects upstream
 `capnp-futures` 0.27.0. It has no dependency on our imported or modified crates.
@@ -34,7 +34,7 @@ cargo run --locked -p capntproto-dev -- digitalocean-bench smoke \
 
 The binary supports `server`, `measure ADDRESS PUBLIC_JSON BYTES WARMUP ITERATIONS`,
 `workflow-server ADDRESS`, and `workflow-measure ADDRESS CASE WARMUP ITERATIONS`.
-`PUBLIC_JSON` must be `null` for this plaintext peer. The orchestration driver
+`PUBLIC_JSON` must be `null` for this TLS peer. The orchestration driver
 supplies these arguments; measurements identify themselves as `capnp-rust`.
 
 CI compiles and packages this executable alongside legacy/portable, C++, gRPC
@@ -48,3 +48,9 @@ Upstream results are descriptive and do not change our own TCP acceptance gate.
 The [benchmark guide](../../docs/wiki/Quality-and-Benchmarks.md) describes
 sampling budgets, the two-droplet topology and retained evidence. Local smoke
 checks validate behavior only; they are not remote performance evidence.
+
+Generate certificates with `benchmarks/rpc/generate-certificates.py` and set
+`CAPNTPROTO_BENCH_CERTS` before starting either peer. The same CA and server
+identity must be used for all peers in a comparison. TLS is mandatory; the
+independent upstream fixture does not implement QUIC. See the encrypted runner
+in [the RPC benchmark guide](../rpc/README.md).

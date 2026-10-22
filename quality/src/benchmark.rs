@@ -83,6 +83,7 @@ fn audit_bundle(r: &mut Runner, bundle: &Path) -> Result<Value> {
 #[serde(deny_unknown_fields)]
 pub struct Trial {
     pub measurement_version: u32,
+    pub security: Value,
     pub protocol: String,
     pub payload_bytes: usize,
     pub warmup: u64,
@@ -99,6 +100,27 @@ pub fn validate(
 ) -> Result<()> {
     if trial.measurement_version != MEASUREMENT_VERSION {
         return Err("unsupported benchmark measurement version; rerun with matched C++ validation and cleanup".into());
+    }
+    let security = &trial.security;
+    let encrypted = if protocol == "native" {
+        security["transport"] == "native" && security["authentication"] == "pinned-mutual-identity"
+    } else {
+        security["transport"] == "tls-tcp"
+            && security["tls"] == "1.3"
+            && security["authentication"] == "server-certificate"
+            && security["early_data"] == false
+            && security["server_name"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty())
+            && security["alpn"]
+                == if protocol == "grpc" {
+                    json!("h2")
+                } else {
+                    Value::Null
+                }
+    };
+    if !encrypted || security["version"] != 1 || security["setup_timed"] != false {
+        return Err("benchmark requires matching encrypted transport metadata; plaintext archives cannot qualify".into());
     }
     if iterations == 0
         || trial.protocol != protocol
@@ -157,6 +179,9 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
             let first = cell[0];
             for trial in &cell {
                 validate(trial, protocol, bytes, first.warmup, first.iterations)?;
+                if trial.security != first.security {
+                    return Err("mixed security contracts in benchmark cell".into());
+                }
             }
             let mut samples: Vec<_> = cell
                 .iter()
@@ -173,7 +198,7 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
             let elapsed: u128 = cell.iter().map(|t| u128::from(t.elapsed_ns)).sum();
             let sample_trials: Vec<Vec<u64>> =
                 cell.iter().map(|trial| trial.latency_ns.clone()).collect();
-            let mut row = json!({"protocol":protocol,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
+            let mut row = json!({"protocol":protocol,"security":first.security,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
             row.as_object_mut().unwrap().extend(
                 latency_summary::summarize(&sample_trials)
                     .as_object()
@@ -186,7 +211,7 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
     Ok(rows)
 }
 
-/// Acceptance compares matched plaintext capability RPC, at every payload size.
+/// Acceptance compares matched TLS capability RPC, at every payload size.
 /// Keep raw distributions and tails in the report; the gate uses pooled p50.
 pub fn tcp_acceptance(rows: &[Value]) -> Result<()> {
     tcp_acceptance_for_driver(rows, "legacy")
@@ -355,7 +380,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         bundle.join("capnp-rust"),
     )?;
     let cxx = std::env::var("CXX").unwrap_or_else(|_| "g++".into());
-    let reference = v::cpp::build(&["capnp_tool", "capnpc_cpp", "capnp-rpc"])?;
+    let reference = v::cpp::build(&["capnp_tool", "capnpc_cpp", "capnp-rpc", "kj-tls"])?;
     let reference_bin = reference.join("c++/src/capnp");
     let cpp_dir = r.directory.join("cpp");
     fs::create_dir_all(&cpp_dir)?;
@@ -390,12 +415,28 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
             .arg(cpp_dir.join("echo.capnp.c++"))
             .arg(reference_bin.join("libcapnp-rpc.a"))
             .arg(reference_bin.join("libcapnp.a"))
+            .arg(reference.join("c++/src/kj/libkj-tls.a"))
             .arg(reference.join("c++/src/kj/libkj-async.a"))
             .arg(reference.join("c++/src/kj/libkj.a"))
-            .args(["-pthread", "-o"])
+            .args(["-lssl", "-lcrypto", "-pthread", "-o"])
             .arg(&cpp),
     )?;
     fs::copy(cpp, bundle.join("capnp-reference"))?;
+    // All transported peers share one short-lived benchmark identity; no plaintext fallback.
+    let certificates = bundle.join("certificates");
+    if certificates.exists() {
+        fs::remove_dir_all(&certificates)?;
+    }
+    r.run(
+        "benchmark-certificates",
+        v::command("python3")
+            .arg("benchmarks/rpc/generate-certificates.py")
+            .arg(&certificates),
+    )?;
+    fs::copy(
+        root().join("benchmarks/rpc/generate-certificates.py"),
+        bundle.join("generate-certificates.py"),
+    )?;
     let mut hashes = std::collections::BTreeMap::new();
     for name in [
         "tcp",
@@ -414,6 +455,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
     let auditable = audit_bundle(r, &bundle)?;
     let manifest = json!({"source_id":r.evidence.source_id, "compiler":r.evidence.compiler,
         "auditable":auditable,
+        "security_fixture":serde_json::from_slice::<Value>(&fs::read(certificates.join("manifest.json"))?)?,
         "cpp_compiler":r.run("cpp-compiler", v::command(&cxx).arg("--version"))?,
         "lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/rpc/Cargo.lock"))?),
         "upstream_rpc":upstream,
@@ -546,6 +588,7 @@ mod tests {
                 for _ in 0..REPETITIONS {
                     trials.push(Trial {
                         measurement_version: MEASUREMENT_VERSION,
+                        security: test_security(protocol),
                         protocol: protocol.into(),
                         payload_bytes: bytes,
                         warmup: 10,
@@ -583,6 +626,7 @@ mod tests {
         assert!(matrix(&[]).is_err());
         let mut t = Trial {
             measurement_version: MEASUREMENT_VERSION,
+            security: test_security("native"),
             protocol: "native".into(),
             payload_bytes: 64,
             warmup: 10,
@@ -596,5 +640,14 @@ mod tests {
         t.latency_ns[1] = 0;
         assert!(validate(&t, "native", 64, 10, 2).is_err());
         assert_eq!(percentile(&mut [3, 1, 2, 4, 5], 95), 5);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_security(protocol: &str) -> Value {
+    if protocol == "native" {
+        json!({"version":1,"transport":"native","authentication":"pinned-mutual-identity","setup_timed":false})
+    } else {
+        json!({"version":1,"transport":"tls-tcp","tls":"1.3","authentication":"server-certificate","server_name":"localhost","early_data":false,"setup_timed":false,"alpn":if protocol == "grpc" { json!("h2") } else { Value::Null }})
     }
 }

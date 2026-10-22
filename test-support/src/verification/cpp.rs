@@ -31,7 +31,11 @@ pub fn build(targets: &[&str]) -> Result<PathBuf> {
                 "-G",
                 "Ninja",
                 "-DBUILD_TESTING=ON",
-                "-DWITH_OPENSSL=OFF",
+                if targets.contains(&"kj-tls") {
+                    "-DWITH_OPENSSL=ON"
+                } else {
+                    "-DWITH_OPENSSL=OFF"
+                },
                 "-DWITH_ZLIB=OFF",
                 "-DWITH_FIBERS=OFF",
                 "-DCMAKE_BUILD_TYPE=Release",

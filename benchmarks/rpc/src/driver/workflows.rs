@@ -247,7 +247,8 @@ fn validate(
     warmup: u64,
     iterations: u64,
 ) -> Result<()> {
-    if value["workflow_version"] != crate::workflows::VERSION
+    if value["security"] != crate::transport_metadata(implementation)?
+        || value["workflow_version"] != crate::workflows::VERSION
         || value["implementation"] != implementation
         || value["case"] != *case
         || value["warmup"] != warmup
@@ -284,7 +285,7 @@ mod tests {
         assert!(address("8.8.8.8", false).is_err());
         assert!(address("10.0.0.1", false).is_ok());
         let case = crate::workflows::cases().remove(0);
-        let valid = json!({"workflow_version":crate::workflows::VERSION,"implementation":"legacy","case":case,"warmup":250,"iterations":2,"elapsed_ns":20,"latency_ns":[10,10]});
+        let valid = json!({"workflow_version":crate::workflows::VERSION,"implementation":"legacy","security":crate::transport_metadata("legacy").unwrap(),"case":case,"warmup":250,"iterations":2,"elapsed_ns":20,"latency_ns":[10,10]});
         assert!(validate(&valid, &case, "legacy", 250, 2).is_ok());
         for (key, replacement) in [
             ("latency_ns", json!([10])),
@@ -292,6 +293,7 @@ mod tests {
             ("implementation", json!("portable")),
             ("warmup", json!(0)),
             ("workflow_version", json!(1)),
+            ("security", json!(null)),
         ] {
             let mut invalid = valid.clone();
             invalid[key] = replacement;

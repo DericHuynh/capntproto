@@ -155,6 +155,7 @@ fn validate_trial_with_iterations(
 ) -> Result<()> {
     if !(1..=1_000_000).contains(&iterations)
         || value["measurement_version"] != crate::MEASUREMENT_VERSION
+        || value["security"] != crate::transport_metadata(protocol)?
         || value["protocol"] != protocol
         || value["payload_bytes"] != bytes
         || value["warmup"] != 10000
@@ -211,7 +212,7 @@ pub fn compare_tcp(tcp: &Path, cpp: &Path, destination: &Path) -> Result<()> {
             "driver_sha256": digest(&std::env::current_exe()?)?,
             "cpu_placement": placement, "cpu": output("lscpu", &[])?,
             "clock_reads": clock_diagnostics(&placement)?,
-            "scope": "Matched plaintext TCP, separate processes and physical cores, 10000 warmups and 1000 retained calls per trial, five alternating repetitions. Portable gate: pooled p50 <= 1.5x for 0/64/1024 bytes; 65536 bytes and tails reported separately. Legacy gate: <= 1.15x at every payload."
+            "scope": "Matched TLS 1.3 over TCP, separate processes and physical cores, 10000 warmups and 1000 retained calls per trial, five alternating repetitions. Portable gate: pooled p50 <= 1.5x for 0/64/1024 bytes; 65536 bytes and tails reported separately. Legacy gate: <= 1.15x at every payload."
         }))?,
     )?;
     let mut trials = Vec::new();
@@ -393,7 +394,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         "available_clocksources":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/available_clocksource").ok(),
         "clock_reads":clock_diagnostics(&placement)?,
         "cpu_placement":placement,
-        "scope":"Linux IPv4 loopback; sequential echo with bulk payload validation, response cleanup and ten-second per-call deadlines inside each timed roundtrip; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
+        "scope":"Linux IPv4 loopback; sequential echo with bulk payload validation, response cleanup and ten-second per-call deadlines inside each timed roundtrip; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols certificate-authenticated TLS 1.3"});
     fs::write(
         destination.join("environment.json"),
         serde_json::to_vec_pretty(&environment)?,
@@ -461,10 +462,11 @@ printf '%s:%s\n' "$1" "${{CAPNTPROTO_BENCH_PORTABLE:-unset}}" >> "$0.log"
 if [ "$1" = server ]; then
   printf '%s\n' '{{"address":"127.0.0.1:12345","public":null}}'
 else
-  printf '%s\n' '{{"measurement_version":{},"protocol":"tcp","payload_bytes":64,"warmup":10000,"iterations":1,"elapsed_ns":100,"latency_ns":[100]}}'
+  printf '%s\n' '{{"measurement_version":{},"protocol":"tcp","security":{},"payload_bytes":64,"warmup":10000,"iterations":1,"elapsed_ns":100,"latency_ns":[100]}}'
 fi
 "#,
-            crate::MEASUREMENT_VERSION
+            crate::MEASUREMENT_VERSION,
+            crate::transport_metadata("tcp").unwrap()
         );
         fs::write(&executable, &script).unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
@@ -505,7 +507,7 @@ fi
                 for _ in 0..5 {
                     trials.push(json!({
                         "measurement_version": crate::MEASUREMENT_VERSION,
-                        "protocol": protocol, "payload_bytes": bytes,
+                        "protocol": protocol, "security":crate::transport_metadata(protocol).unwrap(), "payload_bytes": bytes,
                         "warmup": 10000, "iterations": 1000,
                         "elapsed_ns": latency * 1000, "latency_ns": vec![latency; 1000],
                     }));
@@ -581,6 +583,7 @@ fi
         assert!(tcp_summary(&duplicate).is_err());
         for (key, value) in [
             ("measurement_version", json!(0)),
+            ("security", json!(null)),
             ("protocol", json!("native")),
             ("payload_bytes", json!(17)),
             ("warmup", json!(100)),

@@ -28,7 +28,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
             "measurement_version":crate::MEASUREMENT_VERSION, "manifest":manifest,
             "binary_sha256":hashes, "cpu_placement":placement,
             "cpu":output("lscpu", &[])?, "clock_reads":clock_diagnostics(&placement)?,
-            "scope":"Plaintext TCP loopback; separate processes and physical cores. Five rotating repetitions, 10000 warmups and 1000 retained calls per driver/payload. Portable and legacy selected explicitly for both peers."
+            "scope":"TLS 1.3 over TCP loopback; separate processes and physical cores. Five rotating repetitions, 10000 warmups and 1000 retained calls per driver/payload. Portable and legacy selected explicitly for both peers."
         }))?,
     )?;
     let mut trials = Vec::new();
@@ -65,7 +65,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         destination.join("summary.json"),
         serde_json::to_vec_pretty(&report)?,
     )?;
-    let mut readme = String::from("# Portable loopback target\n\nPlaintext TCP, separate processes and physical cores; five rotating repetitions, 10,000 warmups and 1,000 retained calls per driver/payload. All samples and executable/host identities are retained in trials.json and environment.json. This is separate from the two-host VPC workflows.\n\nTarget: portable pooled p50 ≤ 1.05 × min(legacy, C++) for every payload. Advisory while gap #11 remains open; tails remain in summary.json.\n\n| Bytes | Portable p50 (ns) | Legacy p50 (ns) | C++ p50 (ns) | Faster reference | Ratio | Meets target |\n|---:|---:|---:|---:|---|---:|---|\n");
+    let mut readme = String::from("# Portable loopback target\n\nTLS 1.3 over TCP, separate processes and physical cores; five rotating repetitions, 10,000 warmups and 1,000 retained calls per driver/payload. All samples and executable/host identities are retained in trials.json and environment.json. This is separate from the two-host VPC workflows.\n\nTarget: portable pooled p50 ≤ 1.05 × min(legacy, C++) for every payload. Advisory while gap #11 remains open; tails remain in summary.json.\n\n| Bytes | Portable p50 (ns) | Legacy p50 (ns) | C++ p50 (ns) | Faster reference | Ratio | Meets target |\n|---:|---:|---:|---:|---|---:|---|\n");
     for row in report["rows"].as_array().unwrap() {
         readme += &format!(
             "| {} | {} | {} | {} | {} | {:.3}× | {} |\n",
@@ -179,7 +179,7 @@ mod tests {
         for bytes in PAYLOADS {
             for (driver, latency) in DRIVERS.into_iter().zip([portable, legacy, cpp]) {
                 for repetition in 0..5 {
-                    values.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,
+                    values.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,"security":crate::transport_metadata("tcp").unwrap(),
                         "protocol":if driver == "capnp-cpp" {"capnp-cpp"} else {"tcp"},
                         "payload_bytes":bytes, "driver":driver, "repetition":repetition,
                         "warmup":10000, "iterations":1000, "elapsed_ns":latency*1000,

@@ -112,6 +112,7 @@ def main():
     parser.add_argument('directory', type=Path)
     args = parser.parse_args()
     scope = json.loads((args.directory / 'scope.json').read_text())
+    assert not (scope.get('transport') or scope.get('security_version')), 'encrypted captures contain ciphertext; use syscall accounting, not plaintext frame decoding'
     assert scope['instrument'] == 'wire'
     rows = []
     for trial in scope['trials']:

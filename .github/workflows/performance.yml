@@ -55,7 +55,7 @@ jobs:
       - name: Build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler time iproute2
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler time iproute2 libssl-dev openssl
           rustup toolchain install 1.97.0 --profile minimal
           cargo install gungraun-runner --version 0.20.0 --locked
           git submodule update --init --depth 1 -- vendor/capnproto
@@ -67,13 +67,13 @@ jobs:
         run: python3 -m unittest discover -s benchmarks/rpc -p 'test_*.py'
       - name: Exercise all six workflow implementations locally (not timing evidence)
         run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-workflow-smoke" --state "$RUNNER_TEMP/workflow-smoke"
-      - name: Exercise deep and concurrent service chains (not timing evidence)
+      - name: Exercise TLS and QUIC fixtures and certificate rejection (not timing evidence)
         run: |
-          python3 benchmarks/rpc/topology-runner.py \
+          python3 benchmarks/rpc/secure-check.py \
             --rust target/benchmark-build/bundle/driver \
             --cpp target/benchmark-build/bundle/capnp-reference \
-            --output "$RUNNER_TEMP/benchmark-topology-smoke" \
-            --repetitions 1 --warmup 2 --iterations 5 --mixed
+            --upstream target/benchmark-build/bundle/capnp-rust \
+            --output "$RUNNER_TEMP/benchmark-topology-smoke"
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

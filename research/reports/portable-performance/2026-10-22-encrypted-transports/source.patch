@@ -1,0 +1,2658 @@
+diff --git a/.github/actions/auditable-setup/action.yml b/.github/actions/auditable-setup/action.yml
+index 15406e6..2095c35 100644
+--- a/.github/actions/auditable-setup/action.yml
++++ b/.github/actions/auditable-setup/action.yml
+@@ -18,7 +18,7 @@ runs:
+       run: |
+         rustup toolchain install 1.97.0 --profile minimal
+     - name: Restore Rust dependency cache
+-      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
++      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+       with:
+         key: ${{ inputs.cache-key }}
+         workspaces: ${{ inputs.workspaces }}
+diff --git a/.github/actions/dev-setup/action.yml b/.github/actions/dev-setup/action.yml
+index 089ff87..98ac4e7 100644
+--- a/.github/actions/dev-setup/action.yml
++++ b/.github/actions/dev-setup/action.yml
+@@ -11,7 +11,7 @@ runs:
+       shell: bash
+       run: rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+     - name: Restore Rust dependency cache
+-      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
++      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+       with:
+         key: dev-${{ inputs.cache-key }}
+         workspaces: . -> target
+diff --git a/.github/workflows/performance.yml b/.github/workflows/performance.yml
+index ada396a..cfd14fd 100644
+--- a/.github/workflows/performance.yml
++++ b/.github/workflows/performance.yml
+@@ -55,7 +55,7 @@ jobs:
+       - name: Build prerequisites
+         run: |
+           sudo apt-get update
+-          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler time iproute2
++          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler time iproute2 libssl-dev openssl
+           rustup toolchain install 1.97.0 --profile minimal
+           cargo install gungraun-runner --version 0.20.0 --locked
+           git submodule update --init --depth 1 -- vendor/capnproto
+@@ -67,13 +67,13 @@ jobs:
+         run: python3 -m unittest discover -s benchmarks/rpc -p 'test_*.py'
+       - name: Exercise all six workflow implementations locally (not timing evidence)
+         run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-workflow-smoke" --state "$RUNNER_TEMP/workflow-smoke"
+-      - name: Exercise deep and concurrent service chains (not timing evidence)
++      - name: Exercise TLS and QUIC fixtures and certificate rejection (not timing evidence)
+         run: |
+-          python3 benchmarks/rpc/topology-runner.py \
++          python3 benchmarks/rpc/secure-check.py \
+             --rust target/benchmark-build/bundle/driver \
+             --cpp target/benchmark-build/bundle/capnp-reference \
+-            --output "$RUNNER_TEMP/benchmark-topology-smoke" \
+-            --repetitions 1 --warmup 2 --iterations 5 --mixed
++            --upstream target/benchmark-build/bundle/capnp-rust \
++            --output "$RUNNER_TEMP/benchmark-topology-smoke"
+       - name: Archive executable bundle with permissions intact
+         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
+       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+diff --git a/benchmarks/rpc-upstream/Cargo.lock b/benchmarks/rpc-upstream/Cargo.lock
+index b87262a..24db5cc 100644
+--- a/benchmarks/rpc-upstream/Cargo.lock
++++ b/benchmarks/rpc-upstream/Cargo.lock
+@@ -49,6 +49,7 @@ dependencies = [
+  "futures",
+  "serde_json",
+  "tokio",
++ "tokio-rustls",
+  "tokio-util",
+ ]
+ 
+@@ -61,12 +62,34 @@ dependencies = [
+  "capnp",
+ ]
+ 
++[[package]]
++name = "cc"
++version = "1.9.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "877bf67ac8e52449eb2f9e98a344ea163beb70dd1f9eebe3cc5357dcfeaee4df"
++dependencies = [
++ "find-msvc-tools",
++ "shlex",
++]
++
++[[package]]
++name = "cfg-if"
++version = "1.0.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
++
+ [[package]]
+ name = "embedded-io"
+ version = "0.7.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "9eb1aa714776b75c7e67e1da744b81a129b3ff919c8712b5e1b32252c1f07cc7"
+ 
++[[package]]
++name = "find-msvc-tools"
++version = "0.1.15"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
++
+ [[package]]
+ name = "futures"
+ version = "0.3.34"
+@@ -155,6 +178,17 @@ dependencies = [
+  "slab",
+ ]
+ 
++[[package]]
++name = "getrandom"
++version = "0.2.17"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
++dependencies = [
++ "cfg-if",
++ "libc",
++ "wasi",
++]
++
+ [[package]]
+ name = "itoa"
+ version = "1.0.18"
+@@ -181,9 +215,15 @@ checksum = "4b18443e9c262bfe8fa82f51666e2642c53393f7e5c27b3e1aeab922cff5b9d8"
+ dependencies = [
+  "libc",
+  "wasi",
+- "windows-sys",
++ "windows-sys 0.61.2",
+ ]
+ 
++[[package]]
++name = "once_cell"
++version = "1.21.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
++
+ [[package]]
+ name = "pin-project-lite"
+ version = "0.2.17"
+@@ -208,6 +248,54 @@ dependencies = [
+  "proc-macro2",
+ ]
+ 
++[[package]]
++name = "ring"
++version = "0.17.14"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
++dependencies = [
++ "cc",
++ "cfg-if",
++ "getrandom",
++ "libc",
++ "untrusted",
++ "windows-sys 0.52.0",
++]
++
++[[package]]
++name = "rustls"
++version = "0.23.46"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
++dependencies = [
++ "once_cell",
++ "ring",
++ "rustls-pki-types",
++ "rustls-webpki",
++ "subtle",
++ "zeroize",
++]
++
++[[package]]
++name = "rustls-pki-types"
++version = "1.15.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
++dependencies = [
++ "zeroize",
++]
++
++[[package]]
++name = "rustls-webpki"
++version = "0.103.16"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
++dependencies = [
++ "ring",
++ "rustls-pki-types",
++ "untrusted",
++]
++
+ [[package]]
+ name = "serde"
+ version = "1.0.229"
+@@ -250,6 +338,12 @@ dependencies = [
+  "zmij",
+ ]
+ 
++[[package]]
++name = "shlex"
++version = "2.0.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
++
+ [[package]]
+ name = "slab"
+ version = "0.4.12"
+@@ -263,9 +357,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+ dependencies = [
+  "libc",
+- "windows-sys",
++ "windows-sys 0.61.2",
+ ]
+ 
++[[package]]
++name = "subtle"
++version = "2.6.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
++
+ [[package]]
+ name = "syn"
+ version = "3.0.9"
+@@ -288,7 +388,17 @@ dependencies = [
+  "mio",
+  "pin-project-lite",
+  "socket2",
+- "windows-sys",
++ "windows-sys 0.61.2",
++]
++
++[[package]]
++name = "tokio-rustls"
++version = "0.26.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "c9cc2678c2cdd569ef8215e2afd7954ada2ae20b4fdd2c5fe6139a3b02d105db"
++dependencies = [
++ "rustls",
++ "tokio",
+ ]
+ 
+ [[package]]
+@@ -311,6 +421,12 @@ version = "1.0.27"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+ 
++[[package]]
++name = "untrusted"
++version = "0.9.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
++
+ [[package]]
+ name = "wasi"
+ version = "0.11.1+wasi-snapshot-preview1"
+@@ -323,6 +439,15 @@ version = "0.2.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+ 
++[[package]]
++name = "windows-sys"
++version = "0.52.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
++dependencies = [
++ "windows-targets",
++]
++
+ [[package]]
+ name = "windows-sys"
+ version = "0.61.2"
+@@ -332,6 +457,76 @@ dependencies = [
+  "windows-link",
+ ]
+ 
++[[package]]
++name = "windows-targets"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9b724f72796e036ab90c1021d4780d4d3d648aca59e491e6b98e725b84e99973"
++dependencies = [
++ "windows_aarch64_gnullvm",
++ "windows_aarch64_msvc",
++ "windows_i686_gnu",
++ "windows_i686_gnullvm",
++ "windows_i686_msvc",
++ "windows_x86_64_gnu",
++ "windows_x86_64_gnullvm",
++ "windows_x86_64_msvc",
++]
++
++[[package]]
++name = "windows_aarch64_gnullvm"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "32a4622180e7a0ec044bb555404c800bc9fd9ec262ec147edd5989ccd0c02cd3"
++
++[[package]]
++name = "windows_aarch64_msvc"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "09ec2a7bb152e2252b53fa7803150007879548bc709c039df7627cabbd05d469"
++
++[[package]]
++name = "windows_i686_gnu"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8e9b5ad5ab802e97eb8e295ac6720e509ee4c243f69d781394014ebfe8bbfa0b"
++
++[[package]]
++name = "windows_i686_gnullvm"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "0eee52d38c090b3caa76c563b86c3a4bd71ef1a819287c19d586d7334ae8ed66"
++
++[[package]]
++name = "windows_i686_msvc"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "240948bc05c5e7c6dabba28bf89d89ffce3e303022809e73deaefe4f6ec56c66"
++
++[[package]]
++name = "windows_x86_64_gnu"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "147a5c80aabfbf0c7d901cb5895d1de30ef2907eb21fbbab29ca94c5b08b1a78"
++
++[[package]]
++name = "windows_x86_64_gnullvm"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "24d5b23dc417412679681396f2b49f3de8c1473deb516bd34410872eff51ed0d"
++
++[[package]]
++name = "windows_x86_64_msvc"
++version = "0.52.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
++
++[[package]]
++name = "zeroize"
++version = "1.9.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
++
+ [[package]]
+ name = "zmij"
+ version = "1.0.23"
+diff --git a/benchmarks/rpc-upstream/Cargo.toml b/benchmarks/rpc-upstream/Cargo.toml
+index 263c23f..4f9ff1c 100644
+--- a/benchmarks/rpc-upstream/Cargo.toml
++++ b/benchmarks/rpc-upstream/Cargo.toml
+@@ -12,6 +12,7 @@ name = "capnp-rust"
+ path = "src/main.rs"
+ 
+ [dependencies]
++tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+ capnp = "=0.27.2"
+ capnp-rpc = "=0.27.0"
+ futures = "0.3"
+diff --git a/benchmarks/rpc-upstream/README.md b/benchmarks/rpc-upstream/README.md
+index 676d57f..e5badbf 100644
+--- a/benchmarks/rpc-upstream/README.md
++++ b/benchmarks/rpc-upstream/README.md
+@@ -1,6 +1,6 @@
+ # Upstream Rust RPC benchmark
+ 
+-`capnp-rust` is an independent plaintext TCP baseline built with published
++`capnp-rust` is an independent TLS 1.3 over TCP baseline built with published
+ crates.io packages: `capnp` **0.27.2**, `capnp-rpc` **0.27.0**, and the
+ `capnpc` **0.27.0** code generator. Its committed lockfile also selects upstream
+ `capnp-futures` 0.27.0. It has no dependency on our imported or modified crates.
+@@ -34,7 +34,7 @@ cargo run --locked -p capntproto-dev -- digitalocean-bench smoke \
+ 
+ The binary supports `server`, `measure ADDRESS PUBLIC_JSON BYTES WARMUP ITERATIONS`,
+ `workflow-server ADDRESS`, and `workflow-measure ADDRESS CASE WARMUP ITERATIONS`.
+-`PUBLIC_JSON` must be `null` for this plaintext peer. The orchestration driver
++`PUBLIC_JSON` must be `null` for this TLS peer. The orchestration driver
+ supplies these arguments; measurements identify themselves as `capnp-rust`.
+ 
+ CI compiles and packages this executable alongside legacy/portable, C++, gRPC
+@@ -48,3 +48,9 @@ Upstream results are descriptive and do not change our own TCP acceptance gate.
+ The [benchmark guide](../../docs/wiki/Quality-and-Benchmarks.md) describes
+ sampling budgets, the two-droplet topology and retained evidence. Local smoke
+ checks validate behavior only; they are not remote performance evidence.
++
++Generate certificates with `benchmarks/rpc/generate-certificates.py` and set
++`CAPNTPROTO_BENCH_CERTS` before starting either peer. The same CA and server
++identity must be used for all peers in a comparison. TLS is mandatory; the
++independent upstream fixture does not implement QUIC. See the encrypted runner
++in [the RPC benchmark guide](../rpc/README.md).
+diff --git a/benchmarks/rpc-upstream/src/main.rs b/benchmarks/rpc-upstream/src/main.rs
+index dc78330..c0b5e98 100644
+--- a/benchmarks/rpc-upstream/src/main.rs
++++ b/benchmarks/rpc-upstream/src/main.rs
+@@ -9,6 +9,8 @@ use tokio_util::compat::TokioAsyncReadCompatExt;
+ mod echo_capnp {
+     include!(concat!(env!("OUT_DIR"), "/echo_capnp.rs"));
+ }
++#[path = "../../rpc/tls.rs"]
++mod benchmark_tls;
+ #[path = "../../rpc/measurement.rs"]
+ mod measurement;
+ mod workflows;
+@@ -16,12 +18,12 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+ const MEASUREMENT_VERSION: u32 = 2;
+ 
+ fn rpc(
+-    socket: TcpStream,
++    socket: tokio_rustls::TlsStream<TcpStream>,
+     bootstrap: Option<capnp::capability::Client>,
+     side: Side,
+ ) -> RpcSystem<Side> {
+     // Use the buffered futures IO arrangement from upstream's calculator example.
+-    // Both endpoints use TCP_NODELAY, as do the other plaintext TCP baselines.
++    // TLS authenticates the peer before constructing the upstream RPC driver.
+     let (reader, writer) = socket.compat().split();
+     let network = capnp_rpc::twoparty::VatNetwork::new(
+         futures::io::BufReader::new(reader),
+@@ -35,7 +37,7 @@ fn rpc(
+ fn ready(address: std::net::SocketAddr) -> Result<()> {
+     println!(
+         "{}",
+-        serde_json::json!({"address":address.to_string(), "public":null})
++        serde_json::json!({"address":address.to_string(), "public":null,"security":benchmark_tls::metadata()})
+     );
+     std::io::stdout().flush()?;
+     Ok(())
+@@ -60,7 +62,7 @@ async fn serve() -> Result<()> {
+     let listener = TcpListener::bind("127.0.0.1:0").await?;
+     ready(listener.local_addr()?)?;
+     let (socket, _) = listener.accept().await?;
+-    socket.set_nodelay(true)?;
++    let socket = benchmark_tls::accept(socket, benchmark_tls::server_config()?).await?;
+     let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
+     rpc(socket, Some(bootstrap.client), Side::Server).await?;
+     Ok(())
+@@ -71,7 +73,7 @@ async fn measure(args: &[String]) -> Result<()> {
+         return Err("measure ADDRESS PUBLIC_JSON BYTES WARMUP ITERATIONS".into());
+     }
+     if !serde_json::from_str::<serde_json::Value>(&args[1])?.is_null() {
+-        return Err("upstream benchmark uses plaintext TCP".into());
++        return Err("upstream benchmark uses certificate-authenticated TLS".into());
+     }
+     let bytes: usize = args[2].parse()?;
+     let warmup: u64 = args[3].parse()?;
+@@ -80,15 +82,20 @@ async fn measure(args: &[String]) -> Result<()> {
+         return Err("benchmark bounds exceeded".into());
+     }
+     let payload: Vec<_> = (0..bytes).map(|n| (n % 251) as u8).collect();
+-    let socket = TcpStream::connect(&args[0]).await?;
+-    socket.set_nodelay(true)?;
++    let socket = benchmark_tls::connect(&args[0]).await?;
+     let mut system = rpc(socket, None, Side::Client);
+     let mut client: echo_capnp::echo::Client = system.bootstrap(Side::Server);
+     tokio::task::spawn_local(system);
+     measurement::measure_calls(&mut client, "capnp-rust", &payload, warmup, iterations).await
+ }
+ 
++fn transport_metadata(_: &str) -> Result<serde_json::Value> {
++    Ok(benchmark_tls::metadata())
++}
+ fn main() -> Result<()> {
++    if std::env::var("CAPNTPROTO_BENCH_TRANSPORT").is_ok_and(|v| v != "tls") {
++        return Err("upstream fixture supports TLS only".into());
++    }
+     let args: Vec<_> = std::env::args().skip(1).collect();
+     tokio::runtime::Builder::new_current_thread()
+         .enable_all()
+diff --git a/benchmarks/rpc-upstream/src/workflows.rs b/benchmarks/rpc-upstream/src/workflows.rs
+index a1a985a..dbab2ca 100644
+--- a/benchmarks/rpc-upstream/src/workflows.rs
++++ b/benchmarks/rpc-upstream/src/workflows.rs
+@@ -1,6 +1,6 @@
+ use crate::{echo_capnp::workflows, Result};
+ use capnp_rpc::rpc_twoparty_capnp::Side;
+-use tokio::net::{TcpListener, TcpStream};
++use tokio::net::TcpListener;
+ use tokio::time::timeout;
+ 
+ #[path = "../../rpc/capability-workflows.rs"]
+@@ -26,7 +26,8 @@ pub async fn serve(address: &str) -> Result<()> {
+     crate::ready(listener.local_addr()?)?;
+     loop {
+         let (socket, _) = listener.accept().await?;
+-        socket.set_nodelay(true)?;
++        let socket =
++            crate::benchmark_tls::accept(socket, crate::benchmark_tls::server_config()?).await?;
+         let bootstrap: workflows::Client = capnp_rpc::new_client(capability::Service);
+         tokio::task::spawn_local(async move {
+             if let Err(error) = crate::rpc(socket, Some(bootstrap.client), Side::Server).await {
+@@ -36,8 +37,7 @@ pub async fn serve(address: &str) -> Result<()> {
+     }
+ }
+ async fn connect(address: &str) -> Result<workflows::Client> {
+-    let socket = TcpStream::connect(address).await?;
+-    socket.set_nodelay(true)?;
++    let socket = crate::benchmark_tls::connect(address).await?;
+     let mut system = crate::rpc(socket, None, Side::Client);
+     let client = system.bootstrap(Side::Server);
+     tokio::task::spawn_local(system);
+diff --git a/benchmarks/rpc/Cargo.lock b/benchmarks/rpc/Cargo.lock
+index c32846b..d92e1fd 100644
+--- a/benchmarks/rpc/Cargo.lock
++++ b/benchmarks/rpc/Cargo.lock
+@@ -293,6 +293,7 @@ dependencies = [
+  "serde",
+  "serde_json",
+  "tokio",
++ "tokio-rustls",
+  "tokio-stream",
+  "tokio-tungstenite",
+  "tokio-util",
+@@ -1368,6 +1369,7 @@ version = "0.23.46"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
+ dependencies = [
++ "log",
+  "once_cell",
+  "ring",
+  "rustls-pki-types",
+@@ -1688,6 +1690,7 @@ dependencies = [
+  "socket2",
+  "sync_wrapper",
+  "tokio",
++ "tokio-rustls",
+  "tokio-stream",
+  "tower",
+  "tower-layer",
+diff --git a/benchmarks/rpc/Cargo.toml b/benchmarks/rpc/Cargo.toml
+index 7b2255d..033f2bd 100644
+--- a/benchmarks/rpc/Cargo.toml
++++ b/benchmarks/rpc/Cargo.toml
+@@ -7,14 +7,15 @@ publish = false
+ [workspace]
+ 
+ [dependencies]
+-capntproto = { path = "../..", default-features = false, features = ["native"] }
++tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
++capntproto = { path = "../..", default-features = false, features = ["native", "quic"] }
+ capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+ capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
+ futures = "0.3"
+ tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
+ tokio-util = { version = "0.7", features = ["compat"] }
+ tokio-stream = { version = "0.1", features = ["net"] }
+-tonic = "=0.14.6"
++tonic = { version = "=0.14.6", features = ["tls-ring"] }
+ tonic-prost = "=0.14.6"
+ prost = "0.14"
+ tokio-tungstenite = "=0.29.0"
+diff --git a/benchmarks/rpc/README.md b/benchmarks/rpc/README.md
+index cc40a38..0701f4a 100644
+--- a/benchmarks/rpc/README.md
++++ b/benchmarks/rpc/README.md
+@@ -4,9 +4,75 @@ The existing `workflows.json` catalog and four loopback payloads retain their
+ contracts and sampling budgets. `topologies.json` adds a separate, versioned
+ suite compiled into both the Rust driver and the C++ reference executable.
+ 
++## Encrypted comparison (current default)
++
++Every benchmark connection is encrypted. Capability RPC defaults to TLS 1.3 over
++TCP, including every downstream microservice hop. `CAPNTPROTO_BENCH_TRANSPORT=quic`
++selects the production standard QUIC v1 adapter for both legacy and portable.
++QUIC uses one bidirectional stream per RPC connection, preserving the same
++connection counts, ordering, payloads, concurrency, and application validation.
++The independent upstream Rust fixture and C++/KJ reference use TLS. gRPC uses
++HTTPS/HTTP2 with a TLS 1.3-only acceptor; WebSocket uses WSS. The existing native
++UDP/TCP protocols retain their pinned mutual identity encryption and are a
++separate security model, not certificate-authenticated TLS controls.
++
++Run the complete 24-case encrypted matrix with five independent process repetitions:
++
++```sh
++python3 benchmarks/rpc/secure-runner.py --rust DRIVER --cpp CPP \
++  --output target/secure-comparison --mixed --comparators --upstream UPSTREAM
++```
++
++`--transport tls|quic|both` defaults to both. `--comparators` adds gRPC/WSS and
++optional independent upstream Rust to their supported loopback/workflow cells.
++The runner generates a fresh private benchmark CA and seven-day localhost
++certificate, verifies transport metadata on every peer, and retains raw samples,
++certificate fingerprints, binary hashes, process placement, host counters,
++means, sample SD, and run-mean ranges. Application setup and full handshakes finish
++before warmup/timing; no application 0-RTT is enabled. These are established
++connection measurements, not handshake latency measurements. Five repetitions
++rotate execution order but do not completely balance every position.
++
++**C++ QUIC is unsupported** by the pinned KJ reference. It is explicitly omitted
++from the QUIC matrix. Rust QUIC comparisons are legacy versus portable on the
++same production adapter; C++ comparisons use TLS versus TLS. TLS and QUIC results
++remain separate, and do not reuse or pool the historical plaintext baselines.
++Cryptographic implementations differ: Rust TLS uses rustls/ring, KJ uses OpenSSL,
++and QUIC uses quiche/BoringSSL. All use TLS 1.3, the same CA/server identity, and
++certificate plus hostname verification. These fixtures use server authentication;
++they do not require client certificates. QUIC uses `capntproto-rpc/1` ALPN; HTTP2
++uses `h2`; ordinary RPC TLS and WSS omit ALPN because KJ's public TLS API does not
++expose it. This benchmark configuration does not relax the production RPC TLS
++adapter's ALPN requirement.
++
++For direct commands or the topology-only runner, first create and select a fixture:
++
++```sh
++python3 benchmarks/rpc/generate-certificates.py target/benchmark-certificates
++export CAPNTPROTO_BENCH_CERTS="$PWD/target/benchmark-certificates"
++export CAPNTPROTO_BENCH_TRANSPORT=tls
++```
++
++The standard quality bundle includes a fresh fixture beside its executables;
++`CAPNTPROTO_BENCH_CERTS` overrides that directory. Regenerate expired bundle
++fixtures before reusing an old build. Missing certificates, invalid names/roots, and unsupported transports fail rather
++than falling back to plaintext. Fixture keys are local benchmark artifacts and
++must not be deployed. Both hosts in a remote run must receive the same fixture;
++`CAPNTPROTO_BENCH_SERVER_NAME` identifies the certificate name (default localhost),
++independently of the dialed IP. Old frozen plaintext executables cannot serve as
++controls for this encrypted campaign.
++
++`secure-check.py --rust DRIVER --cpp CPP --upstream UPSTREAM --output NEW_DIR`
++runs all supported application fixtures, mixed-engine callback/pipeline/service
++chains, and wrong-hostname/untrusted-CA rejection checks. Use a separate
++`secure-runner.py ... --trace --repetitions 1 --warmup 2 --iterations 10` run for
++ciphertext syscall diagnostics. Counts include setup, TLS records, QUIC control
++packets and UDP operations; they are not Cap'n Proto message counts. The old
++plaintext frame decoder explicitly rejects encrypted captures.
++
+ ## Deep and concurrent access
+ 
+-| Case | Nested nodes | Outstanding requests per batch | Client TCP connections | Service processes |
++| Case | Nested nodes | Outstanding requests per batch | Client connections | Service processes |
+ | --- | ---: | ---: | ---: | ---: |
+ | deep-8 | 8 | 1 | 1 | 1 |
+ | deep-32 | 32 | 1 | 1 | 1 |
+@@ -22,7 +88,7 @@ next node. Every service traverses and validates every node and byte. Intermedia
+ services copy the nested request into a downstream RPC, await its result, add
+ their checksum and visit count, and copy its nested response back upstream. The
+ client validates the returned chain, checksum, and total visits. Consequently,
+-depth is actual pointer traversal and copying, and every service hop is a TCP RPC
++depth is actual pointer traversal and copying, and every service hop is an encrypted RPC
+ to another OS process. A setup RPC verifies the chain length before timing.
+ 
+ Each service shares one persistent downstream connection across its incoming
+@@ -71,7 +137,7 @@ The runner selects distinct physical cores for the client and available service
+ workers. Longer chains cycle over the available service cores; the exact placement
+ is retained. On a five-core host, four-service chains use one core per process,
+ while eight-service chains intentionally share service cores. These are same-host
+-TCP microservice chains, not cross-host network measurements.
++encrypted microservice chains, not cross-host network measurements.
+ 
+ Every output directory must be new. It retains raw latency samples, per-process
+ logs, server readiness/chain checks, CPU placement, binary and fixture hashes,
+diff --git a/benchmarks/rpc/analyze-topology.py b/benchmarks/rpc/analyze-topology.py
+index f672f50..c390cea 100644
+--- a/benchmarks/rpc/analyze-topology.py
++++ b/benchmarks/rpc/analyze-topology.py
+@@ -112,6 +112,7 @@ def main():
+     parser.add_argument('directory', type=Path)
+     args = parser.parse_args()
+     scope = json.loads((args.directory / 'scope.json').read_text())
++    assert not (scope.get('transport') or scope.get('security_version')), 'encrypted captures contain ciphertext; use syscall accounting, not plaintext frame decoding'
+     assert scope['instrument'] == 'wire'
+     rows = []
+     for trial in scope['trials']:
+diff --git a/benchmarks/rpc/capability-workflows.rs b/benchmarks/rpc/capability-workflows.rs
+index 734aee5..3e5500b 100644
+--- a/benchmarks/rpc/capability-workflows.rs
++++ b/benchmarks/rpc/capability-workflows.rs
+@@ -237,7 +237,7 @@ pub async fn measure(args: &[String]) -> Result<()> {
+         }
+         println!(
+             "{}",
+-            json!({"workflow_version": VERSION, "implementation": implementation()?, "case": case, "warmup": warmup, "iterations": iterations, "elapsed_ns": u64::try_from(start.elapsed().as_nanos())?, "latency_ns": samples})
++            json!({"workflow_version": VERSION, "implementation": implementation()?,"security":crate::transport_metadata(implementation()?)?, "case": case, "warmup": warmup, "iterations": iterations, "elapsed_ns": u64::try_from(start.elapsed().as_nanos())?, "latency_ns": samples})
+         );
+         Ok(())
+     };
+diff --git a/benchmarks/rpc/capnp.c++ b/benchmarks/rpc/capnp.c++
+index e85d791..fc6ae9f 100644
+--- a/benchmarks/rpc/capnp.c++
++++ b/benchmarks/rpc/capnp.c++
+@@ -1,4 +1,5 @@
+ #include "echo.capnp.h"
++#include "secure.h"
+ #include <capnp/rpc-twoparty.h>
+ #include <kj/async-io.h>
+ #include <kj/debug.h>
+@@ -21,14 +22,16 @@ class Service final: public Echo::Server {
+   }
+ };
+ int main(int argc, char** argv) {
++  BenchmarkTransport::setExecutable(argv[0]);
+   if (argc > 1 && std::string(argv[1]).starts_with("topology-")) return runTopologies(argc, argv);
+   if (argc > 1 && std::string(argv[1]).starts_with("workflow-")) return runWorkflows(argc, argv);
+   auto io = kj::setupAsyncIo();
++  BenchmarkTransport transport(io.provider->getTimer());
+   if (argc == 2 && std::string(argv[1]) == "server") {
+-    auto address = io.provider->getNetwork().parseAddress("127.0.0.1", 0).wait(io.waitScope);
++    auto address = transport.address(io.provider->getNetwork().parseAddress("127.0.0.1", 0).wait(io.waitScope));
+     auto listener = address->listen();
+     capnp::TwoPartyServer server(kj::heap<Service>());
+-    std::cout << "{\"address\":\"127.0.0.1:" << listener->getPort() << "\",\"public\":null}" << std::endl;
++    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"address\":\"127.0.0.1:" << listener->getPort() << "\",\"public\":null}" << std::endl;
+     server.listen(*listener).wait(io.waitScope);
+   } else {
+     KJ_REQUIRE(argc == 6 && std::string(argv[1]) == "measure");
+@@ -38,7 +41,7 @@ int main(int argc, char** argv) {
+     KJ_REQUIRE(bytes <= 1024 * 1024 && warmup <= 100000 && iterations > 0 && iterations <= 1000000);
+     std::vector<capnp::byte> payload(bytes);
+     for (size_t n = 0; n < bytes; ++n) payload[n] = n % 251;
+-    auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
++    auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
+     auto stream = address->connect().wait(io.waitScope);
+     capnp::TwoPartyClient client(*stream);
+     auto echo = client.bootstrap().castAs<Echo>();
+@@ -64,7 +67,7 @@ int main(int argc, char** argv) {
+       if (sequence >= warmup) samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - before).count());
+     }
+     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
+-    std::cout << "{\"measurement_version\":2,\"protocol\":\"capnp-cpp\",\"payload_bytes\":" << bytes << ",\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
++    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"measurement_version\":2,\"protocol\":\"capnp-cpp\",\"payload_bytes\":" << bytes << ",\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
+     for (size_t n = 0; n < samples.size(); ++n) { if (n) std::cout << ','; std::cout << samples[n]; }
+     std::cout << "]}" << std::endl;
+   }
+diff --git a/benchmarks/rpc/ciphertext-counts.py b/benchmarks/rpc/ciphertext-counts.py
+new file mode 100644
+index 0000000..f403afb
+--- /dev/null
++++ b/benchmarks/rpc/ciphertext-counts.py
+@@ -0,0 +1,62 @@
++#!/usr/bin/env python3
++"""Count TCP/UDP syscalls in secure-runner traces. No ciphertext decoding or timing qualification."""
++import argparse
++import collections
++import json
++from pathlib import Path
++import re
++
++START = re.compile(r'^(\d+)\s+([0-9.]+)\s+(.*)$')
++CALL = re.compile(r'^(read|write|readv|writev|sendto|recvfrom|sendmsg|recvmsg|recvmmsg|sendmmsg)\(.*\)\s+=\s+(-?\d+|\?)')
++READS = {'read', 'readv', 'recvfrom', 'recvmsg', 'recvmmsg'}
++
++def count(path):
++    counts, pending = collections.Counter(), {}
++    for line in path.read_text().splitlines():
++        match = START.match(line)
++        if not match:
++            continue
++        pid, _, body = match.groups()
++        if '<unfinished ...>' in body:
++            pending[pid] = body.replace('<unfinished ...>', '')
++            continue
++        if body.startswith('<... '):
++            start = pending.pop(pid, None)
++            if start is None:
++                continue
++            body = start + body.split('resumed>', 1)[1].lstrip()
++        match = CALL.match(body)
++        if not match or not re.search(r'<(?:TCP|UDP):', body):
++            continue
++        operation = match.group(1)
++        result = None if match.group(2) == '?' else int(match.group(2))
++        direction = 'read' if operation in READS else 'write'
++        counts[direction + '_attempts'] += 1
++        counts[direction + ('_unreturned' if result is None else ('_positive' if result > 0 else '_nonpositive'))] += 1
++        counts['syscall_' + operation + '_attempts'] += 1
++        if result is not None and result > 0:
++            if operation in ['recvmmsg', 'sendmmsg']:
++                counts[direction + '_batched_datagrams'] += result
++            else:
++                counts[direction + '_returned_bytes'] += result
++    for body in pending.values():
++        if re.search(r'<(?:TCP|UDP):', body):
++            operation = body.split('(', 1)[0]
++            if operation in READS or operation in ['write', 'writev', 'sendto', 'sendmsg', 'sendmmsg']:
++                direction = 'read' if operation in READS else 'write'
++                counts[direction + '_attempts'] += 1
++                counts[direction + '_unreturned'] += 1
++                counts['syscall_' + operation + '_attempts'] += 1
++    return dict(counts=counts, unfinished_socket_calls=sum(bool(re.search(r'<(?:TCP|UDP):', s)) for s in pending.values()))
++
++def summarize(directory):
++    journals = {str(p.relative_to(directory)):count(p) for p in sorted(directory.glob('*/*.strace'))}
++    assert journals, 'no syscall captures'
++    result = dict(scope='Entire peer lifecycle, including handshake, ciphertext, shutdown, QUIC ACK/retry/control packets. Attempts include errors, would-block and unreturned calls at termination; unreturned calls are counted separately. Batched UDP returns datagrams, not bytes. No Capn Proto message count inference.', journals=journals)
++    (directory/'ciphertext-counts.json').write_text(json.dumps(result, indent=2) + '\n')
++    return result
++
++if __name__ == '__main__':
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('directory', type=Path)
++    summarize(parser.parse_args().directory)
+diff --git a/benchmarks/rpc/generate-certificates.py b/benchmarks/rpc/generate-certificates.py
+new file mode 100644
+index 0000000..3198cbb
+--- /dev/null
++++ b/benchmarks/rpc/generate-certificates.py
+@@ -0,0 +1,40 @@
++#!/usr/bin/env python3
++"""Generate a fresh, private benchmark CA and localhost server identity. Never deploy these keys."""
++import argparse
++import json
++import hashlib
++import os
++from pathlib import Path
++import subprocess
++
++def generate(directory):
++    directory.mkdir(parents=True, mode=0o700, exist_ok=False)
++    def run(*args):
++        subprocess.run(['openssl', *args], cwd=directory, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
++    old = os.umask(0o077)
++    try:
++        run('req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
++            '-keyout', 'ca-key.pem', '-out', 'ca.pem', '-days', '7', '-subj', '/CN=Capntproto benchmark CA',
++            '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign')
++        run('req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
++            '-keyout', 'server-key.pem', '-out', 'server.csr', '-subj', '/CN=localhost')
++        (directory / 'extensions.cnf').write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1\n')
++        run('x509', '-req', '-in', 'server.csr', '-CA', 'ca.pem', '-CAkey', 'ca-key.pem', '-CAcreateserial',
++            '-out', 'server.pem', '-days', '7', '-extfile', 'extensions.cnf')
++        for name in ['ca', 'server']:
++            run('x509', '-in', name + '.pem', '-outform', 'DER', '-out', name + '.der')
++        run('pkcs8', '-topk8', '-nocrypt', '-in', 'server-key.pem', '-outform', 'DER', '-out', 'server-key.der')
++        # No signing authority is needed after fixture creation.
++        (directory / 'ca-key.pem').unlink()
++        (directory / 'manifest.json').write_text(json.dumps({
++            'benchmark_only': True, 'authentication': 'server-certificate', 'server_name': 'localhost',
++            'certificate_sha256': {n: hashlib.sha256((directory / n).read_bytes()).hexdigest() for n in ['ca.der', 'server.der']}
++        }, indent=2) + '\n')
++    finally:
++        os.umask(old)
++    return directory
++
++if __name__ == '__main__':
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('directory', type=Path)
++    generate(parser.parse_args().directory.resolve())
+diff --git a/benchmarks/rpc/measurement.rs b/benchmarks/rpc/measurement.rs
+index 8cf4889..03fcf09 100644
+--- a/benchmarks/rpc/measurement.rs
++++ b/benchmarks/rpc/measurement.rs
+@@ -40,7 +40,7 @@ pub(crate) async fn measure_calls(
+     }
+     println!(
+         "{}",
+-        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":protocol,"payload_bytes":payload.len(),"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
++        json!({"measurement_version":MEASUREMENT_VERSION,"protocol":protocol,"security":crate::transport_metadata(protocol)?,"payload_bytes":payload.len(),"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
+     );
+     Ok(())
+ }
+diff --git a/benchmarks/rpc/secure-check.py b/benchmarks/rpc/secure-check.py
+new file mode 100644
+index 0000000..ca484fc
+--- /dev/null
++++ b/benchmarks/rpc/secure-check.py
+@@ -0,0 +1,92 @@
++#!/usr/bin/env python3
++"""End-to-end encrypted fixture checks, including authentication failures and mixed RPC engines."""
++import argparse
++import importlib.util
++import json
++import selectors
++import subprocess
++from pathlib import Path
++
++HERE = Path(__file__).resolve().parent
++spec = importlib.util.spec_from_file_location('secure_runner', HERE / 'secure-runner.py')
++runner = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(runner)
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--rust', required=True, type=Path)
++    p.add_argument('--cpp', required=True, type=Path)
++    p.add_argument('--upstream', type=Path)
++    p.add_argument('--output', required=True, type=Path)
++    args = p.parse_args()
++    output = args.output.resolve()
++    output.mkdir(parents=True, exist_ok=False)
++    certs = runner.certificates.generate(output / 'certificates')
++    wrong = runner.certificates.generate(output / 'untrusted')
++    binaries = dict(legacy=args.rust.resolve(strict=True), portable=args.rust.resolve(strict=True), cpp=args.cpp.resolve(strict=True),
++                    grpc=args.rust.resolve(strict=True), websocket=args.rust.resolve(strict=True))
++    if args.upstream:
++        binaries['upstream'] = args.upstream.resolve(strict=True)
++    campaign = runner.Campaign(binaries, output, certs, runner.physical_cpus()[0])
++    records = []
++    def record(name, **data):
++        records.append(dict(name=name, **data))
++        (output / 'checks.json').write_text(json.dumps(records, indent=2) + '\n')
++    for transport in ['tls', 'quic']:
++        for case in runner.catalog():
++            for label in binaries:
++                if runner.supported(label, transport, case):
++                    name = f'{transport}-{case["name"]}-{label}'
++                    campaign.trial(case, label, transport, name, 1, 2)
++                    record(name, passed=True)
++        # Callback, pipelining and multi-hop concurrent forwarding across engines.
++        labels = ['legacy', 'portable'] + (['cpp'] if transport == 'tls' else [])
++        for case in runner.catalog():
++            if case['name'] not in ['loopback-64', 'pipelined-read', 'callback', 'services-4-deep-16-clients-8']:
++                continue
++            for client in labels:
++                for server in labels:
++                    if client == server:
++                        continue
++                    name = f'mixed-{transport}-{case["name"]}-{client}-{server}'
++                    campaign.trial(case, client, transport, name, 1, 2,
++                                   services=[server if i % 2 == 0 else client for i in range(case.get('hops',1))])
++                    record(name, passed=True)
++        case = runner.catalog()[1]
++        for label in binaries:
++            if not runner.supported(label, transport, case):
++                continue
++            for reason, overrides in [('hostname', {'CAPNTPROTO_BENCH_SERVER_NAME':'wrong.invalid'}),
++                                      ('trust-root', {'CAPNTPROTO_BENCH_CERTS':str(wrong)})]:
++                name = f'reject-{transport}-{label}-{reason}'
++                result = campaign.trial(case, label, transport, name, 0, 1, client_overrides=overrides, reject=True)
++                record(name, **result)
++    # Independently inspect actual TLS negotiation and reject TLS 1.2 on every TCP fixture.
++    case = runner.catalog()[1]
++    for label in binaries:
++        for version in ['tls1_3', 'tls1_2']:
++            name = f'negotiation-{label}-{version}'
++            directory = output / name
++            directory.mkdir()
++            worker = campaign.launch(label, campaign.server_args(label, case), 'tls', directory, 'server', campaign.cpus[1])
++            try:
++                with selectors.DefaultSelector() as selector:
++                    selector.register(worker.stdout, selectors.EVENT_READ)
++                    assert selector.select(30), 'server readiness timeout'
++                    ready = json.loads(worker.stdout.readline())
++                result = subprocess.run(['openssl', 's_client', '-brief', '-connect', ready['address'],
++                    '-servername', 'localhost', '-verify_hostname', 'localhost', '-verify_return_error',
++                    '-CAfile', str(certs/'ca.pem'), '-' + version, '-alpn', 'h2'],
++                    input='', capture_output=True, text=True, timeout=15)
++                (directory/'openssl.txt').write_text(result.stdout + result.stderr)
++                if version == 'tls1_3':
++                    assert 'Protocol version: TLSv1.3' in result.stderr and 'Verification: OK' in result.stderr
++                else:
++                    assert result.returncode != 0 and 'Protocol version: TLSv1.2' not in result.stderr
++                record(name, passed=True, exit=result.returncode)
++            finally:
++                runner.stop(worker)
++    print(json.dumps(dict(checks=len(records), passed=True)))
++
++if __name__ == '__main__':
++    main()
+diff --git a/benchmarks/rpc/secure-runner.py b/benchmarks/rpc/secure-runner.py
+new file mode 100644
+index 0000000..de1d9cb
+--- /dev/null
++++ b/benchmarks/rpc/secure-runner.py
+@@ -0,0 +1,277 @@
++#!/usr/bin/env python3
++"""Matched TLS/QUIC RPC workloads. Creates certificates, retains every sample, rejects plaintext results."""
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import selectors
++import signal
++import subprocess
++import time
++from latency_stats import summarize
++
++HERE = Path(__file__).resolve().parent
++
++def load(name, filename):
++    spec = importlib.util.spec_from_file_location(name, HERE / filename)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++topology = load('topology_runner', 'topology-runner.py')
++certificates = load('certificates', 'generate-certificates.py')
++
++def security(transport, protocol='tcp', name='localhost'):
++    return dict(version=1, transport='quic-v1' if transport == 'quic' else 'tls-tcp', tls='1.3',
++                authentication='server-certificate', server_name=name, early_data=False,
++                setup_timed=False, alpn='capntproto-rpc/1' if transport == 'quic' else ('h2' if protocol == 'grpc' else None))
++
++def validate(data, case, transport, label, warmup, iterations):
++    expected_protocol = label if label in ['grpc', 'websocket'] else 'tcp'
++    assert data.get('security') == security(transport, expected_protocol), 'missing or mismatched encrypted transport identity'
++    if case['family'] == 'loopback':
++        assert data['measurement_version'] == 2 and data['payload_bytes'] == case['payload_bytes']
++        assert data['protocol'] == {'cpp':'capnp-cpp', 'upstream':'capnp-rust'}.get(label, expected_protocol)
++    else:
++        assert data['case'] == {k:v for k,v in case.items() if k != 'family'}
++        version = 'workflow_version' if case['family'] == 'workflow' else 'topology_version'
++        assert data[version] == (3 if case['family'] == 'workflow' else 1)
++        assert data['implementation'] == {'cpp':'capnp-cpp', 'upstream':'capnp-rust'}.get(label, label)
++    samples = data['latency_ns']
++    assert data['warmup'] == warmup and data['iterations'] == iterations == len(samples)
++    assert all(type(n) is int and n > 0 for n in samples)
++    assert data['elapsed_ns'] >= sum(samples)
++
++
++def stop(process):
++    if process.poll() is None:
++        os.killpg(process.pid, signal.SIGTERM)
++    try:
++        process.wait(timeout=10)
++    except subprocess.TimeoutExpired:
++        os.killpg(process.pid, signal.SIGKILL)
++        process.wait(timeout=10)
++
++
++class Campaign:
++    def __init__(self, binaries, output, certs, cpus, instrument=False):
++        self.binaries, self.output, self.certs, self.cpus = binaries, output, certs, cpus
++        self.instrument = instrument
++
++    def launch(self, label, argv, transport, directory, role, cpu, overrides=None):
++        env = dict(os.environ, CAPNTPROTO_BENCH_CERTS=str(self.certs), CAPNTPROTO_BENCH_TRANSPORT=transport,
++                   CAPNTPROTO_BENCH_PORTABLE='1' if label == 'portable' else '0', CAPNTPROTO_BENCH_SERVER_NAME='localhost')
++        env.update(overrides or {})
++        command = ['taskset', '-c', str(cpu)]
++        if self.instrument:
++            # Ciphertext syscall trace, not a Cap'n Proto frame decoder. QUIC includes UDP ACKs/retries.
++            command += ['strace', '-f', '-qq', '-ttt', '-T', '-yy', '-s', '64', '-e',
++                        'trace=read,write,readv,writev,sendto,recvfrom,sendmsg,recvmsg,recvmmsg,sendmmsg,connect,accept,accept4',
++                        '-o', str(directory / (role + '.strace'))]
++        with (directory / (role + '.stderr')).open('x') as error:
++            return subprocess.Popen([*command, str(self.binaries[label]), *argv], env=env,
++                                    stdout=subprocess.PIPE, stderr=error, text=True, start_new_session=True)
++
++    @staticmethod
++    def server_args(label, case, downstream=None):
++        family = case['family']
++        if family == 'topology':
++            return ['topology-server', '127.0.0.1:0'] + ([downstream] if downstream else [])
++        if family == 'workflow':
++            return (['comparison-server', label] if label in ['grpc', 'websocket'] else ['workflow-server']) + ['127.0.0.1:0']
++        return ['server'] + ([] if label in ['cpp', 'upstream'] else [label if label in ['grpc', 'websocket'] else 'tcp'])
++
++    @staticmethod
++    def client_args(label, case, address, warmup, iterations):
++        family = case['family']
++        if family == 'topology':
++            return ['topology-measure', address, case['name'], str(warmup), str(iterations)]
++        if family == 'workflow':
++            return (['comparison-measure', label] if label in ['grpc', 'websocket'] else ['workflow-measure']) + [address, case['name'], str(warmup), str(iterations)]
++        prefix = ['measure'] + ([] if label in ['cpp', 'upstream'] else [label if label in ['grpc', 'websocket'] else 'tcp'])
++        return prefix + [address] + ([] if label == 'cpp' else ['null']) + [str(case['payload_bytes']), str(warmup), str(iterations)]
++
++    def trial(self, case, label, transport, prefix, warmup, iterations, services=None, client_overrides=None, reject=False):
++        directory = self.output / prefix
++        directory.mkdir()
++        workers, address, placement, client = [], None, [], None
++        before = topology.host_state()
++        try:
++            hops = case.get('hops', 1)
++            services = services or [label] * hops
++            for hop in reversed(range(hops)):
++                server_label = services[hop]
++                cpu = self.cpus[1 + hop % (len(self.cpus) - 1)]
++                worker = self.launch(server_label, self.server_args(server_label, case, address), transport, directory, f'service-{hop}', cpu)
++                workers.append(worker)
++                with selectors.DefaultSelector() as selector:
++                    selector.register(worker.stdout, selectors.EVENT_READ)
++                    assert selector.select(30), 'server readiness timeout'
++                    line = worker.stdout.readline()
++                (directory / f'service-{hop}.ready.json').write_text(line)
++                ready = json.loads(line)
++                expected = security(transport, server_label if server_label in ['grpc', 'websocket'] else 'tcp')
++                assert ready.get('security') == expected, 'server is not using the requested encrypted transport'
++                if case['family'] == 'topology':
++                    assert ready['hops'] == hops - hop
++                if server_label in ['legacy', 'portable']:
++                    assert ready['implementation'] == server_label
++                address = ready.get('address') or f"127.0.0.1:{ready['port']}"
++                placement.append(dict(hop=hop, implementation=server_label, cpu=cpu, address=address))
++            client = self.launch(label, self.client_args(label, case, address, warmup, iterations), transport, directory,
++                                 'client', self.cpus[0], client_overrides)
++            output, _ = client.communicate(timeout=300)
++            (directory / 'client.stdout').write_text(output)
++            if reject:
++                assert client.returncode != 0 and not output.strip(), 'unauthenticated client produced benchmark results'
++                return dict(rejected=True, client_exit=client.returncode, services=placement)
++            assert client.returncode == 0, f'client failed: {directory}'
++            data = json.loads(output)
++            validate(data, case, transport, label, warmup, iterations)
++            # Loopback servers legitimately finish on client disconnect; persistent servers must remain live.
++            if case['family'] != 'loopback':
++                assert all(worker.poll() is None for worker in workers), 'service exited during trial'
++            (directory / 'trial.json').write_text(json.dumps(data) + '\n')
++            return dict(data=data, services=placement)
++        finally:
++            if client is not None:
++                stop(client)
++            for worker in reversed(workers):
++                stop(worker)
++            (directory / 'host.json').write_text(json.dumps(dict(before=before, after=topology.host_state()), indent=2) + '\n')
++
++
++def physical_cpus():
++    rows = subprocess.check_output(['lscpu', '-b', '-p=CPU,CORE,SOCKET'], text=True)
++    cores, cpus = set(), []
++    for row in rows.splitlines():
++        if not row or row.startswith('#'):
++            continue
++        cpu, core, socket = map(int, row.split(','))
++        if cpu in os.sched_getaffinity(0) and (core, socket) not in cores:
++            cpus.append(cpu)
++            cores.add((core, socket))
++    assert len(cpus) >= 2
++    return cpus, rows
++
++
++def idle_host():
++    for path in Path('/proc').glob('[0-9]*/comm'):
++        try:
++            name = path.read_text().strip()
++            if name in ['rustc', 'cargo', 'clippy-driver', 'rust-lld', 'clang', 'clang++', 'cc1plus', 'strace'] or 'callgrind' in name:
++                assert (path.parent / 'stat').read_text().split(') ', 1)[1].split()[0] == 'Z', f'competing build/profiler: {path}'
++        except (FileNotFoundError, ProcessLookupError):
++            pass
++
++
++def catalog():
++    return ([dict(family='loopback', name=f'loopback-{n}', payload_bytes=n) for n in [0,64,1024,65536]]
++            + [dict(family='workflow', **c) for c in json.loads((HERE / 'workflows.json').read_text())]
++            + [dict(family='topology', **c) for c in json.loads((HERE / 'topologies.json').read_text())])
++
++
++def supported(label, transport, case):
++    if transport == 'quic' and label not in ['legacy', 'portable']:
++        return False
++    if case['family'] == 'topology' and label not in ['legacy', 'portable', 'cpp']:
++        return False
++    return not (case['name'] == 'pipelined-read' and label in ['grpc', 'websocket'])
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--rust', type=Path, required=True)
++    parser.add_argument('--cpp', type=Path, required=True)
++    parser.add_argument('--upstream', type=Path)
++    parser.add_argument('--output', type=Path, required=True)
++    parser.add_argument('--transport', choices=['tls','quic','both'], default='both')
++    parser.add_argument('--cases', default='')
++    parser.add_argument('--repetitions', type=int, default=5)
++    parser.add_argument('--warmup', type=int, help='Override default 10000 loopback / 100 workflow and topology warmups.')
++    parser.add_argument('--iterations', type=int, default=1000)
++    parser.add_argument('--mixed', action='store_true')
++    parser.add_argument('--comparators', action='store_true', help='Include HTTPS/gRPC, WSS, and optional upstream Rust TLS.')
++    parser.add_argument('--trace', action='store_true', help='Diagnostic ciphertext syscall captures; timings never qualify.')
++    args = parser.parse_args()
++    assert 1 <= args.repetitions <= 100 and (args.warmup is None or 0 <= args.warmup <= 100000) and 1 <= args.iterations <= 100000
++    idle_host()
++    binaries = dict(legacy=args.rust.resolve(strict=True), portable=args.rust.resolve(strict=True), cpp=args.cpp.resolve(strict=True))
++    if args.comparators:
++        binaries.update(grpc=binaries['legacy'], websocket=binaries['legacy'])
++        if args.upstream:
++            binaries['upstream'] = args.upstream.resolve(strict=True)
++    output = args.output.resolve()
++    output.mkdir(parents=True, exist_ok=False)
++    certs = certificates.generate(output / 'certificates')
++    cpus, cpu_topology = physical_cpus()
++    campaign = Campaign(binaries, output, certs, cpus, args.trace)
++    cases = catalog()
++    if args.cases:
++        selected = set(args.cases.split(','))
++        assert selected <= {c['name'] for c in cases}, 'unknown case'
++        cases = [c for c in cases if c['name'] in selected]
++    transports = ['tls', 'quic'] if args.transport == 'both' else [args.transport]
++    scope = dict(security_version=1, transports=transports, cases=cases, repetitions=args.repetitions,
++                 warmup=args.warmup if args.warmup is not None else {'loopback':10000,'workflow':100,'topology':100}, iterations=args.iterations, cpus=cpus, cpu_topology=cpu_topology,
++                 binaries={k:dict(path=str(v), sha256=topology.digest(v)) for k,v in binaries.items()},
++                 certificate_manifest=json.loads((certs / 'manifest.json').read_text()),
++                 sources={p.name:topology.digest(p) for p in [Path(__file__), HERE/'generate-certificates.py', HERE/'workflows.json', HERE/'topologies.json', HERE/'latency_stats.py']},
++                 metric='Established-connection whole-operation latency; setup/handshake excluded, validation and cleanup included.',
++                 order='Rotate variants then reverse every complete cycle; five repetitions do not exactly balance positions.',
++                 unsupported=[dict(transport=t, implementation=k, case=c['name']) for t in transports for k in binaries for c in cases if not supported(k,t,c)],
++                 diagnostic=args.trace, trials=[])
++    def save():
++        (output / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
++    save()
++    if args.mixed:
++        for transport in transports:
++            labels = ['legacy', 'portable'] + (['cpp'] if transport == 'tls' else [])
++            for case in cases:
++                for client in labels:
++                    for server in labels:
++                        if client == server:
++                            continue
++                        prefix = f'mixed-{transport}-{case["name"]}-{client}-{server}'
++                        services = [server if i % 2 == 0 else client for i in range(case.get('hops',1))]
++                        result = campaign.trial(case, client, transport, prefix, 2, 5, services)
++                        scope['trials'].append(dict(path=prefix, transport=transport, case=case['name'], client=client, services=result['services'], mixed=True))
++            save()
++    rows = []
++    for transport in transports:
++        for case in cases:
++            warmup = args.warmup if args.warmup is not None else (10000 if case['family'] == 'loopback' else 100)
++            labels = [k for k in binaries if supported(k, transport, case)]
++            cells = {k:[] for k in labels}
++            for rep in range(args.repetitions):
++                order = labels[rep % len(labels):] + labels[:rep % len(labels)]
++                if rep // len(labels) % 2:
++                    order.reverse()
++                for label in order:
++                    prefix = f'{transport}-{case["name"]}-{rep}-{label}'
++                    result = campaign.trial(case, label, transport, prefix, warmup, args.iterations)
++                    cells[label].append(result['data']['latency_ns'])
++                    scope['trials'].append(dict(path=prefix, transport=transport, case=case['name'], client=label, services=result['services'], mixed=False, repetition=rep))
++                    save()
++            row = dict(transport=transport, case=case, variants={k:dict(summarize(v), samples=sum(map(len,v)), **{f'p{p}_ns':topology.percentile([n for trial in v for n in trial],p) for p in [50,95,99]}) for k,v in cells.items()})
++            rows.append(row)
++            (output / 'summary.json').write_text(json.dumps(dict(rows=rows, diagnostic=args.trace), indent=2) + '\n')
++            print(transport, case['name'], flush=True)
++    lines = ['# Encrypted RPC comparison', '', 'Mean ± sample SD of repetition means, in microseconds. Handshakes are excluded.',
++             'C++ QUIC is unsupported at the pinned revision; no plaintext or TCP substitute is included.', '',
++             '| Transport | Case | Implementation | Mean ± run SD µs | Run mean min–max µs |',
++             '| --- | --- | --- | ---: | ---: |']
++    for row in rows:
++        for label, cell in row['variants'].items():
++            lo, hi = cell['repetition_mean_range_ns']
++            lines.append(f'| {row["transport"]} | {row["case"]["name"]} | {label} | {cell["mean_ns"]/1000:.3f} ± {cell["repetition_mean_stddev_ns"]/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} |')
++    if args.trace:
++        lines += ['', 'Instrumented diagnostic timings do not qualify. Syscalls include setup, ciphertext, TLS records and QUIC control packets.']
++    (output / 'README.md').write_text('\n'.join(lines) + '\n')
++    if args.trace:
++        load('ciphertext_counts', 'ciphertext-counts.py').summarize(output)
++
++if __name__ == '__main__':
++    main()
+diff --git a/benchmarks/rpc/secure.h b/benchmarks/rpc/secure.h
+new file mode 100644
+index 0000000..f77f77e
+--- /dev/null
++++ b/benchmarks/rpc/secure.h
+@@ -0,0 +1,55 @@
++// Benchmark-only authenticated TLS. KJ has no native QUIC adapter at the pinned revision.
++#pragma once
++#include <kj/compat/tls.h>
++#include <kj/debug.h>
++#include <kj/timer.h>
++#include <cstdlib>
++#include <fstream>
++#include <filesystem>
++#include <sstream>
++#include <string>
++
++class BenchmarkTransport {
++  inline static std::string defaultDirectory;
++  static std::string read(const char* name) {
++    const char* directory = std::getenv("CAPNTPROTO_BENCH_CERTS");
++    if (directory == nullptr) directory = defaultDirectory.c_str();
++    std::ifstream file(std::string(directory) + "/" + name);
++    KJ_REQUIRE(file.good(), "cannot read benchmark certificate", name);
++    return std::string(std::istreambuf_iterator<char>(file), {});
++  }
++  static kj::TlsContext::Options options(kj::TlsCertificate& root, kj::TlsKeypair& key, kj::Timer& timer) {
++    const char* transport = std::getenv("CAPNTPROTO_BENCH_TRANSPORT");
++    KJ_REQUIRE(transport == nullptr || std::string(transport) == "tls", "C++ fixture supports TLS only; QUIC is unsupported");
++    kj::TlsContext::Options options;
++    options.useSystemTrustStore = false;
++    options.trustedCertificates = kj::arrayPtr(&root, 1);
++    options.defaultKeypair = key;
++    options.minVersion = kj::TlsVersion::TLS_1_3;
++    options.timer = timer;
++    options.acceptTimeout = 10 * kj::SECONDS;
++    return options;
++  }
++  kj::TlsCertificate root;
++  kj::TlsKeypair key;
++  kj::TlsContext context;
++public:
++  static void setExecutable(const char* executable) {
++    defaultDirectory = (std::filesystem::canonical(executable).parent_path() / "certificates").string();
++  }
++  explicit BenchmarkTransport(kj::Timer& timer)
++    : root(read("ca.pem").c_str()), key{kj::TlsPrivateKey(read("server-key.pem").c_str()), kj::TlsCertificate(read("server.pem").c_str())},
++      context(options(root, key, timer)) {}
++  static std::string hostname() {
++    const char* name = std::getenv("CAPNTPROTO_BENCH_SERVER_NAME");
++    std::string value = name == nullptr ? "localhost" : name;
++    KJ_REQUIRE(!value.empty() && value.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:") == std::string::npos, "invalid benchmark server name");
++    return value;
++  }
++  static std::string metadata() {
++    return "{\"version\":1,\"transport\":\"tls-tcp\",\"tls\":\"1.3\",\"authentication\":\"server-certificate\",\"server_name\":\"" + hostname() + "\",\"early_data\":false,\"setup_timed\":false,\"alpn\":null}";
++  }
++  kj::Own<kj::NetworkAddress> address(kj::Own<kj::NetworkAddress> address) {
++    return context.wrapAddress(kj::mv(address), hostname().c_str());
++  }
++};
+diff --git a/benchmarks/rpc/src/driver.rs b/benchmarks/rpc/src/driver.rs
+index 8918760..664a974 100644
+--- a/benchmarks/rpc/src/driver.rs
++++ b/benchmarks/rpc/src/driver.rs
+@@ -155,6 +155,7 @@ fn validate_trial_with_iterations(
+ ) -> Result<()> {
+     if !(1..=1_000_000).contains(&iterations)
+         || value["measurement_version"] != crate::MEASUREMENT_VERSION
++        || value["security"] != crate::transport_metadata(protocol)?
+         || value["protocol"] != protocol
+         || value["payload_bytes"] != bytes
+         || value["warmup"] != 10000
+@@ -211,7 +212,7 @@ pub fn compare_tcp(tcp: &Path, cpp: &Path, destination: &Path) -> Result<()> {
+             "driver_sha256": digest(&std::env::current_exe()?)?,
+             "cpu_placement": placement, "cpu": output("lscpu", &[])?,
+             "clock_reads": clock_diagnostics(&placement)?,
+-            "scope": "Matched plaintext TCP, separate processes and physical cores, 10000 warmups and 1000 retained calls per trial, five alternating repetitions. Portable gate: pooled p50 <= 1.5x for 0/64/1024 bytes; 65536 bytes and tails reported separately. Legacy gate: <= 1.15x at every payload."
++            "scope": "Matched TLS 1.3 over TCP, separate processes and physical cores, 10000 warmups and 1000 retained calls per trial, five alternating repetitions. Portable gate: pooled p50 <= 1.5x for 0/64/1024 bytes; 65536 bytes and tails reported separately. Legacy gate: <= 1.15x at every payload."
+         }))?,
+     )?;
+     let mut trials = Vec::new();
+@@ -393,7 +394,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
+         "available_clocksources":fs::read_to_string("/sys/devices/system/clocksource/clocksource0/available_clocksource").ok(),
+         "clock_reads":clock_diagnostics(&placement)?,
+         "cpu_placement":placement,
+-        "scope":"Linux IPv4 loopback; sequential echo with bulk payload validation, response cleanup and ten-second per-call deadlines inside each timed roundtrip; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols plaintext"});
++        "scope":"Linux IPv4 loopback; sequential echo with bulk payload validation, response cleanup and ten-second per-call deadlines inside each timed roundtrip; fixed separate physical cores for server/client across all protocols; 10000 warmups/1000 samples; 5 repetitions; Native QUIC v1 / TLS 1.3 with pinned peer authentication, other protocols certificate-authenticated TLS 1.3"});
+     fs::write(
+         destination.join("environment.json"),
+         serde_json::to_vec_pretty(&environment)?,
+@@ -461,10 +462,11 @@ printf '%s:%s\n' "$1" "${{CAPNTPROTO_BENCH_PORTABLE:-unset}}" >> "$0.log"
+ if [ "$1" = server ]; then
+   printf '%s\n' '{{"address":"127.0.0.1:12345","public":null}}'
+ else
+-  printf '%s\n' '{{"measurement_version":{},"protocol":"tcp","payload_bytes":64,"warmup":10000,"iterations":1,"elapsed_ns":100,"latency_ns":[100]}}'
++  printf '%s\n' '{{"measurement_version":{},"protocol":"tcp","security":{},"payload_bytes":64,"warmup":10000,"iterations":1,"elapsed_ns":100,"latency_ns":[100]}}'
+ fi
+ "#,
+-            crate::MEASUREMENT_VERSION
++            crate::MEASUREMENT_VERSION,
++            crate::transport_metadata("tcp").unwrap()
+         );
+         fs::write(&executable, &script).unwrap();
+         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+@@ -505,7 +507,7 @@ fi
+                 for _ in 0..5 {
+                     trials.push(json!({
+                         "measurement_version": crate::MEASUREMENT_VERSION,
+-                        "protocol": protocol, "payload_bytes": bytes,
++                        "protocol": protocol, "security":crate::transport_metadata(protocol).unwrap(), "payload_bytes": bytes,
+                         "warmup": 10000, "iterations": 1000,
+                         "elapsed_ns": latency * 1000, "latency_ns": vec![latency; 1000],
+                     }));
+@@ -581,6 +583,7 @@ fi
+         assert!(tcp_summary(&duplicate).is_err());
+         for (key, value) in [
+             ("measurement_version", json!(0)),
++            ("security", json!(null)),
+             ("protocol", json!("native")),
+             ("payload_bytes", json!(17)),
+             ("warmup", json!(100)),
+diff --git a/benchmarks/rpc/src/driver/portable.rs b/benchmarks/rpc/src/driver/portable.rs
+index b23f002..72d2fb2 100644
+--- a/benchmarks/rpc/src/driver/portable.rs
++++ b/benchmarks/rpc/src/driver/portable.rs
+@@ -28,7 +28,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
+             "measurement_version":crate::MEASUREMENT_VERSION, "manifest":manifest,
+             "binary_sha256":hashes, "cpu_placement":placement,
+             "cpu":output("lscpu", &[])?, "clock_reads":clock_diagnostics(&placement)?,
+-            "scope":"Plaintext TCP loopback; separate processes and physical cores. Five rotating repetitions, 10000 warmups and 1000 retained calls per driver/payload. Portable and legacy selected explicitly for both peers."
++            "scope":"TLS 1.3 over TCP loopback; separate processes and physical cores. Five rotating repetitions, 10000 warmups and 1000 retained calls per driver/payload. Portable and legacy selected explicitly for both peers."
+         }))?,
+     )?;
+     let mut trials = Vec::new();
+@@ -65,7 +65,7 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
+         destination.join("summary.json"),
+         serde_json::to_vec_pretty(&report)?,
+     )?;
+-    let mut readme = String::from("# Portable loopback target\n\nPlaintext TCP, separate processes and physical cores; five rotating repetitions, 10,000 warmups and 1,000 retained calls per driver/payload. All samples and executable/host identities are retained in trials.json and environment.json. This is separate from the two-host VPC workflows.\n\nTarget: portable pooled p50 ≤ 1.05 × min(legacy, C++) for every payload. Advisory while gap #11 remains open; tails remain in summary.json.\n\n| Bytes | Portable p50 (ns) | Legacy p50 (ns) | C++ p50 (ns) | Faster reference | Ratio | Meets target |\n|---:|---:|---:|---:|---|---:|---|\n");
++    let mut readme = String::from("# Portable loopback target\n\nTLS 1.3 over TCP, separate processes and physical cores; five rotating repetitions, 10,000 warmups and 1,000 retained calls per driver/payload. All samples and executable/host identities are retained in trials.json and environment.json. This is separate from the two-host VPC workflows.\n\nTarget: portable pooled p50 ≤ 1.05 × min(legacy, C++) for every payload. Advisory while gap #11 remains open; tails remain in summary.json.\n\n| Bytes | Portable p50 (ns) | Legacy p50 (ns) | C++ p50 (ns) | Faster reference | Ratio | Meets target |\n|---:|---:|---:|---:|---|---:|---|\n");
+     for row in report["rows"].as_array().unwrap() {
+         readme += &format!(
+             "| {} | {} | {} | {} | {} | {:.3}× | {} |\n",
+@@ -179,7 +179,7 @@ mod tests {
+         for bytes in PAYLOADS {
+             for (driver, latency) in DRIVERS.into_iter().zip([portable, legacy, cpp]) {
+                 for repetition in 0..5 {
+-                    values.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,
++                    values.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,"security":crate::transport_metadata("tcp").unwrap(),
+                         "protocol":if driver == "capnp-cpp" {"capnp-cpp"} else {"tcp"},
+                         "payload_bytes":bytes, "driver":driver, "repetition":repetition,
+                         "warmup":10000, "iterations":1000, "elapsed_ns":latency*1000,
+diff --git a/benchmarks/rpc/src/driver/tail.rs b/benchmarks/rpc/src/driver/tail.rs
+index d651a3b..6c81c39 100644
+--- a/benchmarks/rpc/src/driver/tail.rs
++++ b/benchmarks/rpc/src/driver/tail.rs
+@@ -39,7 +39,7 @@ pub fn compare(executables: [&Path; 4], destination: &Path) -> Result<()> {
+             "cpu_placement":placement, "cpu":output("lscpu", &[])?,
+             "clock_reads":clock_diagnostics(&placement)?,
+             "warmup":10000, "iterations":ITERATIONS, "repetitions":REPETITIONS,
+-            "scope":"Plaintext TCP loopback, separate processes and physical cores. Rotated and alternating peer order. All samples retained, including stalls. Compare per-trial p99 ranges as well as pooled percentiles; local results do not qualify remote performance."
++            "scope":"TLS 1.3 over TCP loopback, separate processes and physical cores. Rotated and alternating peer order. All samples retained, including stalls. Compare per-trial p99 ranges as well as pooled percentiles; local results do not qualify remote performance."
+         }))?,
+     )?;
+     let mut trials = Vec::new();
+@@ -161,7 +161,7 @@ mod tests {
+                     if variant == "after" {
+                         samples[195..].fill(1000 + repetition as u64 * 100);
+                     }
+-                    trials.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,
++                    trials.push(json!({"measurement_version":crate::MEASUREMENT_VERSION,"security":crate::transport_metadata(protocol).unwrap(),
+                         "variant":variant,"protocol":protocol,"payload_bytes":bytes,
+                         "repetition":repetition,"warmup":10000,"iterations":200,
+                         "elapsed_ns":samples.iter().sum::<u64>(),"latency_ns":samples}));
+diff --git a/benchmarks/rpc/src/driver/workflows.rs b/benchmarks/rpc/src/driver/workflows.rs
+index 2dcee93..fb1642e 100644
+--- a/benchmarks/rpc/src/driver/workflows.rs
++++ b/benchmarks/rpc/src/driver/workflows.rs
+@@ -247,7 +247,8 @@ fn validate(
+     warmup: u64,
+     iterations: u64,
+ ) -> Result<()> {
+-    if value["workflow_version"] != crate::workflows::VERSION
++    if value["security"] != crate::transport_metadata(implementation)?
++        || value["workflow_version"] != crate::workflows::VERSION
+         || value["implementation"] != implementation
+         || value["case"] != *case
+         || value["warmup"] != warmup
+@@ -284,7 +285,7 @@ mod tests {
+         assert!(address("8.8.8.8", false).is_err());
+         assert!(address("10.0.0.1", false).is_ok());
+         let case = crate::workflows::cases().remove(0);
+-        let valid = json!({"workflow_version":crate::workflows::VERSION,"implementation":"legacy","case":case,"warmup":250,"iterations":2,"elapsed_ns":20,"latency_ns":[10,10]});
++        let valid = json!({"workflow_version":crate::workflows::VERSION,"implementation":"legacy","security":crate::transport_metadata("legacy").unwrap(),"case":case,"warmup":250,"iterations":2,"elapsed_ns":20,"latency_ns":[10,10]});
+         assert!(validate(&valid, &case, "legacy", 250, 2).is_ok());
+         for (key, replacement) in [
+             ("latency_ns", json!([10])),
+@@ -292,6 +293,7 @@ mod tests {
+             ("implementation", json!("portable")),
+             ("warmup", json!(0)),
+             ("workflow_version", json!(1)),
++            ("security", json!(null)),
+         ] {
+             let mut invalid = valid.clone();
+             invalid[key] = replacement;
+diff --git a/benchmarks/rpc/src/lib.rs b/benchmarks/rpc/src/lib.rs
+index a874029..722e17e 100644
+--- a/benchmarks/rpc/src/lib.rs
++++ b/benchmarks/rpc/src/lib.rs
+@@ -17,6 +17,9 @@ mod echo_capnp {
+ mod grpc {
+     tonic::include_proto!("echo");
+ }
++#[path = "../tls.rs"]
++mod benchmark_tls;
++mod secure;
+ mod topology;
+ mod workflows;
+ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+@@ -47,10 +50,10 @@ impl grpc::echo_server::Echo for Echo {
+         Ok(tonic::Response::new(request.into_inner()))
+     }
+ }
+-fn ready(address: std::net::SocketAddr, public: Option<[u8; 32]>) -> Result<()> {
++fn ready(address: std::net::SocketAddr, public: Option<[u8; 32]>, protocol: &str) -> Result<()> {
+     println!(
+         "{}",
+-        json!({"address":address.to_string(), "public":public})
++        json!({"address":address.to_string(), "public":public,"security":transport_metadata(protocol)?,"implementation":tcp_driver()?})
+     );
+     std::io::stdout().flush()?;
+     Ok(())
+@@ -63,12 +66,12 @@ async fn serve(protocol: &str) -> Result<()> {
+         let client = Identity::from_private_key([1; 32])?;
+         let session = if protocol == "native" {
+             let socket = UdpSocket::bind("127.0.0.1:0").await?;
+-            ready(socket.local_addr()?, Some(identity.public_key()))?;
++            ready(socket.local_addr()?, Some(identity.public_key()), protocol)?;
+             transport::accept_authenticated(socket, &identity, client.public_key(), None, CONTEXT)
+                 .await?
+         } else {
+             let socket = TcpListener::bind("127.0.0.1:0").await?;
+-            ready(socket.local_addr()?, Some(identity.public_key()))?;
++            ready(socket.local_addr()?, Some(identity.public_key()), protocol)?;
+             transport::tcp::accept(
+                 socket.accept().await?.0,
+                 &identity,
+@@ -83,41 +86,31 @@ async fn serve(protocol: &str) -> Result<()> {
+         handle.attach(session)?;
+         let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
+         capnp_rpc::RpcSystem::new(Box::new(network), Some(bootstrap.client)).await?;
++    } else if matches!(protocol, "tcp" | "quic") {
++        let listener = secure::Listener::bind("127.0.0.1:0").await?;
++        ready(listener.local_addr()?, None, protocol)?;
++        let network = listener
++            .accept()
++            .await?
++            .network(capnp_rpc::rpc_twoparty_capnp::Side::Server);
++        let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
++        if tcp_driver()? == "portable" {
++            portable_network(
++                network,
++                Some(bootstrap.client),
++                capnp_rpc::rpc_twoparty_capnp::Side::Server,
++            )?
++            .run()
++            .await?;
++        } else {
++            capnp_rpc::RpcSystem::new(network, Some(bootstrap.client)).await?;
++        }
+     } else {
+         let listener = TcpListener::bind("127.0.0.1:0").await?;
+-        ready(listener.local_addr()?, None)?;
++        ready(listener.local_addr()?, None, protocol)?;
+         match protocol {
+-            "tcp" => {
+-                let (socket, _) = listener.accept().await?;
+-                socket.set_nodelay(true)?;
+-                let bootstrap: echo_capnp::echo::Client = capnp_rpc::new_client(Echo);
+-                if tcp_driver()? == "portable" {
+-                    portable_tcp(
+-                        socket,
+-                        Some(bootstrap.client),
+-                        capnp_rpc::rpc_twoparty_capnp::Side::Server,
+-                    )?
+-                    .run()
+-                    .await?;
+-                } else {
+-                    capntproto::rpc::tcp::client(
+-                        socket,
+-                        Some(bootstrap.client),
+-                        capnp_rpc::rpc_twoparty_capnp::Side::Server,
+-                        Default::default(),
+-                    )
+-                    .await?;
+-                }
+-            }
+             "grpc" => {
+-                // serve_with_incoming bypasses tonic's TCP listener settings.
+-                let incoming =
+-                    tokio_stream::wrappers::TcpListenerStream::new(listener).map(|socket| {
+-                        socket.and_then(|socket| {
+-                            socket.set_nodelay(true)?;
+-                            Ok(socket)
+-                        })
+-                    });
++                let incoming = grpc_incoming(listener)?;
+                 tonic::transport::Server::builder()
+                     .add_service(grpc::echo_server::EchoServer::new(Echo))
+                     .serve_with_incoming(incoming)
+@@ -126,6 +119,7 @@ async fn serve(protocol: &str) -> Result<()> {
+             "websocket" => {
+                 let (socket, _) = listener.accept().await?;
+                 socket.set_nodelay(true)?;
++                let socket = benchmark_tls::accept(socket, benchmark_tls::server_config()?).await?;
+                 let mut stream = tokio_tungstenite::accept_async(socket).await?;
+                 while let Some(frame) = stream.next().await {
+                     match frame? {
+@@ -148,23 +142,21 @@ enum Client {
+         capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>,
+     ),
+     Grpc(grpc::echo_client::EchoClient<tonic::transport::Channel>),
+-    WebSocket(Box<WebSocketStream<TcpStream>>),
++    WebSocket(Box<WebSocketStream<tokio_rustls::TlsStream<TcpStream>>>),
+ }
+ impl Client {
+     async fn connect(protocol: &str, address: &str, public: &str) -> Result<Self> {
+         match protocol {
+-            "tcp" => {
++            "tcp" | "quic" => {
++                let side = capnp_rpc::rpc_twoparty_capnp::Side::Client;
++                let network = secure::connect(address).await?.network(side);
+                 if tcp_driver()? == "portable" {
+-                    let socket = TcpStream::connect(address).await?;
+-                    socket.set_nodelay(true)?;
+-                    let mut driver =
+-                        portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
++                    let mut driver = portable_network(network, None, side)?;
+                     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+                     return Ok(Self::Portable(client, driver));
+                 }
+-                let mut driver =
+-                    capntproto::rpc::connect(address, None, Default::default()).await?;
+-                let client = driver.bootstrap();
++                let mut driver = capnp_rpc::RpcSystem::new(network, None);
++                let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+                 tokio::task::spawn_local(driver);
+                 Ok(Self::Native(client))
+             }
+@@ -199,14 +191,13 @@ impl Client {
+                 tokio::task::spawn_local(system);
+                 Ok(Self::Native(client))
+             }
+-            "grpc" => Ok(Self::Grpc(
+-                grpc::echo_client::EchoClient::connect(format!("http://{address}")).await?,
+-            )),
++            "grpc" => Ok(Self::Grpc(grpc::echo_client::EchoClient::new(
++                grpc_channel(address).await?,
++            ))),
+             "websocket" => {
+-                let socket = TcpStream::connect(address).await?;
+-                socket.set_nodelay(true)?;
++                let socket = benchmark_tls::connect(address).await?;
+                 let (stream, _) =
+-                    tokio_tungstenite::client_async(format!("ws://{address}/"), socket).await?;
++                    tokio_tungstenite::client_async(format!("wss://{address}/"), socket).await?;
+                 Ok(Self::WebSocket(Box::new(stream)))
+             }
+             _ => Err("unknown benchmark protocol".into()),
+@@ -235,7 +226,7 @@ impl Roundtrip for grpc::echo_client::EchoClient<tonic::transport::Channel> {
+         Ok(())
+     }
+ }
+-impl Roundtrip for WebSocketStream<TcpStream> {
++impl Roundtrip for WebSocketStream<tokio_rustls::TlsStream<TcpStream>> {
+     async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
+         let mut frame = sequence.to_le_bytes().to_vec();
+         frame.extend_from_slice(payload);
+@@ -339,6 +330,9 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
+             std::path::Path::new(&args[3]),
+         );
+     }
++    if args.get(1).map(String::as_str) == Some("quic") {
++        std::env::set_var("CAPNTPROTO_BENCH_TRANSPORT", "quic");
++    }
+     let runtime = tokio::runtime::Builder::new_current_thread()
+         .enable_all()
+         .build()?;
+@@ -373,17 +367,17 @@ pub(crate) fn tcp_driver() -> Result<&'static str> {
+         _ => Err("CAPNTPROTO_BENCH_PORTABLE must be 0 or 1".into()),
+     }
+ }
+-fn portable_tcp(
+-    socket: TcpStream,
++fn portable_network(
++    network: secure::Network,
+     bootstrap: Option<capnp::capability::Client>,
+     side: capnp_rpc::rpc_twoparty_capnp::Side,
+ ) -> Result<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>> {
+-    portable_tcp_bounded(socket, bootstrap, side, 512 * 1024, 8 * 1024 * 1024)
++    portable_network_bounded(network, bootstrap, side, 512 * 1024, 8 * 1024 * 1024)
+ }
+-fn portable_tcp_bounded(
+-    socket: TcpStream,
++fn portable_network_bounded(
++    network: secure::Network,
+     bootstrap: Option<capnp::capability::Client>,
+-    side: capnp_rpc::rpc_twoparty_capnp::Side,
++    _side: capnp_rpc::rpc_twoparty_capnp::Side,
+     frame_bytes: usize,
+     buffer_bytes: usize,
+ ) -> Result<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>> {
+@@ -394,12 +388,54 @@ fn portable_tcp_bounded(
+         buffer_bytes.try_into()?,
+     )?;
+     Ok(capnp_rpc::portable::RpcSystem::new(
+-        Box::new(capntproto::rpc::tcp::network(
+-            socket,
+-            side,
+-            Default::default(),
+-        )),
+-        bootstrap,
+-        options,
++        network, bootstrap, options,
+     )?)
+ }
++
++pub(crate) fn transport_metadata(protocol: &str) -> Result<serde_json::Value> {
++    match protocol {
++        "grpc" => {
++            let mut metadata = benchmark_tls::metadata();
++            metadata["alpn"] = "h2".into();
++            Ok(metadata)
++        }
++        "websocket" => Ok(benchmark_tls::metadata()),
++        "native" | "native-tcp" => Ok(
++            json!({"version":1,"transport":protocol,"authentication":"pinned-mutual-identity","setup_timed":false}),
++        ),
++        _ => secure::metadata(),
++    }
++}
++fn grpc_incoming(
++    listener: TcpListener,
++) -> Result<impl futures::Stream<Item = std::io::Result<tokio_rustls::server::TlsStream<TcpStream>>>>
++{
++    let mut config = (*benchmark_tls::server_config()?).clone();
++    config.alpn_protocols = vec![b"h2".to_vec()];
++    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
++    Ok(tokio_stream::wrappers::TcpListenerStream::new(listener)
++        .map(move |socket| {
++            let acceptor = acceptor.clone();
++            async move {
++                let socket = socket?;
++                socket.set_nodelay(true)?;
++                tokio::time::timeout(benchmark_tls::DEADLINE, acceptor.accept(socket)).await?
++            }
++        })
++        .buffer_unordered(64))
++}
++async fn grpc_channel(address: &str) -> Result<tonic::transport::Channel> {
++    Ok(
++        tonic::transport::Endpoint::from_shared(format!("https://{address}"))?
++            .tls_config(
++                tonic::transport::ClientTlsConfig::new()
++                    .domain_name(benchmark_tls::name())
++                    .ca_certificate(tonic::transport::Certificate::from_pem(
++                        benchmark_tls::read("ca.pem")?,
++                    )),
++            )?
++            .connect_timeout(benchmark_tls::DEADLINE)
++            .connect()
++            .await?,
++    )
++}
+diff --git a/benchmarks/rpc/src/secure.rs b/benchmarks/rpc/src/secure.rs
+new file mode 100644
+index 0000000..986d27a
+--- /dev/null
++++ b/benchmarks/rpc/src/secure.rs
+@@ -0,0 +1,103 @@
++//! One encrypted transport selection shared by every RPC edge, including service hops.
++use crate::{benchmark_tls as tls, Result};
++use capnp_rpc::rpc_twoparty_capnp::Side;
++use capntproto::rpc::quic;
++use std::sync::Arc;
++use tokio::net::{TcpListener, TcpStream};
++
++pub type Network = Box<dyn capnp_rpc::VatNetwork<Side>>;
++pub enum Stream {
++    Tls(Box<tokio_rustls::TlsStream<TcpStream>>),
++    Quic(quic::Stream),
++}
++impl Stream {
++    pub fn network(self, side: Side) -> Network {
++        match self {
++            Self::Tls(stream) => Box::new(capntproto::rpc::tls::network(
++                *stream,
++                side,
++                Default::default(),
++            )),
++            Self::Quic(stream) => Box::new(quic::network(stream, side, Default::default())),
++        }
++    }
++}
++pub fn transport() -> Result<&'static str> {
++    match std::env::var("CAPNTPROTO_BENCH_TRANSPORT").as_deref() {
++        Ok("tls") | Err(std::env::VarError::NotPresent) => Ok("tls-tcp"),
++        Ok("quic") => Ok("quic-v1"),
++        _ => Err("CAPNTPROTO_BENCH_TRANSPORT must be tls or quic (no plaintext fallback)".into()),
++    }
++}
++pub fn metadata() -> Result<serde_json::Value> {
++    let mut metadata = tls::metadata();
++    metadata["transport"] = transport()?.into();
++    if transport()? == "quic-v1" {
++        metadata["alpn"] = "capntproto-rpc/1".into();
++    }
++    Ok(metadata)
++}
++fn identity() -> Result<capntproto::rpc::tls::Identity> {
++    let (certificates, private_key) = tls::identity()?;
++    Ok(capntproto::rpc::tls::Identity {
++        certificates,
++        private_key,
++    })
++}
++pub enum Listener {
++    Tls(TcpListener, Arc<tokio_rustls::rustls::ServerConfig>),
++    Quic(quic::Endpoint),
++}
++impl Listener {
++    pub async fn bind(address: &str) -> Result<Self> {
++        match transport()? {
++            "tls-tcp" => Ok(Self::Tls(
++                TcpListener::bind(address).await?,
++                tls::server_config()?,
++            )),
++            _ => Ok(Self::Quic(quic::Endpoint::server(
++                quic::server_config(identity()?, None)?,
++                address.parse()?,
++            )?)),
++        }
++    }
++    pub fn local_addr(&self) -> Result<std::net::SocketAddr> {
++        Ok(match self {
++            Self::Tls(listener, _) => listener.local_addr()?,
++            Self::Quic(endpoint) => endpoint.local_addr()?,
++        })
++    }
++    pub async fn accept(&self) -> Result<Stream> {
++        match self {
++            Self::Tls(listener, config) => Ok(Stream::Tls(Box::new(
++                tls::accept(listener.accept().await?.0, config.clone()).await?,
++            ))),
++            Self::Quic(endpoint) => Ok(Stream::Quic(
++                quic::accept(
++                    endpoint.accept().await.ok_or("QUIC listener closed")?,
++                    tls::DEADLINE,
++                )
++                .await?,
++            )),
++        }
++    }
++}
++pub async fn connect(address: &str) -> Result<Stream> {
++    if transport()? == "tls-tcp" {
++        return Ok(Stream::Tls(Box::new(tls::connect(address).await?)));
++    }
++    let address: std::net::SocketAddr = address.parse()?;
++    let bind = if address.is_ipv4() {
++        "0.0.0.0:0"
++    } else {
++        "[::]:0"
++    };
++    let mut endpoint = quic::Endpoint::client(bind.parse()?)?;
++    endpoint.set_default_client_config(quic::client_config(
++        vec![tls::read("ca.der")?.into()],
++        None,
++    )?);
++    Ok(Stream::Quic(
++        quic::connect(&endpoint, address, &tls::name(), tls::DEADLINE).await?,
++    ))
++}
+diff --git a/benchmarks/rpc/src/topology.rs b/benchmarks/rpc/src/topology.rs
+index 91b47dd..73a112a 100644
+--- a/benchmarks/rpc/src/topology.rs
++++ b/benchmarks/rpc/src/topology.rs
+@@ -1,4 +1,4 @@
+-//! Nested access through independent TCP services, with bounded concurrent batches.
++//! Nested access through independent encrypted services, with bounded concurrent batches.
+ use crate::{
+     echo_capnp::{access_node, access_service},
+     Result,
+@@ -10,7 +10,7 @@ use std::{
+     rc::Rc,
+     time::{Duration, Instant},
+ };
+-use tokio::{net::TcpListener, time::timeout};
++use tokio::time::timeout;
+ 
+ const DEADLINE: Duration = Duration::from_secs(10);
+ const PAYLOAD: [u8; 32] = [
+@@ -104,17 +104,16 @@ async fn connect(
+     address: &str,
+     runtime: Option<&capnp_rpc::portable::RuntimeHandle>,
+ ) -> Result<access_service::Client> {
++    let side = capnp_rpc::rpc_twoparty_capnp::Side::Client;
++    let network = crate::secure::connect(address).await?.network(side);
+     if crate::tcp_driver()? == "portable" {
+-        let socket = tokio::net::TcpStream::connect(address).await?;
+-        socket.set_nodelay(true)?;
+-        let mut driver =
+-            crate::portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
++        let mut driver = crate::portable_network(network, None, side)?;
+         let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+         let _completion = runtime.expect("portable runtime").add(driver)?;
+         return Ok(client);
+     }
+-    let mut driver = capntproto::rpc::connect(address, None, Default::default()).await?;
+-    let client = driver.bootstrap();
++    let mut driver = capnp_rpc::RpcSystem::new(network, None);
++    let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+     tokio::task::spawn_local(driver);
+     Ok(client)
+ }
+@@ -151,30 +150,25 @@ async fn serve_inner(
+         1
+     };
+     let service: access_service::Client = capnp_rpc::new_client(Service { next, hops });
+-    let listener = TcpListener::bind(&args[0]).await?;
++    let listener = crate::secure::Listener::bind(&args[0]).await?;
+     println!(
+         "{}",
+-        json!({"address":listener.local_addr()?.to_string(),"hops":hops,"implementation":crate::tcp_driver()?})
++        json!({"address":listener.local_addr()?.to_string(),"hops":hops,"implementation":crate::tcp_driver()?,"security":crate::secure::metadata()?})
+     );
+     use std::io::Write;
+     std::io::stdout().flush()?;
+     loop {
+-        let (socket, _) = listener.accept().await?;
+-        socket.set_nodelay(true)?;
++        let side = capnp_rpc::rpc_twoparty_capnp::Side::Server;
++        let network = listener.accept().await?.network(side);
+         if crate::tcp_driver()? == "portable" {
+-            let driver = crate::portable_tcp(
+-                socket,
++            let driver = crate::portable_network(
++                network,
+                 Some(service.client.clone()),
+                 capnp_rpc::rpc_twoparty_capnp::Side::Server,
+             )?;
+             let _completion = runtime.expect("portable runtime").add(driver)?;
+         } else {
+-            let driver = capntproto::rpc::tcp::client(
+-                socket,
+-                Some(service.client.clone()),
+-                capnp_rpc::rpc_twoparty_capnp::Side::Server,
+-                Default::default(),
+-            );
++            let driver = capnp_rpc::RpcSystem::new(network, Some(service.client.clone()));
+             tokio::task::spawn_local(async move {
+                 let _ = driver.await;
+             });
+@@ -264,7 +258,7 @@ async fn measure_inner(
+     }
+     println!(
+         "{}",
+-        json!({"topology_version":1,"implementation":crate::tcp_driver()?,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
++        json!({"topology_version":1,"implementation":crate::tcp_driver()?,"security":crate::secure::metadata()?,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
+     );
+     Ok(())
+ }
+diff --git a/benchmarks/rpc/src/workflows.rs b/benchmarks/rpc/src/workflows.rs
+index b321860..8f82fb9 100644
+--- a/benchmarks/rpc/src/workflows.rs
++++ b/benchmarks/rpc/src/workflows.rs
+@@ -2,7 +2,6 @@
+ //! destruction are included. A sample is an entire workflow (a batch for fanout).
+ use crate::{echo_capnp::workflows, Result};
+ use serde_json::Value;
+-use tokio::net::{TcpListener, TcpStream};
+ use tokio::time::timeout;
+ 
+ #[path = "../capability-workflows.rs"]
+@@ -23,40 +22,42 @@ pub use support::VERSION;
+ // Includes protocol metadata and segment/frame headers around the 4 MiB payload.
+ const MAX_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
+ 
+-fn portable_tcp(
+-    socket: TcpStream,
++fn portable_network(
++    network: crate::secure::Network,
+     bootstrap: Option<capnp::capability::Client>,
+     side: capnp_rpc::rpc_twoparty_capnp::Side,
+ ) -> Result<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>> {
+-    crate::portable_tcp_bounded(socket, bootstrap, side, MAX_MESSAGE_BYTES, 32 * 1024 * 1024)
++    crate::portable_network_bounded(
++        network,
++        bootstrap,
++        side,
++        MAX_MESSAGE_BYTES,
++        32 * 1024 * 1024,
++    )
+ }
+ pub fn cases() -> Vec<Value> {
+     serde_json::from_str(include_str!("../workflows.json")).expect("workflow catalog")
+ }
+ pub async fn serve(address: &str) -> Result<()> {
+-    let listener = TcpListener::bind(address).await?;
+-    crate::ready(listener.local_addr()?, None)?;
++    let listener = crate::secure::Listener::bind(address).await?;
++    crate::ready(listener.local_addr()?, None, "tcp")?;
+     loop {
+-        let (socket, _) = listener.accept().await?;
+-        socket.set_nodelay(true)?;
++        let network = listener
++            .accept()
++            .await?
++            .network(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+         let bootstrap: workflows::Client = capnp_rpc::new_client(Service);
+         tokio::task::spawn_local(async move {
+             let result = if crate::tcp_driver()? == "portable" {
+-                portable_tcp(
+-                    socket,
++                portable_network(
++                    network,
+                     Some(bootstrap.client),
+                     capnp_rpc::rpc_twoparty_capnp::Side::Server,
+                 )?
+                 .run()
+                 .await
+             } else {
+-                capntproto::rpc::tcp::client(
+-                    socket,
+-                    Some(bootstrap.client),
+-                    capnp_rpc::rpc_twoparty_capnp::Side::Server,
+-                    Default::default(),
+-                )
+-                .await
++                capnp_rpc::RpcSystem::new(network, Some(bootstrap.client)).await
+             };
+             if let Err(error) = result {
+                 eprintln!("workflow connection closed: {error}");
+@@ -71,15 +72,15 @@ async fn connect(
+     workflows::Client,
+     Option<capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>>,
+ )> {
++    let side = capnp_rpc::rpc_twoparty_capnp::Side::Client;
++    let network = crate::secure::connect(address).await?.network(side);
+     if crate::tcp_driver()? == "portable" {
+-        let socket = TcpStream::connect(address).await?;
+-        socket.set_nodelay(true)?;
+-        let mut driver = portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
++        let mut driver = portable_network(network, None, side)?;
+         let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+         Ok((client, Some(driver)))
+     } else {
+-        let mut driver = capntproto::rpc::connect(address, None, Default::default()).await?;
+-        let client = driver.bootstrap();
++        let mut driver = capnp_rpc::RpcSystem::new(network, None);
++        let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
+         tokio::task::spawn_local(driver);
+         Ok((client, None))
+     }
+diff --git a/benchmarks/rpc/src/workflows/comparison.rs b/benchmarks/rpc/src/workflows/comparison.rs
+index 11a07b2..172bccb 100644
+--- a/benchmarks/rpc/src/workflows/comparison.rs
++++ b/benchmarks/rpc/src/workflows/comparison.rs
+@@ -11,8 +11,8 @@ use serde_json::json;
+ use std::time::{Duration, Instant};
+ 
+ enum Client {
+-    Grpc(grpc::Client),
+-    Websocket(websocket::Client),
++    Grpc(Box<grpc::Client>),
++    Websocket(Box<websocket::Client>),
+ }
+ impl Client {
+     async fn call(&mut self, req: Operation) -> Result<Operation> {
+@@ -165,12 +165,12 @@ pub async fn measure(implementation: &str, args: &[String]) -> Result<()> {
+     let deadline = Duration::from_secs(10);
+     let mut client = tokio::time::timeout(deadline, async {
+         match implementation {
+-            "grpc" => Ok(Client::Grpc(
++            "grpc" => Ok(Client::Grpc(Box::new(
+                 grpc::Client::connect(&args[0], args[1] == "callback").await?,
+-            )),
+-            "websocket" => Ok(Client::Websocket(
++            ))),
++            "websocket" => Ok(Client::Websocket(Box::new(
+                 websocket::Client::connect(&args[0]).await?,
+-            )),
++            ))),
+             _ => Err::<_, Box<dyn std::error::Error>>("unknown comparison protocol".into()),
+         }
+     })
+@@ -200,7 +200,7 @@ pub async fn measure(implementation: &str, args: &[String]) -> Result<()> {
+     tokio::time::timeout(deadline, client.call(release)).await??;
+     println!(
+         "{}",
+-        json!({"workflow_version":super::VERSION,"implementation":implementation,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":elapsed,"latency_ns":samples})
++        json!({"workflow_version":super::VERSION,"implementation":implementation,"security":crate::transport_metadata(implementation)?,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":elapsed,"latency_ns":samples})
+     );
+     Ok(())
+ }
+diff --git a/benchmarks/rpc/src/workflows/grpc.rs b/benchmarks/rpc/src/workflows/grpc.rs
+index 0c36371..901ec15 100644
+--- a/benchmarks/rpc/src/workflows/grpc.rs
++++ b/benchmarks/rpc/src/workflows/grpc.rs
+@@ -8,10 +8,9 @@ use crate::{
+     },
+     Result,
+ };
+-use futures::StreamExt;
+ use std::sync::Mutex;
+ use tokio::{net::TcpListener, sync::mpsc};
+-use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
++use tokio_stream::wrappers::ReceiverStream;
+ use tonic::{Request, Response, Status, Streaming};
+ 
+ #[derive(Default)]
+@@ -99,13 +98,8 @@ impl Workflows for Service {
+ }
+ pub(super) async fn serve(address: &str) -> Result<()> {
+     let listener = TcpListener::bind(address).await?;
+-    crate::ready(listener.local_addr()?, None)?;
+-    let incoming = TcpListenerStream::new(listener).map(|socket| {
+-        socket.and_then(|socket| {
+-            socket.set_nodelay(true)?;
+-            Ok(socket)
+-        })
+-    });
++    crate::ready(listener.local_addr()?, None, "grpc")?;
++    let incoming = crate::grpc_incoming(listener)?;
+     tonic::transport::Server::builder()
+         .add_service(
+             WorkflowsServer::new(Service::default())
+@@ -123,8 +117,7 @@ pub(super) struct Client {
+ }
+ impl Client {
+     pub async fn connect(address: &str, callback: bool) -> Result<Self> {
+-        let mut rpc = WorkflowsClient::connect(format!("http://{address}"))
+-            .await?
++        let mut rpc = WorkflowsClient::new(crate::grpc_channel(address).await?)
+             .max_decoding_message_size(super::MAX_MESSAGE_BYTES)
+             .max_encoding_message_size(super::MAX_MESSAGE_BYTES);
+         let (tx, rx) = if callback {
+diff --git a/benchmarks/rpc/src/workflows/websocket.rs b/benchmarks/rpc/src/workflows/websocket.rs
+index 1c6cb91..52d9830 100644
+--- a/benchmarks/rpc/src/workflows/websocket.rs
++++ b/benchmarks/rpc/src/workflows/websocket.rs
+@@ -11,7 +11,7 @@ use tokio_tungstenite::{
+     WebSocketStream,
+ };
+ 
+-pub(super) struct Client(WebSocketStream<TcpStream>);
++pub(super) struct Client(WebSocketStream<tokio_rustls::TlsStream<TcpStream>>);
+ fn config() -> WebSocketConfig {
+     WebSocketConfig::default()
+         .max_message_size(Some(super::MAX_MESSAGE_BYTES))
+@@ -19,10 +19,9 @@ fn config() -> WebSocketConfig {
+ }
+ impl Client {
+     pub async fn connect(address: &str) -> Result<Self> {
+-        let socket = TcpStream::connect(address).await?;
+-        socket.set_nodelay(true)?;
++        let socket = crate::benchmark_tls::connect(address).await?;
+         let (socket, _) = tokio_tungstenite::client_async_with_config(
+-            format!("ws://{address}/workflows"),
++            format!("wss://{address}/workflows"),
+             socket,
+             Some(config()),
+         )
+@@ -56,10 +55,11 @@ impl Client {
+ }
+ pub(super) async fn serve(address: &str) -> Result<()> {
+     let listener = TcpListener::bind(address).await?;
+-    crate::ready(listener.local_addr()?, None)?;
++    crate::ready(listener.local_addr()?, None, "websocket")?;
+     loop {
+         let (socket, _) = listener.accept().await?;
+-        socket.set_nodelay(true)?;
++        let socket =
++            crate::benchmark_tls::accept(socket, crate::benchmark_tls::server_config()?).await?;
+         tokio::task::spawn_local(async move {
+             let result = async {
+                 let socket =
+diff --git a/benchmarks/rpc/test_secure_runner.py b/benchmarks/rpc/test_secure_runner.py
+new file mode 100644
+index 0000000..d172e02
+--- /dev/null
++++ b/benchmarks/rpc/test_secure_runner.py
+@@ -0,0 +1,62 @@
++import copy
++import importlib.util
++from pathlib import Path
++import tempfile
++import unittest
++
++HERE = Path(__file__).resolve().parent
++
++def module(name, filename):
++    spec = importlib.util.spec_from_file_location(name, HERE / filename)
++    value = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(value)
++    return value
++
++runner = module('secure_runner', 'secure-runner.py')
++counts = module('ciphertext_counts', 'ciphertext-counts.py')
++
++class SecurityEvidenceTests(unittest.TestCase):
++    def test_plaintext_downgrade_wrong_transport_and_partial_samples_are_rejected(self):
++        case = dict(family='loopback', name='loopback-64', payload_bytes=64)
++        valid = dict(measurement_version=2, protocol='tcp', payload_bytes=64,
++                     security=runner.security('tls'), warmup=2, iterations=2,
++                     latency_ns=[10,20], elapsed_ns=35)
++        runner.validate(valid, case, 'tls', 'portable', 2, 2)
++        for field, value in [('security', None), ('security', runner.security('quic')),
++                             ('latency_ns',[10]), ('elapsed_ns',29), ('protocol','capnp-cpp')]:
++            invalid = copy.deepcopy(valid)
++            invalid[field] = value
++            with self.assertRaises(AssertionError):
++                runner.validate(invalid, case, 'tls', 'portable', 2, 2)
++        for field, value in [('tls','1.2'),('early_data',True),('authentication','none')]:
++            invalid = copy.deepcopy(valid)
++            invalid['security'][field] = value
++            with self.assertRaises(AssertionError):
++                runner.validate(invalid, case, 'tls', 'portable', 2, 2)
++
++    def test_ciphertext_counters_pair_resumed_calls_and_separate_datagrams_from_bytes(self):
++        trace = '10 1.000 read(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, <unfinished ...>\n11 1.001 write(1</tmp/file>, "abc", 3) = 3 <0.001>\n11 1.002 sendmmsg(4<UDP:[127.0.0.1:3]>, [], 2, 0) = 2 <0.001>\n10 1.003 <... read resumed>"abc", 3) = 3 <0.003>\n10 1.004 recvfrom(4<UDP:[127.0.0.1:3]>, 0x1, 1200, 0, NULL, NULL) = -1 EAGAIN (Resource temporarily unavailable) <0.001>\n10 1.005 write(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, "data", 4) = 4 <0.001>\n'
++        with tempfile.TemporaryDirectory() as directory:
++            path = Path(directory)/'trace'
++            path.write_text(trace)
++            result = counts.count(path)
++        self.assertEqual(result['unfinished_socket_calls'], 0)
++        self.assertEqual(result['counts']['read_attempts'], 2)
++        self.assertEqual(result['counts']['read_positive'], 1)
++        self.assertEqual(result['counts']['read_returned_bytes'], 3)
++        self.assertEqual(result['counts']['write_attempts'], 2)
++        self.assertEqual(result['counts']['write_returned_bytes'], 4)
++        self.assertEqual(result['counts']['write_batched_datagrams'], 2)
++
++    def test_termination_keeps_unreturned_socket_attempts_visible(self):
++        trace = '10 1.000 read(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, 0x1, 16) = ? ERESTARTSYS\n11 1.001 recvfrom(4<UDP:[127.0.0.1:3]>, <unfinished ...>\n'
++        with tempfile.TemporaryDirectory() as directory:
++            path = Path(directory)/'trace'
++            path.write_text(trace)
++            result = counts.count(path)
++        self.assertEqual(result['counts']['read_attempts'], 2)
++        self.assertEqual(result['counts']['read_unreturned'], 2)
++        self.assertEqual(result['unfinished_socket_calls'], 1)
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/benchmarks/rpc/tls.rs b/benchmarks/rpc/tls.rs
+new file mode 100644
+index 0000000..2f21509
+--- /dev/null
++++ b/benchmarks/rpc/tls.rs
+@@ -0,0 +1,87 @@
++//! Shared benchmark-only TLS policy, also compiled by the independent upstream fixture.
++//! No plaintext fallback, public roots, client resumption or early data.
++use crate::Result;
++use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
++use std::{path::PathBuf, sync::Arc, time::Duration};
++use tokio::net::TcpStream;
++use tokio_rustls::{rustls, TlsAcceptor, TlsConnector, TlsStream};
++
++pub const DEADLINE: Duration = Duration::from_secs(10);
++pub fn directory() -> Result<PathBuf> {
++    match std::env::var_os("CAPNTPROTO_BENCH_CERTS") {
++        Some(directory) => Ok(directory.into()),
++        None => Ok(std::env::current_exe()?
++            .parent()
++            .ok_or("missing executable directory")?
++            .join("certificates")),
++    }
++}
++pub fn read(name: &str) -> Result<Vec<u8>> {
++    Ok(std::fs::read(directory()?.join(name))?)
++}
++pub fn name() -> String {
++    std::env::var("CAPNTPROTO_BENCH_SERVER_NAME").unwrap_or_else(|_| "localhost".into())
++}
++pub fn roots() -> Result<rustls::RootCertStore> {
++    let mut roots = rustls::RootCertStore::empty();
++    roots.add(CertificateDer::from(read("ca.der")?))?;
++    Ok(roots)
++}
++pub fn identity() -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
++    Ok((
++        vec![CertificateDer::from(read("server.der")?)],
++        PrivateKeyDer::try_from(read("server-key.der")?).map_err(std::io::Error::other)?,
++    ))
++}
++pub fn client_config() -> Result<Arc<rustls::ClientConfig>> {
++    let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(
++        rustls::crypto::ring::default_provider(),
++    ))
++    .with_protocol_versions(&[&rustls::version::TLS13])?
++    .with_root_certificates(roots()?)
++    .with_no_client_auth();
++    config.resumption = rustls::client::Resumption::disabled();
++    config.enable_early_data = false;
++    // KJ's public TLS API has no ALPN configuration. Ordinary two-party TLS uses
++    // no ALPN on either peer; standard QUIC uses the production RPC ALPN.
++    Ok(Arc::new(config))
++}
++pub fn server_config() -> Result<Arc<rustls::ServerConfig>> {
++    let (certificates, key) = identity()?;
++    let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(
++        rustls::crypto::ring::default_provider(),
++    ))
++    .with_protocol_versions(&[&rustls::version::TLS13])?
++    .with_no_client_auth()
++    .with_single_cert(certificates, key)?;
++    config.send_tls13_tickets = 0;
++    Ok(Arc::new(config))
++}
++pub async fn connect(address: &str) -> Result<TlsStream<TcpStream>> {
++    let config = client_config()?;
++    tokio::time::timeout(DEADLINE, async {
++        let socket = TcpStream::connect(address).await?;
++        socket.set_nodelay(true)?;
++        TlsConnector::from(config)
++            .connect(ServerName::try_from(name())?, socket)
++            .await
++            .map(TlsStream::from)
++            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
++    })
++    .await?
++}
++pub async fn accept(
++    socket: TcpStream,
++    config: Arc<rustls::ServerConfig>,
++) -> Result<TlsStream<TcpStream>> {
++    socket.set_nodelay(true)?;
++    Ok(
++        tokio::time::timeout(DEADLINE, TlsAcceptor::from(config).accept(socket))
++            .await??
++            .into(),
++    )
++}
++pub fn metadata() -> serde_json::Value {
++    serde_json::json!({"version":1,"transport":"tls-tcp","tls":"1.3","authentication":"server-certificate",
++        "server_name":name(),"early_data":false,"setup_timed":false,"alpn":null})
++}
+diff --git a/benchmarks/rpc/topology-runner.py b/benchmarks/rpc/topology-runner.py
+index 147173b..78ec3a6 100644
+--- a/benchmarks/rpc/topology-runner.py
++++ b/benchmarks/rpc/topology-runner.py
+@@ -45,7 +45,8 @@ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--rust', type=Path, required=True)
+     parser.add_argument('--portable', type=Path, help='Portable driver binary; defaults to --rust with portable selected on every peer.')
+-    parser.add_argument('--cpp', type=Path, required=True)
++    parser.add_argument('--cpp', type=Path, help='Required for TLS; unsupported for QUIC.')
++    parser.add_argument('--transport', choices=['tls', 'quic'], default='tls')
+     parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
+     parser.add_argument('--portable-baseline', type=Path, help='Optional frozen portable control, explicitly selected on every peer.')
+     parser.add_argument('--output', type=Path, required=True)
+@@ -56,12 +57,15 @@ def main():
+     parser.add_argument('--instrument', choices=['none', 'socket', 'wire', 'callgrind'], default='none')
+     parser.add_argument('--mixed', action='store_true', help='Also validate every ordered pair of legacy, portable and C++ in alternating service chains.')
+     args = parser.parse_args()
++    certificates = Path(os.environ.get('CAPNTPROTO_BENCH_CERTS', args.rust.resolve().parent / 'certificates')).resolve(strict=True)
++    assert args.transport == 'quic' or args.cpp, '--cpp required for TLS comparison'
+     diagnostic = args.instrument != 'none'
+     warmup = args.warmup if args.warmup is not None else (2 if diagnostic else 100)
+     iterations = args.iterations if args.iterations is not None else (10 if diagnostic else 1000)
+     binaries = {'legacy': args.rust.resolve(strict=True),
+-                'portable': (args.portable or args.rust).resolve(strict=True),
+-                'cpp': args.cpp.resolve(strict=True)}
++                'portable': (args.portable or args.rust).resolve(strict=True)}
++    if args.transport == 'tls':
++        binaries['cpp'] = args.cpp.resolve(strict=True)
+     if args.baseline is not None:
+         binaries['baseline'] = args.baseline.resolve(strict=True)
+     if args.portable_baseline is not None:
+@@ -100,19 +104,19 @@ def main():
+         source = ROOT / 'dev/src/cloud/remote/timing/probe.c'
+         (out / 'probe.c').write_bytes(source.read_bytes())
+         subprocess.run(['cc', '-O2', '-shared', '-fPIC', '-o', str(probe), str(source), '-ldl'], check=True)
+-    scope = dict(topology_version=1, instrument=args.instrument, qualifying_budget=qualifying, warmup=warmup, iterations=iterations,
++    scope = dict(transport=args.transport, cpp_quic='unsupported', topology_version=1, instrument=args.instrument, qualifying_budget=qualifying, warmup=warmup, iterations=iterations,
+                  repetitions=args.repetitions, cases=cases, binaries={k: dict(path=str(v), sha256=digest(v)) for k, v in binaries.items()},
+                  fixture_sha256=digest(catalog_path), runner_sha256=digest(__file__), cpu_topology=topology,
+                  uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
+                  order_policy='Rotate variants, then reverse every complete cycle. Five repetitions do not exactly balance every position.',
+                  statistics='mean_ns and sample stddev_ns describe all retained samples; repetition_mean_stddev_ns is sample SD across run means, not a confidence interval.',
+                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
+-                 goal='Every uninstrumented portable cell pooled p50 <= min(legacy, C++) pooled p50; diagnostic timings do not qualify.',
++                 goal='Every uninstrumented portable cell pooled p50 <= the fastest reference on the same transport (legacy and C++ for TLS, legacy for QUIC); diagnostic timings do not qualify.',
+                  trials=[])
+     (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
+ 
+     def launch(label, argv, prefix, cpu):
+-        env = dict(os.environ, CAPNTPROTO_BENCH_PORTABLE='1' if label in ['portable', 'portable-baseline'] else '0')
++        env = dict(os.environ, CAPNTPROTO_BENCH_CERTS=str(certificates), CAPNTPROTO_BENCH_TRANSPORT=args.transport, CAPNTPROTO_BENCH_PORTABLE='1' if label in ['portable', 'portable-baseline'] else '0')
+         command = ['taskset', '-c', str(cpu)]
+         if args.instrument == 'socket':
+             env.update(LD_PRELOAD=str(probe), CAPNTPROTO_IO_TRACE=str(prefix) + '.bin')
+@@ -157,6 +161,7 @@ def main():
+                     line = process.stdout.readline()
+                 (directory / f'service-{hop}.ready.json').write_text(line)
+                 ready = json.loads(line)
++                assert ready.get('security', {}).get('transport') == ('quic-v1' if args.transport == 'quic' else 'tls-tcp'), 'server transport mismatch'
+                 assert ready['hops'] == case['hops'] - hop, 'incorrect chain length'
+                 if label in ['portable', 'portable-baseline']:
+                     assert ready['implementation'] == 'portable', 'portable service was not selected'
+@@ -169,6 +174,7 @@ def main():
+             (directory / 'trial.json').write_text(output)
+             assert client.returncode == 0, f'client failed: {directory}'
+             data = json.loads(output)
++            assert data.get('security', {}).get('transport') == ('quic-v1' if args.transport == 'quic' else 'tls-tcp'), 'client transport mismatch'
+             assert data['topology_version'] == 1 and data['case'] == case
+             expected = 'portable' if client_label in ['portable', 'portable-baseline'] else ('capnp-cpp' if client_label == 'cpp' else 'legacy')
+             assert data['implementation'] == expected
+@@ -194,8 +200,8 @@ def main():
+ 
+     if args.mixed:
+         for case in cases:
+-            for label in ['legacy', 'portable', 'cpp']:
+-                for other in ['legacy', 'portable', 'cpp']:
++            for label in [k for k in binaries if k in ['legacy', 'portable', 'cpp']]:
++                for other in [k for k in binaries if k in ['legacy', 'portable', 'cpp']]:
+                     if label == other:
+                         continue
+                     services = [other if hop % 2 == 0 else label for hop in range(case['hops'])]
+@@ -227,8 +233,8 @@ def main():
+                                 repetition_p50_ns=[percentile(t['latency_ns'], 50) for t in trials],
+                                 batches_per_second=rate, logical_requests_per_second=rate * case['width'],
+                                 service_calls_per_second=rate * case['width'] * case['hops'])
+-        ratio = cells['legacy']['p50_ns'] / cells['cpp']['p50_ns']
+-        reference = min(['legacy', 'cpp'], key=lambda label: cells[label]['p50_ns'])
++        ratio = cells['legacy']['p50_ns'] / cells['cpp']['p50_ns'] if 'cpp' in cells else None
++        reference = min([k for k in ['legacy', 'cpp'] if k in cells], key=lambda label: cells[label]['p50_ns'])
+         portable_ratio = cells['portable']['p50_ns'] / cells[reference]['p50_ns']
+         rows.append(dict(case=case, variants=cells, legacy_over_cpp=ratio, faster_reference=reference,
+                          portable_over_faster_reference=portable_ratio,
+@@ -246,7 +252,7 @@ def main():
+     summary = dict(rows=rows, socket_journals=journals, diagnostic=diagnostic, qualifying_budget=qualifying,
+                    all_cells_meet_target=all(r['meets_target'] for r in rows) if qualifying else None)
+     (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+-    lines = ['# Deep/concurrent RPC comparison', '',
++    lines = ['# Deep/concurrent RPC comparison', '', f'Transport: {args.transport}. C++ QUIC is unsupported.', '',
+              f'{args.repetitions} independent process repetitions per implementation/case. Times are microseconds per complete batch.',
+              'Mean ± SD reports the mean latency and sample standard deviation of the repetition means. It is not a confidence interval.',
+              'Per-sample SD, extrema, each run mean, run-mean range, p95/p99 and throughput are retained in summary.json.',
+@@ -258,7 +264,7 @@ def main():
+             lo, hi = cell['repetition_mean_range_ns']
+             lines.append(f"| {row['case']['name']} | {label} | {cell['mean_ns']/1000:.3f} ± {cell['repetition_mean_stddev_ns']/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} | {cell['p50_ns']/1000:.3f} | {cell['p95_ns']/1000:.3f} | {cell['p99_ns']/1000:.3f} |")
+     lines += ['', 'Instrumented/short runs are diagnostic only.' if not qualifying else
+-              'The latency target remains portable pooled p50 ≤ min(legacy, C++) in every cell; added descriptive statistics do not replace that gate.']
++              'The latency target remains portable pooled p50 ≤ the fastest reference on the same transport in every cell; C++ is unavailable for QUIC.']
+     (out / 'README.md').write_text('\n'.join(lines) + '\n')
+     print(json.dumps(rows, indent=2))
+ 
+diff --git a/benchmarks/rpc/topology.c++ b/benchmarks/rpc/topology.c++
+index c656f7e..7edd636 100644
+--- a/benchmarks/rpc/topology.c++
++++ b/benchmarks/rpc/topology.c++
+@@ -1,4 +1,5 @@
+ #include "echo.capnp.h"
++#include "secure.h"
+ #include <capnp/rpc-twoparty.h>
+ #include <kj/async-io.h>
+ #include <kj/debug.h>
+@@ -103,8 +104,9 @@ kj::Promise<void> access(AccessService::Client& client, const Case& c, uint64_t
+ 
+ int runTopologies(int argc, char** argv) {
+   auto io = kj::setupAsyncIo();
++  BenchmarkTransport transport(io.provider->getTimer());
+   auto connect = [&](const char* address) {
+-    auto parsed = io.provider->getNetwork().parseAddress(address).wait(io.waitScope);
++    auto parsed = transport.address(io.provider->getNetwork().parseAddress(address).wait(io.waitScope));
+     return kj::heap<Connection>(io.provider->getTimer().timeoutAfter(
+         10 * kj::SECONDS, parsed->connect()).wait(io.waitScope));
+   };
+@@ -120,10 +122,10 @@ int runTopologies(int argc, char** argv) {
+       hops += response.getHops();
+       next = downstream->client;
+     }
+-    auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
++    auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
+     auto listener = address->listen();
+     capnp::TwoPartyServer server(kj::heap<Service>(kj::mv(next), hops));
+-    std::cout << "{\"port\":" << listener->getPort() << ",\"hops\":" << hops << "}" << std::endl;
++    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"port\":" << listener->getPort() << ",\"hops\":" << hops << "}" << std::endl;
+     server.listen(*listener).wait(io.waitScope);
+     return 0;
+   }
+@@ -160,7 +162,7 @@ int runTopologies(int argc, char** argv) {
+     if (sequence >= warmup) samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - before).count());
+   }
+   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
+-  std::cout << "{\"topology_version\":1,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\""
++  std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"topology_version\":1,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\""
+       << c.name << "\",\"depth\":" << c.depth << ",\"width\":" << c.width
+       << ",\"connections\":" << c.connections << ",\"hops\":" << c.hops
+       << ",\"payload_bytes_per_node\":32},\"warmup\":" << warmup << ",\"iterations\":"
+diff --git a/benchmarks/rpc/workflows.c++ b/benchmarks/rpc/workflows.c++
+index d34e9c7..36095d7 100644
+--- a/benchmarks/rpc/workflows.c++
++++ b/benchmarks/rpc/workflows.c++
+@@ -1,4 +1,5 @@
+ #include "echo.capnp.h"
++#include "secure.h"
+ #include <capnp/rpc-twoparty.h>
+ #include <kj/async-io.h>
+ #include <kj/debug.h>
+@@ -127,11 +128,12 @@ kj::Promise<void> operation(Workflows::Client& client, Cell::Client& state, Call
+ 
+ int runWorkflows(int argc, char** argv) {
+   auto io = kj::setupAsyncIo();
++  BenchmarkTransport transport(io.provider->getTimer());
+   if (argc == 3 && std::string(argv[1]) == "workflow-server") {
+-    auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
++    auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
+     auto listener = address->listen();
+     capnp::TwoPartyServer server(kj::heap<Service>());
+-    std::cout << "{\"ready\":true}" << std::endl;
++    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"ready\":true,\"address\":\"127.0.0.1:" << listener->getPort() << "\"}" << std::endl;
+     server.listen(*listener).wait(io.waitScope);
+     return 0;
+   }
+@@ -150,7 +152,7 @@ int runWorkflows(int argc, char** argv) {
+   KJ_REQUIRE(warmup <= 100000 && iterations > 0 && iterations <= 100000);
+   std::vector<capnp::byte> payload(bytes);
+   for (size_t n = 0; n < bytes; ++n) payload[n] = n % 251;
+-  auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
++  auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
+   auto stream = address->connect().wait(io.waitScope);
+   capnp::TwoPartyClient rpc(*stream);
+   auto client = rpc.bootstrap().castAs<Workflows>();
+@@ -173,7 +175,7 @@ int runWorkflows(int argc, char** argv) {
+   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
+   auto width = name == "fanout-32" ? 32 : 1;
+   auto rpcs = width == 32 ? 32 : (name == "dependent-read" || name == "pipelined-read" || name == "write-read" || name == "callback" ? 2 : 1);
+-  std::cout << "{\"workflow_version\":3,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\"" << name << "\",\"payload_bytes\":" << bytes << ",\"width\":" << width << ",\"rpcs_per_iteration\":" << rpcs << "},\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
++  std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"workflow_version\":3,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\"" << name << "\",\"payload_bytes\":" << bytes << ",\"width\":" << width << ",\"rpcs_per_iteration\":" << rpcs << "},\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
+   for (size_t n = 0; n < samples.size(); ++n) { if (n) std::cout << ','; std::cout << samples[n]; }
+   std::cout << "]}" << std::endl;
+   return 0;
+diff --git a/quality/src/benchmark.rs b/quality/src/benchmark.rs
+index 06ae3de..765fb12 100644
+--- a/quality/src/benchmark.rs
++++ b/quality/src/benchmark.rs
+@@ -83,6 +83,7 @@ fn audit_bundle(r: &mut Runner, bundle: &Path) -> Result<Value> {
+ #[serde(deny_unknown_fields)]
+ pub struct Trial {
+     pub measurement_version: u32,
++    pub security: Value,
+     pub protocol: String,
+     pub payload_bytes: usize,
+     pub warmup: u64,
+@@ -100,6 +101,27 @@ pub fn validate(
+     if trial.measurement_version != MEASUREMENT_VERSION {
+         return Err("unsupported benchmark measurement version; rerun with matched C++ validation and cleanup".into());
+     }
++    let security = &trial.security;
++    let encrypted = if protocol == "native" {
++        security["transport"] == "native" && security["authentication"] == "pinned-mutual-identity"
++    } else {
++        security["transport"] == "tls-tcp"
++            && security["tls"] == "1.3"
++            && security["authentication"] == "server-certificate"
++            && security["early_data"] == false
++            && security["server_name"]
++                .as_str()
++                .is_some_and(|s| !s.is_empty())
++            && security["alpn"]
++                == if protocol == "grpc" {
++                    json!("h2")
++                } else {
++                    Value::Null
++                }
++    };
++    if !encrypted || security["version"] != 1 || security["setup_timed"] != false {
++        return Err("benchmark requires matching encrypted transport metadata; plaintext archives cannot qualify".into());
++    }
+     if iterations == 0
+         || trial.protocol != protocol
+         || trial.payload_bytes != bytes
+@@ -157,6 +179,9 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
+             let first = cell[0];
+             for trial in &cell {
+                 validate(trial, protocol, bytes, first.warmup, first.iterations)?;
++                if trial.security != first.security {
++                    return Err("mixed security contracts in benchmark cell".into());
++                }
+             }
+             let mut samples: Vec<_> = cell
+                 .iter()
+@@ -173,7 +198,7 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
+             let elapsed: u128 = cell.iter().map(|t| u128::from(t.elapsed_ns)).sum();
+             let sample_trials: Vec<Vec<u64>> =
+                 cell.iter().map(|trial| trial.latency_ns.clone()).collect();
+-            let mut row = json!({"protocol":protocol,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
++            let mut row = json!({"protocol":protocol,"security":first.security,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
+             row.as_object_mut().unwrap().extend(
+                 latency_summary::summarize(&sample_trials)
+                     .as_object()
+@@ -186,7 +211,7 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
+     Ok(rows)
+ }
+ 
+-/// Acceptance compares matched plaintext capability RPC, at every payload size.
++/// Acceptance compares matched TLS capability RPC, at every payload size.
+ /// Keep raw distributions and tails in the report; the gate uses pooled p50.
+ pub fn tcp_acceptance(rows: &[Value]) -> Result<()> {
+     tcp_acceptance_for_driver(rows, "legacy")
+@@ -355,7 +380,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
+         bundle.join("capnp-rust"),
+     )?;
+     let cxx = std::env::var("CXX").unwrap_or_else(|_| "g++".into());
+-    let reference = v::cpp::build(&["capnp_tool", "capnpc_cpp", "capnp-rpc"])?;
++    let reference = v::cpp::build(&["capnp_tool", "capnpc_cpp", "capnp-rpc", "kj-tls"])?;
+     let reference_bin = reference.join("c++/src/capnp");
+     let cpp_dir = r.directory.join("cpp");
+     fs::create_dir_all(&cpp_dir)?;
+@@ -390,12 +415,28 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
+             .arg(cpp_dir.join("echo.capnp.c++"))
+             .arg(reference_bin.join("libcapnp-rpc.a"))
+             .arg(reference_bin.join("libcapnp.a"))
++            .arg(reference.join("c++/src/kj/libkj-tls.a"))
+             .arg(reference.join("c++/src/kj/libkj-async.a"))
+             .arg(reference.join("c++/src/kj/libkj.a"))
+-            .args(["-pthread", "-o"])
++            .args(["-lssl", "-lcrypto", "-pthread", "-o"])
+             .arg(&cpp),
+     )?;
+     fs::copy(cpp, bundle.join("capnp-reference"))?;
++    // All transported peers share one short-lived benchmark identity; no plaintext fallback.
++    let certificates = bundle.join("certificates");
++    if certificates.exists() {
++        fs::remove_dir_all(&certificates)?;
++    }
++    r.run(
++        "benchmark-certificates",
++        v::command("python3")
++            .arg("benchmarks/rpc/generate-certificates.py")
++            .arg(&certificates),
++    )?;
++    fs::copy(
++        root().join("benchmarks/rpc/generate-certificates.py"),
++        bundle.join("generate-certificates.py"),
++    )?;
+     let mut hashes = std::collections::BTreeMap::new();
+     for name in [
+         "tcp",
+@@ -414,6 +455,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
+     let auditable = audit_bundle(r, &bundle)?;
+     let manifest = json!({"source_id":r.evidence.source_id, "compiler":r.evidence.compiler,
+         "auditable":auditable,
++        "security_fixture":serde_json::from_slice::<Value>(&fs::read(certificates.join("manifest.json"))?)?,
+         "cpp_compiler":r.run("cpp-compiler", v::command(&cxx).arg("--version"))?,
+         "lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/rpc/Cargo.lock"))?),
+         "upstream_rpc":upstream,
+@@ -546,6 +588,7 @@ mod tests {
+                 for _ in 0..REPETITIONS {
+                     trials.push(Trial {
+                         measurement_version: MEASUREMENT_VERSION,
++                        security: test_security(protocol),
+                         protocol: protocol.into(),
+                         payload_bytes: bytes,
+                         warmup: 10,
+@@ -583,6 +626,7 @@ mod tests {
+         assert!(matrix(&[]).is_err());
+         let mut t = Trial {
+             measurement_version: MEASUREMENT_VERSION,
++            security: test_security("native"),
+             protocol: "native".into(),
+             payload_bytes: 64,
+             warmup: 10,
+@@ -598,3 +642,12 @@ mod tests {
+         assert_eq!(percentile(&mut [3, 1, 2, 4, 5], 95), 5);
+     }
+ }
++
++#[cfg(test)]
++pub(crate) fn test_security(protocol: &str) -> Value {
++    if protocol == "native" {
++        json!({"version":1,"transport":"native","authentication":"pinned-mutual-identity","setup_timed":false})
++    } else {
++        json!({"version":1,"transport":"tls-tcp","tls":"1.3","authentication":"server-certificate","server_name":"localhost","early_data":false,"setup_timed":false,"alpn":if protocol == "grpc" { json!("h2") } else { Value::Null }})
++    }
++}
+diff --git a/quality/src/report.rs b/quality/src/report.rs
+index 5097109..6ea2043 100644
+--- a/quality/src/report.rs
++++ b/quality/src/report.rs
+@@ -328,6 +328,7 @@ mod tests {
+                 for repetition in 0..5 {
+                     trials.push(benchmark::Trial {
+                         measurement_version: benchmark::MEASUREMENT_VERSION,
++                        security: benchmark::test_security(protocol),
+                         protocol: protocol.into(),
+                         payload_bytes: bytes,
+                         iterations: 1000,
+@@ -391,6 +392,7 @@ mod tests {
+                 for _ in 0..5 {
+                     trials.push(benchmark::Trial {
+                         measurement_version: benchmark::MEASUREMENT_VERSION,
++                        security: benchmark::test_security(protocol),
+                         protocol: (*protocol).into(),
+                         payload_bytes: bytes,
+                         iterations: 1000,
+diff --git a/test-support/src/verification/cpp.rs b/test-support/src/verification/cpp.rs
+index 5cbb9df..253b438 100644
+--- a/test-support/src/verification/cpp.rs
++++ b/test-support/src/verification/cpp.rs
+@@ -31,7 +31,11 @@ pub fn build(targets: &[&str]) -> Result<PathBuf> {
+                 "-G",
+                 "Ninja",
+                 "-DBUILD_TESTING=ON",
+-                "-DWITH_OPENSSL=OFF",
++                if targets.contains(&"kj-tls") {
++                    "-DWITH_OPENSSL=ON"
++                } else {
++                    "-DWITH_OPENSSL=OFF"
++                },
+                 "-DWITH_ZLIB=OFF",
+                 "-DWITH_FIBERS=OFF",
+                 "-DCMAKE_BUILD_TYPE=Release",

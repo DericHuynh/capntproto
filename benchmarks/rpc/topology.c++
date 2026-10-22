@@ -1,4 +1,5 @@
 #include "echo.capnp.h"
+#include "secure.h"
 #include <capnp/rpc-twoparty.h>
 #include <kj/async-io.h>
 #include <kj/debug.h>
@@ -103,8 +104,9 @@ kj::Promise<void> access(AccessService::Client& client, const Case& c, uint64_t 
 
 int runTopologies(int argc, char** argv) {
   auto io = kj::setupAsyncIo();
+  BenchmarkTransport transport(io.provider->getTimer());
   auto connect = [&](const char* address) {
-    auto parsed = io.provider->getNetwork().parseAddress(address).wait(io.waitScope);
+    auto parsed = transport.address(io.provider->getNetwork().parseAddress(address).wait(io.waitScope));
     return kj::heap<Connection>(io.provider->getTimer().timeoutAfter(
         10 * kj::SECONDS, parsed->connect()).wait(io.waitScope));
   };
@@ -120,10 +122,10 @@ int runTopologies(int argc, char** argv) {
       hops += response.getHops();
       next = downstream->client;
     }
-    auto address = io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope);
+    auto address = transport.address(io.provider->getNetwork().parseAddress(argv[2]).wait(io.waitScope));
     auto listener = address->listen();
     capnp::TwoPartyServer server(kj::heap<Service>(kj::mv(next), hops));
-    std::cout << "{\"port\":" << listener->getPort() << ",\"hops\":" << hops << "}" << std::endl;
+    std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"port\":" << listener->getPort() << ",\"hops\":" << hops << "}" << std::endl;
     server.listen(*listener).wait(io.waitScope);
     return 0;
   }
@@ -160,7 +162,7 @@ int runTopologies(int argc, char** argv) {
     if (sequence >= warmup) samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - before).count());
   }
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
-  std::cout << "{\"topology_version\":1,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\""
+  std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"topology_version\":1,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\""
       << c.name << "\",\"depth\":" << c.depth << ",\"width\":" << c.width
       << ",\"connections\":" << c.connections << ",\"hops\":" << c.hops
       << ",\"payload_bytes_per_node\":32},\"warmup\":" << warmup << ",\"iterations\":"

@@ -11,8 +11,8 @@ use serde_json::json;
 use std::time::{Duration, Instant};
 
 enum Client {
-    Grpc(grpc::Client),
-    Websocket(websocket::Client),
+    Grpc(Box<grpc::Client>),
+    Websocket(Box<websocket::Client>),
 }
 impl Client {
     async fn call(&mut self, req: Operation) -> Result<Operation> {
@@ -165,12 +165,12 @@ pub async fn measure(implementation: &str, args: &[String]) -> Result<()> {
     let deadline = Duration::from_secs(10);
     let mut client = tokio::time::timeout(deadline, async {
         match implementation {
-            "grpc" => Ok(Client::Grpc(
+            "grpc" => Ok(Client::Grpc(Box::new(
                 grpc::Client::connect(&args[0], args[1] == "callback").await?,
-            )),
-            "websocket" => Ok(Client::Websocket(
+            ))),
+            "websocket" => Ok(Client::Websocket(Box::new(
                 websocket::Client::connect(&args[0]).await?,
-            )),
+            ))),
             _ => Err::<_, Box<dyn std::error::Error>>("unknown comparison protocol".into()),
         }
     })
@@ -200,7 +200,7 @@ pub async fn measure(implementation: &str, args: &[String]) -> Result<()> {
     tokio::time::timeout(deadline, client.call(release)).await??;
     println!(
         "{}",
-        json!({"workflow_version":super::VERSION,"implementation":implementation,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":elapsed,"latency_ns":samples})
+        json!({"workflow_version":super::VERSION,"implementation":implementation,"security":crate::transport_metadata(implementation)?,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":elapsed,"latency_ns":samples})
     );
     Ok(())
 }

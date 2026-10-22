@@ -1,6 +1,6 @@
 use crate::{echo_capnp::workflows, Result};
 use capnp_rpc::rpc_twoparty_capnp::Side;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::time::timeout;
 
 #[path = "../../rpc/capability-workflows.rs"]
@@ -26,7 +26,8 @@ pub async fn serve(address: &str) -> Result<()> {
     crate::ready(listener.local_addr()?)?;
     loop {
         let (socket, _) = listener.accept().await?;
-        socket.set_nodelay(true)?;
+        let socket =
+            crate::benchmark_tls::accept(socket, crate::benchmark_tls::server_config()?).await?;
         let bootstrap: workflows::Client = capnp_rpc::new_client(capability::Service);
         tokio::task::spawn_local(async move {
             if let Err(error) = crate::rpc(socket, Some(bootstrap.client), Side::Server).await {
@@ -36,8 +37,7 @@ pub async fn serve(address: &str) -> Result<()> {
     }
 }
 async fn connect(address: &str) -> Result<workflows::Client> {
-    let socket = TcpStream::connect(address).await?;
-    socket.set_nodelay(true)?;
+    let socket = crate::benchmark_tls::connect(address).await?;
     let mut system = crate::rpc(socket, None, Side::Client);
     let client = system.bootstrap(Side::Server);
     tokio::task::spawn_local(system);

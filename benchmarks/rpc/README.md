@@ -4,9 +4,75 @@ The existing `workflows.json` catalog and four loopback payloads retain their
 contracts and sampling budgets. `topologies.json` adds a separate, versioned
 suite compiled into both the Rust driver and the C++ reference executable.
 
+## Encrypted comparison (current default)
+
+Every benchmark connection is encrypted. Capability RPC defaults to TLS 1.3 over
+TCP, including every downstream microservice hop. `CAPNTPROTO_BENCH_TRANSPORT=quic`
+selects the production standard QUIC v1 adapter for both legacy and portable.
+QUIC uses one bidirectional stream per RPC connection, preserving the same
+connection counts, ordering, payloads, concurrency, and application validation.
+The independent upstream Rust fixture and C++/KJ reference use TLS. gRPC uses
+HTTPS/HTTP2 with a TLS 1.3-only acceptor; WebSocket uses WSS. The existing native
+UDP/TCP protocols retain their pinned mutual identity encryption and are a
+separate security model, not certificate-authenticated TLS controls.
+
+Run the complete 24-case encrypted matrix with five independent process repetitions:
+
+```sh
+python3 benchmarks/rpc/secure-runner.py --rust DRIVER --cpp CPP \
+  --output target/secure-comparison --mixed --comparators --upstream UPSTREAM
+```
+
+`--transport tls|quic|both` defaults to both. `--comparators` adds gRPC/WSS and
+optional independent upstream Rust to their supported loopback/workflow cells.
+The runner generates a fresh private benchmark CA and seven-day localhost
+certificate, verifies transport metadata on every peer, and retains raw samples,
+certificate fingerprints, binary hashes, process placement, host counters,
+means, sample SD, and run-mean ranges. Application setup and full handshakes finish
+before warmup/timing; no application 0-RTT is enabled. These are established
+connection measurements, not handshake latency measurements. Five repetitions
+rotate execution order but do not completely balance every position.
+
+**C++ QUIC is unsupported** by the pinned KJ reference. It is explicitly omitted
+from the QUIC matrix. Rust QUIC comparisons are legacy versus portable on the
+same production adapter; C++ comparisons use TLS versus TLS. TLS and QUIC results
+remain separate, and do not reuse or pool the historical plaintext baselines.
+Cryptographic implementations differ: Rust TLS uses rustls/ring, KJ uses OpenSSL,
+and QUIC uses quiche/BoringSSL. All use TLS 1.3, the same CA/server identity, and
+certificate plus hostname verification. These fixtures use server authentication;
+they do not require client certificates. QUIC uses `capntproto-rpc/1` ALPN; HTTP2
+uses `h2`; ordinary RPC TLS and WSS omit ALPN because KJ's public TLS API does not
+expose it. This benchmark configuration does not relax the production RPC TLS
+adapter's ALPN requirement.
+
+For direct commands or the topology-only runner, first create and select a fixture:
+
+```sh
+python3 benchmarks/rpc/generate-certificates.py target/benchmark-certificates
+export CAPNTPROTO_BENCH_CERTS="$PWD/target/benchmark-certificates"
+export CAPNTPROTO_BENCH_TRANSPORT=tls
+```
+
+The standard quality bundle includes a fresh fixture beside its executables;
+`CAPNTPROTO_BENCH_CERTS` overrides that directory. Regenerate expired bundle
+fixtures before reusing an old build. Missing certificates, invalid names/roots, and unsupported transports fail rather
+than falling back to plaintext. Fixture keys are local benchmark artifacts and
+must not be deployed. Both hosts in a remote run must receive the same fixture;
+`CAPNTPROTO_BENCH_SERVER_NAME` identifies the certificate name (default localhost),
+independently of the dialed IP. Old frozen plaintext executables cannot serve as
+controls for this encrypted campaign.
+
+`secure-check.py --rust DRIVER --cpp CPP --upstream UPSTREAM --output NEW_DIR`
+runs all supported application fixtures, mixed-engine callback/pipeline/service
+chains, and wrong-hostname/untrusted-CA rejection checks. Use a separate
+`secure-runner.py ... --trace --repetitions 1 --warmup 2 --iterations 10` run for
+ciphertext syscall diagnostics. Counts include setup, TLS records, QUIC control
+packets and UDP operations; they are not Cap'n Proto message counts. The old
+plaintext frame decoder explicitly rejects encrypted captures.
+
 ## Deep and concurrent access
 
-| Case | Nested nodes | Outstanding requests per batch | Client TCP connections | Service processes |
+| Case | Nested nodes | Outstanding requests per batch | Client connections | Service processes |
 | --- | ---: | ---: | ---: | ---: |
 | deep-8 | 8 | 1 | 1 | 1 |
 | deep-32 | 32 | 1 | 1 | 1 |
@@ -22,7 +88,7 @@ next node. Every service traverses and validates every node and byte. Intermedia
 services copy the nested request into a downstream RPC, await its result, add
 their checksum and visit count, and copy its nested response back upstream. The
 client validates the returned chain, checksum, and total visits. Consequently,
-depth is actual pointer traversal and copying, and every service hop is a TCP RPC
+depth is actual pointer traversal and copying, and every service hop is an encrypted RPC
 to another OS process. A setup RPC verifies the chain length before timing.
 
 Each service shares one persistent downstream connection across its incoming
@@ -71,7 +137,7 @@ The runner selects distinct physical cores for the client and available service
 workers. Longer chains cycle over the available service cores; the exact placement
 is retained. On a five-core host, four-service chains use one core per process,
 while eight-service chains intentionally share service cores. These are same-host
-TCP microservice chains, not cross-host network measurements.
+encrypted microservice chains, not cross-host network measurements.
 
 Every output directory must be new. It retains raw latency samples, per-process
 logs, server readiness/chain checks, CPU placement, binary and fixture hashes,

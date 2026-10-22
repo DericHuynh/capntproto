@@ -328,6 +328,7 @@ mod tests {
                 for repetition in 0..5 {
                     trials.push(benchmark::Trial {
                         measurement_version: benchmark::MEASUREMENT_VERSION,
+                        security: benchmark::test_security(protocol),
                         protocol: protocol.into(),
                         payload_bytes: bytes,
                         iterations: 1000,
@@ -391,6 +392,7 @@ mod tests {
                 for _ in 0..5 {
                     trials.push(benchmark::Trial {
                         measurement_version: benchmark::MEASUREMENT_VERSION,
+                        security: benchmark::test_security(protocol),
                         protocol: (*protocol).into(),
                         payload_bytes: bytes,
                         iterations: 1000,

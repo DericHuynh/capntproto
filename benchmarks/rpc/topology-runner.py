@@ -45,7 +45,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rust', type=Path, required=True)
     parser.add_argument('--portable', type=Path, help='Portable driver binary; defaults to --rust with portable selected on every peer.')
-    parser.add_argument('--cpp', type=Path, required=True)
+    parser.add_argument('--cpp', type=Path, help='Required for TLS; unsupported for QUIC.')
+    parser.add_argument('--transport', choices=['tls', 'quic'], default='tls')
     parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
     parser.add_argument('--portable-baseline', type=Path, help='Optional frozen portable control, explicitly selected on every peer.')
     parser.add_argument('--output', type=Path, required=True)
@@ -56,12 +57,15 @@ def main():
     parser.add_argument('--instrument', choices=['none', 'socket', 'wire', 'callgrind'], default='none')
     parser.add_argument('--mixed', action='store_true', help='Also validate every ordered pair of legacy, portable and C++ in alternating service chains.')
     args = parser.parse_args()
+    certificates = Path(os.environ.get('CAPNTPROTO_BENCH_CERTS', args.rust.resolve().parent / 'certificates')).resolve(strict=True)
+    assert args.transport == 'quic' or args.cpp, '--cpp required for TLS comparison'
     diagnostic = args.instrument != 'none'
     warmup = args.warmup if args.warmup is not None else (2 if diagnostic else 100)
     iterations = args.iterations if args.iterations is not None else (10 if diagnostic else 1000)
     binaries = {'legacy': args.rust.resolve(strict=True),
-                'portable': (args.portable or args.rust).resolve(strict=True),
-                'cpp': args.cpp.resolve(strict=True)}
+                'portable': (args.portable or args.rust).resolve(strict=True)}
+    if args.transport == 'tls':
+        binaries['cpp'] = args.cpp.resolve(strict=True)
     if args.baseline is not None:
         binaries['baseline'] = args.baseline.resolve(strict=True)
     if args.portable_baseline is not None:
@@ -100,19 +104,19 @@ def main():
         source = ROOT / 'dev/src/cloud/remote/timing/probe.c'
         (out / 'probe.c').write_bytes(source.read_bytes())
         subprocess.run(['cc', '-O2', '-shared', '-fPIC', '-o', str(probe), str(source), '-ldl'], check=True)
-    scope = dict(topology_version=1, instrument=args.instrument, qualifying_budget=qualifying, warmup=warmup, iterations=iterations,
+    scope = dict(transport=args.transport, cpp_quic='unsupported', topology_version=1, instrument=args.instrument, qualifying_budget=qualifying, warmup=warmup, iterations=iterations,
                  repetitions=args.repetitions, cases=cases, binaries={k: dict(path=str(v), sha256=digest(v)) for k, v in binaries.items()},
                  fixture_sha256=digest(catalog_path), runner_sha256=digest(__file__), cpu_topology=topology,
                  uname=list(platform.uname()), client_cpu=cpus[0], server_cpus=cpus[1:],
                  order_policy='Rotate variants, then reverse every complete cycle. Five repetitions do not exactly balance every position.',
                  statistics='mean_ns and sample stddev_ns describe all retained samples; repetition_mean_stddev_ns is sample SD across run means, not a confidence interval.',
                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
-                 goal='Every uninstrumented portable cell pooled p50 <= min(legacy, C++) pooled p50; diagnostic timings do not qualify.',
+                 goal='Every uninstrumented portable cell pooled p50 <= the fastest reference on the same transport (legacy and C++ for TLS, legacy for QUIC); diagnostic timings do not qualify.',
                  trials=[])
     (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
 
     def launch(label, argv, prefix, cpu):
-        env = dict(os.environ, CAPNTPROTO_BENCH_PORTABLE='1' if label in ['portable', 'portable-baseline'] else '0')
+        env = dict(os.environ, CAPNTPROTO_BENCH_CERTS=str(certificates), CAPNTPROTO_BENCH_TRANSPORT=args.transport, CAPNTPROTO_BENCH_PORTABLE='1' if label in ['portable', 'portable-baseline'] else '0')
         command = ['taskset', '-c', str(cpu)]
         if args.instrument == 'socket':
             env.update(LD_PRELOAD=str(probe), CAPNTPROTO_IO_TRACE=str(prefix) + '.bin')
@@ -157,6 +161,7 @@ def main():
                     line = process.stdout.readline()
                 (directory / f'service-{hop}.ready.json').write_text(line)
                 ready = json.loads(line)
+                assert ready.get('security', {}).get('transport') == ('quic-v1' if args.transport == 'quic' else 'tls-tcp'), 'server transport mismatch'
                 assert ready['hops'] == case['hops'] - hop, 'incorrect chain length'
                 if label in ['portable', 'portable-baseline']:
                     assert ready['implementation'] == 'portable', 'portable service was not selected'
@@ -169,6 +174,7 @@ def main():
             (directory / 'trial.json').write_text(output)
             assert client.returncode == 0, f'client failed: {directory}'
             data = json.loads(output)
+            assert data.get('security', {}).get('transport') == ('quic-v1' if args.transport == 'quic' else 'tls-tcp'), 'client transport mismatch'
             assert data['topology_version'] == 1 and data['case'] == case
             expected = 'portable' if client_label in ['portable', 'portable-baseline'] else ('capnp-cpp' if client_label == 'cpp' else 'legacy')
             assert data['implementation'] == expected
@@ -194,8 +200,8 @@ def main():
 
     if args.mixed:
         for case in cases:
-            for label in ['legacy', 'portable', 'cpp']:
-                for other in ['legacy', 'portable', 'cpp']:
+            for label in [k for k in binaries if k in ['legacy', 'portable', 'cpp']]:
+                for other in [k for k in binaries if k in ['legacy', 'portable', 'cpp']]:
                     if label == other:
                         continue
                     services = [other if hop % 2 == 0 else label for hop in range(case['hops'])]
@@ -227,8 +233,8 @@ def main():
                                 repetition_p50_ns=[percentile(t['latency_ns'], 50) for t in trials],
                                 batches_per_second=rate, logical_requests_per_second=rate * case['width'],
                                 service_calls_per_second=rate * case['width'] * case['hops'])
-        ratio = cells['legacy']['p50_ns'] / cells['cpp']['p50_ns']
-        reference = min(['legacy', 'cpp'], key=lambda label: cells[label]['p50_ns'])
+        ratio = cells['legacy']['p50_ns'] / cells['cpp']['p50_ns'] if 'cpp' in cells else None
+        reference = min([k for k in ['legacy', 'cpp'] if k in cells], key=lambda label: cells[label]['p50_ns'])
         portable_ratio = cells['portable']['p50_ns'] / cells[reference]['p50_ns']
         rows.append(dict(case=case, variants=cells, legacy_over_cpp=ratio, faster_reference=reference,
                          portable_over_faster_reference=portable_ratio,
@@ -246,7 +252,7 @@ def main():
     summary = dict(rows=rows, socket_journals=journals, diagnostic=diagnostic, qualifying_budget=qualifying,
                    all_cells_meet_target=all(r['meets_target'] for r in rows) if qualifying else None)
     (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
-    lines = ['# Deep/concurrent RPC comparison', '',
+    lines = ['# Deep/concurrent RPC comparison', '', f'Transport: {args.transport}. C++ QUIC is unsupported.', '',
              f'{args.repetitions} independent process repetitions per implementation/case. Times are microseconds per complete batch.',
              'Mean ± SD reports the mean latency and sample standard deviation of the repetition means. It is not a confidence interval.',
              'Per-sample SD, extrema, each run mean, run-mean range, p95/p99 and throughput are retained in summary.json.',
@@ -258,7 +264,7 @@ def main():
             lo, hi = cell['repetition_mean_range_ns']
             lines.append(f"| {row['case']['name']} | {label} | {cell['mean_ns']/1000:.3f} ± {cell['repetition_mean_stddev_ns']/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} | {cell['p50_ns']/1000:.3f} | {cell['p95_ns']/1000:.3f} | {cell['p99_ns']/1000:.3f} |")
     lines += ['', 'Instrumented/short runs are diagnostic only.' if not qualifying else
-              'The latency target remains portable pooled p50 ≤ min(legacy, C++) in every cell; added descriptive statistics do not replace that gate.']
+              'The latency target remains portable pooled p50 ≤ the fastest reference on the same transport in every cell; C++ is unavailable for QUIC.']
     (out / 'README.md').write_text('\n'.join(lines) + '\n')
     print(json.dumps(rows, indent=2))
 

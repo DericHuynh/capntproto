@@ -237,7 +237,7 @@ pub async fn measure(args: &[String]) -> Result<()> {
         }
         println!(
             "{}",
-            json!({"workflow_version": VERSION, "implementation": implementation()?, "case": case, "warmup": warmup, "iterations": iterations, "elapsed_ns": u64::try_from(start.elapsed().as_nanos())?, "latency_ns": samples})
+            json!({"workflow_version": VERSION, "implementation": implementation()?,"security":crate::transport_metadata(implementation()?)?, "case": case, "warmup": warmup, "iterations": iterations, "elapsed_ns": u64::try_from(start.elapsed().as_nanos())?, "latency_ns": samples})
         );
         Ok(())
     };

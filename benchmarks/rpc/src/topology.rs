@@ -1,4 +1,4 @@
-//! Nested access through independent TCP services, with bounded concurrent batches.
+//! Nested access through independent encrypted services, with bounded concurrent batches.
 use crate::{
     echo_capnp::{access_node, access_service},
     Result,
@@ -10,7 +10,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-use tokio::{net::TcpListener, time::timeout};
+use tokio::time::timeout;
 
 const DEADLINE: Duration = Duration::from_secs(10);
 const PAYLOAD: [u8; 32] = [
@@ -104,17 +104,16 @@ async fn connect(
     address: &str,
     runtime: Option<&capnp_rpc::portable::RuntimeHandle>,
 ) -> Result<access_service::Client> {
+    let side = capnp_rpc::rpc_twoparty_capnp::Side::Client;
+    let network = crate::secure::connect(address).await?.network(side);
     if crate::tcp_driver()? == "portable" {
-        let socket = tokio::net::TcpStream::connect(address).await?;
-        socket.set_nodelay(true)?;
-        let mut driver =
-            crate::portable_tcp(socket, None, capnp_rpc::rpc_twoparty_capnp::Side::Client)?;
+        let mut driver = crate::portable_network(network, None, side)?;
         let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
         let _completion = runtime.expect("portable runtime").add(driver)?;
         return Ok(client);
     }
-    let mut driver = capntproto::rpc::connect(address, None, Default::default()).await?;
-    let client = driver.bootstrap();
+    let mut driver = capnp_rpc::RpcSystem::new(network, None);
+    let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
     tokio::task::spawn_local(driver);
     Ok(client)
 }
@@ -151,30 +150,25 @@ async fn serve_inner(
         1
     };
     let service: access_service::Client = capnp_rpc::new_client(Service { next, hops });
-    let listener = TcpListener::bind(&args[0]).await?;
+    let listener = crate::secure::Listener::bind(&args[0]).await?;
     println!(
         "{}",
-        json!({"address":listener.local_addr()?.to_string(),"hops":hops,"implementation":crate::tcp_driver()?})
+        json!({"address":listener.local_addr()?.to_string(),"hops":hops,"implementation":crate::tcp_driver()?,"security":crate::secure::metadata()?})
     );
     use std::io::Write;
     std::io::stdout().flush()?;
     loop {
-        let (socket, _) = listener.accept().await?;
-        socket.set_nodelay(true)?;
+        let side = capnp_rpc::rpc_twoparty_capnp::Side::Server;
+        let network = listener.accept().await?.network(side);
         if crate::tcp_driver()? == "portable" {
-            let driver = crate::portable_tcp(
-                socket,
+            let driver = crate::portable_network(
+                network,
                 Some(service.client.clone()),
                 capnp_rpc::rpc_twoparty_capnp::Side::Server,
             )?;
             let _completion = runtime.expect("portable runtime").add(driver)?;
         } else {
-            let driver = capntproto::rpc::tcp::client(
-                socket,
-                Some(service.client.clone()),
-                capnp_rpc::rpc_twoparty_capnp::Side::Server,
-                Default::default(),
-            );
+            let driver = capnp_rpc::RpcSystem::new(network, Some(service.client.clone()));
             tokio::task::spawn_local(async move {
                 let _ = driver.await;
             });
@@ -264,7 +258,7 @@ async fn measure_inner(
     }
     println!(
         "{}",
-        json!({"topology_version":1,"implementation":crate::tcp_driver()?,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
+        json!({"topology_version":1,"implementation":crate::tcp_driver()?,"security":crate::secure::metadata()?,"case":case,"warmup":warmup,"iterations":iterations,"elapsed_ns":u64::try_from(start.elapsed().as_nanos())?,"latency_ns":samples})
     );
     Ok(())
 }

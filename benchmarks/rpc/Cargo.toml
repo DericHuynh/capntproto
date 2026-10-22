@@ -7,14 +7,15 @@ publish = false
 [workspace]
 
 [dependencies]
-capntproto = { path = "../..", default-features = false, features = ["native"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+capntproto = { path = "../..", default-features = false, features = ["native", "quic"] }
 capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio-stream = { version = "0.1", features = ["net"] }
-tonic = "=0.14.6"
+tonic = { version = "=0.14.6", features = ["tls-ring"] }
 tonic-prost = "=0.14.6"
 prost = "0.14"
 tokio-tungstenite = "=0.29.0"

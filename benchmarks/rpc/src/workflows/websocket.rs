@@ -11,7 +11,7 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
-pub(super) struct Client(WebSocketStream<TcpStream>);
+pub(super) struct Client(WebSocketStream<tokio_rustls::TlsStream<TcpStream>>);
 fn config() -> WebSocketConfig {
     WebSocketConfig::default()
         .max_message_size(Some(super::MAX_MESSAGE_BYTES))
@@ -19,10 +19,9 @@ fn config() -> WebSocketConfig {
 }
 impl Client {
     pub async fn connect(address: &str) -> Result<Self> {
-        let socket = TcpStream::connect(address).await?;
-        socket.set_nodelay(true)?;
+        let socket = crate::benchmark_tls::connect(address).await?;
         let (socket, _) = tokio_tungstenite::client_async_with_config(
-            format!("ws://{address}/workflows"),
+            format!("wss://{address}/workflows"),
             socket,
             Some(config()),
         )
@@ -56,10 +55,11 @@ impl Client {
 }
 pub(super) async fn serve(address: &str) -> Result<()> {
     let listener = TcpListener::bind(address).await?;
-    crate::ready(listener.local_addr()?, None)?;
+    crate::ready(listener.local_addr()?, None, "websocket")?;
     loop {
         let (socket, _) = listener.accept().await?;
-        socket.set_nodelay(true)?;
+        let socket =
+            crate::benchmark_tls::accept(socket, crate::benchmark_tls::server_config()?).await?;
         tokio::task::spawn_local(async move {
             let result = async {
                 let socket =

@@ -8,10 +8,9 @@ use crate::{
     },
     Result,
 };
-use futures::StreamExt;
 use std::sync::Mutex;
 use tokio::{net::TcpListener, sync::mpsc};
-use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
 #[derive(Default)]
@@ -99,13 +98,8 @@ impl Workflows for Service {
 }
 pub(super) async fn serve(address: &str) -> Result<()> {
     let listener = TcpListener::bind(address).await?;
-    crate::ready(listener.local_addr()?, None)?;
-    let incoming = TcpListenerStream::new(listener).map(|socket| {
-        socket.and_then(|socket| {
-            socket.set_nodelay(true)?;
-            Ok(socket)
-        })
-    });
+    crate::ready(listener.local_addr()?, None, "grpc")?;
+    let incoming = crate::grpc_incoming(listener)?;
     tonic::transport::Server::builder()
         .add_service(
             WorkflowsServer::new(Service::default())
@@ -123,8 +117,7 @@ pub(super) struct Client {
 }
 impl Client {
     pub async fn connect(address: &str, callback: bool) -> Result<Self> {
-        let mut rpc = WorkflowsClient::connect(format!("http://{address}"))
-            .await?
+        let mut rpc = WorkflowsClient::new(crate::grpc_channel(address).await?)
             .max_decoding_message_size(super::MAX_MESSAGE_BYTES)
             .max_encoding_message_size(super::MAX_MESSAGE_BYTES);
         let (tx, rx) = if callback {
