@@ -135,12 +135,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         .expect("queued observer traversal")
                 }
                 _ => {
-                    let available = if self.outgoing.has_waiters() {
-                        self.available_resources()
-                    } else {
-                        Default::default()
-                    };
-                    let Some(index) = self.outgoing.next_retry(|r| available.ready(r)) else {
+                    let available = self
+                        .outgoing
+                        .has_waiters()
+                        .then(|| self.available_resources());
+                    let Some(index) = self
+                        .outgoing
+                        .next_retry(|r| available.as_ref().expect("active resource wait").ready(r))
+                    else {
                         continue;
                     };
                     index

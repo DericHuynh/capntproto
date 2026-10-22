@@ -1,0 +1,10 @@
+{
+  "retained": false,
+  "stages": [
+    "cursor",
+    "waits",
+    "reuse"
+  ],
+  "reason": "Rotating buffer hint reduced simulated instructions slightly but increased data-cache misses. Last-used hint lost most instruction improvement and increased conditional misses. Native results mixed and noisy; keep original buffer selection in final candidate.",
+  "final_stage": "links"
+}

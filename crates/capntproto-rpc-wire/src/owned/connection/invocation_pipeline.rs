@@ -282,16 +282,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 }
                 return Ok(Propagation::Unrelated);
             }
-            let available = if self.invocation_pipelines.retry.has_waiters() {
-                self.available_resources()
-            } else {
-                Default::default()
-            };
+            let available = self
+                .invocation_pipelines
+                .retry
+                .has_waiters()
+                .then(|| self.available_resources());
             let bindings = &mut self.invocation_pipelines;
             let Some(index) = bindings.retry.pop(
                 &mut bindings.slots,
                 |s| &mut s.retry,
-                |r| available.ready(r),
+                |r| available.as_ref().expect("active resource wait").ready(r),
             ) else {
                 continue;
             };

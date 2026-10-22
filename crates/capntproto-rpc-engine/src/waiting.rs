@@ -2,14 +2,29 @@
 //! Failed transactions park after rollback. A wake removes the old wait, so
 //! cancellation is never held behind capacity. No poll visits sleeping owners.
 use crate::work_queue::{Link, Queue};
+use core::num::NonZeroUsize;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Requirement {
     pub resource: usize,
     pub minimum: usize,
 }
+// Resource plus one keeps the absence of a wait in its zero niche.
+#[derive(Clone, Copy)]
+struct Parked {
+    resource: NonZeroUsize,
+    minimum: usize,
+}
+impl Parked {
+    fn requirement(self) -> Requirement {
+        Requirement {
+            resource: self.resource.get() - 1,
+            minimum: self.minimum,
+        }
+    }
+}
 pub struct Slot {
     link: Link,
-    requirement: Option<Requirement>,
+    requirement: Option<Parked>,
 }
 impl Slot {
     pub const EMPTY: Self = Self {
@@ -37,7 +52,10 @@ impl<const N: usize> Waiting<N> {
         cursor: 0,
     };
     pub fn remove<T>(&mut self, slots: &mut [T], index: usize, slot: fn(&mut T) -> &mut Slot) {
-        let requirement = slot(&mut slots[index]).requirement.take();
+        let requirement = slot(&mut slots[index])
+            .requirement
+            .take()
+            .map(Parked::requirement);
         let queue = match requirement {
             Some(r) => &mut self.resources[r.resource],
             None => &mut self.ready,
@@ -50,7 +68,9 @@ impl<const N: usize> Waiting<N> {
         }
     }
     pub fn wake<T>(&mut self, slots: &mut [T], index: usize, slot: fn(&mut T) -> &mut Slot) {
-        self.remove(slots, index, slot);
+        if slot(&mut slots[index]).is_parked() {
+            self.remove(slots, index, slot);
+        }
         self.ready.push_with(slots, index, |s| &mut slot(s).link);
     }
     pub fn park<T>(
@@ -62,7 +82,10 @@ impl<const N: usize> Waiting<N> {
     ) {
         assert!(requirement.resource < N && N < 64);
         self.remove(slots, index, slot);
-        slot(&mut slots[index]).requirement = Some(requirement);
+        slot(&mut slots[index]).requirement = Some(Parked {
+            resource: NonZeroUsize::new(requirement.resource + 1).unwrap(),
+            minimum: requirement.minimum,
+        });
         self.active |= 1 << requirement.resource;
         // Only parking walks a resource's blocked list. Small demands cannot
         // be hidden behind a larger demand that remains unsatisfiable.
@@ -87,7 +110,7 @@ impl<const N: usize> Waiting<N> {
             let class = active.trailing_zeros() as usize;
             active &= active - 1;
             let index = self.resources[class].head().unwrap();
-            if available(slot(&slots[index]).requirement.unwrap()) {
+            if available(slot(&slots[index]).requirement.unwrap().requirement()) {
                 return true;
             }
         }
@@ -114,7 +137,8 @@ impl<const N: usize> Waiting<N> {
                 &mut self.resources[class]
             };
             let index = queue.head().unwrap();
-            if class != N && !available(slot(&mut slots[index]).requirement.unwrap()) {
+            if class != N && !available(slot(&mut slots[index]).requirement.unwrap().requirement())
+            {
                 continue;
             }
             queue.remove_with(slots, index, |s| &mut slot(s).link);
@@ -130,6 +154,26 @@ impl<const N: usize> Waiting<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn repeated_wakes_preserve_fifo_position() {
+        let mut slots = [const { Slot::EMPTY }; 2];
+        let mut q = Waiting::<2>::EMPTY;
+        q.wake(&mut slots, 0, |s| s);
+        q.wake(&mut slots, 1, |s| s);
+        q.wake(&mut slots, 0, |s| s);
+        assert_eq!(
+            q.pop(&mut slots, |s| s, |_| panic!("no resource wait")),
+            Some(0)
+        );
+        assert_eq!(
+            q.pop(&mut slots, |s| s, |_| panic!("no resource wait")),
+            Some(1)
+        );
+        assert_eq!(
+            q.pop(&mut slots, |s| s, |_| panic!("no resource wait")),
+            None
+        );
+    }
     #[test]
     fn smaller_demands_and_cancellation_pass_blocked_owners_without_polling_them() {
         let mut slots = [const { Slot::EMPTY }; 4];

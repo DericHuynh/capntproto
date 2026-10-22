@@ -1,0 +1,96 @@
+{
+  "script": "validate.sh",
+  "script_exit_code": 0,
+  "tests": {
+    "test-core-final.log": [
+      {
+        "passed": 348,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 218,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 159,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "test-fixed-final.log": [
+      {
+        "passed": 86,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "test-growing-final.log": [
+      {
+        "passed": 89,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "test-integrations-final.log": [
+      {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 22,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  "core_passed": 725,
+  "standalone_fixed_passed": 86,
+  "standalone_growing_passed": 89,
+  "targeted_integrations_passed": 36,
+  "compatibility": {
+    "checks": 206,
+    "passed": true,
+    "log": "check-compat-final.log"
+  },
+  "strict_clippy": {
+    "passed": true,
+    "log": "clippy-final.log",
+    "scope": "capntproto, core, futures, rpc-engine, rpc-wire, rpc; all targets; quic; -D warnings"
+  },
+  "format": {
+    "passed": true,
+    "log": "fmt-final.log"
+  },
+  "embedded": {
+    "passed": true,
+    "target": "thumbv7em-none-eabi",
+    "log": "check-embedded-final.log",
+    "warnings": "Three pre-existing unused standalone fixture functions"
+  },
+  "not_rerun": [
+    "Whole root/API-contract suites (prior qualification is preserved separately)",
+    "Coverage",
+    "Complete Verus/Kani proof execution",
+    "Whole-workspace Clippy"
+  ],
+  "failed_build_attempts": [
+    {
+      "log": "build-baseline.log",
+      "reason": "Compiler killed at memory limit",
+      "resolution": "Removed rebuildable cache artifacts and reran with one compiler job; build-baseline2.log passed before baseline freeze"
+    }
+  ]
+}
