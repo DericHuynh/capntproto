@@ -515,6 +515,15 @@ pub fn import(r: &mut Runner, bundle: &Path) -> Result<()> {
     Ok(())
 }
 #[cfg(test)]
+pub(crate) fn test_security(protocol: &str) -> Value {
+    if protocol == "native" {
+        json!({"version":1,"transport":"native","authentication":"pinned-mutual-identity","setup_timed":false})
+    } else {
+        json!({"version":1,"transport":"tls-tcp","tls":"1.3","authentication":"server-certificate","server_name":"localhost","early_data":false,"setup_timed":false,"alpn":if protocol == "grpc" { json!("h2") } else { Value::Null }})
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]
@@ -640,14 +649,5 @@ mod tests {
         t.latency_ns[1] = 0;
         assert!(validate(&t, "native", 64, 10, 2).is_err());
         assert_eq!(percentile(&mut [3, 1, 2, 4, 5], 95), 5);
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn test_security(protocol: &str) -> Value {
-    if protocol == "native" {
-        json!({"version":1,"transport":"native","authentication":"pinned-mutual-identity","setup_timed":false})
-    } else {
-        json!({"version":1,"transport":"tls-tcp","tls":"1.3","authentication":"server-certificate","server_name":"localhost","early_data":false,"setup_timed":false,"alpn":if protocol == "grpc" { json!("h2") } else { Value::Null }})
     }
 }

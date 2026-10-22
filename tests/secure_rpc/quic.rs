@@ -355,3 +355,49 @@ async fn quic_validates_ip_subject_alternative_names() {
     })
     .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn stalled_reader_resumes_large_transfer_without_starving_runtime() {
+    local(async {
+        let pki = Pki::new();
+        let server = server(&pki, false);
+        let endpoint = client(&pki, false, Version::V1);
+        let address = server.local_addr().unwrap();
+        let task = tokio::task::spawn_local(async move {
+            let mut stream = quic::accept(server.accept().await.unwrap(), TIMEOUT)
+                .await
+                .unwrap();
+            assert_eq!(stream.read_u8().await.unwrap(), 1);
+            // Exceed both the old bridge and the initial QUIC stream window.
+            stream
+                .write_all(&vec![0x53; 3 * 1024 * 1024 + 17])
+                .await
+                .unwrap();
+            stream.shutdown().await.unwrap();
+            assert_eq!(
+                stream.write(b"after FIN").await.unwrap_err().kind(),
+                io::ErrorKind::BrokenPipe
+            );
+        });
+        let mut stream = quic::connect(&endpoint, address, "localhost", TIMEOUT)
+            .await
+            .unwrap();
+        stream.write_all(&[1]).await.unwrap();
+        stream.shutdown().await.unwrap();
+        // A parked writer must not repeatedly wake itself and starve this timer.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(
+            !task.is_finished(),
+            "receiver flow control must bound buffering"
+        );
+        let mut received = Vec::new();
+        stream.read_to_end(&mut received).await.unwrap();
+        assert_eq!(received, vec![0x53; 3 * 1024 * 1024 + 17]);
+        task.await.unwrap();
+        drop(stream);
+        tokio::time::timeout(TIMEOUT, endpoint.wait_idle())
+            .await
+            .unwrap();
+    })
+    .await;
+}

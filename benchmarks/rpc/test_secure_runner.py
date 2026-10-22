@@ -34,6 +34,26 @@ class SecurityEvidenceTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 runner.validate(invalid, case, 'tls', 'portable', 2, 2)
 
+    def test_campaign_lock_rejects_overlap_and_releases_after_close(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'lock'
+            with runner.campaign_lock(path):
+                with self.assertRaisesRegex(RuntimeError, 'another encrypted benchmark'):
+                    runner.campaign_lock(path)
+            with runner.campaign_lock(path):
+                pass
+
+    def test_frozen_portable_control_keeps_engine_and_transport_identity(self):
+        case = dict(family='workflow', name='unary-small', payload_bytes=64)
+        data = dict(case={'name':'unary-small','payload_bytes':64}, workflow_version=3,
+                    implementation='portable', security=runner.security('quic'),
+                    warmup=2, iterations=2, latency_ns=[10,20], elapsed_ns=35)
+        runner.validate(data, case, 'quic', 'portable-baseline', 2, 2)
+        self.assertTrue(runner.supported('portable-baseline', 'quic', case))
+        data['implementation'] = 'legacy'
+        with self.assertRaises(AssertionError):
+            runner.validate(data, case, 'quic', 'portable-baseline', 2, 2)
+
     def test_ciphertext_counters_pair_resumed_calls_and_separate_datagrams_from_bytes(self):
         trace = '10 1.000 read(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, <unfinished ...>\n11 1.001 write(1</tmp/file>, "abc", 3) = 3 <0.001>\n11 1.002 sendmmsg(4<UDP:[127.0.0.1:3]>, [], 2, 0) = 2 <0.001>\n10 1.003 <... read resumed>"abc", 3) = 3 <0.003>\n10 1.004 recvfrom(4<UDP:[127.0.0.1:3]>, 0x1, 1200, 0, NULL, NULL) = -1 EAGAIN (Resource temporarily unavailable) <0.001>\n10 1.005 write(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, "data", 4) = 4 <0.001>\n'
         with tempfile.TemporaryDirectory() as directory:

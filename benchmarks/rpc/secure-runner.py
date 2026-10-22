@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Matched TLS/QUIC RPC workloads. Creates certificates, retains every sample, rejects plaintext results."""
 import argparse
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -28,7 +29,12 @@ def security(transport, protocol='tcp', name='localhost'):
                 authentication='server-certificate', server_name=name, early_data=False,
                 setup_timed=False, alpn='capntproto-rpc/1' if transport == 'quic' else ('h2' if protocol == 'grpc' else None))
 
+def engine(label):
+    return 'portable' if label == 'portable-baseline' else label
+
+
 def validate(data, case, transport, label, warmup, iterations):
+    label = engine(label)
     expected_protocol = label if label in ['grpc', 'websocket'] else 'tcp'
     assert data.get('security') == security(transport, expected_protocol), 'missing or mismatched encrypted transport identity'
     if case['family'] == 'loopback':
@@ -55,14 +61,25 @@ def stop(process):
         process.wait(timeout=10)
 
 
+def campaign_lock(path=Path('/tmp/capntproto-secure-benchmark.lock')):
+    lock = path.open('a')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        raise RuntimeError('another encrypted benchmark campaign is active') from None
+    return lock
+
+
 class Campaign:
     def __init__(self, binaries, output, certs, cpus, instrument=False):
+        self._lock = campaign_lock()
         self.binaries, self.output, self.certs, self.cpus = binaries, output, certs, cpus
         self.instrument = instrument
 
     def launch(self, label, argv, transport, directory, role, cpu, overrides=None):
         env = dict(os.environ, CAPNTPROTO_BENCH_CERTS=str(self.certs), CAPNTPROTO_BENCH_TRANSPORT=transport,
-                   CAPNTPROTO_BENCH_PORTABLE='1' if label == 'portable' else '0', CAPNTPROTO_BENCH_SERVER_NAME='localhost')
+                   CAPNTPROTO_BENCH_PORTABLE='1' if engine(label) == 'portable' else '0', CAPNTPROTO_BENCH_SERVER_NAME='localhost')
         env.update(overrides or {})
         command = ['taskset', '-c', str(cpu)]
         if self.instrument:
@@ -116,8 +133,8 @@ class Campaign:
                 assert ready.get('security') == expected, 'server is not using the requested encrypted transport'
                 if case['family'] == 'topology':
                     assert ready['hops'] == hops - hop
-                if server_label in ['legacy', 'portable']:
-                    assert ready['implementation'] == server_label
+                if engine(server_label) in ['legacy', 'portable']:
+                    assert ready['implementation'] == engine(server_label)
                 address = ready.get('address') or f"127.0.0.1:{ready['port']}"
                 placement.append(dict(hop=hop, implementation=server_label, cpu=cpu, address=address))
             client = self.launch(label, self.client_args(label, case, address, warmup, iterations), transport, directory,
@@ -161,6 +178,10 @@ def idle_host():
     for path in Path('/proc').glob('[0-9]*/comm'):
         try:
             name = path.read_text().strip()
+            argv = (path.parent / 'cmdline').read_bytes().split(b'\0')
+            modes = [b'server', b'measure', b'workflow-server', b'workflow-measure',
+                     b'topology-server', b'topology-measure', b'comparison-server', b'comparison-measure']
+            assert len(argv) < 2 or argv[1] not in modes, f'competing benchmark peer: {path.parent}'
             if name in ['rustc', 'cargo', 'clippy-driver', 'rust-lld', 'clang', 'clang++', 'cc1plus', 'strace'] or 'callgrind' in name:
                 assert (path.parent / 'stat').read_text().split(') ', 1)[1].split()[0] == 'Z', f'competing build/profiler: {path}'
         except (FileNotFoundError, ProcessLookupError):
@@ -174,6 +195,7 @@ def catalog():
 
 
 def supported(label, transport, case):
+    label = engine(label)
     if transport == 'quic' and label not in ['legacy', 'portable']:
         return False
     if case['family'] == 'topology' and label not in ['legacy', 'portable', 'cpp']:
@@ -184,6 +206,8 @@ def supported(label, transport, case):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rust', type=Path, required=True)
+    parser.add_argument('--portable', type=Path, help='Candidate portable executable; defaults to --rust.')
+    parser.add_argument('--portable-baseline', type=Path, help='Frozen portable control, separate from the candidate.')
     parser.add_argument('--cpp', type=Path, required=True)
     parser.add_argument('--upstream', type=Path)
     parser.add_argument('--output', type=Path, required=True)
@@ -199,6 +223,10 @@ def main():
     assert 1 <= args.repetitions <= 100 and (args.warmup is None or 0 <= args.warmup <= 100000) and 1 <= args.iterations <= 100000
     idle_host()
     binaries = dict(legacy=args.rust.resolve(strict=True), portable=args.rust.resolve(strict=True), cpp=args.cpp.resolve(strict=True))
+    if args.portable:
+        binaries['portable'] = args.portable.resolve(strict=True)
+    if args.portable_baseline:
+        binaries['portable-baseline'] = args.portable_baseline.resolve(strict=True)
     if args.comparators:
         binaries.update(grpc=binaries['legacy'], websocket=binaries['legacy'])
         if args.upstream:

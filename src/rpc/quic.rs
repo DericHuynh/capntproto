@@ -27,15 +27,14 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 /// Authenticated RPC IO. Drop cancels an open writer immediately. After successful
 /// write shutdown, drop cancels reading but lets Quiche finish queued transmission
 /// until the stream is collected or the connection closes/times out.
 pub struct Stream {
-    io: DuplexStream,
-    state: Rc<RefCell<driver::State>>,
+    state: Rc<driver::State>,
     close: Option<tokio::sync::oneshot::Sender<()>>,
     certificates: Vec<CertificateDer<'static>>,
     version: u32,
@@ -49,7 +48,7 @@ impl Stream {
         self.version
     }
     pub fn is_closed(&self) -> bool {
-        self.state.borrow().closed
+        self.state.closed.get()
     }
 }
 impl Drop for Stream {
@@ -61,43 +60,97 @@ impl Drop for Stream {
 }
 impl AsyncRead for Stream {
     fn poll_read(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.io).poll_read(cx, buffer)
+        let state = &self.state;
+        if buffer.remaining() == 0 || state.read_closed.get() {
+            return Poll::Ready(Ok(()));
+        }
+        let result = state
+            .conn
+            .borrow_mut()
+            .stream_recv(0, buffer.initialize_unfilled());
+        match result {
+            Ok((n, fin)) => {
+                buffer.advance(n);
+                state.read_closed.set(fin);
+                // Reading returns flow-control credit to the packet engine.
+                state.changed.notify_one();
+                Poll::Ready(Ok(()))
+            }
+            Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => {
+                if state.closed.get() {
+                    return Poll::Ready(Ok(()));
+                }
+                state.reader.borrow_mut().replace(cx.waker().clone());
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(io::Error::other(e))),
+        }
     }
 }
 impl AsyncWrite for Stream {
     fn poll_write(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        if let Some(error) = self.state.borrow().error() {
+        let state = &self.state;
+        if state.write_closed.get() {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "QUIC write half closed",
+            )));
+        }
+        if let Some(error) = state.error() {
             return Poll::Ready(Err(error));
         }
-        Pin::new(&mut self.io).poll_write(cx, bytes)
-    }
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.io).poll_flush(cx)
-    }
-    /// Queue all buffered bytes and FIN in the upstream transport. The receive
-    /// half stays open. This is not a peer-delivery or application receipt.
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match Pin::new(&mut self.io).poll_shutdown(cx) {
-            Poll::Ready(Ok(())) => (),
-            other => return other,
+        if bytes.is_empty() {
+            return Poll::Ready(Ok(0));
         }
-        let mut state = self.state.borrow_mut();
-        if state.write_closed {
+        // Quiche applies connection/stream flow control and congestion capacity;
+        // no second application byte queue or relay task is needed.
+        let result = state.conn.borrow_mut().stream_send(0, bytes, false);
+        state.changed.notify_one();
+        match result {
+            Ok(n) if n != 0 => Poll::Ready(Ok(n)),
+            Ok(_) | Err(quiche::Error::Done) => {
+                state.writer.borrow_mut().replace(cx.waker().clone());
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(io::Error::other(e))),
+        }
+    }
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // Every successful write already queued its bytes in Quiche. As before,
+        // flush does not promise UDP transmission or acknowledgement by the peer.
+        Poll::Ready(Ok(()))
+    }
+    /// Queue FIN in the upstream transport. The receive half stays open.
+    /// This is not a peer-delivery or application receipt.
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let state = &self.state;
+        if state.write_closed.get() {
             return Poll::Ready(Ok(()));
         }
         if let Some(error) = state.error() {
             return Poll::Ready(Err(error));
         }
-        state.waiter = Some(cx.waker().clone());
-        Poll::Pending
+        let result = state.conn.borrow_mut().stream_send(0, &[], true);
+        state.changed.notify_one();
+        match result {
+            Ok(_) => {
+                state.write_closed.set(true);
+                Poll::Ready(Ok(()))
+            }
+            Err(quiche::Error::Done) => {
+                state.writer.borrow_mut().replace(cx.waker().clone());
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(io::Error::other(e))),
+        }
     }
 }
 /// Dial and authenticate, checking the certificate chain and DNS name or IP SAN.

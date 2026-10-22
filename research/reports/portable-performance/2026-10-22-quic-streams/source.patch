@@ -1,0 +1,952 @@
+diff --git a/benchmarks/rpc/README.md b/benchmarks/rpc/README.md
+index 0701f4a..894dc3f 100644
+--- a/benchmarks/rpc/README.md
++++ b/benchmarks/rpc/README.md
+@@ -23,6 +23,12 @@ python3 benchmarks/rpc/secure-runner.py --rust DRIVER --cpp CPP \
+   --output target/secure-comparison --mixed --comparators --upstream UPSTREAM
+ ```
+ 
++To measure a transport change against frozen controls, pass `--rust LEGACY`,
++`--portable CANDIDATE`, and `--portable-baseline PREVIOUS`. Each executable is
++used on both ends and every service hop of its cell. The baseline label still
++requires portable-engine metadata; binary hashes distinguish the two portable
++builds. Without these overrides, legacy and portable use `--rust`.
++
+ `--transport tls|quic|both` defaults to both. `--comparators` adds gRPC/WSS and
+ optional independent upstream Rust to their supported loopback/workflow cells.
+ The runner generates a fresh private benchmark CA and seven-day localhost
+diff --git a/benchmarks/rpc/secure-runner.py b/benchmarks/rpc/secure-runner.py
+index de1d9cb..a651c51 100644
+--- a/benchmarks/rpc/secure-runner.py
++++ b/benchmarks/rpc/secure-runner.py
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env python3
+ """Matched TLS/QUIC RPC workloads. Creates certificates, retains every sample, rejects plaintext results."""
+ import argparse
++import fcntl
+ import hashlib
+ import importlib.util
+ import json
+@@ -28,7 +29,12 @@ def security(transport, protocol='tcp', name='localhost'):
+                 authentication='server-certificate', server_name=name, early_data=False,
+                 setup_timed=False, alpn='capntproto-rpc/1' if transport == 'quic' else ('h2' if protocol == 'grpc' else None))
+ 
++def engine(label):
++    return 'portable' if label == 'portable-baseline' else label
++
++
+ def validate(data, case, transport, label, warmup, iterations):
++    label = engine(label)
+     expected_protocol = label if label in ['grpc', 'websocket'] else 'tcp'
+     assert data.get('security') == security(transport, expected_protocol), 'missing or mismatched encrypted transport identity'
+     if case['family'] == 'loopback':
+@@ -55,14 +61,25 @@ def stop(process):
+         process.wait(timeout=10)
+ 
+ 
++def campaign_lock(path=Path('/tmp/capntproto-secure-benchmark.lock')):
++    lock = path.open('a')
++    try:
++        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
++    except BlockingIOError:
++        lock.close()
++        raise RuntimeError('another encrypted benchmark campaign is active') from None
++    return lock
++
++
+ class Campaign:
+     def __init__(self, binaries, output, certs, cpus, instrument=False):
++        self._lock = campaign_lock()
+         self.binaries, self.output, self.certs, self.cpus = binaries, output, certs, cpus
+         self.instrument = instrument
+ 
+     def launch(self, label, argv, transport, directory, role, cpu, overrides=None):
+         env = dict(os.environ, CAPNTPROTO_BENCH_CERTS=str(self.certs), CAPNTPROTO_BENCH_TRANSPORT=transport,
+-                   CAPNTPROTO_BENCH_PORTABLE='1' if label == 'portable' else '0', CAPNTPROTO_BENCH_SERVER_NAME='localhost')
++                   CAPNTPROTO_BENCH_PORTABLE='1' if engine(label) == 'portable' else '0', CAPNTPROTO_BENCH_SERVER_NAME='localhost')
+         env.update(overrides or {})
+         command = ['taskset', '-c', str(cpu)]
+         if self.instrument:
+@@ -116,8 +133,8 @@ class Campaign:
+                 assert ready.get('security') == expected, 'server is not using the requested encrypted transport'
+                 if case['family'] == 'topology':
+                     assert ready['hops'] == hops - hop
+-                if server_label in ['legacy', 'portable']:
+-                    assert ready['implementation'] == server_label
++                if engine(server_label) in ['legacy', 'portable']:
++                    assert ready['implementation'] == engine(server_label)
+                 address = ready.get('address') or f"127.0.0.1:{ready['port']}"
+                 placement.append(dict(hop=hop, implementation=server_label, cpu=cpu, address=address))
+             client = self.launch(label, self.client_args(label, case, address, warmup, iterations), transport, directory,
+@@ -161,6 +178,10 @@ def idle_host():
+     for path in Path('/proc').glob('[0-9]*/comm'):
+         try:
+             name = path.read_text().strip()
++            argv = (path.parent / 'cmdline').read_bytes().split(b'\0')
++            modes = [b'server', b'measure', b'workflow-server', b'workflow-measure',
++                     b'topology-server', b'topology-measure', b'comparison-server', b'comparison-measure']
++            assert len(argv) < 2 or argv[1] not in modes, f'competing benchmark peer: {path.parent}'
+             if name in ['rustc', 'cargo', 'clippy-driver', 'rust-lld', 'clang', 'clang++', 'cc1plus', 'strace'] or 'callgrind' in name:
+                 assert (path.parent / 'stat').read_text().split(') ', 1)[1].split()[0] == 'Z', f'competing build/profiler: {path}'
+         except (FileNotFoundError, ProcessLookupError):
+@@ -174,6 +195,7 @@ def catalog():
+ 
+ 
+ def supported(label, transport, case):
++    label = engine(label)
+     if transport == 'quic' and label not in ['legacy', 'portable']:
+         return False
+     if case['family'] == 'topology' and label not in ['legacy', 'portable', 'cpp']:
+@@ -184,6 +206,8 @@ def supported(label, transport, case):
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--rust', type=Path, required=True)
++    parser.add_argument('--portable', type=Path, help='Candidate portable executable; defaults to --rust.')
++    parser.add_argument('--portable-baseline', type=Path, help='Frozen portable control, separate from the candidate.')
+     parser.add_argument('--cpp', type=Path, required=True)
+     parser.add_argument('--upstream', type=Path)
+     parser.add_argument('--output', type=Path, required=True)
+@@ -199,6 +223,10 @@ def main():
+     assert 1 <= args.repetitions <= 100 and (args.warmup is None or 0 <= args.warmup <= 100000) and 1 <= args.iterations <= 100000
+     idle_host()
+     binaries = dict(legacy=args.rust.resolve(strict=True), portable=args.rust.resolve(strict=True), cpp=args.cpp.resolve(strict=True))
++    if args.portable:
++        binaries['portable'] = args.portable.resolve(strict=True)
++    if args.portable_baseline:
++        binaries['portable-baseline'] = args.portable_baseline.resolve(strict=True)
+     if args.comparators:
+         binaries.update(grpc=binaries['legacy'], websocket=binaries['legacy'])
+         if args.upstream:
+diff --git a/benchmarks/rpc/test_secure_runner.py b/benchmarks/rpc/test_secure_runner.py
+index d172e02..8a1edc5 100644
+--- a/benchmarks/rpc/test_secure_runner.py
++++ b/benchmarks/rpc/test_secure_runner.py
+@@ -34,6 +34,26 @@ class SecurityEvidenceTests(unittest.TestCase):
+             with self.assertRaises(AssertionError):
+                 runner.validate(invalid, case, 'tls', 'portable', 2, 2)
+ 
++    def test_campaign_lock_rejects_overlap_and_releases_after_close(self):
++        with tempfile.TemporaryDirectory() as directory:
++            path = Path(directory) / 'lock'
++            with runner.campaign_lock(path):
++                with self.assertRaisesRegex(RuntimeError, 'another encrypted benchmark'):
++                    runner.campaign_lock(path)
++            with runner.campaign_lock(path):
++                pass
++
++    def test_frozen_portable_control_keeps_engine_and_transport_identity(self):
++        case = dict(family='workflow', name='unary-small', payload_bytes=64)
++        data = dict(case={'name':'unary-small','payload_bytes':64}, workflow_version=3,
++                    implementation='portable', security=runner.security('quic'),
++                    warmup=2, iterations=2, latency_ns=[10,20], elapsed_ns=35)
++        runner.validate(data, case, 'quic', 'portable-baseline', 2, 2)
++        self.assertTrue(runner.supported('portable-baseline', 'quic', case))
++        data['implementation'] = 'legacy'
++        with self.assertRaises(AssertionError):
++            runner.validate(data, case, 'quic', 'portable-baseline', 2, 2)
++
+     def test_ciphertext_counters_pair_resumed_calls_and_separate_datagrams_from_bytes(self):
+         trace = '10 1.000 read(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, <unfinished ...>\n11 1.001 write(1</tmp/file>, "abc", 3) = 3 <0.001>\n11 1.002 sendmmsg(4<UDP:[127.0.0.1:3]>, [], 2, 0) = 2 <0.001>\n10 1.003 <... read resumed>"abc", 3) = 3 <0.003>\n10 1.004 recvfrom(4<UDP:[127.0.0.1:3]>, 0x1, 1200, 0, NULL, NULL) = -1 EAGAIN (Resource temporarily unavailable) <0.001>\n10 1.005 write(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, "data", 4) = 4 <0.001>\n'
+         with tempfile.TemporaryDirectory() as directory:
+diff --git a/docs/wiki/TCP-TLS-and-QUIC.md b/docs/wiki/TCP-TLS-and-QUIC.md
+index fcb7f1d..74e5acc 100644
+--- a/docs/wiki/TCP-TLS-and-QUIC.md
++++ b/docs/wiki/TCP-TLS-and-QUIC.md
+@@ -147,6 +147,14 @@ stream. `quic::listen` performs concurrent bounded setup with the same
+ cancels pending setup while established streams retain their packet router.
+ The endpoint also bounds its incoming queue, route count and per-route packets.
+ 
++Application reads and writes access Quiche's stream buffers directly on the
++`LocalSet`. There is no additional duplex byte queue or task relaying application
++data. Quiche retains flow-control and congestion backpressure. The packet task
++owns UDP transmission, recovery, pacing and bounded bursts; it wakes only parked
++operations that can make progress. Connection borrows never cross a socket or
++pacing await. Authenticated receive bytes remain drainable after the packet task
++terminates.
++
+ Write shutdown queues all buffered bytes and FIN into Quiche; the receive
+ direction stays open. It is local write completion, not a peer receipt or method
+ completion. Applications requiring delivery confirmation must use a response or
+diff --git a/quality/src/benchmark.rs b/quality/src/benchmark.rs
+index 765fb12..f67a9ed 100644
+--- a/quality/src/benchmark.rs
++++ b/quality/src/benchmark.rs
+@@ -514,6 +514,15 @@ pub fn import(r: &mut Runner, bundle: &Path) -> Result<()> {
+         "instructions":instructions,"instructions_sha256":v::sha256(instructions_raw)});
+     Ok(())
+ }
++#[cfg(test)]
++pub(crate) fn test_security(protocol: &str) -> Value {
++    if protocol == "native" {
++        json!({"version":1,"transport":"native","authentication":"pinned-mutual-identity","setup_timed":false})
++    } else {
++        json!({"version":1,"transport":"tls-tcp","tls":"1.3","authentication":"server-certificate","server_name":"localhost","early_data":false,"setup_timed":false,"alpn":if protocol == "grpc" { json!("h2") } else { Value::Null }})
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -642,12 +651,3 @@ mod tests {
+         assert_eq!(percentile(&mut [3, 1, 2, 4, 5], 95), 5);
+     }
+ }
+-
+-#[cfg(test)]
+-pub(crate) fn test_security(protocol: &str) -> Value {
+-    if protocol == "native" {
+-        json!({"version":1,"transport":"native","authentication":"pinned-mutual-identity","setup_timed":false})
+-    } else {
+-        json!({"version":1,"transport":"tls-tcp","tls":"1.3","authentication":"server-certificate","server_name":"localhost","early_data":false,"setup_timed":false,"alpn":if protocol == "grpc" { json!("h2") } else { Value::Null }})
+-    }
+-}
+diff --git a/src/rpc/quic.rs b/src/rpc/quic.rs
+index abe3728..c4db2b6 100644
+--- a/src/rpc/quic.rs
++++ b/src/rpc/quic.rs
+@@ -27,15 +27,14 @@ use std::{
+     task::{Context, Poll},
+     time::Duration,
+ };
+-use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
++use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+ use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
+ 
+ /// Authenticated RPC IO. Drop cancels an open writer immediately. After successful
+ /// write shutdown, drop cancels reading but lets Quiche finish queued transmission
+ /// until the stream is collected or the connection closes/times out.
+ pub struct Stream {
+-    io: DuplexStream,
+-    state: Rc<RefCell<driver::State>>,
++    state: Rc<driver::State>,
+     close: Option<tokio::sync::oneshot::Sender<()>>,
+     certificates: Vec<CertificateDer<'static>>,
+     version: u32,
+@@ -49,7 +48,7 @@ impl Stream {
+         self.version
+     }
+     pub fn is_closed(&self) -> bool {
+-        self.state.borrow().closed
++        self.state.closed.get()
+     }
+ }
+ impl Drop for Stream {
+@@ -61,43 +60,97 @@ impl Drop for Stream {
+ }
+ impl AsyncRead for Stream {
+     fn poll_read(
+-        mut self: Pin<&mut Self>,
++        self: Pin<&mut Self>,
+         cx: &mut Context<'_>,
+         buffer: &mut ReadBuf<'_>,
+     ) -> Poll<io::Result<()>> {
+-        Pin::new(&mut self.io).poll_read(cx, buffer)
++        let state = &self.state;
++        if buffer.remaining() == 0 || state.read_closed.get() {
++            return Poll::Ready(Ok(()));
++        }
++        let result = state
++            .conn
++            .borrow_mut()
++            .stream_recv(0, buffer.initialize_unfilled());
++        match result {
++            Ok((n, fin)) => {
++                buffer.advance(n);
++                state.read_closed.set(fin);
++                // Reading returns flow-control credit to the packet engine.
++                state.changed.notify_one();
++                Poll::Ready(Ok(()))
++            }
++            Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => {
++                if state.closed.get() {
++                    return Poll::Ready(Ok(()));
++                }
++                state.reader.borrow_mut().replace(cx.waker().clone());
++                Poll::Pending
++            }
++            Err(e) => Poll::Ready(Err(io::Error::other(e))),
++        }
+     }
+ }
+ impl AsyncWrite for Stream {
+     fn poll_write(
+-        mut self: Pin<&mut Self>,
++        self: Pin<&mut Self>,
+         cx: &mut Context<'_>,
+         bytes: &[u8],
+     ) -> Poll<io::Result<usize>> {
+-        if let Some(error) = self.state.borrow().error() {
++        let state = &self.state;
++        if state.write_closed.get() {
++            return Poll::Ready(Err(io::Error::new(
++                io::ErrorKind::BrokenPipe,
++                "QUIC write half closed",
++            )));
++        }
++        if let Some(error) = state.error() {
+             return Poll::Ready(Err(error));
+         }
+-        Pin::new(&mut self.io).poll_write(cx, bytes)
++        if bytes.is_empty() {
++            return Poll::Ready(Ok(0));
++        }
++        // Quiche applies connection/stream flow control and congestion capacity;
++        // no second application byte queue or relay task is needed.
++        let result = state.conn.borrow_mut().stream_send(0, bytes, false);
++        state.changed.notify_one();
++        match result {
++            Ok(n) if n != 0 => Poll::Ready(Ok(n)),
++            Ok(_) | Err(quiche::Error::Done) => {
++                state.writer.borrow_mut().replace(cx.waker().clone());
++                Poll::Pending
++            }
++            Err(e) => Poll::Ready(Err(io::Error::other(e))),
++        }
+     }
+-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+-        Pin::new(&mut self.io).poll_flush(cx)
++    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
++        // Every successful write already queued its bytes in Quiche. As before,
++        // flush does not promise UDP transmission or acknowledgement by the peer.
++        Poll::Ready(Ok(()))
+     }
+-    /// Queue all buffered bytes and FIN in the upstream transport. The receive
+-    /// half stays open. This is not a peer-delivery or application receipt.
+-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+-        match Pin::new(&mut self.io).poll_shutdown(cx) {
+-            Poll::Ready(Ok(())) => (),
+-            other => return other,
+-        }
+-        let mut state = self.state.borrow_mut();
+-        if state.write_closed {
++    /// Queue FIN in the upstream transport. The receive half stays open.
++    /// This is not a peer-delivery or application receipt.
++    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
++        let state = &self.state;
++        if state.write_closed.get() {
+             return Poll::Ready(Ok(()));
+         }
+         if let Some(error) = state.error() {
+             return Poll::Ready(Err(error));
+         }
+-        state.waiter = Some(cx.waker().clone());
+-        Poll::Pending
++        let result = state.conn.borrow_mut().stream_send(0, &[], true);
++        state.changed.notify_one();
++        match result {
++            Ok(_) => {
++                state.write_closed.set(true);
++                Poll::Ready(Ok(()))
++            }
++            Err(quiche::Error::Done) => {
++                state.writer.borrow_mut().replace(cx.waker().clone());
++                Poll::Pending
++            }
++            Err(e) => Poll::Ready(Err(io::Error::other(e))),
++        }
+     }
+ }
+ /// Dial and authenticate, checking the certificate chain and DNS name or IP SAN.
+diff --git a/src/rpc/quic/driver.rs b/src/rpc/quic/driver.rs
+index d35a2b1..a06491a 100644
+--- a/src/rpc/quic/driver.rs
++++ b/src/rpc/quic/driver.rs
+@@ -1,25 +1,28 @@
+-//! Cancellable quiche packet/stream pump with bounded application buffering.
++//! Quiche owns the stream buffers; the task handles packets, recovery and pacing.
+ use super::*;
+ use tokio::{
+-    io::{AsyncReadExt, AsyncWriteExt},
+-    sync::oneshot,
++    sync::{oneshot, Notify},
+     time::Instant,
+ };
+ 
+-#[derive(Default)]
+ pub(super) struct State {
+-    pub write_closed: bool,
+-    pub closed: bool,
+-    failure: Option<(io::ErrorKind, String)>,
+-    pub waiter: Option<std::task::Waker>,
++    pub conn: RefCell<Box<quiche::Connection>>,
++    pub write_closed: std::cell::Cell<bool>,
++    pub read_closed: std::cell::Cell<bool>,
++    pub closed: std::cell::Cell<bool>,
++    failure: RefCell<Option<(io::ErrorKind, String)>>,
++    pub reader: RefCell<Option<std::task::Waker>>,
++    pub writer: RefCell<Option<std::task::Waker>>,
++    pub changed: Notify,
+ }
+ impl State {
+     pub fn error(&self) -> Option<io::Error> {
+         self.failure
++            .borrow()
+             .as_ref()
+             .map(|(kind, message)| io::Error::new(*kind, message.clone()))
+             .or_else(|| {
+-                self.closed.then(|| {
++                self.closed.get().then(|| {
+                     io::Error::new(
+                         io::ErrorKind::BrokenPipe,
+                         "QUIC session closed before submitting FIN",
+@@ -27,6 +30,17 @@ impl State {
+                 })
+             })
+     }
++    fn wake(&self) {
++        // Take wakers before invoking them: a wake can schedule application work.
++        let read = self.reader.borrow_mut().take();
++        let write = self.writer.borrow_mut().take();
++        if let Some(wake) = read {
++            wake.wake();
++        }
++        if let Some(wake) = write {
++            wake.wake();
++        }
++    }
+ }
+ struct Ready {
+     certificates: Vec<CertificateDer<'static>>,
+@@ -38,19 +52,26 @@ pub(super) async fn spawn(
+     conn: Box<quiche::Connection>,
+     timeout: Duration,
+ ) -> io::Result<Stream> {
+-    let (io, network) = tokio::io::duplex(crate::rpc::QUIC_BUFFER_BYTES);
+     let (ready, wait) = oneshot::channel();
+     let (close, canceled) = oneshot::channel();
+-    let state = Rc::new(RefCell::new(State::default()));
++    let state = Rc::new(State {
++        conn: RefCell::new(conn),
++        write_closed: false.into(),
++        read_closed: false.into(),
++        closed: false.into(),
++        failure: RefCell::new(None),
++        reader: RefCell::new(None),
++        writer: RefCell::new(None),
++        changed: Notify::new(),
++    });
+     let mut stream = Stream {
+-        io,
+         state: state.clone(),
+         close: Some(close),
+         certificates: vec![],
+         version: 0,
+         _endpoint: core.clone(),
+     };
+-    tokio::task::spawn_local(run(core, route, conn, network, state, ready, canceled));
++    tokio::task::spawn_local(run(core, route, state, ready, canceled));
+     let ready = tls::deadline(timeout, async {
+         wait.await
+             .map_err(|_| io::Error::other("QUIC driver stopped during setup"))?
+@@ -61,247 +82,188 @@ pub(super) async fn spawn(
+     Ok(stream)
+ }
+ async fn flush(
+-    conn: &mut quiche::Connection,
++    conn: &RefCell<Box<quiche::Connection>>,
+     core: &endpoint::Core,
+     batch: &mut crate::rpc::packet_batch::Batch,
+     sender: &crate::rpc::packet_batch::Sender,
+ ) -> io::Result<bool> {
+     for _ in 0..16 {
+         let start = batch.len();
+-        match conn.send(batch.output_buffer()) {
++        // No connection borrow crosses a socket/pacing await. The application
++        // can consume or enqueue stream bytes while a datagram is waiting.
++        let result = conn.borrow_mut().send(batch.output_buffer());
++        match result {
+             Ok((n, info)) => {
+-                if !batch.push_prepared(n, info, conn.send_quantum()) {
++                let quantum = conn.borrow().send_quantum();
++                if !batch.push_prepared(n, info, quantum) {
+                     batch.send(sender, &core.socket).await?;
+-                    batch.restart(start, n, info, conn.send_quantum());
++                    batch.restart(start, n, info, quantum);
+                 }
+             }
+             Err(quiche::Error::Done) => {
+                 batch.send(sender, &core.socket).await?;
+-                sender.check_path_mtu(conn);
++                sender.check_path_mtu(&mut conn.borrow_mut());
+                 return Ok(false);
+             }
+             Err(e) => return Err(io::Error::other(e)),
+         }
+     }
+     batch.send(sender, &core.socket).await?;
+-    sender.check_path_mtu(conn);
++    sender.check_path_mtu(&mut conn.borrow_mut());
+     Ok(true)
+ }
+-#[allow(clippy::too_many_arguments)] // A single future owns every resource of this session.
+ async fn run(
+     core: Rc<endpoint::Core>,
+     mut route: endpoint::Route,
+-    mut conn: Box<quiche::Connection>,
+-    network: DuplexStream,
+-    state: Rc<RefCell<State>>,
++    state: Rc<State>,
+     ready: oneshot::Sender<io::Result<Ready>>,
+     mut canceled: oneshot::Receiver<()>,
+ ) {
+     let mut ready = Some(ready);
+-    let result = pump(
+-        &core,
+-        &mut route,
+-        &mut conn,
+-        network,
+-        &state,
+-        &mut ready,
+-        &mut canceled,
+-    )
+-    .await;
+-    let _ = conn.close(
+-        true,
+-        if result.is_ok() { 0 } else { 1 },
+-        b"RPC session closed",
+-    );
++    let result = pump(&core, &mut route, &state, &mut ready, &mut canceled).await;
++    {
++        let mut conn = state.conn.borrow_mut();
++        if !conn.is_closed() && !conn.is_draining() {
++            let _ = conn.close(
++                true,
++                if result.is_ok() { 0 } else { 1 },
++                b"RPC session closed",
++            );
++        }
++    }
+     let _ = flush(
+-        &mut conn,
++        &state.conn,
+         &core,
+         &mut crate::rpc::packet_batch::Batch::new(),
+         &crate::rpc::packet_batch::Sender::default(),
+     )
+     .await;
+-    let failure = result.as_ref().err().map(|e| (e.kind(), e.to_string()));
+-    let wake = {
+-        let mut state = state.borrow_mut();
+-        state.closed = true;
+-        state.failure = failure;
+-        state.waiter.take()
+-    };
+-    if let Some(wake) = wake {
+-        wake.wake();
+-    }
++    *state.failure.borrow_mut() = result.as_ref().err().map(|e| (e.kind(), e.to_string()));
++    state.closed.set(true);
++    state.wake();
+     if let Some(ready) = ready {
+         let _ = ready.send(Err(result.err().unwrap_or_else(|| {
+             io::Error::new(io::ErrorKind::ConnectionAborted, "QUIC setup canceled")
+         })));
+     }
+ }
++fn receive(state: &State, mut packet: endpoint::Packet, local: SocketAddr) -> io::Result<()> {
++    match state.conn.borrow_mut().recv(
++        &mut packet.bytes,
++        quiche::RecvInfo {
++            from: packet.from,
++            to: local,
++        },
++    ) {
++        Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => Ok(()),
++        Err(e) => Err(io::Error::other(e)),
++    }
++}
+ async fn pump(
+     core: &endpoint::Core,
+     route: &mut endpoint::Route,
+-    conn: &mut quiche::Connection,
+-    network: DuplexStream,
+-    state: &RefCell<State>,
++    state: &State,
+     ready: &mut Option<oneshot::Sender<io::Result<Ready>>>,
+     canceled: &mut oneshot::Receiver<()>,
+ ) -> io::Result<()> {
+     let local = core.socket.local_addr()?;
+-    let (mut reader, mut writer) = tokio::io::split(network);
+-    let mut tx = vec![0; crate::rpc::QUIC_BUFFER_BYTES];
+-    let (mut tx_start, mut tx_end) = (0, 0);
+-    let mut tx_eof = false;
+-    let mut fin_sent = false;
+-    let mut rx = vec![0; crate::rpc::QUIC_BUFFER_BYTES];
+-    let (mut rx_start, mut rx_end) = (0, 0);
+-    let mut rx_fin = false;
+-    let mut rx_closed = false;
+-    let mut stream_seen = !conn.is_server();
+     let mut detached = false;
+     let mut batch = crate::rpc::packet_batch::Batch::new();
+     let sender = crate::rpc::packet_batch::Sender::default();
+     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
+     loop {
+         for _ in 0..16 {
+-            let Ok(mut packet) = route.packets.try_recv() else {
++            let Ok(packet) = route.packets.try_recv() else {
+                 break;
+             };
+-            match conn.recv(
+-                &mut packet.bytes,
+-                quiche::RecvInfo {
+-                    from: packet.from,
+-                    to: local,
+-                },
+-            ) {
+-                Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+-                Err(e) => return Err(io::Error::other(e)),
+-            }
++            receive(state, packet, local)?;
+         }
+-        if conn.is_established() {
+-            if conn.application_proto() != tls::ALPN {
+-                return Err(io::Error::new(
+-                    io::ErrorKind::InvalidData,
+-                    "RPC ALPN was not negotiated",
+-                ));
+-            }
+-            if !rx_fin && rx_start == rx_end {
+-                match conn.stream_recv(0, &mut rx) {
+-                    Ok((n, fin)) => {
+-                        rx_start = 0;
+-                        rx_end = n;
+-                        rx_fin = fin;
+-                        stream_seen = true;
++        {
++            let mut conn = state.conn.borrow_mut();
++            if conn.is_established() {
++                if ready.is_some() && conn.application_proto() != tls::ALPN {
++                    return Err(io::Error::new(
++                        io::ErrorKind::InvalidData,
++                        "RPC ALPN was not negotiated",
++                    ));
++                }
++                if !conn.is_server() || conn.stream_readable(0) {
++                    if let Some(ready) = ready.take() {
++                        let certificates = conn
++                            .peer_cert_chain()
++                            .unwrap_or_default()
++                            .into_iter()
++                            .map(|cert| CertificateDer::from(cert.to_vec()))
++                            .collect();
++                        let _ = ready.send(Ok(Ready {
++                            certificates,
++                            version: quiche::PROTOCOL_VERSION,
++                        }));
+                     }
+-                    Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => (),
+-                    Err(e) => return Err(io::Error::other(e)),
+                 }
+             }
+-            if stream_seen {
+-                if let Some(ready) = ready.take() {
+-                    let certificates = conn
+-                        .peer_cert_chain()
+-                        .unwrap_or_default()
+-                        .into_iter()
+-                        .map(|cert| CertificateDer::from(cert.to_vec()))
+-                        .collect();
+-                    let _ = ready.send(Ok(Ready {
+-                        certificates,
+-                        version: quiche::PROTOCOL_VERSION,
+-                    }));
++            if conn.is_closed() || conn.is_draining() {
++                // The Stream keeps the connection alive to drain authenticated
++                // bytes even after the packet task and endpoint route finish.
++                if conn.is_timed_out() {
++                    return Err(io::Error::new(
++                        io::ErrorKind::TimedOut,
++                        "QUIC connection timed out",
++                    ));
+                 }
+-                if !conn.is_closed()
+-                    && !conn.is_draining()
+-                    && (tx_start < tx_end || (tx_eof && !fin_sent))
+-                {
+-                    match conn.stream_send(0, &tx[tx_start..tx_end], tx_eof) {
+-                        Ok(n) => {
+-                            tx_start += n;
+-                            if tx_eof && tx_start == tx_end {
+-                                fin_sent = true;
+-                            }
+-                        }
+-                        Err(quiche::Error::Done) => (),
+-                        Err(e) => return Err(io::Error::other(e)),
+-                    }
+-                }
+-                if fin_sent {
+-                    let wake = {
+-                        let mut state = state.borrow_mut();
+-                        state.write_closed = true;
+-                        state.waiter.take()
+-                    };
+-                    if let Some(wake) = wake {
+-                        wake.wake();
+-                    }
++                if !state.write_closed.get() {
++                    return Err(io::Error::new(
++                        io::ErrorKind::ConnectionAborted,
++                        "QUIC connection closed before submitting FIN",
++                    ));
+                 }
++                return Ok(());
+             }
+-        }
+-        if rx_fin && rx_start == rx_end && !rx_closed {
+-            writer.shutdown().await?;
+-            rx_closed = true;
+-        }
+-        let exhausted = flush(conn, core, &mut batch, &sender).await?;
+-        // CONNECTION_CLOSE may overtake delivery from Quiche's receive buffer
+-        // into the bounded application bridge. Preserve already authenticated
+-        // bytes, including a final response larger than the bridge.
+-        if (conn.is_closed() || conn.is_draining())
+-            && rx_start == rx_end
+-            && !conn.stream_readable(0)
+-        {
+-            if conn.is_timed_out() {
+-                return Err(io::Error::new(
+-                    io::ErrorKind::TimedOut,
+-                    "QUIC connection timed out",
+-                ));
++            if detached
++                && matches!(
++                    conn.stream_capacity(0),
++                    Err(quiche::Error::InvalidStreamState(_))
++                )
++            {
++                return Ok(());
+             }
+-            if !state.borrow().write_closed {
+-                return Err(io::Error::new(
+-                    io::ErrorKind::ConnectionAborted,
+-                    "QUIC connection closed before submitting FIN",
+-                ));
+-            }
+-            return Ok(());
+         }
+-        // Once the application has completed shutdown and dropped its read
+-        // half, keep recovery alive until Quiche collects the stream (or the
+-        // connection fails/times out). Collection is only a cleanup signal;
+-        // it is never reported as a peer-delivery receipt.
+-        if detached
+-            && matches!(
+-                conn.stream_capacity(0),
+-                Err(quiche::Error::InvalidStreamState(_))
+-            )
+-        {
+-            return Ok(());
++        let readable = state.conn.borrow().stream_readable(0);
++        let read = readable.then(|| state.reader.borrow_mut().take()).flatten();
++        if let Some(wake) = read {
++            wake.wake();
++            // Give the newly ready RPC work one turn to enqueue its response.
++            // Quiche can then piggyback ACK/credit on application packets.
++            tokio::task::yield_now().await;
+         }
+-        let deadline = Instant::now() + conn.timeout().unwrap_or(Duration::from_secs(10));
++        let exhausted = flush(&state.conn, core, &mut batch, &sender).await?;
++        // A flow-blocked writer must not wake itself on its own notification.
++        let writable = !matches!(state.conn.borrow_mut().stream_capacity(0), Ok(0));
++        let write = writable.then(|| state.writer.borrow_mut().take()).flatten();
++        if let Some(wake) = write {
++            wake.wake();
++        }
++        let deadline = Instant::now()
++            + state
++                .conn
++                .borrow()
++                .timeout()
++                .unwrap_or(Duration::from_secs(10));
+         tokio::select! {
+             biased;
+             _ = &mut *canceled, if !detached => {
+-                if !state.borrow().write_closed { return Ok(()); }
++                if !state.write_closed.get() { return Ok(()); }
+                 detached = true;
+-                rx_start = 0;
+-                rx_end = 0;
+-                rx_fin = true;
+-                rx_closed = true;
+-                match conn.stream_shutdown(0, quiche::Shutdown::Read, 0) {
++                match state.conn.borrow_mut().stream_shutdown(0, quiche::Shutdown::Read, 0) {
+                     Ok(()) | Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => (),
+                     Err(error) => return Err(io::Error::other(error)),
+                 }
+             },
+             packet = route.packets.recv() => {
+-                let mut packet = packet.ok_or_else(|| io::Error::other("QUIC packet router closed"))?;
+-                match conn.recv(&mut packet.bytes, quiche::RecvInfo { from: packet.from, to: local }) {
+-                    Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+-                    Err(e) => return Err(io::Error::other(e)),
+-                }
+-            }
+-            n = writer.write(&rx[rx_start..rx_end]), if rx_start < rx_end => {
+-                let n = n?; if n == 0 { return Err(io::Error::new(io::ErrorKind::WriteZero, "RPC consumer closed")); } rx_start += n;
+-            }
+-            n = reader.read(&mut tx), if ready.is_none() && tx_start == tx_end && !tx_eof && !conn.is_closed() && !conn.is_draining() => {
+-                tx_end = n?; tx_start = 0; tx_eof = tx_end == 0;
++                receive(state, packet.ok_or_else(|| io::Error::other("QUIC packet router closed"))?, local)?;
+             }
+-            _ = tokio::time::sleep_until(deadline) => mtu_recovery.on_timeout(conn),
++            _ = state.changed.notified() => (),
++            _ = tokio::time::sleep_until(deadline) => mtu_recovery.on_timeout(&mut state.conn.borrow_mut()),
+             _ = tokio::task::yield_now(), if exhausted => (),
+         }
+     }
+@@ -310,6 +272,7 @@ async fn pump(
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+     #[tokio::test(flavor = "current_thread")]
+     async fn flush_budget_preserves_queued_packets_and_final_short_datagram() {
+         tokio::task::LocalSet::new()
+@@ -341,39 +304,37 @@ mod tests {
+                     let payload = vec![0xa5; 64 * 1024 + 17];
+                     let peer = async {
+                         let incoming = server.accept().await.unwrap();
+-                        let mut conn = incoming.connection;
++                        let conn = RefCell::new(incoming.connection);
+                         let mut route = incoming.route;
+                         let mut batch = crate::rpc::packet_batch::Batch::new();
+                         let sender = crate::rpc::packet_batch::Sender::default();
+                         loop {
+                             let mut start = [0; 1];
+-                            if conn.is_established() && conn.stream_recv(0, &mut start).is_ok() {
++                            if conn.borrow_mut().is_established()
++                                && conn.borrow_mut().stream_recv(0, &mut start).is_ok()
++                            {
+                                 assert_eq!(
+-                                    conn.stream_send(0, &payload, true).unwrap(),
++                                    conn.borrow_mut().stream_send(0, &payload, true).unwrap(),
+                                     payload.len()
+                                 );
+-                                assert!(flush(&mut conn, &server.0, &mut batch, &sender)
++                                assert!(flush(&conn, &server.0, &mut batch, &sender)
+                                     .await
+                                     .unwrap());
+-                                while flush(&mut conn, &server.0, &mut batch, &sender)
+-                                    .await
+-                                    .unwrap()
+-                                {}
++                                while flush(&conn, &server.0, &mut batch, &sender).await.unwrap() {}
+                                 assert!(batch.bytes().is_empty());
+                                 break;
+                             }
+-                            flush(&mut conn, &server.0, &mut batch, &sender)
+-                                .await
+-                                .unwrap();
++                            flush(&conn, &server.0, &mut batch, &sender).await.unwrap();
+                             let mut packet = route.packets.recv().await.unwrap();
+-                            conn.recv(
+-                                &mut packet.bytes,
+-                                quiche::RecvInfo {
+-                                    from: packet.from,
+-                                    to: server.local_addr().unwrap(),
+-                                },
+-                            )
+-                            .unwrap();
++                            conn.borrow_mut()
++                                .recv(
++                                    &mut packet.bytes,
++                                    quiche::RecvInfo {
++                                        from: packet.from,
++                                        to: server.local_addr().unwrap(),
++                                    },
++                                )
++                                .unwrap();
+                         }
+                         // Keep the route alive until the client has drained every byte.
+                         std::future::pending::<()>().await;
+@@ -412,26 +373,26 @@ mod tests {
+                 endpoint.set_default_client_config(client_config(vec![cert.cert.der().clone()], None).unwrap());
+                 let peer = async {
+                     let incoming = server.accept().await.unwrap();
+-                    let mut conn = incoming.connection;
++                    let conn = RefCell::new(incoming.connection);
+                     let mut route = incoming.route;
+                     let mut stopped = false;
+                     loop {
+-                        if conn.is_established() && !stopped {
++                        if conn.borrow_mut().is_established() && !stopped {
+                             let mut buf = [0; 64];
+-                            if conn.stream_recv(0, &mut buf).is_ok() {
+-                                conn.stream_shutdown(0, quiche::Shutdown::Read, 42).unwrap();
+-                                conn.stream_send(0, b"s", false).unwrap(); stopped = true;
++                            if conn.borrow_mut().stream_recv(0, &mut buf).is_ok() {
++                                conn.borrow_mut().stream_shutdown(0, quiche::Shutdown::Read, 42).unwrap();
++                                conn.borrow_mut().stream_send(0, b"s", false).unwrap(); stopped = true;
+                             }
+                         }
+-                        flush(&mut conn, &server.0, &mut crate::rpc::packet_batch::Batch::new(), &crate::rpc::packet_batch::Sender::default()).await.unwrap();
+-                        if conn.is_closed() || conn.is_draining() { break; }
+-                        let timeout = conn.timeout().unwrap_or(Duration::from_secs(1));
++                        flush(&conn, &server.0, &mut crate::rpc::packet_batch::Batch::new(), &crate::rpc::packet_batch::Sender::default()).await.unwrap();
++                        if conn.borrow_mut().is_closed() || conn.borrow_mut().is_draining() { break; }
++                        let timeout = conn.borrow_mut().timeout().unwrap_or(Duration::from_secs(1));
+                         tokio::select! {
+                             packet = route.packets.recv() => {
+                                 let mut packet = packet.unwrap();
+-                                match conn.recv(&mut packet.bytes, quiche::RecvInfo { from: packet.from, to: server.local_addr().unwrap() }) { Ok(_) | Err(quiche::Error::Done) => (), Err(e) => panic!("{e}") }
++                                match conn.borrow_mut().recv(&mut packet.bytes, quiche::RecvInfo { from: packet.from, to: server.local_addr().unwrap() }) { Ok(_) | Err(quiche::Error::Done) => (), Err(e) => panic!("{e}") }
+                             }
+-                            _ = tokio::time::sleep(timeout) => conn.on_timeout(),
++                            _ = tokio::time::sleep(timeout) => conn.borrow_mut().on_timeout(),
+                         }
+                     }
+                 };
+diff --git a/tests/secure_rpc/quic.rs b/tests/secure_rpc/quic.rs
+index dfe7194..1753016 100644
+--- a/tests/secure_rpc/quic.rs
++++ b/tests/secure_rpc/quic.rs
+@@ -355,3 +355,49 @@ async fn quic_validates_ip_subject_alternative_names() {
+     })
+     .await;
+ }
++
++#[tokio::test(flavor = "current_thread")]
++async fn stalled_reader_resumes_large_transfer_without_starving_runtime() {
++    local(async {
++        let pki = Pki::new();
++        let server = server(&pki, false);
++        let endpoint = client(&pki, false, Version::V1);
++        let address = server.local_addr().unwrap();
++        let task = tokio::task::spawn_local(async move {
++            let mut stream = quic::accept(server.accept().await.unwrap(), TIMEOUT)
++                .await
++                .unwrap();
++            assert_eq!(stream.read_u8().await.unwrap(), 1);
++            // Exceed both the old bridge and the initial QUIC stream window.
++            stream
++                .write_all(&vec![0x53; 3 * 1024 * 1024 + 17])
++                .await
++                .unwrap();
++            stream.shutdown().await.unwrap();
++            assert_eq!(
++                stream.write(b"after FIN").await.unwrap_err().kind(),
++                io::ErrorKind::BrokenPipe
++            );
++        });
++        let mut stream = quic::connect(&endpoint, address, "localhost", TIMEOUT)
++            .await
++            .unwrap();
++        stream.write_all(&[1]).await.unwrap();
++        stream.shutdown().await.unwrap();
++        // A parked writer must not repeatedly wake itself and starve this timer.
++        tokio::time::sleep(Duration::from_millis(30)).await;
++        assert!(
++            !task.is_finished(),
++            "receiver flow control must bound buffering"
++        );
++        let mut received = Vec::new();
++        stream.read_to_end(&mut received).await.unwrap();
++        assert_eq!(received, vec![0x53; 3 * 1024 * 1024 + 17]);
++        task.await.unwrap();
++        drop(stream);
++        tokio::time::timeout(TIMEOUT, endpoint.wait_idle())
++            .await
++            .unwrap();
++    })
++    .await;
++}

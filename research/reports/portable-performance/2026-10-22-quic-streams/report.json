@@ -1,0 +1,3608 @@
+{
+  "metrics": {
+    "cases": 24,
+    "mean_wins": 21,
+    "legacy_mean_wins": 14,
+    "geometric_mean_latency_reduction_pct": 13.565440579105047,
+    "min_latency_reduction_pct": -4.169099967227474,
+    "max_latency_reduction_pct": 37.491122113861216,
+    "no_more_all_syscalls_vs_legacy": 23,
+    "no_more_all_syscalls_vs_portable-baseline": 22,
+    "retained_samples": 360000
+  },
+  "native": {
+    "rows": [
+      {
+        "transport": "quic",
+        "case": {
+          "family": "loopback",
+          "name": "loopback-0",
+          "payload_bytes": 0
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 44530.0788,
+            "stddev_ns": 27669.36327061667,
+            "min_ns": 22204,
+            "max_ns": 814737,
+            "repetition_mean_ns": [
+              41060.683,
+              41085.786,
+              45851.536,
+              49703.054,
+              44949.335
+            ],
+            "repetition_mean_stddev_ns": 3625.6570929169093,
+            "repetition_mean_range_ns": [
+              41060.683,
+              49703.054
+            ],
+            "samples": 5000,
+            "p50_ns": 37126,
+            "p95_ns": 78108,
+            "p99_ns": 141664
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 42079.1094,
+            "stddev_ns": 31030.628876971405,
+            "min_ns": 26249,
+            "max_ns": 980156,
+            "repetition_mean_ns": [
+              35027.361,
+              33841.166,
+              61207.306,
+              39962.247,
+              40357.467
+            ],
+            "repetition_mean_stddev_ns": 11078.401634495487,
+            "repetition_mean_range_ns": [
+              33841.166,
+              61207.306
+            ],
+            "samples": 5000,
+            "p50_ns": 32139,
+            "p95_ns": 73090,
+            "p99_ns": 129475
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 48969.3218,
+            "stddev_ns": 37402.93034161191,
+            "min_ns": 22885,
+            "max_ns": 1806410,
+            "repetition_mean_ns": [
+              54681.956,
+              49138.462,
+              43637.257,
+              45229.406,
+              52159.528
+            ],
+            "repetition_mean_stddev_ns": 4616.765608390597,
+            "repetition_mean_range_ns": [
+              43637.257,
+              54681.956
+            ],
+            "samples": 5000,
+            "p50_ns": 41753,
+            "p95_ns": 88443,
+            "p99_ns": 147773
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "loopback",
+          "name": "loopback-64",
+          "payload_bytes": 64
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 44696.0488,
+            "stddev_ns": 47483.279354325,
+            "min_ns": 22183,
+            "max_ns": 2030568,
+            "repetition_mean_ns": [
+              50595.04,
+              40684.479,
+              46168.033,
+              44854.975,
+              41177.717
+            ],
+            "repetition_mean_stddev_ns": 4045.412312575099,
+            "repetition_mean_range_ns": [
+              40684.479,
+              50595.04
+            ],
+            "samples": 5000,
+            "p50_ns": 36155,
+            "p95_ns": 78608,
+            "p99_ns": 152240
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 41448.0162,
+            "stddev_ns": 25240.58021465933,
+            "min_ns": 30216,
+            "max_ns": 663399,
+            "repetition_mean_ns": [
+              40752.878,
+              45204.981,
+              46750.006,
+              39678.046,
+              34854.17
+            ],
+            "repetition_mean_stddev_ns": 4725.4814485665065,
+            "repetition_mean_range_ns": [
+              34854.17,
+              46750.006
+            ],
+            "samples": 5000,
+            "p50_ns": 36696,
+            "p95_ns": 65549,
+            "p99_ns": 126260
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 48572.9616,
+            "stddev_ns": 35191.11373843339,
+            "min_ns": 23916,
+            "max_ns": 1822160,
+            "repetition_mean_ns": [
+              53796.7,
+              49481.504,
+              46977.633,
+              42480.966,
+              50128.005
+            ],
+            "repetition_mean_stddev_ns": 4188.929931155245,
+            "repetition_mean_range_ns": [
+              42480.966,
+              53796.7
+            ],
+            "samples": 5000,
+            "p50_ns": 42694,
+            "p95_ns": 82594,
+            "p99_ns": 156466
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "loopback",
+          "name": "loopback-1024",
+          "payload_bytes": 1024
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 51409.6666,
+            "stddev_ns": 35072.30322399901,
+            "min_ns": 23786,
+            "max_ns": 1002659,
+            "repetition_mean_ns": [
+              53038.344,
+              51575.708,
+              54164.082,
+              50237.127,
+              48033.072
+            ],
+            "repetition_mean_stddev_ns": 2400.166880753253,
+            "repetition_mean_range_ns": [
+              48033.072,
+              54164.082
+            ],
+            "samples": 5000,
+            "p50_ns": 46030,
+            "p95_ns": 90118,
+            "p99_ns": 160174
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 49938.7828,
+            "stddev_ns": 282926.9381363052,
+            "min_ns": 31617,
+            "max_ns": 20000167,
+            "repetition_mean_ns": [
+              35076.427,
+              37415.395,
+              68666.16,
+              50482.34,
+              58053.592
+            ],
+            "repetition_mean_stddev_ns": 14094.19296632605,
+            "repetition_mean_range_ns": [
+              35076.427,
+              68666.16
+            ],
+            "samples": 5000,
+            "p50_ns": 42124,
+            "p95_ns": 75875,
+            "p99_ns": 120233
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 59521.434,
+            "stddev_ns": 23294.549949486336,
+            "min_ns": 24097,
+            "max_ns": 376213,
+            "repetition_mean_ns": [
+              45255.623,
+              53898.076,
+              87883.749,
+              54386.696,
+              56183.026
+            ],
+            "repetition_mean_stddev_ns": 16409.348959862924,
+            "repetition_mean_range_ns": [
+              45255.623,
+              87883.749
+            ],
+            "samples": 5000,
+            "p50_ns": 48835,
+            "p95_ns": 94725,
+            "p99_ns": 130830
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "loopback",
+          "name": "loopback-65536",
+          "payload_bytes": 65536
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 192253.9844,
+            "stddev_ns": 79501.18213723617,
+            "min_ns": 120280,
+            "max_ns": 1751515,
+            "repetition_mean_ns": [
+              133148.872,
+              233554.175,
+              217931.212,
+              212068.74,
+              164566.923
+            ],
+            "repetition_mean_stddev_ns": 41885.67171805372,
+            "repetition_mean_range_ns": [
+              133148.872,
+              233554.175
+            ],
+            "samples": 5000,
+            "p50_ns": 198749,
+            "p95_ns": 281384,
+            "p99_ns": 468452
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 147665.0934,
+            "stddev_ns": 81999.03020474315,
+            "min_ns": 103217,
+            "max_ns": 3315951,
+            "repetition_mean_ns": [
+              151863.172,
+              138838.147,
+              127672.878,
+              192068.069,
+              127883.201
+            ],
+            "repetition_mean_stddev_ns": 26730.9513127555,
+            "repetition_mean_range_ns": [
+              127672.878,
+              192068.069
+            ],
+            "samples": 5000,
+            "p50_ns": 123065,
+            "p95_ns": 220704,
+            "p99_ns": 354761
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 167361.9086,
+            "stddev_ns": 54651.819502051556,
+            "min_ns": 119239,
+            "max_ns": 1051357,
+            "repetition_mean_ns": [
+              141200.363,
+              170929.085,
+              219612.163,
+              145372.354,
+              159695.578
+            ],
+            "repetition_mean_stddev_ns": 31502.19610157835,
+            "repetition_mean_range_ns": [
+              141200.363,
+              219612.163
+            ],
+            "samples": 5000,
+            "p50_ns": 141443,
+            "p95_ns": 241229,
+            "p99_ns": 332308
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "unary-empty",
+          "payload_bytes": 0,
+          "width": 1,
+          "rpcs_per_iteration": 1
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 40548.898,
+            "stddev_ns": 27218.83645711572,
+            "min_ns": 25899,
+            "max_ns": 806797,
+            "repetition_mean_ns": [
+              40858.816,
+              37245.875,
+              44876.606,
+              39632.732,
+              40130.461
+            ],
+            "repetition_mean_stddev_ns": 2772.61231968346,
+            "repetition_mean_range_ns": [
+              37245.875,
+              44876.606
+            ],
+            "samples": 5000,
+            "p50_ns": 33611,
+            "p95_ns": 71859,
+            "p99_ns": 144780
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 36768.8948,
+            "stddev_ns": 22194.82484809782,
+            "min_ns": 30016,
+            "max_ns": 697240,
+            "repetition_mean_ns": [
+              36577.602,
+              37053.822,
+              38293.057,
+              36693.816,
+              35226.177
+            ],
+            "repetition_mean_stddev_ns": 1098.4605014731746,
+            "repetition_mean_range_ns": [
+              35226.177,
+              38293.057
+            ],
+            "samples": 5000,
+            "p50_ns": 32058,
+            "p95_ns": 60842,
+            "p99_ns": 119251
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 54120.9764,
+            "stddev_ns": 25682.641285321904,
+            "min_ns": 29195,
+            "max_ns": 888931,
+            "repetition_mean_ns": [
+              48131.405,
+              82205.856,
+              46885.204,
+              45873.394,
+              47509.023
+            ],
+            "repetition_mean_stddev_ns": 15722.05753977002,
+            "repetition_mean_range_ns": [
+              45873.394,
+              82205.856
+            ],
+            "samples": 5000,
+            "p50_ns": 42584,
+            "p95_ns": 86091,
+            "p99_ns": 124099
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "unary-small",
+          "payload_bytes": 64,
+          "width": 1,
+          "rpcs_per_iteration": 1
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 47193.0356,
+            "stddev_ns": 27914.547337231554,
+            "min_ns": 25910,
+            "max_ns": 759665,
+            "repetition_mean_ns": [
+              43099.392,
+              37237.28,
+              41897.775,
+              47019.948,
+              66710.783
+            ],
+            "repetition_mean_stddev_ns": 11455.20836999643,
+            "repetition_mean_range_ns": [
+              37237.28,
+              66710.783
+            ],
+            "samples": 5000,
+            "p50_ns": 38398,
+            "p95_ns": 85720,
+            "p99_ns": 135867
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 43557.9288,
+            "stddev_ns": 52377.24876127125,
+            "min_ns": 27592,
+            "max_ns": 2301319,
+            "repetition_mean_ns": [
+              39862.445,
+              55739.27,
+              37274.705,
+              42787.31,
+              42125.914
+            ],
+            "repetition_mean_stddev_ns": 7144.317584453023,
+            "repetition_mean_range_ns": [
+              37274.705,
+              55739.27
+            ],
+            "samples": 5000,
+            "p50_ns": 32159,
+            "p95_ns": 84789,
+            "p99_ns": 163739
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 49970.8046,
+            "stddev_ns": 34994.16922831023,
+            "min_ns": 26820,
+            "max_ns": 1579291,
+            "repetition_mean_ns": [
+              51015.352,
+              46565.609,
+              49694.731,
+              52648.252,
+              49930.079
+            ],
+            "repetition_mean_stddev_ns": 2232.321444818444,
+            "repetition_mean_range_ns": [
+              46565.609,
+              52648.252
+            ],
+            "samples": 5000,
+            "p50_ns": 41824,
+            "p95_ns": 94443,
+            "p99_ns": 169949
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "unary-1k",
+          "payload_bytes": 1024,
+          "width": 1,
+          "rpcs_per_iteration": 1
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 59596.9862,
+            "stddev_ns": 53446.83003101009,
+            "min_ns": 24528,
+            "max_ns": 3350633,
+            "repetition_mean_ns": [
+              48933.188,
+              64901.035,
+              49454.808,
+              54803.996,
+              79891.904
+            ],
+            "repetition_mean_stddev_ns": 13034.279304297119,
+            "repetition_mean_range_ns": [
+              48933.188,
+              79891.904
+            ],
+            "samples": 5000,
+            "p50_ns": 47552,
+            "p95_ns": 99141,
+            "p99_ns": 138080
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 49021.0556,
+            "stddev_ns": 55635.98210666819,
+            "min_ns": 29816,
+            "max_ns": 3202368,
+            "repetition_mean_ns": [
+              45246.676,
+              37708.973,
+              50336.848,
+              47184.015,
+              64628.766
+            ],
+            "repetition_mean_stddev_ns": 9885.795439041985,
+            "repetition_mean_range_ns": [
+              37708.973,
+              64628.766
+            ],
+            "samples": 5000,
+            "p50_ns": 42855,
+            "p95_ns": 79200,
+            "p99_ns": 130498
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 62034.4152,
+            "stddev_ns": 32841.569835515795,
+            "min_ns": 29425,
+            "max_ns": 771923,
+            "repetition_mean_ns": [
+              50214.13,
+              53078.031,
+              69144.202,
+              52493.728,
+              85241.985
+            ],
+            "repetition_mean_stddev_ns": 15000.8419493617,
+            "repetition_mean_range_ns": [
+              50214.13,
+              85241.985
+            ],
+            "samples": 5000,
+            "p50_ns": 47082,
+            "p95_ns": 105200,
+            "p99_ns": 160694
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "fanout-32",
+          "payload_bytes": 1024,
+          "width": 32,
+          "rpcs_per_iteration": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 195644.7816,
+            "stddev_ns": 71170.43102982934,
+            "min_ns": 150296,
+            "max_ns": 2543155,
+            "repetition_mean_ns": [
+              205587.055,
+              187978.961,
+              229895.595,
+              175128.222,
+              179634.075
+            ],
+            "repetition_mean_stddev_ns": 22405.377524407988,
+            "repetition_mean_range_ns": [
+              175128.222,
+              229895.595
+            ],
+            "samples": 5000,
+            "p50_ns": 175363,
+            "p95_ns": 277452,
+            "p99_ns": 372088
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 204191.8378,
+            "stddev_ns": 74036.53116223367,
+            "min_ns": 161582,
+            "max_ns": 2417817,
+            "repetition_mean_ns": [
+              183877.852,
+              193695.1,
+              223272.576,
+              187982.73,
+              232130.931
+            ],
+            "repetition_mean_stddev_ns": 21967.26085730647,
+            "repetition_mean_range_ns": [
+              183877.852,
+              232130.931
+            ],
+            "samples": 5000,
+            "p50_ns": 184436,
+            "p95_ns": 290485,
+            "p99_ns": 418863
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 220264.1006,
+            "stddev_ns": 94593.11296043274,
+            "min_ns": 172258,
+            "max_ns": 2479640,
+            "repetition_mean_ns": [
+              211735.921,
+              210474.697,
+              237411.538,
+              201756.108,
+              239942.239
+            ],
+            "repetition_mean_stddev_ns": 17265.3685197542,
+            "repetition_mean_range_ns": [
+              201756.108,
+              239942.239
+            ],
+            "samples": 5000,
+            "p50_ns": 194241,
+            "p95_ns": 319269,
+            "p99_ns": 520772
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "dependent-read",
+          "payload_bytes": 1024,
+          "width": 1,
+          "rpcs_per_iteration": 2
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 119551.4364,
+            "stddev_ns": 78920.63494893907,
+            "min_ns": 51781,
+            "max_ns": 2385459,
+            "repetition_mean_ns": [
+              113659.301,
+              146860.527,
+              117829.702,
+              110917.301,
+              108490.351
+            ],
+            "repetition_mean_stddev_ns": 15655.382162747666,
+            "repetition_mean_range_ns": [
+              108490.351,
+              146860.527
+            ],
+            "samples": 5000,
+            "p50_ns": 98663,
+            "p95_ns": 199099,
+            "p99_ns": 324544
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 128963.3936,
+            "stddev_ns": 75784.79170130985,
+            "min_ns": 83649,
+            "max_ns": 2245122,
+            "repetition_mean_ns": [
+              101964.542,
+              105508.393,
+              165364.47,
+              162136.716,
+              109842.847
+            ],
+            "repetition_mean_stddev_ns": 31898.973436776036,
+            "repetition_mean_range_ns": [
+              101964.542,
+              165364.47
+            ],
+            "samples": 5000,
+            "p50_ns": 94351,
+            "p95_ns": 221724,
+            "p99_ns": 297732
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 160508.2918,
+            "stddev_ns": 105897.06650909316,
+            "min_ns": 94867,
+            "max_ns": 2904745,
+            "repetition_mean_ns": [
+              128780.653,
+              173839.497,
+              170320.565,
+              170040.098,
+              159560.646
+            ],
+            "repetition_mean_stddev_ns": 18522.946331886746,
+            "repetition_mean_range_ns": [
+              128780.653,
+              173839.497
+            ],
+            "samples": 5000,
+            "p50_ns": 128950,
+            "p95_ns": 253343,
+            "p99_ns": 371597
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "pipelined-read",
+          "payload_bytes": 1024,
+          "width": 1,
+          "rpcs_per_iteration": 2
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 70656.773,
+            "stddev_ns": 43996.13672957771,
+            "min_ns": 41284,
+            "max_ns": 1183542,
+            "repetition_mean_ns": [
+              60043.483,
+              107627.421,
+              62105.065,
+              63052.512,
+              60455.384
+            ],
+            "repetition_mean_stddev_ns": 20703.233870380674,
+            "repetition_mean_range_ns": [
+              60043.483,
+              107627.421
+            ],
+            "samples": 5000,
+            "p50_ns": 52789,
+            "p95_ns": 127322,
+            "p99_ns": 185519
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 87628.0898,
+            "stddev_ns": 66679.00739682034,
+            "min_ns": 66182,
+            "max_ns": 1751506,
+            "repetition_mean_ns": [
+              85759.638,
+              83471.483,
+              94899.726,
+              98520.806,
+              75488.796
+            ],
+            "repetition_mean_stddev_ns": 9214.918684127666,
+            "repetition_mean_range_ns": [
+              75488.796,
+              98520.806
+            ],
+            "samples": 5000,
+            "p50_ns": 70830,
+            "p95_ns": 151586,
+            "p99_ns": 244257
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 95322.7568,
+            "stddev_ns": 52971.03353607922,
+            "min_ns": 69297,
+            "max_ns": 1395705,
+            "repetition_mean_ns": [
+              86974.386,
+              95134.028,
+              110419.611,
+              91768.682,
+              92317.077
+            ],
+            "repetition_mean_stddev_ns": 8934.644355742746,
+            "repetition_mean_range_ns": [
+              86974.386,
+              110419.611
+            ],
+            "samples": 5000,
+            "p50_ns": 76826,
+            "p95_ns": 167049,
+            "p99_ns": 245559
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "write-read",
+          "payload_bytes": 1024,
+          "width": 1,
+          "rpcs_per_iteration": 2
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 98225.4428,
+            "stddev_ns": 64493.03558367902,
+            "min_ns": 39178,
+            "max_ns": 3208970,
+            "repetition_mean_ns": [
+              88085.589,
+              97248.727,
+              106556.871,
+              98314.886,
+              100921.141
+            ],
+            "repetition_mean_stddev_ns": 6716.734577951712,
+            "repetition_mean_range_ns": [
+              88085.589,
+              106556.871
+            ],
+            "samples": 5000,
+            "p50_ns": 86070,
+            "p95_ns": 161443,
+            "p99_ns": 232540
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 89471.812,
+            "stddev_ns": 95390.45375247607,
+            "min_ns": 60841,
+            "max_ns": 4247984,
+            "repetition_mean_ns": [
+              78102.159,
+              82983.644,
+              107955.183,
+              79506.41,
+              98811.664
+            ],
+            "repetition_mean_stddev_ns": 13224.43202243278,
+            "repetition_mean_range_ns": [
+              78102.159,
+              107955.183
+            ],
+            "samples": 5000,
+            "p50_ns": 67492,
+            "p95_ns": 152439,
+            "p99_ns": 269055
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 112415.3296,
+            "stddev_ns": 51107.62029121029,
+            "min_ns": 40921,
+            "max_ns": 925052,
+            "repetition_mean_ns": [
+              101233.095,
+              104134.439,
+              132396.092,
+              113960.179,
+              110352.843
+            ],
+            "repetition_mean_stddev_ns": 12242.209732190095,
+            "repetition_mean_range_ns": [
+              101233.095,
+              132396.092
+            ],
+            "samples": 5000,
+            "p50_ns": 91057,
+            "p95_ns": 190547,
+            "p99_ns": 307112
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "callback",
+          "payload_bytes": 64,
+          "width": 1,
+          "rpcs_per_iteration": 2
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 113511.7736,
+            "stddev_ns": 45911.09060411912,
+            "min_ns": 51707,
+            "max_ns": 1256341,
+            "repetition_mean_ns": [
+              104049.748,
+              102261.701,
+              94102.62,
+              151011.124,
+              116133.675
+            ],
+            "repetition_mean_stddev_ns": 22393.553496497727,
+            "repetition_mean_range_ns": [
+              94102.62,
+              151011.124
+            ],
+            "samples": 5000,
+            "p50_ns": 89545,
+            "p95_ns": 185329,
+            "p99_ns": 224748
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 113917.6052,
+            "stddev_ns": 49887.84645993666,
+            "min_ns": 77196,
+            "max_ns": 843159,
+            "repetition_mean_ns": [
+              103729.587,
+              106347.382,
+              98786.769,
+              121031.473,
+              139692.815
+            ],
+            "repetition_mean_stddev_ns": 16620.881095496057,
+            "repetition_mean_range_ns": [
+              98786.769,
+              139692.815
+            ],
+            "samples": 5000,
+            "p50_ns": 88203,
+            "p95_ns": 201012,
+            "p99_ns": 278559
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 137123.3662,
+            "stddev_ns": 118556.23962564995,
+            "min_ns": 86140,
+            "max_ns": 6526424,
+            "repetition_mean_ns": [
+              120815.73,
+              121558.719,
+              120384.627,
+              143594.7,
+              179263.055
+            ],
+            "repetition_mean_stddev_ns": 25524.567401865515,
+            "repetition_mean_range_ns": [
+              120384.627,
+              179263.055
+            ],
+            "samples": 5000,
+            "p50_ns": 105629,
+            "p95_ns": 230858,
+            "p99_ns": 349466
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "bulk-64k",
+          "payload_bytes": 65536,
+          "width": 1,
+          "rpcs_per_iteration": 1
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 194079.4388,
+            "stddev_ns": 61235.876909504856,
+            "min_ns": 122204,
+            "max_ns": 1880371,
+            "repetition_mean_ns": [
+              151497.882,
+              207631.503,
+              210047.444,
+              201416.502,
+              199803.863
+            ],
+            "repetition_mean_stddev_ns": 24178.638001767766,
+            "repetition_mean_range_ns": [
+              151497.882,
+              210047.444
+            ],
+            "samples": 5000,
+            "p50_ns": 193775,
+            "p95_ns": 247096,
+            "p99_ns": 349812
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 172830.438,
+            "stddev_ns": 55618.739001992755,
+            "min_ns": 108836,
+            "max_ns": 2057443,
+            "repetition_mean_ns": [
+              178868.689,
+              187048.352,
+              184202.312,
+              177162.611,
+              136870.226
+            ],
+            "repetition_mean_stddev_ns": 20492.886826342616,
+            "repetition_mean_range_ns": [
+              136870.226,
+              187048.352
+            ],
+            "samples": 5000,
+            "p50_ns": 173043,
+            "p95_ns": 223860,
+            "p99_ns": 349301
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 195083.8726,
+            "stddev_ns": 69657.77035022297,
+            "min_ns": 124079,
+            "max_ns": 2379778,
+            "repetition_mean_ns": [
+              218446.97,
+              176699.836,
+              209222.905,
+              222075.782,
+              148973.87
+            ],
+            "repetition_mean_stddev_ns": 31378.395720105305,
+            "repetition_mean_range_ns": [
+              148973.87,
+              222075.782
+            ],
+            "samples": 5000,
+            "p50_ns": 196599,
+            "p95_ns": 277331,
+            "p99_ns": 413709
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "bulk-256k",
+          "payload_bytes": 262144,
+          "width": 1,
+          "rpcs_per_iteration": 1
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 474736.3164,
+            "stddev_ns": 225140.51154060577,
+            "min_ns": 297639,
+            "max_ns": 3081721,
+            "repetition_mean_ns": [
+              390880.436,
+              420427.244,
+              446423.672,
+              610071.031,
+              505879.199
+            ],
+            "repetition_mean_stddev_ns": 86701.00052483423,
+            "repetition_mean_range_ns": [
+              390880.436,
+              610071.031
+            ],
+            "samples": 5000,
+            "p50_ns": 451041,
+            "p95_ns": 674008,
+            "p99_ns": 1177797
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 396730.2904,
+            "stddev_ns": 599210.7722071471,
+            "min_ns": 248228,
+            "max_ns": 28213155,
+            "repetition_mean_ns": [
+              323504.922,
+              321916.267,
+              465058.114,
+              530815.174,
+              342356.975
+            ],
+            "repetition_mean_stddev_ns": 95607.26644734909,
+            "repetition_mean_range_ns": [
+              321916.267,
+              530815.174
+            ],
+            "samples": 5000,
+            "p50_ns": 325575,
+            "p95_ns": 571763,
+            "p99_ns": 838605
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 410656.504,
+            "stddev_ns": 456235.088641345,
+            "min_ns": 284589,
+            "max_ns": 28119293,
+            "repetition_mean_ns": [
+              355997.556,
+              353065.846,
+              392708.828,
+              609492.628,
+              342017.662
+            ],
+            "repetition_mean_stddev_ns": 112775.77133141785,
+            "repetition_mean_range_ns": [
+              342017.662,
+              609492.628
+            ],
+            "samples": 5000,
+            "p50_ns": 323622,
+            "p95_ns": 627477,
+            "p99_ns": 989693
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "bulk-1m",
+          "payload_bytes": 1048576,
+          "width": 1,
+          "rpcs_per_iteration": 1
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 1382690.2114,
+            "stddev_ns": 402555.2589881008,
+            "min_ns": 1105866,
+            "max_ns": 11248816,
+            "repetition_mean_ns": [
+              1330057.104,
+              1368946.164,
+              1310609.222,
+              1391350.111,
+              1512488.456
+            ],
+            "repetition_mean_stddev_ns": 79179.21133214164,
+            "repetition_mean_range_ns": [
+              1310609.222,
+              1512488.456
+            ],
+            "samples": 5000,
+            "p50_ns": 1275233,
+            "p95_ns": 1708995,
+            "p99_ns": 3494433
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 1614855.061,
+            "stddev_ns": 2961472.344239778,
+            "min_ns": 957350,
+            "max_ns": 34253502,
+            "repetition_mean_ns": [
+              1753188.549,
+              1552565.329,
+              1876410.743,
+              1324032.708,
+              1568077.976
+            ],
+            "repetition_mean_stddev_ns": 211064.72709036258,
+            "repetition_mean_range_ns": [
+              1324032.708,
+              1876410.743
+            ],
+            "samples": 5000,
+            "p50_ns": 1209339,
+            "p95_ns": 2167601,
+            "p99_ns": 28578091
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 1550224.6458,
+            "stddev_ns": 1593382.0637540184,
+            "min_ns": 1015318,
+            "max_ns": 35881617,
+            "repetition_mean_ns": [
+              2067738.916,
+              1422597.72,
+              1280939.377,
+              1376183.255,
+              1603663.961
+            ],
+            "repetition_mean_stddev_ns": 312157.96248178935,
+            "repetition_mean_range_ns": [
+              1280939.377,
+              2067738.916
+            ],
+            "samples": 5000,
+            "p50_ns": 1296786,
+            "p95_ns": 2305199,
+            "p99_ns": 3485982
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "workflow",
+          "name": "bulk-4m",
+          "payload_bytes": 4194304,
+          "width": 1,
+          "rpcs_per_iteration": 1
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 6111335.8008,
+            "stddev_ns": 1082674.5600154975,
+            "min_ns": 4765578,
+            "max_ns": 22401130,
+            "repetition_mean_ns": [
+              5956656.772,
+              6522539.635,
+              5836868.811,
+              6121785.604,
+              6118828.182
+            ],
+            "repetition_mean_stddev_ns": 259090.552637553,
+            "repetition_mean_range_ns": [
+              5836868.811,
+              6522539.635
+            ],
+            "samples": 5000,
+            "p50_ns": 5836216,
+            "p95_ns": 7790420,
+            "p99_ns": 10292378
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 6097084.0814,
+            "stddev_ns": 4073204.310299367,
+            "min_ns": 4278565,
+            "max_ns": 67145959,
+            "repetition_mean_ns": [
+              5831648.701,
+              5788979.579,
+              6485382.214,
+              6204407.016,
+              6175002.897
+            ],
+            "repetition_mean_stddev_ns": 288855.2057102112,
+            "repetition_mean_range_ns": [
+              5788979.579,
+              6485382.214
+            ],
+            "samples": 5000,
+            "p50_ns": 5321858,
+            "p95_ns": 8561798,
+            "p99_ns": 32854455
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 6717291.7392,
+            "stddev_ns": 4070443.1147201103,
+            "min_ns": 4696170,
+            "max_ns": 62183110,
+            "repetition_mean_ns": [
+              6269136.346,
+              6792364.573,
+              6621773.868,
+              7344663.456,
+              6558520.453
+            ],
+            "repetition_mean_stddev_ns": 398248.1773058638,
+            "repetition_mean_range_ns": [
+              6269136.346,
+              7344663.456
+            ],
+            "samples": 5000,
+            "p50_ns": 5885682,
+            "p95_ns": 9321379,
+            "p99_ns": 33508437
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "deep-8",
+          "depth": 8,
+          "width": 1,
+          "connections": 1,
+          "hops": 1,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 62346.8292,
+            "stddev_ns": 24760.79532146368,
+            "min_ns": 30676,
+            "max_ns": 532721,
+            "repetition_mean_ns": [
+              79839.774,
+              75959.091,
+              52048.694,
+              52294.396,
+              51592.191
+            ],
+            "repetition_mean_stddev_ns": 14265.886177682994,
+            "repetition_mean_range_ns": [
+              51592.191,
+              79839.774
+            ],
+            "samples": 5000,
+            "p50_ns": 52499,
+            "p95_ns": 101543,
+            "p99_ns": 135895
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 48464.4534,
+            "stddev_ns": 47307.30100565362,
+            "min_ns": 32689,
+            "max_ns": 2548302,
+            "repetition_mean_ns": [
+              41988.723,
+              42187.235,
+              53865.424,
+              52059.443,
+              52221.442
+            ],
+            "repetition_mean_stddev_ns": 5864.041951621024,
+            "repetition_mean_range_ns": [
+              41988.723,
+              53865.424
+            ],
+            "samples": 5000,
+            "p50_ns": 43556,
+            "p95_ns": 88032,
+            "p99_ns": 165729
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 60772.9162,
+            "stddev_ns": 48085.470014665385,
+            "min_ns": 36665,
+            "max_ns": 1780577,
+            "repetition_mean_ns": [
+              50568.316,
+              67463.279,
+              62130.658,
+              63873.445,
+              59828.883
+            ],
+            "repetition_mean_stddev_ns": 6349.07000975857,
+            "repetition_mean_range_ns": [
+              50568.316,
+              67463.279
+            ],
+            "samples": 5000,
+            "p50_ns": 49495,
+            "p95_ns": 104366,
+            "p99_ns": 179630
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "deep-32",
+          "depth": 32,
+          "width": 1,
+          "connections": 1,
+          "hops": 1,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 58390.336,
+            "stddev_ns": 65730.81791144064,
+            "min_ns": 23025,
+            "max_ns": 3194994,
+            "repetition_mean_ns": [
+              67279.47,
+              60881.298,
+              58736.106,
+              54473.641,
+              50581.165
+            ],
+            "repetition_mean_stddev_ns": 6357.373736036092,
+            "repetition_mean_range_ns": [
+              50581.165,
+              67279.47
+            ],
+            "samples": 5000,
+            "p50_ns": 46851,
+            "p95_ns": 97737,
+            "p99_ns": 219009
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 47556.432,
+            "stddev_ns": 19567.456647416027,
+            "min_ns": 36025,
+            "max_ns": 345359,
+            "repetition_mean_ns": [
+              54921.192,
+              56407.21,
+              42003.764,
+              42501.05,
+              41948.944
+            ],
+            "repetition_mean_stddev_ns": 7423.087157934628,
+            "repetition_mean_range_ns": [
+              41948.944,
+              56407.21
+            ],
+            "samples": 5000,
+            "p50_ns": 40941,
+            "p95_ns": 69715,
+            "p99_ns": 137367
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 76079.4844,
+            "stddev_ns": 277691.9770858455,
+            "min_ns": 38498,
+            "max_ns": 13216394,
+            "repetition_mean_ns": [
+              76214.193,
+              90402.974,
+              110912.1,
+              50555.786,
+              52312.369
+            ],
+            "repetition_mean_stddev_ns": 25665.280851359614,
+            "repetition_mean_range_ns": [
+              50555.786,
+              110912.1
+            ],
+            "samples": 5000,
+            "p50_ns": 53200,
+            "p95_ns": 120040,
+            "p99_ns": 221984
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "concurrent-32",
+          "depth": 1,
+          "width": 32,
+          "connections": 1,
+          "hops": 1,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 133783.062,
+            "stddev_ns": 38773.67243136145,
+            "min_ns": 108373,
+            "max_ns": 734445,
+            "repetition_mean_ns": [
+              131147.595,
+              157625.619,
+              140247.572,
+              120022.911,
+              119871.613
+            ],
+            "repetition_mean_stddev_ns": 15811.967532290537,
+            "repetition_mean_range_ns": [
+              119871.613,
+              157625.619
+            ],
+            "samples": 5000,
+            "p50_ns": 113851,
+            "p95_ns": 209685,
+            "p99_ns": 261904
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 157763.6542,
+            "stddev_ns": 63180.77207441997,
+            "min_ns": 125829,
+            "max_ns": 2238897,
+            "repetition_mean_ns": [
+              161651.393,
+              179865.823,
+              136386.073,
+              138616.913,
+              172298.069
+            ],
+            "repetition_mean_stddev_ns": 19611.65641118534,
+            "repetition_mean_range_ns": [
+              136386.073,
+              179865.823
+            ],
+            "samples": 5000,
+            "p50_ns": 135263,
+            "p95_ns": 241673,
+            "p99_ns": 318619
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 166898.0228,
+            "stddev_ns": 49847.25889315994,
+            "min_ns": 131638,
+            "max_ns": 974245,
+            "repetition_mean_ns": [
+              188933.995,
+              147716.504,
+              181245.053,
+              166505.101,
+              150089.461
+            ],
+            "repetition_mean_stddev_ns": 18316.892116015297,
+            "repetition_mean_range_ns": [
+              147716.504,
+              188933.995
+            ],
+            "samples": 5000,
+            "p50_ns": 140081,
+            "p95_ns": 250958,
+            "p99_ns": 329976
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "deep-32-concurrent-32",
+          "depth": 32,
+          "width": 32,
+          "connections": 1,
+          "hops": 1,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 352405.1126,
+            "stddev_ns": 78278.71532900265,
+            "min_ns": 293692,
+            "max_ns": 2017494,
+            "repetition_mean_ns": [
+              374050.189,
+              354816.93,
+              387109.057,
+              323467.246,
+              322582.141
+            ],
+            "repetition_mean_stddev_ns": 29178.329762277655,
+            "repetition_mean_range_ns": [
+              322582.141,
+              387109.057
+            ],
+            "samples": 5000,
+            "p50_ns": 320603,
+            "p95_ns": 516837,
+            "p99_ns": 566852
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 408674.596,
+            "stddev_ns": 115240.73271931033,
+            "min_ns": 310057,
+            "max_ns": 3126287,
+            "repetition_mean_ns": [
+              377145.346,
+              392592.891,
+              414799.814,
+              411341.022,
+              447493.907
+            ],
+            "repetition_mean_stddev_ns": 26477.735321139367,
+            "repetition_mean_range_ns": [
+              377145.346,
+              447493.907
+            ],
+            "samples": 5000,
+            "p50_ns": 398198,
+            "p95_ns": 528224,
+            "p99_ns": 682877
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 419632.807,
+            "stddev_ns": 326052.81406657095,
+            "min_ns": 325149,
+            "max_ns": 16716222,
+            "repetition_mean_ns": [
+              378739.568,
+              516115.543,
+              376684.906,
+              430583.735,
+              396040.283
+            ],
+            "repetition_mean_stddev_ns": 58099.54293067712,
+            "repetition_mean_range_ns": [
+              376684.906,
+              516115.543
+            ],
+            "samples": 5000,
+            "p50_ns": 372059,
+            "p95_ns": 569026,
+            "p99_ns": 660744
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "services-4-deep-16",
+          "depth": 16,
+          "width": 1,
+          "connections": 1,
+          "hops": 4,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 454454.237,
+            "stddev_ns": 250681.1641067418,
+            "min_ns": 185097,
+            "max_ns": 7769424,
+            "repetition_mean_ns": [
+              554741.815,
+              377583.312,
+              503531.959,
+              441199.242,
+              395214.857
+            ],
+            "repetition_mean_stddev_ns": 74263.65067010476,
+            "repetition_mean_range_ns": [
+              377583.312,
+              554741.815
+            ],
+            "samples": 5000,
+            "p50_ns": 427302,
+            "p95_ns": 707980,
+            "p99_ns": 1137637
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 348070.8754,
+            "stddev_ns": 134499.03192271944,
+            "min_ns": 153771,
+            "max_ns": 2619961,
+            "repetition_mean_ns": [
+              399064.875,
+              341550.792,
+              351244.587,
+              315937.231,
+              332556.892
+            ],
+            "repetition_mean_stddev_ns": 31329.804944448886,
+            "repetition_mean_range_ns": [
+              315937.231,
+              399064.875
+            ],
+            "samples": 5000,
+            "p50_ns": 336415,
+            "p95_ns": 519269,
+            "p99_ns": 773756
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 464009.0436,
+            "stddev_ns": 180243.86582525584,
+            "min_ns": 229114,
+            "max_ns": 4311715,
+            "repetition_mean_ns": [
+              467478.196,
+              423156.555,
+              451702.237,
+              454904.858,
+              522803.372
+            ],
+            "repetition_mean_stddev_ns": 36647.229019816936,
+            "repetition_mean_range_ns": [
+              423156.555,
+              522803.372
+            ],
+            "samples": 5000,
+            "p50_ns": 439599,
+            "p95_ns": 677607,
+            "p99_ns": 1062904
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "services-4-deep-16-concurrent-32",
+          "depth": 16,
+          "width": 32,
+          "connections": 1,
+          "hops": 4,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 1646867.8294,
+            "stddev_ns": 435243.08199521794,
+            "min_ns": 975858,
+            "max_ns": 9427263,
+            "repetition_mean_ns": [
+              1627543.952,
+              1603065.566,
+              1559626.587,
+              1818496.316,
+              1625606.726
+            ],
+            "repetition_mean_stddev_ns": 99764.04264891817,
+            "repetition_mean_range_ns": [
+              1559626.587,
+              1818496.316
+            ],
+            "samples": 5000,
+            "p50_ns": 1564668,
+            "p95_ns": 2066628,
+            "p99_ns": 3519029
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 1774453.574,
+            "stddev_ns": 349132.02195966104,
+            "min_ns": 1074247,
+            "max_ns": 14389288,
+            "repetition_mean_ns": [
+              1848576.541,
+              1815905.113,
+              1748330.496,
+              1717935.275,
+              1741520.445
+            ],
+            "repetition_mean_stddev_ns": 55167.401230549476,
+            "repetition_mean_range_ns": [
+              1717935.275,
+              1848576.541
+            ],
+            "samples": 5000,
+            "p50_ns": 1719480,
+            "p95_ns": 2063056,
+            "p99_ns": 2925761
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 1908646.8372,
+            "stddev_ns": 416044.88725158916,
+            "min_ns": 1223084,
+            "max_ns": 14979118,
+            "repetition_mean_ns": [
+              1960853.074,
+              1833108.686,
+              2012070.034,
+              1807168.318,
+              1930034.074
+            ],
+            "repetition_mean_stddev_ns": 86433.73884199867,
+            "repetition_mean_range_ns": [
+              1807168.318,
+              2012070.034
+            ],
+            "samples": 5000,
+            "p50_ns": 1825209,
+            "p95_ns": 2408437,
+            "p99_ns": 3538862
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "services-4-deep-16-clients-8",
+          "depth": 16,
+          "width": 32,
+          "connections": 8,
+          "hops": 4,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 1394942.8738,
+            "stddev_ns": 314947.89213825506,
+            "min_ns": 855843,
+            "max_ns": 10185621,
+            "repetition_mean_ns": [
+              1371060.71,
+              1379450.189,
+              1417134.412,
+              1399419.225,
+              1407649.833
+            ],
+            "repetition_mean_stddev_ns": 19263.631082563665,
+            "repetition_mean_range_ns": [
+              1371060.71,
+              1417134.412
+            ],
+            "samples": 5000,
+            "p50_ns": 1349989,
+            "p95_ns": 1790550,
+            "p99_ns": 2354402
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 1500697.3024,
+            "stddev_ns": 320813.50832327665,
+            "min_ns": 957373,
+            "max_ns": 11328065,
+            "repetition_mean_ns": [
+              1513463.915,
+              1509291.489,
+              1509832.342,
+              1505310.676,
+              1465588.09
+            ],
+            "repetition_mean_stddev_ns": 19838.31772359461,
+            "repetition_mean_range_ns": [
+              1465588.09,
+              1513463.915
+            ],
+            "samples": 5000,
+            "p50_ns": 1469827,
+            "p95_ns": 1868138,
+            "p99_ns": 2360591
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 1488363.981,
+            "stddev_ns": 370531.8214414643,
+            "min_ns": 1002139,
+            "max_ns": 7884333,
+            "repetition_mean_ns": [
+              1615595.891,
+              1504774.514,
+              1483852.069,
+              1397693.269,
+              1439904.162
+            ],
+            "repetition_mean_stddev_ns": 82230.09476096272,
+            "repetition_mean_range_ns": [
+              1397693.269,
+              1615595.891
+            ],
+            "samples": 5000,
+            "p50_ns": 1426502,
+            "p95_ns": 2001779,
+            "p99_ns": 2820014
+          }
+        }
+      },
+      {
+        "transport": "quic",
+        "case": {
+          "family": "topology",
+          "name": "services-8-deep-16-clients-8",
+          "depth": 16,
+          "width": 32,
+          "connections": 8,
+          "hops": 8,
+          "payload_bytes_per_node": 32
+        },
+        "variants": {
+          "legacy": {
+            "statistics_version": 1,
+            "mean_ns": 2974426.169,
+            "stddev_ns": 1032194.3095125927,
+            "min_ns": 1641178,
+            "max_ns": 35563709,
+            "repetition_mean_ns": [
+              2887992.999,
+              3045932.747,
+              3148108.443,
+              3008000.078,
+              2782096.578
+            ],
+            "repetition_mean_stddev_ns": 142185.87730071644,
+            "repetition_mean_range_ns": [
+              2782096.578,
+              3148108.443
+            ],
+            "samples": 5000,
+            "p50_ns": 2815034,
+            "p95_ns": 4017012,
+            "p99_ns": 5773307
+          },
+          "portable": {
+            "statistics_version": 1,
+            "mean_ns": 3229716.4372,
+            "stddev_ns": 620132.719760438,
+            "min_ns": 1868742,
+            "max_ns": 15372458,
+            "repetition_mean_ns": [
+              3228315.605,
+              3149709.818,
+              3357330.03,
+              3237164.776,
+              3176061.957
+            ],
+            "repetition_mean_stddev_ns": 80035.19774199711,
+            "repetition_mean_range_ns": [
+              3149709.818,
+              3357330.03
+            ],
+            "samples": 5000,
+            "p50_ns": 3189007,
+            "p95_ns": 4081120,
+            "p99_ns": 4803986
+          },
+          "portable-baseline": {
+            "statistics_version": 1,
+            "mean_ns": 3208008.3838,
+            "stddev_ns": 706631.4090546608,
+            "min_ns": 2130495,
+            "max_ns": 14507506,
+            "repetition_mean_ns": [
+              3107470.996,
+              3194423.68,
+              3408983.42,
+              3148026.477,
+              3181137.346
+            ],
+            "repetition_mean_stddev_ns": 117263.7598689228,
+            "repetition_mean_range_ns": [
+              3107470.996,
+              3408983.42
+            ],
+            "samples": 5000,
+            "p50_ns": 3038379,
+            "p95_ns": 4309993,
+            "p99_ns": 5754484
+          }
+        }
+      }
+    ],
+    "diagnostic": false,
+    "replacement_reason": {
+      "reason": "Confirmation mistakenly started before the final primary native process finished. Preserve both raw runs, exclude primary services-8-deep-16-clients-8 and this confirmation from qualified results, then repeat both sequentially.",
+      "detected_unix": 1792632057.4348364
+    },
+    "case_sources": {
+      "loopback-0": "native",
+      "loopback-64": "native",
+      "loopback-1024": "native",
+      "loopback-65536": "native",
+      "unary-empty": "native",
+      "unary-small": "native",
+      "unary-1k": "native",
+      "fanout-32": "native",
+      "dependent-read": "native",
+      "pipelined-read": "native",
+      "write-read": "native",
+      "callback": "native",
+      "bulk-64k": "native",
+      "bulk-256k": "native",
+      "bulk-1m": "native",
+      "bulk-4m": "native",
+      "deep-8": "native",
+      "deep-32": "native",
+      "concurrent-32": "native",
+      "deep-32-concurrent-32": "native",
+      "services-4-deep-16": "native",
+      "services-4-deep-16-concurrent-32": "native",
+      "services-4-deep-16-clients-8": "native",
+      "services-8-deep-16-clients-8": "isolated-repeat"
+    }
+  },
+  "confirmation": {
+    "transport": "quic",
+    "case": {
+      "family": "workflow",
+      "name": "bulk-1m",
+      "payload_bytes": 1048576,
+      "width": 1,
+      "rpcs_per_iteration": 1
+    },
+    "variants": {
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 1558137.6754,
+        "stddev_ns": 859675.689659701,
+        "min_ns": 1114038,
+        "max_ns": 41218762,
+        "repetition_mean_ns": [
+          1587475.342,
+          1499930.597,
+          1573455.101,
+          1669508.577,
+          1460318.76
+        ],
+        "repetition_mean_stddev_ns": 81325.58656049964,
+        "repetition_mean_range_ns": [
+          1460318.76,
+          1669508.577
+        ],
+        "samples": 5000,
+        "p50_ns": 1418944,
+        "p95_ns": 2416217,
+        "p99_ns": 3553865
+      },
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 1472677.2872,
+        "stddev_ns": 3091641.2765057953,
+        "min_ns": 938702,
+        "max_ns": 30072785,
+        "repetition_mean_ns": [
+          1435650.003,
+          1224537.944,
+          1569076.059,
+          1476021.974,
+          1658100.456
+        ],
+        "repetition_mean_stddev_ns": 163271.105129725,
+        "repetition_mean_range_ns": [
+          1224537.944,
+          1658100.456
+        ],
+        "samples": 5000,
+        "p50_ns": 1057741,
+        "p95_ns": 1422803,
+        "p99_ns": 28581602
+      },
+      "portable-baseline": {
+        "statistics_version": 1,
+        "mean_ns": 1496716.5478,
+        "stddev_ns": 1863566.684384303,
+        "min_ns": 1018619,
+        "max_ns": 57093422,
+        "repetition_mean_ns": [
+          1211822.11,
+          1518783.311,
+          1586809.474,
+          1735553.282,
+          1430614.562
+        ],
+        "repetition_mean_stddev_ns": 194409.9895895311,
+        "repetition_mean_range_ns": [
+          1211822.11,
+          1735553.282
+        ],
+        "samples": 5000,
+        "p50_ns": 1248381,
+        "p95_ns": 2222980,
+        "p99_ns": 3958152
+      }
+    }
+  },
+  "trace_scope": "Entire peer lifecycle, including handshake, ciphertext, shutdown, QUIC ACK/retry/control packets. Attempts include errors, would-block and unreturned calls at termination; unreturned calls are counted separately. Batched UDP returns datagrams, not bytes. No Capn Proto message count inference.",
+  "traces": [
+    {
+      "case": "loopback-0",
+      "variants": {
+        "legacy": {
+          "read_attempts": 94,
+          "write_attempts": 54,
+          "read_positive": 57,
+          "write_positive": 54,
+          "read_returned_bytes": 43539,
+          "write_returned_bytes": 43539
+        },
+        "portable": {
+          "read_attempts": 69,
+          "write_attempts": 34,
+          "read_positive": 37,
+          "write_positive": 34,
+          "read_returned_bytes": 42885,
+          "write_returned_bytes": 42885
+        },
+        "portable-baseline": {
+          "read_attempts": 99,
+          "write_attempts": 56,
+          "read_positive": 59,
+          "write_positive": 56,
+          "read_returned_bytes": 43633,
+          "write_returned_bytes": 43633
+        }
+      }
+    },
+    {
+      "case": "loopback-64",
+      "variants": {
+        "legacy": {
+          "read_attempts": 99,
+          "write_attempts": 55,
+          "read_positive": 58,
+          "write_positive": 55,
+          "read_returned_bytes": 45114,
+          "write_returned_bytes": 45114
+        },
+        "portable": {
+          "read_attempts": 68,
+          "write_attempts": 34,
+          "read_positive": 37,
+          "write_positive": 34,
+          "read_returned_bytes": 44421,
+          "write_returned_bytes": 44421
+        },
+        "portable-baseline": {
+          "read_attempts": 99,
+          "write_attempts": 56,
+          "read_positive": 59,
+          "write_positive": 56,
+          "read_returned_bytes": 45169,
+          "write_returned_bytes": 45169
+        }
+      }
+    },
+    {
+      "case": "loopback-1024",
+      "variants": {
+        "legacy": {
+          "read_attempts": 102,
+          "write_attempts": 55,
+          "read_positive": 59,
+          "write_positive": 55,
+          "read_returned_bytes": 68194,
+          "write_returned_bytes": 68194
+        },
+        "portable": {
+          "read_attempts": 72,
+          "write_attempts": 34,
+          "read_positive": 40,
+          "write_positive": 34,
+          "read_returned_bytes": 67581,
+          "write_returned_bytes": 67581
+        },
+        "portable-baseline": {
+          "read_attempts": 111,
+          "write_attempts": 56,
+          "read_positive": 62,
+          "write_positive": 56,
+          "read_returned_bytes": 68331,
+          "write_returned_bytes": 68331
+        }
+      }
+    },
+    {
+      "case": "loopback-65536",
+      "variants": {
+        "legacy": {
+          "read_attempts": 238,
+          "write_attempts": 83,
+          "read_positive": 186,
+          "write_positive": 83,
+          "read_returned_bytes": 1622239,
+          "write_returned_bytes": 1622239
+        },
+        "portable": {
+          "read_attempts": 217,
+          "write_attempts": 62,
+          "read_positive": 186,
+          "write_positive": 62,
+          "read_returned_bytes": 1622422,
+          "write_returned_bytes": 1622422
+        },
+        "portable-baseline": {
+          "read_attempts": 264,
+          "write_attempts": 86,
+          "read_positive": 210,
+          "write_positive": 86,
+          "read_returned_bytes": 1623257,
+          "write_returned_bytes": 1623257
+        }
+      }
+    },
+    {
+      "case": "unary-empty",
+      "variants": {
+        "legacy": {
+          "read_attempts": 102,
+          "write_attempts": 58,
+          "read_positive": 61,
+          "write_positive": 58,
+          "read_returned_bytes": 43963,
+          "write_returned_bytes": 43963
+        },
+        "portable": {
+          "read_attempts": 72,
+          "write_attempts": 36,
+          "read_positive": 39,
+          "write_positive": 36,
+          "read_returned_bytes": 43239,
+          "write_returned_bytes": 43239
+        },
+        "portable-baseline": {
+          "read_attempts": 105,
+          "write_attempts": 60,
+          "read_positive": 63,
+          "write_positive": 60,
+          "read_returned_bytes": 44055,
+          "write_returned_bytes": 44055
+        }
+      }
+    },
+    {
+      "case": "unary-small",
+      "variants": {
+        "legacy": {
+          "read_attempts": 104,
+          "write_attempts": 58,
+          "read_positive": 61,
+          "write_positive": 58,
+          "read_returned_bytes": 45561,
+          "write_returned_bytes": 45561
+        },
+        "portable": {
+          "read_attempts": 73,
+          "write_attempts": 36,
+          "read_positive": 39,
+          "write_positive": 36,
+          "read_returned_bytes": 44839,
+          "write_returned_bytes": 44839
+        },
+        "portable-baseline": {
+          "read_attempts": 110,
+          "write_attempts": 60,
+          "read_positive": 63,
+          "write_positive": 60,
+          "read_returned_bytes": 45655,
+          "write_returned_bytes": 45655
+        }
+      }
+    },
+    {
+      "case": "unary-1k",
+      "variants": {
+        "legacy": {
+          "read_attempts": 105,
+          "write_attempts": 58,
+          "read_positive": 62,
+          "write_positive": 58,
+          "read_returned_bytes": 69601,
+          "write_returned_bytes": 69601
+        },
+        "portable": {
+          "read_attempts": 72,
+          "write_attempts": 36,
+          "read_positive": 40,
+          "write_positive": 36,
+          "read_returned_bytes": 68879,
+          "write_returned_bytes": 68879
+        },
+        "portable-baseline": {
+          "read_attempts": 110,
+          "write_attempts": 60,
+          "read_positive": 65,
+          "write_positive": 60,
+          "read_returned_bytes": 69735,
+          "write_returned_bytes": 69735
+        }
+      }
+    },
+    {
+      "case": "fanout-32",
+      "variants": {
+        "legacy": {
+          "read_attempts": 167,
+          "write_attempts": 58,
+          "read_positive": 110,
+          "write_positive": 58,
+          "read_returned_bytes": 913871,
+          "write_returned_bytes": 913871
+        },
+        "portable": {
+          "read_attempts": 140,
+          "write_attempts": 39,
+          "read_positive": 105,
+          "write_positive": 39,
+          "read_returned_bytes": 913841,
+          "write_returned_bytes": 913841
+        },
+        "portable-baseline": {
+          "read_attempts": 187,
+          "write_attempts": 62,
+          "read_positive": 128,
+          "write_positive": 62,
+          "read_returned_bytes": 914614,
+          "write_returned_bytes": 914614
+        }
+      }
+    },
+    {
+      "case": "dependent-read",
+      "variants": {
+        "legacy": {
+          "read_attempts": 198,
+          "write_attempts": 106,
+          "read_positive": 110,
+          "write_positive": 106,
+          "read_returned_bytes": 74875,
+          "write_returned_bytes": 74875
+        },
+        "portable": {
+          "read_attempts": 123,
+          "write_attempts": 60,
+          "read_positive": 65,
+          "write_positive": 60,
+          "read_returned_bytes": 73417,
+          "write_returned_bytes": 73417
+        },
+        "portable-baseline": {
+          "read_attempts": 203,
+          "write_attempts": 108,
+          "read_positive": 113,
+          "write_positive": 108,
+          "read_returned_bytes": 75053,
+          "write_returned_bytes": 75053
+        }
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "variants": {
+        "legacy": {
+          "read_attempts": 116,
+          "write_attempts": 58,
+          "read_positive": 62,
+          "write_positive": 58,
+          "read_returned_bytes": 73363,
+          "write_returned_bytes": 73363
+        },
+        "portable": {
+          "read_attempts": 75,
+          "write_attempts": 36,
+          "read_positive": 41,
+          "write_positive": 36,
+          "read_returned_bytes": 72679,
+          "write_returned_bytes": 72679
+        },
+        "portable-baseline": {
+          "read_attempts": 124,
+          "write_attempts": 60,
+          "read_positive": 65,
+          "write_positive": 60,
+          "read_returned_bytes": 73495,
+          "write_returned_bytes": 73495
+        }
+      }
+    },
+    {
+      "case": "write-read",
+      "variants": {
+        "legacy": {
+          "read_attempts": 188,
+          "write_attempts": 106,
+          "read_positive": 110,
+          "write_positive": 106,
+          "read_returned_bytes": 73803,
+          "write_returned_bytes": 73803
+        },
+        "portable": {
+          "read_attempts": 123,
+          "write_attempts": 60,
+          "read_positive": 65,
+          "write_positive": 60,
+          "read_returned_bytes": 72303,
+          "write_returned_bytes": 72303
+        },
+        "portable-baseline": {
+          "read_attempts": 194,
+          "write_attempts": 108,
+          "read_positive": 113,
+          "write_positive": 108,
+          "read_returned_bytes": 73937,
+          "write_returned_bytes": 73937
+        }
+      }
+    },
+    {
+      "case": "callback",
+      "variants": {
+        "legacy": {
+          "read_attempts": 194,
+          "write_attempts": 106,
+          "read_positive": 109,
+          "write_positive": 106,
+          "read_returned_bytes": 50723,
+          "write_returned_bytes": 50723
+        },
+        "portable": {
+          "read_attempts": 120,
+          "write_attempts": 60,
+          "read_positive": 63,
+          "write_positive": 60,
+          "read_returned_bytes": 49183,
+          "write_returned_bytes": 49183
+        },
+        "portable-baseline": {
+          "read_attempts": 202,
+          "write_attempts": 108,
+          "read_positive": 111,
+          "write_positive": 108,
+          "read_returned_bytes": 50815,
+          "write_returned_bytes": 50815
+        }
+      }
+    },
+    {
+      "case": "bulk-64k",
+      "variants": {
+        "legacy": {
+          "read_attempts": 254,
+          "write_attempts": 88,
+          "read_positive": 194,
+          "write_positive": 88,
+          "read_returned_bytes": 1688387,
+          "write_returned_bytes": 1688387
+        },
+        "portable": {
+          "read_attempts": 226,
+          "write_attempts": 65,
+          "read_positive": 192,
+          "write_positive": 65,
+          "read_returned_bytes": 1688503,
+          "write_returned_bytes": 1688503
+        },
+        "portable-baseline": {
+          "read_attempts": 281,
+          "write_attempts": 92,
+          "read_positive": 219,
+          "write_positive": 92,
+          "read_returned_bytes": 1689444,
+          "write_returned_bytes": 1689444
+        }
+      }
+    },
+    {
+      "case": "bulk-256k",
+      "variants": {
+        "legacy": {
+          "read_attempts": 768,
+          "write_attempts": 266,
+          "read_positive": 675,
+          "write_positive": 266,
+          "read_returned_bytes": 6690964,
+          "write_returned_bytes": 6694460
+        },
+        "portable": {
+          "read_attempts": 635,
+          "write_attempts": 207,
+          "read_positive": 574,
+          "write_positive": 207,
+          "read_returned_bytes": 6676589,
+          "write_returned_bytes": 6689645
+        },
+        "portable-baseline": {
+          "read_attempts": 763,
+          "write_attempts": 267,
+          "read_positive": 667,
+          "write_positive": 267,
+          "read_returned_bytes": 6680197,
+          "write_returned_bytes": 6693293
+        }
+      }
+    },
+    {
+      "case": "bulk-1m",
+      "variants": {
+        "legacy": {
+          "read_attempts": 2318,
+          "write_attempts": 924,
+          "read_positive": 2072,
+          "write_positive": 924,
+          "read_returned_bytes": 26343363,
+          "write_returned_bytes": 27043183
+        },
+        "portable": {
+          "read_attempts": 2301,
+          "write_attempts": 874,
+          "read_positive": 2024,
+          "write_positive": 874,
+          "read_returned_bytes": 26398719,
+          "write_returned_bytes": 26904168
+        },
+        "portable-baseline": {
+          "read_attempts": 2434,
+          "write_attempts": 894,
+          "read_positive": 2153,
+          "write_positive": 894,
+          "read_returned_bytes": 26403746,
+          "write_returned_bytes": 27071103
+        }
+      }
+    },
+    {
+      "case": "bulk-4m",
+      "variants": {
+        "legacy": {
+          "read_attempts": 8717,
+          "write_attempts": 3256,
+          "read_positive": 7797,
+          "write_positive": 3256,
+          "read_returned_bytes": 105227786,
+          "write_returned_bytes": 107354356
+        },
+        "portable": {
+          "read_attempts": 8442,
+          "write_attempts": 3228,
+          "read_positive": 7498,
+          "write_positive": 3228,
+          "read_returned_bytes": 105274158,
+          "write_returned_bytes": 107505225
+        },
+        "portable-baseline": {
+          "read_attempts": 8595,
+          "write_attempts": 3193,
+          "read_positive": 7710,
+          "write_positive": 3193,
+          "read_returned_bytes": 105281009,
+          "write_returned_bytes": 107469687
+        }
+      }
+    },
+    {
+      "case": "deep-8",
+      "variants": {
+        "legacy": {
+          "read_attempts": 97,
+          "write_attempts": 58,
+          "read_positive": 61,
+          "write_positive": 58,
+          "read_returned_bytes": 54835,
+          "write_returned_bytes": 54835
+        },
+        "portable": {
+          "read_attempts": 72,
+          "write_attempts": 36,
+          "read_positive": 39,
+          "write_positive": 36,
+          "read_returned_bytes": 54111,
+          "write_returned_bytes": 54111
+        },
+        "portable-baseline": {
+          "read_attempts": 100,
+          "write_attempts": 60,
+          "read_positive": 63,
+          "write_positive": 60,
+          "read_returned_bytes": 54927,
+          "write_returned_bytes": 54927
+        }
+      }
+    },
+    {
+      "case": "deep-32",
+      "variants": {
+        "legacy": {
+          "read_attempts": 106,
+          "write_attempts": 58,
+          "read_positive": 61,
+          "write_positive": 58,
+          "read_returned_bytes": 87101,
+          "write_returned_bytes": 87101
+        },
+        "portable": {
+          "read_attempts": 73,
+          "write_attempts": 36,
+          "read_positive": 40,
+          "write_positive": 36,
+          "read_returned_bytes": 86419,
+          "write_returned_bytes": 86419
+        },
+        "portable-baseline": {
+          "read_attempts": 106,
+          "write_attempts": 60,
+          "read_positive": 64,
+          "write_positive": 60,
+          "read_returned_bytes": 87235,
+          "write_returned_bytes": 87235
+        }
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "variants": {
+        "legacy": {
+          "read_attempts": 115,
+          "write_attempts": 58,
+          "read_positive": 61,
+          "write_positive": 58,
+          "read_returned_bytes": 173429,
+          "write_returned_bytes": 173429
+        },
+        "portable": {
+          "read_attempts": 74,
+          "write_attempts": 35,
+          "read_positive": 43,
+          "write_positive": 35,
+          "read_returned_bytes": 172866,
+          "write_returned_bytes": 172866
+        },
+        "portable-baseline": {
+          "read_attempts": 126,
+          "write_attempts": 60,
+          "read_positive": 68,
+          "write_positive": 60,
+          "read_returned_bytes": 173723,
+          "write_returned_bytes": 173723
+        }
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "variants": {
+        "legacy": {
+          "read_attempts": 193,
+          "write_attempts": 60,
+          "read_positive": 135,
+          "write_positive": 60,
+          "read_returned_bytes": 1509807,
+          "write_returned_bytes": 1509807
+        },
+        "portable": {
+          "read_attempts": 144,
+          "write_attempts": 36,
+          "read_positive": 111,
+          "write_positive": 36,
+          "read_returned_bytes": 1509003,
+          "write_returned_bytes": 1509003
+        },
+        "portable-baseline": {
+          "read_attempts": 214,
+          "write_attempts": 64,
+          "read_positive": 153,
+          "write_positive": 64,
+          "read_returned_bytes": 1510547,
+          "write_returned_bytes": 1510547
+        }
+      }
+    },
+    {
+      "case": "services-4-deep-16",
+      "variants": {
+        "legacy": {
+          "read_attempts": 463,
+          "write_attempts": 240,
+          "read_positive": 252,
+          "write_positive": 240,
+          "read_returned_bytes": 262655,
+          "write_returned_bytes": 262655
+        },
+        "portable": {
+          "read_attempts": 435,
+          "write_attempts": 216,
+          "read_positive": 228,
+          "write_positive": 216,
+          "read_returned_bytes": 261871,
+          "write_returned_bytes": 261871
+        },
+        "portable-baseline": {
+          "read_attempts": 475,
+          "write_attempts": 243,
+          "read_positive": 255,
+          "write_positive": 243,
+          "read_returned_bytes": 262788,
+          "write_returned_bytes": 262788
+        }
+      }
+    },
+    {
+      "case": "services-4-deep-16-concurrent-32",
+      "variants": {
+        "legacy": {
+          "read_attempts": 626,
+          "write_attempts": 239,
+          "read_positive": 395,
+          "write_positive": 239,
+          "read_returned_bytes": 3280564,
+          "write_returned_bytes": 3280564
+        },
+        "portable": {
+          "read_attempts": 594,
+          "write_attempts": 217,
+          "read_positive": 386,
+          "write_positive": 217,
+          "read_returned_bytes": 3280374,
+          "write_returned_bytes": 3280374
+        },
+        "portable-baseline": {
+          "read_attempts": 646,
+          "write_attempts": 244,
+          "read_positive": 413,
+          "write_positive": 244,
+          "read_returned_bytes": 3281300,
+          "write_returned_bytes": 3281300
+        }
+      }
+    },
+    {
+      "case": "services-4-deep-16-clients-8",
+      "variants": {
+        "legacy": {
+          "read_attempts": 1666,
+          "write_attempts": 872,
+          "read_positive": 968,
+          "write_positive": 872,
+          "read_returned_bytes": 3575656,
+          "write_returned_bytes": 3575656
+        },
+        "portable": {
+          "read_attempts": 1583,
+          "write_attempts": 814,
+          "read_positive": 905,
+          "write_positive": 814,
+          "read_returned_bytes": 3573806,
+          "write_returned_bytes": 3573806
+        },
+        "portable-baseline": {
+          "read_attempts": 1618,
+          "write_attempts": 833,
+          "read_positive": 941,
+          "write_positive": 833,
+          "read_returned_bytes": 3574667,
+          "write_returned_bytes": 3574667
+        }
+      }
+    },
+    {
+      "case": "services-8-deep-16-clients-8",
+      "variants": {
+        "legacy": {
+          "read_attempts": 2456,
+          "write_attempts": 1205,
+          "read_positive": 1423,
+          "write_positive": 1205,
+          "read_returned_bytes": 6858552,
+          "write_returned_bytes": 6858552
+        },
+        "portable": {
+          "read_attempts": 2814,
+          "write_attempts": 1387,
+          "read_positive": 1582,
+          "write_positive": 1387,
+          "read_returned_bytes": 6865753,
+          "write_returned_bytes": 6865753
+        },
+        "portable-baseline": {
+          "read_attempts": 2729,
+          "write_attempts": 1341,
+          "read_positive": 1550,
+          "write_positive": 1341,
+          "read_returned_bytes": 6863854,
+          "write_returned_bytes": 6863854
+        }
+      }
+    }
+  ],
+  "profiles": {
+    "scope": "Callgrind simulated counters, entire two-peer lifecycle, 10 warmups and 100 operations. Not hardware PMU or native timing.",
+    "rows": [
+      {
+        "case": "unary-small",
+        "engine": "legacy",
+        "profiles": {
+          "before": {
+            "peers": {
+              "client": {
+                "Ir": 14537872,
+                "Dr": 3326473,
+                "Dw": 2378135,
+                "I1mr": 530018,
+                "D1mr": 80159,
+                "D1mw": 68410,
+                "ILmr": 12087,
+                "DLmr": 14426,
+                "DLmw": 12097,
+                "Bc": 1906926,
+                "Bcm": 117280,
+                "Bi": 76473,
+                "Bim": 23973
+              },
+              "service-0": {
+                "Ir": 12149985,
+                "Dr": 2916091,
+                "Dw": 2054647,
+                "I1mr": 521057,
+                "D1mr": 73653,
+                "D1mw": 48147,
+                "ILmr": 10765,
+                "DLmr": 16796,
+                "DLmw": 10879,
+                "Bc": 1708925,
+                "Bcm": 107792,
+                "Bi": 72568,
+                "Bim": 21497
+              }
+            },
+            "total": {
+              "Ir": 26687857,
+              "Bcm": 225072,
+              "Bim": 45470
+            }
+          },
+          "direct": {
+            "peers": {
+              "client": {
+                "Ir": 14942378,
+                "Dr": 3441514,
+                "Dw": 2459852,
+                "I1mr": 545305,
+                "D1mr": 75862,
+                "D1mw": 63577,
+                "ILmr": 12060,
+                "DLmr": 14424,
+                "DLmw": 12098,
+                "Bc": 1963436,
+                "Bcm": 114772,
+                "Bi": 80531,
+                "Bim": 24050
+              },
+              "service-0": {
+                "Ir": 12518129,
+                "Dr": 3035832,
+                "Dw": 2082809,
+                "I1mr": 537539,
+                "D1mr": 69558,
+                "D1mw": 42227,
+                "ILmr": 10592,
+                "DLmr": 16798,
+                "DLmw": 10201,
+                "Bc": 1716324,
+                "Bcm": 102149,
+                "Bi": 76883,
+                "Bim": 22462
+              }
+            },
+            "total": {
+              "Ir": 27460507,
+              "Bcm": 216921,
+              "Bim": 46512
+            }
+          },
+          "coalesced": {
+            "peers": {
+              "client": {
+                "Ir": 12700726,
+                "Dr": 2816710,
+                "Dw": 2030664,
+                "I1mr": 364081,
+                "D1mr": 72882,
+                "D1mw": 58424,
+                "ILmr": 12021,
+                "DLmr": 14423,
+                "DLmw": 12101,
+                "Bc": 1653957,
+                "Bcm": 91327,
+                "Bi": 60993,
+                "Bim": 20813
+              },
+              "service-0": {
+                "Ir": 10514483,
+                "Dr": 2467547,
+                "Dw": 1701418,
+                "I1mr": 367348,
+                "D1mr": 66689,
+                "D1mw": 40072,
+                "ILmr": 10709,
+                "DLmr": 16799,
+                "DLmw": 10210,
+                "Bc": 1442546,
+                "Bcm": 80392,
+                "Bi": 57407,
+                "Bim": 20569
+              }
+            },
+            "total": {
+              "Ir": 23215209,
+              "Bcm": 171719,
+              "Bim": 41382
+            }
+          }
+        }
+      },
+      {
+        "case": "unary-small",
+        "engine": "portable",
+        "profiles": {
+          "before": {
+            "peers": {
+              "client": {
+                "Ir": 14694480,
+                "Dr": 3410791,
+                "Dw": 2491844,
+                "I1mr": 572096,
+                "D1mr": 83655,
+                "D1mw": 73702,
+                "ILmr": 14938,
+                "DLmr": 14466,
+                "DLmw": 12906,
+                "Bc": 2031605,
+                "Bcm": 121901,
+                "Bi": 72046,
+                "Bim": 20796
+              },
+              "service-0": {
+                "Ir": 12504778,
+                "Dr": 3041581,
+                "Dw": 2146864,
+                "I1mr": 563664,
+                "D1mr": 85753,
+                "D1mw": 60935,
+                "ILmr": 14138,
+                "DLmr": 16843,
+                "DLmw": 10537,
+                "Bc": 1808133,
+                "Bcm": 115091,
+                "Bi": 69122,
+                "Bim": 19873
+              }
+            },
+            "total": {
+              "Ir": 27199258,
+              "Bcm": 236992,
+              "Bim": 40669
+            }
+          },
+          "direct": {
+            "peers": {
+              "client": {
+                "Ir": 14682940,
+                "Dr": 3402233,
+                "Dw": 2493963,
+                "I1mr": 569409,
+                "D1mr": 82178,
+                "D1mw": 69716,
+                "ILmr": 14916,
+                "DLmr": 14469,
+                "DLmw": 12885,
+                "Bc": 2023421,
+                "Bcm": 114246,
+                "Bi": 71959,
+                "Bim": 20694
+              },
+              "service-0": {
+                "Ir": 12504557,
+                "Dr": 3035821,
+                "Dw": 2149275,
+                "I1mr": 561537,
+                "D1mr": 80735,
+                "D1mw": 56243,
+                "ILmr": 13930,
+                "DLmr": 16843,
+                "DLmw": 10492,
+                "Bc": 1802515,
+                "Bcm": 109903,
+                "Bi": 69080,
+                "Bim": 20148
+              }
+            },
+            "total": {
+              "Ir": 27187497,
+              "Bcm": 224149,
+              "Bim": 40842
+            }
+          },
+          "coalesced": {
+            "peers": {
+              "client": {
+                "Ir": 12955188,
+                "Dr": 2918668,
+                "Dw": 2162337,
+                "I1mr": 424531,
+                "D1mr": 78876,
+                "D1mw": 66595,
+                "ILmr": 14894,
+                "DLmr": 14470,
+                "DLmw": 12889,
+                "Bc": 1790429,
+                "Bcm": 95680,
+                "Bi": 57518,
+                "Bim": 17479
+              },
+              "service-0": {
+                "Ir": 10719349,
+                "Dr": 2542564,
+                "Dw": 1811521,
+                "I1mr": 415610,
+                "D1mr": 77072,
+                "D1mw": 53705,
+                "ILmr": 14014,
+                "DLmr": 16846,
+                "DLmw": 10498,
+                "Bc": 1559228,
+                "Bcm": 89207,
+                "Bi": 53844,
+                "Bim": 16955
+              }
+            },
+            "total": {
+              "Ir": 23674537,
+              "Bcm": 184887,
+              "Bim": 34434
+            }
+          }
+        }
+      },
+      {
+        "case": "pipelined-read",
+        "engine": "legacy",
+        "profiles": {
+          "before": {
+            "peers": {
+              "client": {
+                "Ir": 17533040,
+                "Dr": 4061089,
+                "Dw": 2939478,
+                "I1mr": 621130,
+                "D1mr": 102062,
+                "D1mw": 98939,
+                "ILmr": 12100,
+                "DLmr": 14422,
+                "DLmw": 12246,
+                "Bc": 2249935,
+                "Bcm": 165213,
+                "Bi": 98391,
+                "Bim": 31144
+              },
+              "service-0": {
+                "Ir": 16746264,
+                "Dr": 4112115,
+                "Dw": 2987790,
+                "I1mr": 715593,
+                "D1mr": 112738,
+                "D1mw": 90949,
+                "ILmr": 11169,
+                "DLmr": 16802,
+                "DLmw": 11134,
+                "Bc": 2272593,
+                "Bcm": 178648,
+                "Bi": 115413,
+                "Bim": 45659
+              }
+            },
+            "total": {
+              "Ir": 34279304,
+              "Bcm": 343861,
+              "Bim": 76803
+            }
+          },
+          "direct": {
+            "peers": {
+              "client": {
+                "Ir": 18471668,
+                "Dr": 4332079,
+                "Dw": 3096918,
+                "I1mr": 653202,
+                "D1mr": 104519,
+                "D1mw": 86845,
+                "ILmr": 12088,
+                "DLmr": 14421,
+                "DLmw": 12116,
+                "Bc": 2416872,
+                "Bcm": 167869,
+                "Bi": 104706,
+                "Bim": 32754
+              },
+              "service-0": {
+                "Ir": 17323153,
+                "Dr": 4287684,
+                "Dw": 3040628,
+                "I1mr": 745081,
+                "D1mr": 109514,
+                "D1mw": 74306,
+                "ILmr": 10986,
+                "DLmr": 16804,
+                "DLmw": 10121,
+                "Bc": 2324866,
+                "Bcm": 181593,
+                "Bi": 120766,
+                "Bim": 44928
+              }
+            },
+            "total": {
+              "Ir": 35794821,
+              "Bcm": 349462,
+              "Bim": 77682
+            }
+          },
+          "coalesced": {
+            "peers": {
+              "client": {
+                "Ir": 16216637,
+                "Dr": 3701354,
+                "Dw": 2663764,
+                "I1mr": 456812,
+                "D1mr": 91377,
+                "D1mw": 82039,
+                "ILmr": 12034,
+                "DLmr": 14420,
+                "DLmw": 12167,
+                "Bc": 2107336,
+                "Bcm": 138230,
+                "Bi": 85026,
+                "Bim": 29174
+              },
+              "service-0": {
+                "Ir": 15078610,
+                "Dr": 3673257,
+                "Dw": 2627061,
+                "I1mr": 552933,
+                "D1mr": 101102,
+                "D1mw": 71460,
+                "ILmr": 11076,
+                "DLmr": 16806,
+                "DLmw": 10158,
+                "Bc": 2038100,
+                "Bcm": 150979,
+                "Bi": 100004,
+                "Bim": 42865
+              }
+            },
+            "total": {
+              "Ir": 31295247,
+              "Bcm": 289209,
+              "Bim": 72039
+            }
+          }
+        }
+      },
+      {
+        "case": "pipelined-read",
+        "engine": "portable",
+        "profiles": {
+          "before": {
+            "peers": {
+              "client": {
+                "Ir": 20951414,
+                "Dr": 5195715,
+                "Dw": 3732087,
+                "I1mr": 963533,
+                "D1mr": 147664,
+                "D1mw": 137455,
+                "ILmr": 15485,
+                "DLmr": 14475,
+                "DLmw": 13117,
+                "Bc": 2900625,
+                "Bcm": 269359,
+                "Bi": 119852,
+                "Bim": 49979
+              },
+              "service-0": {
+                "Ir": 17964058,
+                "Dr": 4554269,
+                "Dw": 3206846,
+                "I1mr": 913404,
+                "D1mr": 120597,
+                "D1mw": 104554,
+                "ILmr": 14263,
+                "DLmr": 16849,
+                "DLmw": 10587,
+                "Bc": 2533114,
+                "Bcm": 226615,
+                "Bi": 109808,
+                "Bim": 43246
+              }
+            },
+            "total": {
+              "Ir": 38915472,
+              "Bcm": 495974,
+              "Bim": 93225
+            }
+          },
+          "direct": {
+            "peers": {
+              "client": {
+                "Ir": 21156099,
+                "Dr": 5250111,
+                "Dw": 3759034,
+                "I1mr": 958066,
+                "D1mr": 152030,
+                "D1mw": 128982,
+                "ILmr": 15463,
+                "DLmr": 14478,
+                "DLmw": 12998,
+                "Bc": 2941145,
+                "Bcm": 271768,
+                "Bi": 120615,
+                "Bim": 47333
+              },
+              "service-0": {
+                "Ir": 18060079,
+                "Dr": 4562335,
+                "Dw": 3209840,
+                "I1mr": 900102,
+                "D1mr": 116416,
+                "D1mw": 89316,
+                "ILmr": 14083,
+                "DLmr": 16844,
+                "DLmw": 10497,
+                "Bc": 2542047,
+                "Bcm": 218689,
+                "Bi": 110230,
+                "Bim": 43521
+              }
+            },
+            "total": {
+              "Ir": 39216178,
+              "Bcm": 490457,
+              "Bim": 90854
+            }
+          },
+          "coalesced": {
+            "peers": {
+              "client": {
+                "Ir": 19425217,
+                "Dr": 4763182,
+                "Dw": 3426591,
+                "I1mr": 808648,
+                "D1mr": 141705,
+                "D1mw": 126336,
+                "ILmr": 15440,
+                "DLmr": 14477,
+                "DLmw": 12995,
+                "Bc": 2709923,
+                "Bcm": 239114,
+                "Bi": 106383,
+                "Bim": 45188
+              },
+              "service-0": {
+                "Ir": 16258809,
+                "Dr": 4070701,
+                "Dw": 2873272,
+                "I1mr": 752267,
+                "D1mr": 110827,
+                "D1mw": 87261,
+                "ILmr": 14138,
+                "DLmr": 16849,
+                "DLmw": 10504,
+                "Bc": 2306764,
+                "Bcm": 197027,
+                "Bi": 94893,
+                "Bim": 39845
+              }
+            },
+            "total": {
+              "Ir": 35684026,
+              "Bcm": 436141,
+              "Bim": 85033
+            }
+          }
+        }
+      },
+      {
+        "case": "callback",
+        "engine": "legacy",
+        "profiles": {
+          "before": {
+            "peers": {
+              "client": {
+                "Ir": 21159851,
+                "Dr": 5178803,
+                "Dw": 3685417,
+                "I1mr": 1047985,
+                "D1mr": 130804,
+                "D1mw": 105914,
+                "ILmr": 12650,
+                "DLmr": 14436,
+                "DLmw": 12095,
+                "Bc": 2802771,
+                "Bcm": 203746,
+                "Bi": 140683,
+                "Bim": 48406
+              },
+              "service-0": {
+                "Ir": 20094897,
+                "Dr": 5129956,
+                "Dw": 3619524,
+                "I1mr": 1072942,
+                "D1mr": 143344,
+                "D1mw": 86755,
+                "ILmr": 11221,
+                "DLmr": 16804,
+                "DLmw": 10921,
+                "Bc": 2807878,
+                "Bcm": 216815,
+                "Bi": 162684,
+                "Bim": 56375
+              }
+            },
+            "total": {
+              "Ir": 41254748,
+              "Bcm": 420561,
+              "Bim": 104781
+            }
+          },
+          "direct": {
+            "peers": {
+              "client": {
+                "Ir": 21984578,
+                "Dr": 5413741,
+                "Dw": 3853291,
+                "I1mr": 1085200,
+                "D1mr": 124156,
+                "D1mw": 96282,
+                "ILmr": 12621,
+                "DLmr": 14435,
+                "DLmw": 12100,
+                "Bc": 2918107,
+                "Bcm": 196672,
+                "Bi": 148902,
+                "Bim": 50254
+              },
+              "service-0": {
+                "Ir": 21167357,
+                "Dr": 5438552,
+                "Dw": 3769502,
+                "I1mr": 1124303,
+                "D1mr": 136379,
+                "D1mw": 80014,
+                "ILmr": 11084,
+                "DLmr": 16805,
+                "DLmw": 10205,
+                "Bc": 2917161,
+                "Bcm": 220825,
+                "Bi": 172550,
+                "Bim": 58339
+              }
+            },
+            "total": {
+              "Ir": 43151935,
+              "Bcm": 417497,
+              "Bim": 108593
+            }
+          },
+          "coalesced": {
+            "peers": {
+              "client": {
+                "Ir": 17674077,
+                "Dr": 4202621,
+                "Dw": 3022919,
+                "I1mr": 727518,
+                "D1mr": 114298,
+                "D1mw": 89651,
+                "ILmr": 12582,
+                "DLmr": 14433,
+                "DLmw": 12103,
+                "Bc": 2325031,
+                "Bcm": 151932,
+                "Bi": 110623,
+                "Bim": 43072
+              },
+              "service-0": {
+                "Ir": 16648132,
+                "Dr": 4197001,
+                "Dw": 2930048,
+                "I1mr": 742863,
+                "D1mr": 126796,
+                "D1mw": 72316,
+                "ILmr": 11163,
+                "DLmr": 16811,
+                "DLmw": 10209,
+                "Bc": 2295712,
+                "Bcm": 167219,
+                "Bi": 131566,
+                "Bim": 52836
+              }
+            },
+            "total": {
+              "Ir": 34322209,
+              "Bcm": 319151,
+              "Bim": 95908
+            }
+          }
+        }
+      },
+      {
+        "case": "callback",
+        "engine": "portable",
+        "profiles": {
+          "before": {
+            "peers": {
+              "client": {
+                "Ir": 23064072,
+                "Dr": 5802802,
+                "Dw": 4141878,
+                "I1mr": 1259374,
+                "D1mr": 155111,
+                "D1mw": 134610,
+                "ILmr": 15860,
+                "DLmr": 14479,
+                "DLmw": 12914,
+                "Bc": 3185433,
+                "Bcm": 250876,
+                "Bi": 147936,
+                "Bim": 50946
+              },
+              "service-0": {
+                "Ir": 21214895,
+                "Dr": 5546188,
+                "Dw": 3867342,
+                "I1mr": 1263834,
+                "D1mr": 170273,
+                "D1mw": 121257,
+                "ILmr": 15204,
+                "DLmr": 16861,
+                "DLmw": 10535,
+                "Bc": 3049134,
+                "Bcm": 262468,
+                "Bi": 151638,
+                "Bim": 52822
+              }
+            },
+            "total": {
+              "Ir": 44278967,
+              "Bcm": 513344,
+              "Bim": 103768
+            }
+          },
+          "direct": {
+            "peers": {
+              "client": {
+                "Ir": 23045460,
+                "Dr": 5786397,
+                "Dw": 4147448,
+                "I1mr": 1250880,
+                "D1mr": 151005,
+                "D1mw": 125800,
+                "ILmr": 15840,
+                "DLmr": 14483,
+                "DLmw": 12884,
+                "Bc": 3167847,
+                "Bcm": 238530,
+                "Bi": 147593,
+                "Bim": 51016
+              },
+              "service-0": {
+                "Ir": 21241742,
+                "Dr": 5555387,
+                "Dw": 3880603,
+                "I1mr": 1255790,
+                "D1mr": 162354,
+                "D1mw": 110547,
+                "ILmr": 14984,
+                "DLmr": 16860,
+                "DLmw": 10491,
+                "Bc": 3051975,
+                "Bcm": 252624,
+                "Bi": 151428,
+                "Bim": 51615
+              }
+            },
+            "total": {
+              "Ir": 44287202,
+              "Bcm": 491154,
+              "Bim": 102631
+            }
+          },
+          "coalesced": {
+            "peers": {
+              "client": {
+                "Ir": 19615210,
+                "Dr": 4826615,
+                "Dw": 3490442,
+                "I1mr": 958924,
+                "D1mr": 142301,
+                "D1mw": 121470,
+                "ILmr": 15810,
+                "DLmr": 14483,
+                "DLmw": 12892,
+                "Bc": 2707103,
+                "Bcm": 203888,
+                "Bi": 118929,
+                "Bim": 44025
+              },
+              "service-0": {
+                "Ir": 17727668,
+                "Dr": 4574450,
+                "Dw": 3210728,
+                "I1mr": 961575,
+                "D1mr": 152161,
+                "D1mw": 106628,
+                "ILmr": 15088,
+                "DLmr": 16865,
+                "DLmw": 10496,
+                "Bc": 2565778,
+                "Bcm": 210331,
+                "Bi": 121192,
+                "Bim": 48588
+              }
+            },
+            "total": {
+              "Ir": 37342878,
+              "Bcm": 414219,
+              "Bim": 92613
+            }
+          }
+        }
+      }
+    ]
+  },
+  "source": {
+    "base": "55669b793bcc82448a50d4232731f61ac642532f",
+    "tree": "fa4541f6b9ab36faff8aca0c8524b5110c53e7f6",
+    "build_tree": "746d6c9f214ddcc22da62e8711bcaf227468cee3",
+    "patch_sha256": "8cf3cf463eeb4c25ace7e3d4c8f1e1c9432ecb9fa8f707ac4a3f8239b9ce65f0",
+    "build_patch_sha256": "5b519927a1f498611fc0065690c4192c73578e365a0a86667a76fb8e558c2254",
+    "changes_after_build": [
+      "benchmarks/rpc/README.md",
+      "benchmarks/rpc/secure-runner.py",
+      "benchmarks/rpc/test_secure_runner.py"
+    ],
+    "replay_verified": true,
+    "sources": {
+      "benchmarks/rpc/README.md": "9d2ec2b8b55d5db9ef50d8879bd36850b6c2ecbb384bae5070fba2aafecc4d22",
+      "benchmarks/rpc/secure-runner.py": "ea884134510cd482b60eae55d1448e42886fecbd2069c784caf90b3ffc04c99f",
+      "benchmarks/rpc/test_secure_runner.py": "c135adec63d42d8488fdab5582fb90ef3eb3f4ff063091dabc6f55f398d341bc",
+      "docs/wiki/TCP-TLS-and-QUIC.md": "b5cc0f46232f998c2ad2c6f21534a787995ebcd8a5d00551994f64481efc6f03",
+      "quality/src/benchmark.rs": "bad6051e384f4ad58097c4deca5f38145f4fdd8a264c5d815b54eb01acde62a4",
+      "src/rpc/quic.rs": "0527fc418c6f49dea6e712f64feea9eb20958d49cf24a5149277f816f1a6c35f",
+      "src/rpc/quic/driver.rs": "b4fb1aefb005f3bab4ad35d34ba9ab5cfae6054eeca568f84f79aa14875a2419",
+      "tests/secure_rpc/quic.rs": "fbac3d5e3ba38ea6349a14e436e16396bb9f3dd45d90e9ef7cbed061e4dbdcd6"
+    }
+  },
+  "archive": {
+    "path": "/workspace/capntproto/target/portable-quic-direct-20261022.tar.xz",
+    "bytes": 56596500,
+    "sha256": "bdef9917ca7fc38f3b56e173ed064b329aa7215164739c4f44a3c67e2ba055a8",
+    "files": 7016,
+    "manifest_sha256": "6ee58e1e48fca6b1c3a31024cdcfc0c8ec33e464b6e4b3cc8105820e873830f6"
+  },
+  "validation": {
+    "secure_rpc": 19,
+    "quic_unit": 4,
+    "nonmodel_library": {
+      "passed": 199,
+      "ignored": 2,
+      "model_tests_excluded": 28
+    },
+    "quality_unit": 22,
+    "python": 7,
+    "encrypted_end_to_end": 226,
+    "strict_clippy": [
+      "quic",
+      "quality",
+      "benchmark"
+    ],
+    "format_and_diff_checks": true,
+    "formal_lane": "Not rerun. An initial broad library command failed 28 TLC tests because TLA2TOOLS_JAR was unset; the separate non-model partition passed. No model or coverage qualification claimed."
+  },
+  "baseline_archive": {
+    "path": "/workspace/capntproto/target/encrypted-rpc-20261022.tar.xz",
+    "sha256": "40da619a790fbfe08e22f55c310e2755f6adb14ac19e3af3f5a38261ad87d9ce",
+    "unchanged": true,
+    "contains_frozen_controls": true
+  },
+  "build": {
+    "candidate": "37cd2ddce0b7d0fd9ec5d5239087cc7652c378a13ac5cec835ab91e23644b06f",
+    "direct_prototype": "a20d1ced85d7a6e998ab5f1e9a26fb14f4311324cdd6bc829cda35a387253bfb",
+    "baseline": "90f86f3664704b2384dde0d329b63d05b6d5ff816475440a878b001aaaf7d1ef",
+    "command": "CARGO_NET_OFFLINE=true CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/tmp/capntproto-build-cache/bench cargo build --locked --release --manifest-path benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench",
+    "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+    "source": {
+      "base": "55669b793bcc82448a50d4232731f61ac642532f",
+      "tree": "fa4541f6b9ab36faff8aca0c8524b5110c53e7f6",
+      "build_tree": "746d6c9f214ddcc22da62e8711bcaf227468cee3",
+      "patch_sha256": "8cf3cf463eeb4c25ace7e3d4c8f1e1c9432ecb9fa8f707ac4a3f8239b9ce65f0",
+      "build_patch_sha256": "5b519927a1f498611fc0065690c4192c73578e365a0a86667a76fb8e558c2254",
+      "changes_after_build": [
+        "benchmarks/rpc/README.md",
+        "benchmarks/rpc/secure-runner.py",
+        "benchmarks/rpc/test_secure_runner.py"
+      ],
+      "replay_verified": true,
+      "sources": {
+        "benchmarks/rpc/README.md": "9d2ec2b8b55d5db9ef50d8879bd36850b6c2ecbb384bae5070fba2aafecc4d22",
+        "benchmarks/rpc/secure-runner.py": "ea884134510cd482b60eae55d1448e42886fecbd2069c784caf90b3ffc04c99f",
+        "benchmarks/rpc/test_secure_runner.py": "c135adec63d42d8488fdab5582fb90ef3eb3f4ff063091dabc6f55f398d341bc",
+        "docs/wiki/TCP-TLS-and-QUIC.md": "b5cc0f46232f998c2ad2c6f21534a787995ebcd8a5d00551994f64481efc6f03",
+        "quality/src/benchmark.rs": "bad6051e384f4ad58097c4deca5f38145f4fdd8a264c5d815b54eb01acde62a4",
+        "src/rpc/quic.rs": "0527fc418c6f49dea6e712f64feea9eb20958d49cf24a5149277f816f1a6c35f",
+        "src/rpc/quic/driver.rs": "b4fb1aefb005f3bab4ad35d34ba9ab5cfae6054eeca568f84f79aa14875a2419",
+        "tests/secure_rpc/quic.rs": "fbac3d5e3ba38ea6349a14e436e16396bb9f3dd45d90e9ef7cbed061e4dbdcd6"
+      }
+    }
+  }
+}

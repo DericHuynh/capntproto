@@ -255,3 +255,9 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-22-encrypted-transports/README.md
 !/research/reports/portable-performance/2026-10-22-encrypted-transports/report.json
 !/research/reports/portable-performance/2026-10-22-encrypted-transports/source.patch
+
+!/research/reports/portable-performance/2026-10-22-quic-streams/
+/research/reports/portable-performance/2026-10-22-quic-streams/*
+!/research/reports/portable-performance/2026-10-22-quic-streams/README.md
+!/research/reports/portable-performance/2026-10-22-quic-streams/report.json
+!/research/reports/portable-performance/2026-10-22-quic-streams/source.patch

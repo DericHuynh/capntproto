@@ -147,6 +147,14 @@ stream. `quic::listen` performs concurrent bounded setup with the same
 cancels pending setup while established streams retain their packet router.
 The endpoint also bounds its incoming queue, route count and per-route packets.
 
+Application reads and writes access Quiche's stream buffers directly on the
+`LocalSet`. There is no additional duplex byte queue or task relaying application
+data. Quiche retains flow-control and congestion backpressure. The packet task
+owns UDP transmission, recovery, pacing and bounded bursts; it wakes only parked
+operations that can make progress. Connection borrows never cross a socket or
+pacing await. Authenticated receive bytes remain drainable after the packet task
+terminates.
+
 Write shutdown queues all buffered bytes and FIN into Quiche; the receive
 direction stays open. It is local write completion, not a peer receipt or method
 completion. Applications requiring delivery confirmation must use a response or

@@ -23,6 +23,12 @@ python3 benchmarks/rpc/secure-runner.py --rust DRIVER --cpp CPP \
   --output target/secure-comparison --mixed --comparators --upstream UPSTREAM
 ```
 
+To measure a transport change against frozen controls, pass `--rust LEGACY`,
+`--portable CANDIDATE`, and `--portable-baseline PREVIOUS`. Each executable is
+used on both ends and every service hop of its cell. The baseline label still
+requires portable-engine metadata; binary hashes distinguish the two portable
+builds. Without these overrides, legacy and portable use `--rust`.
+
 `--transport tls|quic|both` defaults to both. `--comparators` adds gRPC/WSS and
 optional independent upstream Rust to their supported loopback/workflow cells.
 The runner generates a fresh private benchmark CA and seven-day localhost
