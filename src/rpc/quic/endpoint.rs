@@ -16,11 +16,17 @@ pub(super) struct Packet {
     pub bytes: Vec<u8>,
     pub from: SocketAddr,
 }
-type Routes = Rc<RefCell<HashMap<Vec<u8>, mpsc::Sender<Packet>>>>;
+#[derive(Clone)]
+enum Destination {
+    Pending(mpsc::Sender<Packet>),
+    Active(Weak<driver::State>),
+}
+type Routes = Rc<RefCell<HashMap<Vec<u8>, Destination>>>;
 /// A shared UDP endpoint. Construct and poll within a Tokio LocalSet.
 pub struct Endpoint(pub(super) Rc<Core>);
 pub(super) struct Core {
     pub socket: Rc<UdpSocket>,
+    pub local: SocketAddr,
     pub client: RefCell<Option<ClientConfig>>,
     pub server: RefCell<Option<ServerConfig>>,
     routes: Routes,
@@ -51,6 +57,7 @@ impl Endpoint {
         crate::rpc::packet_mtu::prepare(&socket)?;
         let (tx, rx) = mpsc::channel(MAX_PENDING);
         let core = Rc::new(Core {
+            local: socket.local_addr()?,
             socket: Rc::new(socket),
             client: RefCell::new(None),
             server: RefCell::new(server),
@@ -120,6 +127,21 @@ pub(super) struct Route {
     routes: Routes,
     changed: Rc<Notify>,
 }
+impl Route {
+    pub fn activate(&mut self, state: &Rc<driver::State>, local: SocketAddr) {
+        // Admission remains bounded until accept starts the session. Activation
+        // cannot race the router: neither draining nor replacing routes awaits.
+        while let Ok(mut packet) = self.packets.try_recv() {
+            state.receive(&mut packet.bytes, packet.from, local);
+        }
+        let mut routes = self.routes.borrow_mut();
+        for key in &self.keys {
+            *routes.get_mut(key).expect("registered QUIC route") =
+                Destination::Active(Rc::downgrade(state));
+        }
+        self.packets.close();
+    }
+}
 impl Drop for Route {
     fn drop(&mut self) {
         {
@@ -143,7 +165,7 @@ pub(super) fn register(core: &Core, keys: Vec<Vec<u8>>) -> io::Result<Route> {
     }
     let (sender, packets) = mpsc::channel(64);
     for key in &keys {
-        routes.insert(key.clone(), sender.clone());
+        routes.insert(key.clone(), Destination::Pending(sender.clone()));
     }
     Ok(Route {
         packets,
@@ -154,8 +176,29 @@ pub(super) fn register(core: &Core, keys: Vec<Vec<u8>>) -> io::Result<Route> {
 }
 async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<Incoming>) {
     let mut bytes = vec![0; 65535];
+    let mut received = 0;
     loop {
-        let (n, from) = match socket.recv_from(&mut bytes).await {
+        // Decryption now runs here too: bound each turn so another session,
+        // application reader or recovery timer can run under sustained ingress.
+        if received == 16 {
+            tokio::task::yield_now().await;
+            received = 0;
+        }
+        let received_packet = futures::future::poll_fn(|cx| {
+            let mut buffer = ReadBuf::new(&mut bytes);
+            match socket.poll_recv_from(cx, &mut buffer) {
+                Poll::Ready(Ok(from)) => Poll::Ready(Ok((buffer.filled().len(), from))),
+                Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+                Poll::Pending => {
+                    // A socket wait already yielded this task. Start a fresh
+                    // budget for its next burst, not the preceding flight.
+                    received = 0;
+                    Poll::Pending
+                }
+            }
+        })
+        .await;
+        let (n, from) = match received_packet {
             Ok(packet) => packet,
             Err(e)
                 if matches!(
@@ -169,18 +212,30 @@ async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<I
             }
             Err(_) => break,
         };
+        received += 1;
         let Some(core) = core.upgrade() else {
             return;
         };
         let Ok(header) = quiche::Header::from_slice(&mut bytes[..n], 16) else {
             continue;
         };
-        let sender = core.routes.borrow().get(header.dcid.as_ref()).cloned();
-        if let Some(sender) = sender {
-            let _ = sender.try_send(Packet {
-                bytes: bytes[..n].to_vec(),
-                from,
-            });
+        let destination = core.routes.borrow().get(header.dcid.as_ref()).cloned();
+        if let Some(destination) = destination {
+            match destination {
+                Destination::Pending(sender) => {
+                    let _ = sender.try_send(Packet {
+                        bytes: bytes[..n].to_vec(),
+                        from,
+                    });
+                }
+                Destination::Active(state) => {
+                    if let Some(state) = state.upgrade() {
+                        // Quiche consumes the socket buffer in place. No packet
+                        // allocation, channel hop or second scheduling turn.
+                        state.receive(&mut bytes[..n], from, core.local);
+                    }
+                }
+            }
             continue;
         }
         if !core.admitting.get()

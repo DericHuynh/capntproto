@@ -1,0 +1,329 @@
+diff --git a/src/rpc/quic/driver.rs b/src/rpc/quic/driver.rs
+index a06491a..68381eb 100644
+--- a/src/rpc/quic/driver.rs
++++ b/src/rpc/quic/driver.rs
+@@ -14,6 +14,7 @@ pub(super) struct State {
+     pub reader: RefCell<Option<std::task::Waker>>,
+     pub writer: RefCell<Option<std::task::Waker>>,
+     pub changed: Notify,
++    defer_flush: std::cell::Cell<bool>,
+ }
+ impl State {
+     pub fn error(&self) -> Option<io::Error> {
+@@ -30,6 +31,32 @@ impl State {
+                 })
+             })
+     }
++    pub fn receive(&self, bytes: &mut [u8], from: SocketAddr, local: SocketAddr) {
++        if self.closed.get() || self.failure.borrow().is_some() {
++            return;
++        }
++        let result = self
++            .conn
++            .borrow_mut()
++            .recv(bytes, quiche::RecvInfo { from, to: local });
++        match result {
++            Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
++            Err(error) => {
++                *self.failure.borrow_mut() = Some((io::ErrorKind::Other, error.to_string()));
++            }
++        }
++        // Schedule the RPC reader before its packet driver so a response can
++        // share the next flight with ACKs. All connection borrows end first.
++        let parked = self.reader.borrow().is_some();
++        let read = (parked && self.conn.borrow().stream_readable(0))
++            .then(|| self.reader.borrow_mut().take())
++            .flatten();
++        if let Some(waker) = read {
++            self.defer_flush.set(true);
++            waker.wake();
++        }
++        self.changed.notify_one();
++    }
+     fn wake(&self) {
+         // Take wakers before invoking them: a wake can schedule application work.
+         let read = self.reader.borrow_mut().take();
+@@ -48,7 +75,7 @@ struct Ready {
+ }
+ pub(super) async fn spawn(
+     core: Rc<endpoint::Core>,
+-    route: endpoint::Route,
++    mut route: endpoint::Route,
+     conn: Box<quiche::Connection>,
+     timeout: Duration,
+ ) -> io::Result<Stream> {
+@@ -63,7 +90,9 @@ pub(super) async fn spawn(
+         reader: RefCell::new(None),
+         writer: RefCell::new(None),
+         changed: Notify::new(),
++        defer_flush: false.into(),
+     });
++    route.activate(&state, core.local);
+     let mut stream = Stream {
+         state: state.clone(),
+         close: Some(close),
+@@ -114,13 +143,13 @@ async fn flush(
+ }
+ async fn run(
+     core: Rc<endpoint::Core>,
+-    mut route: endpoint::Route,
++    _route: endpoint::Route,
+     state: Rc<State>,
+     ready: oneshot::Sender<io::Result<Ready>>,
+     mut canceled: oneshot::Receiver<()>,
+ ) {
+     let mut ready = Some(ready);
+-    let result = pump(&core, &mut route, &state, &mut ready, &mut canceled).await;
++    let result = pump(&core, &state, &mut ready, &mut canceled).await;
+     {
+         let mut conn = state.conn.borrow_mut();
+         if !conn.is_closed() && !conn.is_draining() {
+@@ -147,36 +176,19 @@ async fn run(
+         })));
+     }
+ }
+-fn receive(state: &State, mut packet: endpoint::Packet, local: SocketAddr) -> io::Result<()> {
+-    match state.conn.borrow_mut().recv(
+-        &mut packet.bytes,
+-        quiche::RecvInfo {
+-            from: packet.from,
+-            to: local,
+-        },
+-    ) {
+-        Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => Ok(()),
+-        Err(e) => Err(io::Error::other(e)),
+-    }
+-}
+ async fn pump(
+     core: &endpoint::Core,
+-    route: &mut endpoint::Route,
+     state: &State,
+     ready: &mut Option<oneshot::Sender<io::Result<Ready>>>,
+     canceled: &mut oneshot::Receiver<()>,
+ ) -> io::Result<()> {
+-    let local = core.socket.local_addr()?;
+     let mut detached = false;
+     let mut batch = crate::rpc::packet_batch::Batch::new();
+     let sender = crate::rpc::packet_batch::Sender::default();
+     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
+     loop {
+-        for _ in 0..16 {
+-            let Ok(packet) = route.packets.try_recv() else {
+-                break;
+-            };
+-            receive(state, packet, local)?;
++        if let Some(error) = state.error() {
++            return Err(error);
+         }
+         {
+             let mut conn = state.conn.borrow_mut();
+@@ -228,12 +240,9 @@ async fn pump(
+                 return Ok(());
+             }
+         }
+-        let readable = state.conn.borrow().stream_readable(0);
+-        let read = readable.then(|| state.reader.borrow_mut().take()).flatten();
+-        if let Some(wake) = read {
+-            wake.wake();
+-            // Give the newly ready RPC work one turn to enqueue its response.
+-            // Quiche can then piggyback ACK/credit on application packets.
++        if state.defer_flush.replace(false) {
++            // The router already woke the reader. Preserve a deferred executor
++            // turn for the RPC work it schedules before flushing ACK/credit.
+             tokio::task::yield_now().await;
+         }
+         let exhausted = flush(&state.conn, core, &mut batch, &sender).await?;
+@@ -259,9 +268,6 @@ async fn pump(
+                     Err(error) => return Err(io::Error::other(error)),
+                 }
+             },
+-            packet = route.packets.recv() => {
+-                receive(state, packet.ok_or_else(|| io::Error::other("QUIC packet router closed"))?, local)?;
+-            }
+             _ = state.changed.notified() => (),
+             _ = tokio::time::sleep_until(deadline) => mtu_recovery.on_timeout(&mut state.conn.borrow_mut()),
+             _ = tokio::task::yield_now(), if exhausted => (),
+diff --git a/src/rpc/quic/endpoint.rs b/src/rpc/quic/endpoint.rs
+index 4b313a9..17bdc94 100644
+--- a/src/rpc/quic/endpoint.rs
++++ b/src/rpc/quic/endpoint.rs
+@@ -16,11 +16,17 @@ pub(super) struct Packet {
+     pub bytes: Vec<u8>,
+     pub from: SocketAddr,
+ }
+-type Routes = Rc<RefCell<HashMap<Vec<u8>, mpsc::Sender<Packet>>>>;
++#[derive(Clone)]
++enum Destination {
++    Pending(mpsc::Sender<Packet>),
++    Active(Weak<driver::State>),
++}
++type Routes = Rc<RefCell<HashMap<Vec<u8>, Destination>>>;
+ /// A shared UDP endpoint. Construct and poll within a Tokio LocalSet.
+ pub struct Endpoint(pub(super) Rc<Core>);
+ pub(super) struct Core {
+     pub socket: Rc<UdpSocket>,
++    pub local: SocketAddr,
+     pub client: RefCell<Option<ClientConfig>>,
+     pub server: RefCell<Option<ServerConfig>>,
+     routes: Routes,
+@@ -51,6 +57,7 @@ impl Endpoint {
+         crate::rpc::packet_mtu::prepare(&socket)?;
+         let (tx, rx) = mpsc::channel(MAX_PENDING);
+         let core = Rc::new(Core {
++            local: socket.local_addr()?,
+             socket: Rc::new(socket),
+             client: RefCell::new(None),
+             server: RefCell::new(server),
+@@ -120,6 +127,21 @@ pub(super) struct Route {
+     routes: Routes,
+     changed: Rc<Notify>,
+ }
++impl Route {
++    pub fn activate(&mut self, state: &Rc<driver::State>, local: SocketAddr) {
++        // Admission remains bounded until accept starts the session. Activation
++        // cannot race the router: neither draining nor replacing routes awaits.
++        while let Ok(mut packet) = self.packets.try_recv() {
++            state.receive(&mut packet.bytes, packet.from, local);
++        }
++        let mut routes = self.routes.borrow_mut();
++        for key in &self.keys {
++            *routes.get_mut(key).expect("registered QUIC route") =
++                Destination::Active(Rc::downgrade(state));
++        }
++        self.packets.close();
++    }
++}
+ impl Drop for Route {
+     fn drop(&mut self) {
+         {
+@@ -143,7 +165,7 @@ pub(super) fn register(core: &Core, keys: Vec<Vec<u8>>) -> io::Result<Route> {
+     }
+     let (sender, packets) = mpsc::channel(64);
+     for key in &keys {
+-        routes.insert(key.clone(), sender.clone());
++        routes.insert(key.clone(), Destination::Pending(sender.clone()));
+     }
+     Ok(Route {
+         packets,
+@@ -154,8 +176,29 @@ pub(super) fn register(core: &Core, keys: Vec<Vec<u8>>) -> io::Result<Route> {
+ }
+ async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<Incoming>) {
+     let mut bytes = vec![0; 65535];
++    let mut received = 0;
+     loop {
+-        let (n, from) = match socket.recv_from(&mut bytes).await {
++        // Decryption now runs here too: bound each turn so another session,
++        // application reader or recovery timer can run under sustained ingress.
++        if received == 16 {
++            tokio::task::yield_now().await;
++            received = 0;
++        }
++        let received_packet = futures::future::poll_fn(|cx| {
++            let mut buffer = ReadBuf::new(&mut bytes);
++            match socket.poll_recv_from(cx, &mut buffer) {
++                Poll::Ready(Ok(from)) => Poll::Ready(Ok((buffer.filled().len(), from))),
++                Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
++                Poll::Pending => {
++                    // A socket wait already yielded this task. Start a fresh
++                    // budget for its next burst, not the preceding flight.
++                    received = 0;
++                    Poll::Pending
++                }
++            }
++        })
++        .await;
++        let (n, from) = match received_packet {
+             Ok(packet) => packet,
+             Err(e)
+                 if matches!(
+@@ -169,18 +212,30 @@ async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<I
+             }
+             Err(_) => break,
+         };
++        received += 1;
+         let Some(core) = core.upgrade() else {
+             return;
+         };
+         let Ok(header) = quiche::Header::from_slice(&mut bytes[..n], 16) else {
+             continue;
+         };
+-        let sender = core.routes.borrow().get(header.dcid.as_ref()).cloned();
+-        if let Some(sender) = sender {
+-            let _ = sender.try_send(Packet {
+-                bytes: bytes[..n].to_vec(),
+-                from,
+-            });
++        let destination = core.routes.borrow().get(header.dcid.as_ref()).cloned();
++        if let Some(destination) = destination {
++            match destination {
++                Destination::Pending(sender) => {
++                    let _ = sender.try_send(Packet {
++                        bytes: bytes[..n].to_vec(),
++                        from,
++                    });
++                }
++                Destination::Active(state) => {
++                    if let Some(state) = state.upgrade() {
++                        // Quiche consumes the socket buffer in place. No packet
++                        // allocation, channel hop or second scheduling turn.
++                        state.receive(&mut bytes[..n], from, core.local);
++                    }
++                }
++            }
+             continue;
+         }
+         if !core.admitting.get()
+diff --git a/tests/secure_rpc/quic.rs b/tests/secure_rpc/quic.rs
+index 1753016..a86f688 100644
+--- a/tests/secure_rpc/quic.rs
++++ b/tests/secure_rpc/quic.rs
+@@ -360,11 +360,12 @@ async fn quic_validates_ip_subject_alternative_names() {
+ async fn stalled_reader_resumes_large_transfer_without_starving_runtime() {
+     local(async {
+         let pki = Pki::new();
+-        let server = server(&pki, false);
++        let server = std::rc::Rc::new(server(&pki, false));
+         let endpoint = client(&pki, false, Version::V1);
+         let address = server.local_addr().unwrap();
++        let sending = server.clone();
+         let task = tokio::task::spawn_local(async move {
+-            let mut stream = quic::accept(server.accept().await.unwrap(), TIMEOUT)
++            let mut stream = quic::accept(sending.accept().await.unwrap(), TIMEOUT)
+                 .await
+                 .unwrap();
+             assert_eq!(stream.read_u8().await.unwrap(), 1);
+@@ -390,6 +391,34 @@ async fn stalled_reader_resumes_large_transfer_without_starving_runtime() {
+             !task.is_finished(),
+             "receiver flow control must bound buffering"
+         );
++        // A flow-blocked session must not hold up another authenticated stream
++        // multiplexed through the same client and server UDP endpoints.
++        tokio::join!(
++            async {
++                let mut probe = quic::connect(&endpoint, address, "localhost", TIMEOUT)
++                    .await
++                    .unwrap();
++                probe.write_all(b"ping").await.unwrap();
++                probe.shutdown().await.unwrap();
++                let mut response = Vec::new();
++                probe.read_to_end(&mut response).await.unwrap();
++                assert_eq!(response, b"pong");
++            },
++            async {
++                let mut probe = quic::accept(server.accept().await.unwrap(), TIMEOUT)
++                    .await
++                    .unwrap();
++                let mut request = Vec::new();
++                probe.read_to_end(&mut request).await.unwrap();
++                assert_eq!(request, b"ping");
++                probe.write_all(b"pong").await.unwrap();
++                probe.shutdown().await.unwrap();
++            }
++        );
++        assert!(
++            !task.is_finished(),
++            "the first stream is still flow-blocked"
++        );
+         let mut received = Vec::new();
+         stream.read_to_end(&mut received).await.unwrap();
+         assert_eq!(received, vec![0x53; 3 * 1024 * 1024 + 17]);

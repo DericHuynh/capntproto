@@ -14,6 +14,7 @@ pub(super) struct State {
     pub reader: RefCell<Option<std::task::Waker>>,
     pub writer: RefCell<Option<std::task::Waker>>,
     pub changed: Notify,
+    defer_flush: std::cell::Cell<bool>,
 }
 impl State {
     pub fn error(&self) -> Option<io::Error> {
@@ -29,6 +30,32 @@ impl State {
                     )
                 })
             })
+    }
+    pub fn receive(&self, bytes: &mut [u8], from: SocketAddr, local: SocketAddr) {
+        if self.closed.get() || self.failure.borrow().is_some() {
+            return;
+        }
+        let result = self
+            .conn
+            .borrow_mut()
+            .recv(bytes, quiche::RecvInfo { from, to: local });
+        match result {
+            Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => (),
+            Err(error) => {
+                *self.failure.borrow_mut() = Some((io::ErrorKind::Other, error.to_string()));
+            }
+        }
+        // Schedule the RPC reader before its packet driver so a response can
+        // share the next flight with ACKs. All connection borrows end first.
+        let parked = self.reader.borrow().is_some();
+        let read = (parked && self.conn.borrow().stream_readable(0))
+            .then(|| self.reader.borrow_mut().take())
+            .flatten();
+        if let Some(waker) = read {
+            self.defer_flush.set(true);
+            waker.wake();
+        }
+        self.changed.notify_one();
     }
     fn wake(&self) {
         // Take wakers before invoking them: a wake can schedule application work.
@@ -48,7 +75,7 @@ struct Ready {
 }
 pub(super) async fn spawn(
     core: Rc<endpoint::Core>,
-    route: endpoint::Route,
+    mut route: endpoint::Route,
     conn: Box<quiche::Connection>,
     timeout: Duration,
 ) -> io::Result<Stream> {
@@ -63,7 +90,9 @@ pub(super) async fn spawn(
         reader: RefCell::new(None),
         writer: RefCell::new(None),
         changed: Notify::new(),
+        defer_flush: false.into(),
     });
+    route.activate(&state, core.local);
     let mut stream = Stream {
         state: state.clone(),
         close: Some(close),
@@ -114,13 +143,13 @@ async fn flush(
 }
 async fn run(
     core: Rc<endpoint::Core>,
-    mut route: endpoint::Route,
+    _route: endpoint::Route,
     state: Rc<State>,
     ready: oneshot::Sender<io::Result<Ready>>,
     mut canceled: oneshot::Receiver<()>,
 ) {
     let mut ready = Some(ready);
-    let result = pump(&core, &mut route, &state, &mut ready, &mut canceled).await;
+    let result = pump(&core, &state, &mut ready, &mut canceled).await;
     {
         let mut conn = state.conn.borrow_mut();
         if !conn.is_closed() && !conn.is_draining() {
@@ -147,36 +176,19 @@ async fn run(
         })));
     }
 }
-fn receive(state: &State, mut packet: endpoint::Packet, local: SocketAddr) -> io::Result<()> {
-    match state.conn.borrow_mut().recv(
-        &mut packet.bytes,
-        quiche::RecvInfo {
-            from: packet.from,
-            to: local,
-        },
-    ) {
-        Ok(_) | Err(quiche::Error::Done | quiche::Error::CryptoFail) => Ok(()),
-        Err(e) => Err(io::Error::other(e)),
-    }
-}
 async fn pump(
     core: &endpoint::Core,
-    route: &mut endpoint::Route,
     state: &State,
     ready: &mut Option<oneshot::Sender<io::Result<Ready>>>,
     canceled: &mut oneshot::Receiver<()>,
 ) -> io::Result<()> {
-    let local = core.socket.local_addr()?;
     let mut detached = false;
     let mut batch = crate::rpc::packet_batch::Batch::new();
     let sender = crate::rpc::packet_batch::Sender::default();
     let mut mtu_recovery = crate::rpc::packet_mtu::Recovery::default();
     loop {
-        for _ in 0..16 {
-            let Ok(packet) = route.packets.try_recv() else {
-                break;
-            };
-            receive(state, packet, local)?;
+        if let Some(error) = state.error() {
+            return Err(error);
         }
         {
             let mut conn = state.conn.borrow_mut();
@@ -228,12 +240,9 @@ async fn pump(
                 return Ok(());
             }
         }
-        let readable = state.conn.borrow().stream_readable(0);
-        let read = readable.then(|| state.reader.borrow_mut().take()).flatten();
-        if let Some(wake) = read {
-            wake.wake();
-            // Give the newly ready RPC work one turn to enqueue its response.
-            // Quiche can then piggyback ACK/credit on application packets.
+        if state.defer_flush.replace(false) {
+            // The router already woke the reader. Preserve a deferred executor
+            // turn for the RPC work it schedules before flushing ACK/credit.
             tokio::task::yield_now().await;
         }
         let exhausted = flush(&state.conn, core, &mut batch, &sender).await?;
@@ -259,9 +268,6 @@ async fn pump(
                     Err(error) => return Err(io::Error::other(error)),
                 }
             },
-            packet = route.packets.recv() => {
-                receive(state, packet.ok_or_else(|| io::Error::other("QUIC packet router closed"))?, local)?;
-            }
             _ = state.changed.notified() => (),
             _ = tokio::time::sleep_until(deadline) => mtu_recovery.on_timeout(&mut state.conn.borrow_mut()),
             _ = tokio::task::yield_now(), if exhausted => (),

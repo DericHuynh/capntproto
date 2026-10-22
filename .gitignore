@@ -261,3 +261,9 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-22-quic-streams/README.md
 !/research/reports/portable-performance/2026-10-22-quic-streams/report.json
 !/research/reports/portable-performance/2026-10-22-quic-streams/source.patch
+
+!/research/reports/portable-performance/2026-10-22-quic-routing/
+/research/reports/portable-performance/2026-10-22-quic-routing/*
+!/research/reports/portable-performance/2026-10-22-quic-routing/README.md
+!/research/reports/portable-performance/2026-10-22-quic-routing/report.json
+!/research/reports/portable-performance/2026-10-22-quic-routing/source.patch

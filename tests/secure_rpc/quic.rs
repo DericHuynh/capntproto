@@ -360,11 +360,12 @@ async fn quic_validates_ip_subject_alternative_names() {
 async fn stalled_reader_resumes_large_transfer_without_starving_runtime() {
     local(async {
         let pki = Pki::new();
-        let server = server(&pki, false);
+        let server = std::rc::Rc::new(server(&pki, false));
         let endpoint = client(&pki, false, Version::V1);
         let address = server.local_addr().unwrap();
+        let sending = server.clone();
         let task = tokio::task::spawn_local(async move {
-            let mut stream = quic::accept(server.accept().await.unwrap(), TIMEOUT)
+            let mut stream = quic::accept(sending.accept().await.unwrap(), TIMEOUT)
                 .await
                 .unwrap();
             assert_eq!(stream.read_u8().await.unwrap(), 1);
@@ -389,6 +390,34 @@ async fn stalled_reader_resumes_large_transfer_without_starving_runtime() {
         assert!(
             !task.is_finished(),
             "receiver flow control must bound buffering"
+        );
+        // A flow-blocked session must not hold up another authenticated stream
+        // multiplexed through the same client and server UDP endpoints.
+        tokio::join!(
+            async {
+                let mut probe = quic::connect(&endpoint, address, "localhost", TIMEOUT)
+                    .await
+                    .unwrap();
+                probe.write_all(b"ping").await.unwrap();
+                probe.shutdown().await.unwrap();
+                let mut response = Vec::new();
+                probe.read_to_end(&mut response).await.unwrap();
+                assert_eq!(response, b"pong");
+            },
+            async {
+                let mut probe = quic::accept(server.accept().await.unwrap(), TIMEOUT)
+                    .await
+                    .unwrap();
+                let mut request = Vec::new();
+                probe.read_to_end(&mut request).await.unwrap();
+                assert_eq!(request, b"ping");
+                probe.write_all(b"pong").await.unwrap();
+                probe.shutdown().await.unwrap();
+            }
+        );
+        assert!(
+            !task.is_finished(),
+            "the first stream is still flow-blocked"
         );
         let mut received = Vec::new();
         stream.read_to_end(&mut received).await.unwrap();
