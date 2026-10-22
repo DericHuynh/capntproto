@@ -13,6 +13,8 @@ fn resolution_is_once_and_preserves_promise_references() {
     let id = ImportId::from_wire(17);
     let mut slots = [
         Slot {
+            release_previous: None,
+            release_next: None,
             generation: 1,
             entry: Some(Entry {
                 #[cfg(feature = "alloc")]
@@ -30,7 +32,8 @@ fn resolution_is_once_and_preserves_promise_references() {
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
-        pending_releases: 0,
+        release_head: None,
+        release_tail: None,
         brand: PhantomData,
     };
     let mut receipts = [ReceiveSlot::new(ImportId::from_wire(23), 47)];
@@ -72,6 +75,8 @@ fn duplicate_batch_admission_is_atomic_for_all_reference_counts() {
     let mut refs = ImportRefs::new();
     refs.receive(remote).unwrap();
     let mut slots = [Slot {
+        release_previous: None,
+        release_next: None,
         generation,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -87,7 +92,8 @@ fn duplicate_batch_admission_is_atomic_for_all_reference_counts() {
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut slots),
-        pending_releases: usize::from(local == 0),
+        release_head: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
+        release_tail: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         brand: PhantomData,
     };
     let mut receipts = [ReceiveSlot::alias(wire), ReceiveSlot::alias(wire)];

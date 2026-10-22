@@ -543,8 +543,8 @@ fn plain_reply_to_an_opaque_sink_preserves_errors_owners_and_reentrant_work() {
             .unwrap();
             let received = coordinator
                 .driver
-                .try_receive_plain_owned(frame, messages, |key| {
-                    coordinator.calls.plain_receiver(key)
+                .try_receive_plain_owned(frame, messages, |key, owner| {
+                    coordinator.calls.plain_receiver(key, owner)
                 })
                 .unwrap_or_else(|(error, _)| panic!("{error:?}"));
             let connection::PlainReceived::Delivered(index, message) = received else {

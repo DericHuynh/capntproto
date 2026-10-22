@@ -459,7 +459,6 @@ pub fn owned_rpc_conversation(chunk: usize, cancel: bool) -> Result<()> {
                                 }
                                 client.imports.release(capability);
                                 assert!(controls::release_one(
-                                    0,
                                     &mut client.imports,
                                     messages,
                                     &mut queue,

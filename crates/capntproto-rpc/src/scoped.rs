@@ -35,6 +35,7 @@ use std::{
 };
 
 mod admission;
+mod bindings;
 mod metadata;
 pub use metadata::MetadataSource;
 pub(crate) mod response;
@@ -136,6 +137,7 @@ struct Endpoint {
     inbox: Weak<Inbox>,
     index: usize,
     settled: Cell<bool>,
+    metadata_generation: Cell<u64>,
     failure: RefCell<Option<Error>>,
     resolution: RefCell<Option<Resolution>>,
     #[cfg(unix)]
@@ -160,7 +162,10 @@ struct Entry<'id> {
     endpoint: Weak<Endpoint>,
     client: Client<'id>,
     pending: bool,
-    metadata: Option<(Rc<MetadataSource>, u64)>,
+    metadata: Option<Rc<MetadataSource>>,
+    // Aliases can converge on the same terminal key after promise resolution.
+    same_key_next: Option<usize>,
+    refresh_position: Option<usize>,
 }
 
 /// Scoped graph ownership paired with ordinary owned generated clients.
@@ -173,6 +178,9 @@ pub struct ClientHooks<'id> {
     inbox: Rc<Inbox>,
     entries: Vec<Option<Entry<'id>>>,
     unsettled: usize,
+    bindings: bindings::Bindings<'id>,
+    free: Vec<usize>,
+    refresh: Vec<usize>,
     maximum_clients: usize,
 }
 impl<'id> ClientHooks<'id> {
@@ -202,6 +210,9 @@ impl<'id> ClientHooks<'id> {
             }),
             entries: Vec::new(),
             unsettled: 0,
+            bindings: bindings::Bindings::default(),
+            free: Vec::new(),
+            refresh: Vec::new(),
             maximum_clients,
         }
     }
@@ -305,21 +316,36 @@ impl<'id> ClientHooks<'id> {
         if refresh {
             self.collect(graph);
         }
-        for entry in self.entries.iter().flatten() {
-            if entry.client.key() == client.key() {
-                if let Some(endpoint) = entry.endpoint.upgrade() {
-                    graph.release(client);
-                    return Ok(capability::Client::new(Box::new(Hook(endpoint, None))));
-                }
+        let key = client.key();
+        let mut matching = self.bindings.get(&key).copied();
+        while let Some(index) = matching {
+            let entry = self.entries[index].as_ref().expect("indexed endpoint");
+            if let Some(endpoint) = entry.endpoint.upgrade() {
+                graph.release(client);
+                return Ok(capability::Client::new(Box::new(Hook(endpoint, None))));
             }
+            matching = entry.same_key_next;
         }
-        let index = self
-            .entries
-            .iter()
-            .position(Option::is_none)
-            .unwrap_or(self.entries.len());
+        if self
+            .bindings
+            .try_reserve(self.entries.len() - self.free.len() + 1 - self.bindings.len())
+            .is_err()
+        {
+            graph.release(client);
+            return Err(Error::overloaded(
+                "scoped binding capacity exhausted".into(),
+            ));
+        }
+        let index = self.free.last().copied().unwrap_or(self.entries.len());
         if index == self.entries.len() {
-            if index == self.maximum_clients || self.entries.try_reserve(1).is_err() {
+            if index == self.maximum_clients
+                || self.entries.try_reserve(1).is_err()
+                || self.free.try_reserve(index + 1 - self.free.len()).is_err()
+                || self
+                    .refresh
+                    .try_reserve(index + 1 - self.refresh.len())
+                    .is_err()
+            {
                 graph.release(client);
                 return Err(Error::overloaded("scoped client capacity exhausted".into()));
             }
@@ -334,6 +360,8 @@ impl<'id> ClientHooks<'id> {
                 ));
             }
             self.entries.push(None);
+        } else {
+            self.free.pop();
         }
         let endpoint = Rc::new(Endpoint {
             introduction: RefCell::default(),
@@ -348,6 +376,7 @@ impl<'id> ClientHooks<'id> {
             inbox: Rc::downgrade(&self.inbox),
             index,
             settled: Cell::new(!pending),
+            metadata_generation: Cell::new(0),
             failure: RefCell::new(match graph.inspect(&client) {
                 Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
                     location: capntproto_rpc_engine::clients::Location::Broken,
@@ -366,7 +395,10 @@ impl<'id> ClientHooks<'id> {
             client,
             pending,
             metadata: None,
+            same_key_next: self.bindings.insert(key, index),
+            refresh_position: Some(self.refresh.len()),
         });
+        self.refresh.push(index);
         self.unsettled += usize::from(pending);
         Ok(capability::Client::new(Box::new(Hook(endpoint, None))))
     }
@@ -398,7 +430,15 @@ impl<'id> ClientHooks<'id> {
             // Release the queue borrow before touching graph ownership.
             let index = self.inbox.released.borrow_mut().pop_front();
             let Some(index) = index else { break };
+            let key = self.entries[index]
+                .as_ref()
+                .expect("unreclaimed endpoint")
+                .client
+                .key();
+            self.unlink_binding(key, index);
+            self.remove_refresh(index);
             let entry = self.entries[index].take().expect("unreclaimed endpoint");
+            self.free.push(index);
             debug_assert_eq!(entry.endpoint.strong_count(), 0);
             self.unsettled -= usize::from(entry.pending);
             graph.release(entry.client);
@@ -425,6 +465,42 @@ impl<'id> ClientHooks<'id> {
         self.synchronize(graph, metadata, |_| None, true, false);
     }
 
+    fn unlink_binding(&mut self, key: capntproto_rpc_engine::clients::Key<'id>, index: usize) {
+        let next = self.entries[index].as_ref().unwrap().same_key_next;
+        let head = self.bindings[&key];
+        if head == index {
+            if let Some(next) = next {
+                self.bindings.insert(key, next);
+            } else {
+                self.bindings.remove(&key);
+            }
+        } else {
+            let mut previous = head;
+            loop {
+                let entry = self.entries[previous].as_mut().unwrap();
+                if entry.same_key_next == Some(index) {
+                    entry.same_key_next = next;
+                    break;
+                }
+                previous = entry.same_key_next.expect("indexed alias");
+            }
+        }
+    }
+
+    fn remove_refresh(&mut self, index: usize) {
+        if let Some(position) = self.entries[index]
+            .as_mut()
+            .unwrap()
+            .refresh_position
+            .take()
+        {
+            self.refresh.swap_remove(position);
+            if let Some(&moved) = self.refresh.get(position) {
+                self.entries[moved].as_mut().unwrap().refresh_position = Some(position);
+            }
+        }
+    }
+
     #[inline(always)]
     fn synchronize<G: Capabilities<'id>>(
         &mut self,
@@ -438,42 +514,36 @@ impl<'id> ClientHooks<'id> {
         if !refresh_settled && self.unsettled == 0 {
             return;
         }
-        for slot in &mut self.entries {
-            let Some(entry) = slot.as_mut() else {
-                continue;
-            };
-            if refresh_settled && !subscriptions {
-                // Switching projection policy invalidates the old source.
-                entry.metadata = None;
-            }
-            if !refresh_settled && !entry.pending {
-                continue;
-            }
-            // A settled import's revision can be checked without retaining its
-            // endpoint. Destruction is already journaled independently above;
-            // unchanged metadata needs no Weak upgrade or matching Rc drop.
-            if subscriptions && !entry.pending {
-                if let Some((source, revision)) = &entry.metadata {
-                    if source.revision() == *revision {
-                        continue;
+        if refresh_settled && !subscriptions {
+            // Arbitrary caller projections have no change contract. Re-enable
+            // their live entries and disarm previous source subscriptions.
+            for (index, slot) in self.entries.iter_mut().enumerate() {
+                let Some(entry) = slot else { continue };
+                if entry.metadata.take().is_some() {
+                    if let Some(endpoint) = entry.endpoint.upgrade() {
+                        endpoint.next_metadata_generation();
                     }
                 }
+                if entry.refresh_position.is_none() {
+                    entry.refresh_position = Some(self.refresh.len());
+                    self.refresh.push(index);
+                }
+            }
+        }
+        let mut position = 0;
+        while position < self.refresh.len() {
+            let index = self.refresh[position];
+            let entry = self.entries[index].as_mut().expect("refresh endpoint");
+            position += 1;
+            if !refresh_settled && !entry.pending {
+                continue;
             }
             // Retain through metadata and resolution publication. Reentrant
             // notification may drop another endpoint; its release is journaled.
             let Some(endpoint) = entry.endpoint.upgrade() else {
                 continue;
             };
-            if subscriptions && !entry.pending {
-                if let Some((source, revision)) = &mut entry.metadata {
-                    let next = source.revision();
-                    if let Some(metadata) = source.snapshot() {
-                        endpoint.apply_metadata(metadata);
-                    }
-                    *revision = next;
-                    continue;
-                }
-            }
+            let old_key = entry.client.key();
             let destination = graph.inspect(&entry.client);
             endpoint.remote.set(matches!(
                 destination,
@@ -488,7 +558,8 @@ impl<'id> ClientHooks<'id> {
                         if let Some(source) = subscribe(owner) {
                             let snapshot = source.snapshot();
                             if !entry.pending {
-                                entry.metadata = Some((source.clone(), source.revision()));
+                                source.subscribe(&endpoint);
+                                entry.metadata = Some(source);
                             }
                             return snapshot;
                         }
@@ -502,12 +573,25 @@ impl<'id> ClientHooks<'id> {
             if entry.pending {
                 Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);
             }
+            let new_key = entry.client.key();
+            let subscribed = entry.metadata.is_some();
+            if new_key != old_key {
+                // Admission reserved hash capacity for every live endpoint,
+                // including aliases that currently share a key.
+                self.unlink_binding(old_key, index);
+                let next = self.bindings.insert(new_key, index);
+                self.entries[index].as_mut().unwrap().same_key_next = next;
+            }
+            if subscribed {
+                self.remove_refresh(index);
+                position -= 1;
+            }
         }
         self.reclaim_released(graph);
     }
 
-    // Metadata on settled imports still refreshes on every collection. Keep
-    // first settlement and its notification work outside that repeated walk.
+    // Resolve only pending endpoints. Settled import metadata arrives through
+    // its source subscription without revisiting the graph.
     #[inline(never)]
     fn settle_endpoint<G: Capabilities<'id>>(
         graph: &mut G,

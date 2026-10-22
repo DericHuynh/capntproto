@@ -58,6 +58,7 @@ pub struct Record {
     references: u32,
     lifecycle: Question,
     finish: Option<question::Finish>,
+    finish_next: Option<QuestionId>,
     published: bool,
     destination: ResultsTo,
     provision: bool,
@@ -65,6 +66,7 @@ pub struct Record {
     // This binding makes their relationship explicit and pins the generation
     // until the adapter transfers or releases its owning exchange.
     owner: Option<core::num::NonZeroUsize>,
+    observers: [usize; 2],
 }
 impl Record {
     #[inline]
@@ -159,7 +161,8 @@ pub struct Questions<'id, 'storage> {
     observation: crate::observation::Counter,
     table: Table<'storage>,
     generation: u64,
-    pending_finishes: usize,
+    finish_head: Option<QuestionId>,
+    finish_tail: Option<QuestionId>,
     brand: Brand<'id>,
 }
 pub fn with_questions<R>(
@@ -197,7 +200,8 @@ pub(crate) fn new_scope_with_adoptions<'id, 's>(
         observation: Default::default(),
         table,
         generation: 0,
-        pending_finishes: 0,
+        finish_head: None,
+        finish_tail: None,
         brand: PhantomData,
     })
 }
@@ -229,7 +233,8 @@ pub(crate) fn new_growing_with_adoptions<'id, 's>(
         observation: Default::default(),
         table,
         generation: 0,
-        pending_finishes: 0,
+        finish_head: None,
+        finish_tail: None,
         brand: PhantomData,
     })
 }
@@ -308,10 +313,12 @@ impl<'id, 'storage> Questions<'id, 'storage> {
                 references: 1,
                 lifecycle: Question::new(),
                 finish: None,
+                finish_next: None,
                 published: false,
                 destination,
                 provision: false,
                 owner: None,
+                observers: [0; 2],
             })
             .map_err(|_| Error::Full)?;
         self.generation = generation;
@@ -377,6 +384,21 @@ impl<'id, 'storage> Questions<'id, 'storage> {
             record.owner?.get() - 1,
         ))
     }
+    /// Count weak result observers on this exact generation. These counters do
+    /// not retain authority or extend the protocol lifetime.
+    pub fn add_observer(&mut self, key: Key<'id>, invocation: bool) {
+        let record = self.record_mut(key).expect("live observer question");
+        record.observers[usize::from(invocation)] += 1;
+    }
+    pub fn remove_observer(&mut self, key: Key<'id>, invocation: bool) {
+        if let Ok(record) = self.record_mut(key) {
+            record.observers[usize::from(invocation)] -= 1;
+        }
+    }
+    pub fn has_observers(&self, key: Key<'id>, invocation: bool) -> bool {
+        self.record(key)
+            .is_ok_and(|record| record.observers[usize::from(invocation)] != 0)
+    }
     pub fn owner(&self, key: Key<'id>) -> Option<usize> {
         self.record(key).ok()?.owner.map(|owner| owner.get() - 1)
     }
@@ -436,7 +458,7 @@ impl<'id, 'storage> Questions<'id, 'storage> {
             let finish = record.finish.is_some();
             let reclaim = record.reclaimable();
             if finish {
-                self.pending_finishes += 1;
+                self.enqueue_finish(local.key.id);
             }
             if reclaim {
                 self.table.remove(local.key.id);
@@ -490,26 +512,32 @@ impl<'id, 'storage> Questions<'id, 'storage> {
             .map(|r| r.destination != ResultsTo::Caller)
             .ok_or(Error::UnknownQuestion)
     }
-    pub fn pending_finish(&mut self) -> Option<Finish<'_, 'id, 'storage>> {
-        if !self.has_pending_finish() {
-            return None;
+    fn enqueue_finish(&mut self, id: QuestionId) {
+        debug_assert!(self.table.get(id).unwrap().finish_next.is_none());
+        if let Some(tail) = self.finish_tail {
+            self.table.get_mut(tail).unwrap().finish_next = Some(id);
+        } else {
+            self.finish_head = Some(id);
         }
-        let key = self
-            .table
-            .values()
-            .find(|r| r.finish.is_some())
-            .map(|r| Key {
-                id: r.id,
-                generation: r.generation,
-                brand: PhantomData,
-            })?;
+        self.finish_tail = Some(id);
+    }
+    /// The oldest retained Finish obligation. Rejected output leaves it at the
+    /// head; no unrelated question is visited, even after table growth.
+    pub fn pending_finish(&mut self) -> Option<Finish<'_, 'id, 'storage>> {
+        let id = self.finish_head?;
+        let record = self.table.get(id).expect("queued Finish owner");
+        let key = Key {
+            id,
+            generation: record.generation,
+            brand: PhantomData,
+        };
         Some(Finish {
             questions: self,
             key,
         })
     }
     pub fn has_pending_finish(&self) -> bool {
-        self.pending_finishes != 0
+        self.finish_head.is_some()
     }
     /// Inspect response delivery without releasing the outstanding question.
     /// Accept only after payload and associated capability effects are prepared.
@@ -610,7 +638,7 @@ impl<'id> Receive<'_, 'id, '_> {
         };
         let reclaim = record.reclaimable();
         if finish {
-            self.questions.pending_finishes += 1;
+            self.questions.enqueue_finish(local.key.id);
         }
         if reclaim {
             self.questions.table.remove(self.id);
@@ -684,8 +712,13 @@ impl Finish<'_, '_, '_> {
             .release_result_caps
     }
     pub fn accept(self) {
-        self.questions.record_mut(self.key).unwrap().finish = None;
-        self.questions.pending_finishes -= 1;
+        debug_assert_eq!(self.questions.finish_head, Some(self.key.id));
+        let record = self.questions.record_mut(self.key).unwrap();
+        record.finish = None;
+        self.questions.finish_head = record.finish_next.take();
+        if self.questions.finish_head.is_none() {
+            self.questions.finish_tail = None;
+        }
         self.questions.reclaim(self.key.id);
     }
 }

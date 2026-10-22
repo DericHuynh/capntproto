@@ -9,6 +9,8 @@ fn import_generation_and_cleanup_lifecycle() {
     let generation: u64 = kani::any();
     let wire = ImportId::from_wire(kani::any());
     let mut storage = [Slot {
+        release_previous: None,
+        release_next: None,
         generation,
         entry: None,
     }];
@@ -83,6 +85,8 @@ fn import_receive_is_atomic() {
     let mut refs = ImportRefs::new();
     refs.receive(remote).unwrap();
     let mut storage = [Slot {
+        release_previous: None,
+        release_next: None,
         generation,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -95,7 +99,8 @@ fn import_receive_is_atomic() {
         }),
     }];
     let mut imports = Imports {
-        pending_releases: usize::from(local == 0),
+        release_head: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
+        release_tail: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut storage),
@@ -145,6 +150,8 @@ fn receipt_metadata_preserves_ownership() {
         promise::ImportState::Hosted
     };
     let mut storage = [Slot {
+        release_previous: None,
+        release_next: None,
         generation,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -157,7 +164,8 @@ fn receipt_metadata_preserves_ownership() {
         }),
     }];
     let mut imports = Imports {
-        pending_releases: usize::from(local == 0),
+        release_head: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
+        release_tail: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(&mut storage),

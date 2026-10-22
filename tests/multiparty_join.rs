@@ -23,6 +23,12 @@ type Vat = [u8; 32];
 struct Proxies(Network, bool);
 struct Link(Box<dyn Connection<Vat>>, bool);
 impl Connection<Vat> for Link {
+    fn control_mode(&self) -> capnp_rpc::ControlMode {
+        capnp_rpc::ControlMode::Network
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<capnp_rpc::FrameIo> {
+        self.0.take_frame_io()
+    }
     fn send_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
         self.0.send_frame(frame)
     }

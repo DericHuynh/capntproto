@@ -63,7 +63,7 @@ pub fn queued_invocation_pipeline(early: bool, cancel: bool) {
                 payload.field(Payload::CONTENT).cast::<capnp::field_api::Struct<CapabilityResults>>().init()?.field(CapabilityResults::VALUE).set_index(0)?;
                 payload.field(Payload::CAP_TABLE).init(1)?.get_mut(0).unwrap().scalar(CapDescriptor::SENDER_PROMISE).set(77);Ok(())
             }).unwrap();
-            assert!(matches!(peer.receive(frame,messages,&mut [0;4],|_|(),||panic!("Return")).unwrap_or_else(|_|panic!("Return")),Received::Returned(key) if key==sent.question));
+            assert!(matches!(peer.receive(frame,messages,&mut [0;4],|_|(),||panic!("Return")).unwrap_or_else(|_|panic!("Return")),Received::Returned(key, _) if key==sent.question));
             assert!(matches!(peer.take_response(sent.question),Err(owned::connection::Error::PendingResponse)));
             assert!(!peer.drain_canceled_response(messages));
             let resolve=Frame::build(messages,776,Default::default(),|builder|{

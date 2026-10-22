@@ -34,6 +34,99 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         self.effects = Effects::Network;
         self.coordinator
     }
+    /// Reject unsupported request/response operations through the ordinary
+    /// output queue. The driver owns the pending request across backpressure;
+    /// ordinary two-party turns only test that one owner, not network registries.
+    pub(super) fn reject_network<O: Output<I>>(
+        &mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        scratch: &mut [u32],
+        output: &O,
+    ) -> Poll<capnp::Result<bool>> {
+        if !self.coordinator.driver.has_network() {
+            return Poll::Pending;
+        }
+        match queue.ensure_capacity() {
+            Ok(()) => (),
+            Err(messages::Error::NoSendSlot) if !queue.is_empty() => return Poll::Pending,
+            Err(error) => return Poll::Ready(Err(wire_error(error))),
+        }
+        self.effects = Effects::Network;
+        let coordinator = &mut self.coordinator;
+        let driver = &mut coordinator.driver;
+        let request = driver.take_network().expect("pending network request");
+        use connection::NetworkRequest as N;
+        let result = match request {
+            N::Join(join) => driver
+                .reject_join(
+                    join,
+                    capnp::ErrorKind::Unimplemented,
+                    messages,
+                    queue,
+                    coordinator.options.output_bytes.get(),
+                    coordinator.options.reader,
+                )
+                .map(|_| ())
+                .map_err(|rejected| {
+                    driver.release_network(N::Join(rejected.join), messages);
+                    wire_error(rejected.error)
+                }),
+            N::Accept(accept) => {
+                let key = accept.key();
+                let outcome = (|| {
+                    let producer = driver
+                        .ledgers
+                        .answers
+                        .get(key)
+                        .map_err(wire_error)?
+                        .owner
+                        .producer
+                        .clone();
+                    producer.fail(Error::unimplemented(
+                        "third-party acceptance unavailable on this route".into(),
+                    ));
+                    driver
+                        .complete_authenticated_accept(
+                            &accept,
+                            Err(capnp::ErrorKind::Unimplemented),
+                            messages,
+                        )
+                        .map_err(|rejected| {
+                            if let Ok(result) = rejected.result {
+                                result.release(messages, &mut driver.runtime);
+                            }
+                            wire_error(rejected.error)
+                        })?;
+                    producer.prepare_trace(&coordinator.policy);
+                    driver
+                        .send_answer_using(
+                            key,
+                            messages,
+                            queue,
+                            producer.publication_bytes()?,
+                            coordinator.options.reader,
+                            scratch,
+                            output.bundle(),
+                            |owner, imports, bundle| output.attach(owner, imports, bundle),
+                            |results, builder| results.write_exception(builder),
+                        )
+                        .map_err(wire_error)?;
+                    Ok(())
+                })();
+                accept.release(messages);
+                outcome
+            }
+            request => {
+                driver.release_network(request, messages);
+                Err(Error::unimplemented(
+                    "two-party connection has no handoff network".into(),
+                ))
+            }
+        };
+        Poll::Ready(result.map(|()| true))
+    }
+
     /// Complete an admitted bootstrap without exposing the protocol tables.
     pub fn complete_bootstrap(
         &mut self,

@@ -1886,3 +1886,206 @@ fn newly_published_output_cannot_report_idle_before_physical_flush() {
         reclaimed(messages);
     });
 }
+
+#[test]
+fn two_party_rejects_join_and_accept_after_output_backpressure_without_disconnect() {
+    use capntproto_rpc_engine::ids::QuestionId;
+    use capntproto_rpc_wire::{calls, clients as binding, network};
+    for join in [true, false] {
+        with_peer(|mut driver, messages| {
+            let target = if join {
+                let service = driver
+                    .runtime
+                    .endpoint(
+                        Route::local(Rc::from(crate::broken::new_cap(Error::failed(
+                            "test target".into(),
+                        )))),
+                        capntproto_rpc_engine::clients::Location::Local,
+                    )
+                    .unwrap_or_else(|_| panic!("endpoint capacity"));
+                let mut batch = driver.ledgers.exports.batch();
+                let grant = binding::stage(&mut driver.runtime, &mut batch, &service).unwrap();
+                batch.commit();
+                driver.runtime.release(service);
+                Some(ImportId::from_wire(grant.id().to_wire()))
+            } else {
+                None
+            };
+            let mut coordinator = Coordinator::new(
+                driver,
+                ClientHooks::new(8, 8),
+                NonZeroUsize::new(4).unwrap(),
+                None,
+                options(),
+            )
+            .unwrap();
+            let mut control = TwoParty::new(
+                || Err(Error::failed("bootstrap remains usable".into())),
+                NonZeroUsize::new(2).unwrap(),
+            );
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let incoming = Frame::build(messages, 512, Default::default(), |b| {
+                let id = QuestionId::from_wire(7);
+                if let Some(target) = target {
+                    network::join(b, id, calls::Target::Imported(target), |part| {
+                        part.cast::<capnp::field_api::Data>()
+                            .copy_from(b"unsupported part")
+                    })
+                } else {
+                    network::accept(b, id, None, |completion| {
+                        completion
+                            .cast::<capnp::field_api::Data>()
+                            .copy_from(b"unsupported completion")
+                    })
+                }
+            })
+            .unwrap();
+            let received = coordinator
+                .driver
+                .receive(
+                    incoming,
+                    messages,
+                    &mut [0; 16],
+                    |_| (),
+                    server::Results::new,
+                )
+                .unwrap_or_else(|error| panic!("{}", error.error));
+            <TwoParty<'_, _> as Control<'_, '_, '_, (), u8, 8, 8>>::received(
+                &mut control,
+                received,
+                &mut ControlContext::new(&mut coordinator),
+                messages,
+                &mut queue,
+            )
+            .unwrap();
+            coordinator
+                .driver
+                .send(
+                    messages,
+                    &mut queue,
+                    512,
+                    Default::default(),
+                    calls::bootstrap,
+                )
+                .unwrap();
+            let mut cx = Context::from_waker(Waker::noop());
+            for _ in 0..3 {
+                assert!(control
+                    .poll(
+                        &mut ControlContext::new(&mut coordinator),
+                        messages,
+                        &mut queue,
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut cx
+                    )
+                    .is_pending());
+                assert!(
+                    coordinator.driver.has_network(),
+                    "backpressure retains request authority"
+                );
+            }
+            let window = queue.window(messages).unwrap().unwrap();
+            let size = window.bytes().len();
+            window.advance(size).unwrap();
+            assert!(matches!(
+                control.poll(
+                    &mut ControlContext::new(&mut coordinator),
+                    messages,
+                    &mut queue,
+                    &mut [0; 32],
+                    &NoResources,
+                    &mut cx
+                ),
+                Poll::Ready(Ok(true))
+            ));
+            assert!(!coordinator.driver.has_network());
+            let window = queue.window(messages).unwrap().unwrap();
+            let size = window.bytes().len();
+            let mut bytes = window.bytes();
+            let message = capnp::serialize::read_message_from_flat_slice_no_alloc(
+                &mut bytes,
+                Default::default(),
+            )
+            .unwrap();
+            let root: capntproto_rpc_wire::rpc_capnp::message::Reader = message.get_root().unwrap();
+            let capntproto_rpc_wire::rpc_capnp::message::Return(returned) = root.which().unwrap()
+            else {
+                panic!("Return")
+            };
+            let returned = returned.unwrap();
+            assert_eq!(returned.get_answer_id(), 7);
+            let capntproto_rpc_wire::rpc_capnp::return_::Exception(error) =
+                returned.which().unwrap()
+            else {
+                panic!("Exception")
+            };
+            assert_eq!(
+                error.unwrap().get_type().unwrap(),
+                capntproto_rpc_wire::rpc_capnp::exception::Type::Unimplemented
+            );
+            window.advance(size).unwrap();
+            // A subsequent bootstrap is still admitted by the same connection.
+            let incoming = Frame::build(messages, 512, Default::default(), |b| {
+                calls::bootstrap(b, QuestionId::from_wire(8))
+            })
+            .unwrap();
+            let received = coordinator
+                .driver
+                .receive(
+                    incoming,
+                    messages,
+                    &mut [0; 16],
+                    |_| (),
+                    server::Results::new,
+                )
+                .unwrap_or_else(|error| panic!("{}", error.error));
+            <TwoParty<'_, _> as Control<'_, '_, '_, (), u8, 8, 8>>::received(
+                &mut control,
+                received,
+                &mut ControlContext::new(&mut coordinator),
+                messages,
+                &mut queue,
+            )
+            .unwrap();
+            assert!(matches!(
+                control.poll(
+                    &mut ControlContext::new(&mut coordinator),
+                    messages,
+                    &mut queue,
+                    &mut [0; 32],
+                    &NoResources,
+                    &mut cx
+                ),
+                Poll::Ready(Ok(true))
+            ));
+            let input = Rc::new(RefCell::new(Pipe::default()));
+            let output = Rc::new(RefCell::new(Pipe::default()));
+            let mut reader = Reader(input);
+            let mut writer = Writer(output);
+            let mut scratch = [0; 32];
+            {
+                let mut run = std::pin::pin!(coordinator.run(
+                    messages,
+                    &mut queue,
+                    &mut reader,
+                    &mut writer,
+                    &mut scratch,
+                    |_| (),
+                    &mut control,
+                    async { Ok(()) }
+                ));
+                let mut done = false;
+                for _ in 0..2000 {
+                    if let Poll::Ready(result) = run.as_mut().poll(&mut cx) {
+                        result.unwrap();
+                        done = true;
+                        break;
+                    }
+                }
+                assert!(done);
+            }
+            reclaimed(messages);
+        });
+    }
+}

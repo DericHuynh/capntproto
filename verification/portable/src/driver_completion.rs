@@ -40,7 +40,7 @@ pub fn caller_owned_reply_future(mode: u8) {
             super::owning::exchange(messages,&mut queue,1).release(messages);
             if cancel{drop(receiver.take());assert!(sender.is_closed());peer.cancel(sent.question).unwrap();}
             let frame=Frame::build(messages,776,Default::default(),|builder|calls::results(builder,AnswerId::from_wire(sent.question.id().to_wire()),echo::Owned::ECHO,|mut result|{result.scalar(EchoResults::VALUE).set(61);Ok(())})).unwrap();
-            assert!(matches!(peer.receive(frame,messages,&mut [0;4],|_|(),||panic!("Return")).unwrap_or_else(|_|panic!("Return")),Received::Returned(key)if key==sent.question));
+            assert!(matches!(peer.receive(frame,messages,&mut [0;4],|_|(),||panic!("Return")).unwrap_or_else(|_|panic!("Return")),Received::Returned(key, _)if key==sent.question));
             let response=peer.take_response(sent.question).unwrap();
             match sender.send(response){
                 Err(rejected)=>{assert!(cancel);peer.release_response(rejected,messages);}

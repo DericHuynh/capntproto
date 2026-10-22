@@ -169,7 +169,7 @@ pub fn owning_network_await(mode: u8) {
                     )
                     .unwrap_or_else(|r| panic!("{}", r.error));
                 if mode == 3 {
-                    assert!(matches!(received, Received::Returned(k) if k == key));
+                    assert!(matches!(received, Received::Returned(k, _) if k == key));
                     assert!(
                         peer.take_network().is_none(),
                         "canceled call starts no rendezvous"

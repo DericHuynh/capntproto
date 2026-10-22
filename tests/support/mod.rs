@@ -207,8 +207,8 @@ impl Drop for ReadLease {
 }
 #[derive(Clone)]
 pub struct Endpoint(Rc<Inner>);
-impl Connection<u8> for Endpoint {
-    fn send_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
+impl Endpoint {
+    fn publish_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
         #[cfg(unix)]
         let mut frame = frame;
         let result = (|| {
@@ -228,7 +228,95 @@ impl Connection<u8> for Endpoint {
                 })
                 .map_err(|_| Error::disconnected("peer gone".into()))
         })();
-        Promise::from_future(async { result })
+        result
+    }
+}
+struct FrameInput {
+    lease: ReadLease,
+    bytes: Option<Vec<u8>>,
+    #[cfg(unix)]
+    fds: Vec<std::os::fd::OwnedFd>,
+}
+impl capnp_rpc::IncomingFrameStream for FrameInput {
+    fn poll_frame(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<capnp::Result<Option<&[u8]>>> {
+        use futures::Stream;
+        use std::{pin::Pin, task::Poll};
+        if self.bytes.is_none() {
+            let value =
+                std::task::ready!(Pin::new(self.lease.receiver.as_mut().unwrap()).poll_next(cx));
+            let Some(message) = value else {
+                if let Some(error) = self.lease.inner.status.borrow_mut().read_error.take() {
+                    return Poll::Ready(Err(error));
+                }
+                return Poll::Ready(Ok(None));
+            };
+            let mut input = Input(message);
+            self.bytes = Some(capnp::serialize::write_message_segments_to_words(
+                &input.get_segments().unwrap(),
+            ));
+            #[cfg(unix)]
+            {
+                self.fds = input.take_fds();
+            }
+        }
+        Poll::Ready(Ok(self.bytes.as_deref()))
+    }
+    fn frame(&self) -> Option<&[u8]> {
+        self.bytes.as_deref()
+    }
+    #[cfg(unix)]
+    fn take_fds(&mut self) -> Vec<std::os::fd::OwnedFd> {
+        std::mem::take(&mut self.fds)
+    }
+    fn finish_frame(&mut self) {
+        self.bytes = None;
+        #[cfg(unix)]
+        self.fds.clear();
+    }
+}
+struct FrameOutput(Endpoint);
+impl capnp_rpc::OutgoingMessageStream for FrameOutput {
+    fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
+        self.0.shutdown(result)
+    }
+    fn send(&mut self, frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
+        self.0.publish_frame(frame)
+    }
+    fn poll_flush(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+impl Connection<u8> for Endpoint {
+    fn control_mode(&self) -> capnp_rpc::ControlMode {
+        capnp_rpc::ControlMode::Network
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<capnp_rpc::FrameIo> {
+        let receiver = self
+            .0
+            .receiver
+            .borrow_mut()
+            .take()
+            .ok_or_else(|| Error::failed("test frame input already owned".into()))?;
+        self.0.status.borrow_mut().readers += 1;
+        Ok(capnp_rpc::FrameIo {
+            incoming: Box::new(FrameInput {
+                lease: ReadLease {
+                    inner: self.0.clone(),
+                    receiver: Some(receiver),
+                },
+                bytes: None,
+                #[cfg(unix)]
+                fds: Vec::new(),
+            }),
+            outgoing: Box::new(FrameOutput(self.clone())),
+            write_finished: None,
+        })
+    }
+    fn send_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
+        Promise::from(self.publish_frame(frame))
     }
     fn get_peer_vat_id(&self) -> u8 {
         self.0.peer

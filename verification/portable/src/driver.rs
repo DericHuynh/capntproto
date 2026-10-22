@@ -275,7 +275,7 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
             let Received::Bootstrap(incoming) = receive(server, messages, &mut queue, chunk) else { panic!("bootstrap") };
             server.complete_bootstrap(&incoming, Ok(&service), messages, 776, Default::default()).unwrap();
             assert!(server.send_answer(incoming.answer(), messages, &mut queue, 776, Default::default(), &mut [0; 4], |_, _| Ok(())).unwrap().is_none());
-            assert!(matches!(receive(client, messages, &mut queue, chunk), Received::Returned(key) if key == bootstrap));
+            assert!(matches!(receive(client, messages, &mut queue, chunk), Received::Returned(key, _) if key == bootstrap));
             assert!(matches!(client.take_response(bootstrap), Err(owned::connection::Error::PendingResponse)));
             assert!(matches!(client.poll_outgoing(0, messages).unwrap(), owned::connection::Propagation::Resolved));
             let response = client.take_response(bootstrap).unwrap();
@@ -322,7 +322,7 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
                 assert!(canceled);
                 assert_eq!(server.runtime.queued(), 0);
                 assert_eq!(server.retry_call().unwrap(), answers[1]);
-                assert!(matches!(receive(client, messages, &mut queue, chunk), Received::Returned(key) if key == calls[0].unwrap()));
+                assert!(matches!(receive(client, messages, &mut queue, chunk), Received::Returned(key, _) if key == calls[0].unwrap()));
                 assert!(client.drain_canceled_response(messages));
             }
             for i in usize::from(cancel)..2 {
@@ -347,7 +347,7 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
                     assert!(matches!(server.enqueue_call(&service, echo::Owned::ECHO, &[], messages, 776, Default::default(), |_| panic!("new calls cannot bypass deferred input")), Err(owned::connection::Error::Busy)));
                     assert_eq!(server.retry_call().unwrap(), answers[1]);
                 }
-                assert!(matches!(receive(client, messages, &mut queue, chunk), Received::Returned(key) if key == calls[i].unwrap()));
+                assert!(matches!(receive(client, messages, &mut queue, chunk), Received::Returned(key, _) if key == calls[i].unwrap()));
                 if i == 0 && cancel {
                     assert!(client.drain_canceled_response(messages));
                     assert!(!client.drain_canceled_response(messages));
@@ -363,7 +363,7 @@ pub fn owning_connection_driver(chunk: usize, cancel: bool) {
             }
             client.runtime.release(remote);
             while let Some(server) = client.drain_endpoint() { assert!(server.is_none()); }
-            assert!(controls::release_one(0, &mut client.ledgers.imports, messages, &mut queue, 776, Default::default()).unwrap().is_some());
+            assert!(controls::release_one(&mut client.ledgers.imports, messages, &mut queue, 776, Default::default()).unwrap().is_some());
             assert!(matches!(receive(server, messages, &mut queue, chunk), Received::Released));
             assert!(server.drain_export(0));
             server.runtime.release(service);
@@ -432,7 +432,7 @@ pub fn owning_return_resolve_order() {
                     || panic!("no producer")
                 )
                 .unwrap_or_else(|_| panic!("Return")),
-                Received::Returned(_)
+                Received::Returned(_, _)
             ));
             let resolved = Frame::build(messages, 776, Default::default(), |builder| {
                 let mut root = builder.try_init_root::<Message>()?;
@@ -506,7 +506,6 @@ pub fn owning_return_resolve_order() {
             .unwrap());
             super::owning::exchange(messages, &mut queue, 3).release(messages);
             assert!(controls::release_one(
-                0,
                 &mut peer.ledgers.imports,
                 messages,
                 &mut queue,

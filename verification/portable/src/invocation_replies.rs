@@ -399,7 +399,7 @@ pub fn queued_remote_reply_bindings(mode: u8) {
                     builder.try_get_root::<Message>()?.field(Message::RETURN).edit()?.field(Return::RESULTS).edit()?.field(Payload::CAP_TABLE).init(1)?.get_mut(0).unwrap().scalar(CapDescriptor::SENDER_HOSTED).set(101);
                     Ok(())
                 }).unwrap();
-                assert!(matches!(peer.receive(frame, messages, &mut [0;4], |_|(), ||panic!("Return")).unwrap_or_else(|_|panic!("Return")), Received::Returned(key) if key == sent.question));
+                assert!(matches!(peer.receive(frame, messages, &mut [0;4], |_|(), ||panic!("Return")).unwrap_or_else(|_|panic!("Return")), Received::Returned(key, _) if key == sent.question));
                 if mode == 1 || mode == 4 {assert!(peer.drain_canceled_response(messages));}
                 else {
                     assert_eq!(replies.as_mut().unwrap().poll_one(0, &mut peer, messages, &mut cx).unwrap(), CallProgress::Delivered);

@@ -17,6 +17,7 @@ use capntproto_rpc_wire::{
 mod calls;
 pub mod coordinator;
 pub mod foreign;
+mod ready;
 pub mod resources;
 pub mod server;
 pub use calls::{Calls, Progress};

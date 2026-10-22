@@ -146,11 +146,12 @@ pub fn outgoing_question_pipeline(reflected: bool, cancel: bool) {
             let mut imports_binding = bindings::Imports::new(&mut import_slots, 1).unwrap();
             let mut answer_slots = [pipelines::Slot::<0>::EMPTY];
             let mut answer_binding = pipelines::Bindings::new(&mut answer_slots).unwrap();
-            assert!(outgoing.pending_for(response.key()));
+            assert!(outgoing.pending_for(response.key(), questions));
             let progress = outgoing
                 .poll_one(
                     0,
                     &response,
+                    questions,
                     messages,
                     &mut runtime,
                     &mut imports_binding,
@@ -164,12 +165,13 @@ pub fn outgoing_question_pipeline(reflected: bool, cancel: bool) {
                 panic!("pipeline result")
             };
             assert_eq!(barrier.is_some(), reflected);
-            assert!(!outgoing.pending_for(response.key()));
+            assert!(!outgoing.pending_for(response.key(), questions));
             assert!(matches!(
                 outgoing
                     .poll_one(
                         0,
                         &response,
+                        questions,
                         messages,
                         &mut runtime,
                         &mut imports_binding,
@@ -239,7 +241,6 @@ pub fn outgoing_question_pipeline(reflected: bool, cancel: bool) {
             assert_eq!(servers, usize::from(reflected));
             if !reflected {
                 assert!(owned::controls::release_one(
-                    0,
                     imports,
                     messages,
                     &mut queue,

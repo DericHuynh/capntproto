@@ -1,0 +1,229 @@
+{
+  "baseline": {
+    "dependent-read-portable": {
+      "Ir": 166204724,
+      "Bc": 21576384,
+      "Bcm": 1778082,
+      "Bi": 1468366,
+      "Bim": 462256
+    },
+    "pipelined-read-portable": {
+      "Ir": 162560974,
+      "Bc": 21469722,
+      "Bcm": 2161013,
+      "Bi": 1320353,
+      "Bim": 542012
+    }
+  },
+  "baseline-fanout": {
+    "fanout-32-portable": {
+      "Ir": 1414476918,
+      "Bc": 301253491,
+      "Bcm": 4989405,
+      "Bi": 5897557,
+      "Bim": 542878
+    }
+  },
+  "step1": {
+    "dependent-read-portable": {
+      "Ir": 166614730,
+      "Bc": 21632051,
+      "Bcm": 1901134,
+      "Bi": 1468367,
+      "Bim": 487471
+    },
+    "pipelined-read-portable": {
+      "Ir": 162926544,
+      "Bc": 21512953,
+      "Bcm": 2230704,
+      "Bi": 1320353,
+      "Bim": 566199
+    }
+  },
+  "step1b": {
+    "dependent-read-portable": {
+      "Ir": 166399461,
+      "Bc": 21576462,
+      "Bcm": 1922352,
+      "Bi": 1468352,
+      "Bim": 474325
+    },
+    "pipelined-read-portable": {
+      "Ir": 162796994,
+      "Bc": 21487943,
+      "Bcm": 2277222,
+      "Bi": 1320339,
+      "Bim": 547034
+    }
+  },
+  "step1b-fanout": {
+    "fanout-32-portable": {
+      "Ir": 1410631723,
+      "Bc": 301084535,
+      "Bcm": 5680876,
+      "Bi": 5897532,
+      "Bim": 550958
+    }
+  },
+  "step2": {
+    "dependent-read-portable": {
+      "Ir": 166058495,
+      "Bc": 21525907,
+      "Bcm": 1821069,
+      "Bi": 1466349,
+      "Bim": 480488
+    },
+    "fanout-32-portable": {
+      "Ir": 1412504825,
+      "Bc": 301246897,
+      "Bcm": 5402119,
+      "Bi": 5897547,
+      "Bim": 588398
+    },
+    "pipelined-read-portable": {
+      "Ir": 162490726,
+      "Bc": 21442484,
+      "Bcm": 2191853,
+      "Bi": 1318335,
+      "Bim": 553176
+    }
+  },
+  "step3": {
+    "dependent-read-portable": {
+      "Ir": 164341560,
+      "Bc": 21261424,
+      "Bcm": 1801316,
+      "Bi": 1461291,
+      "Bim": 527875
+    },
+    "fanout-32-portable": {
+      "Ir": 1404812271,
+      "Bc": 300006612,
+      "Bcm": 5431905,
+      "Bi": 5894509,
+      "Bim": 577217
+    },
+    "pipelined-read-portable": {
+      "Ir": 161143521,
+      "Bc": 21235613,
+      "Bcm": 2204492,
+      "Bi": 1315298,
+      "Bim": 557143
+    }
+  },
+  "step4": {
+    "dependent-read-portable": {
+      "Ir": 165660673,
+      "Bc": 21315438,
+      "Bcm": 1851773,
+      "Bi": 1465391,
+      "Bim": 517797
+    },
+    "fanout-32-portable": {
+      "Ir": 1402865868,
+      "Bc": 299383430,
+      "Bcm": 5435477,
+      "Bi": 5894569,
+      "Bim": 472372
+    },
+    "pipelined-read-portable": {
+      "Ir": 163885267,
+      "Bc": 21362442,
+      "Bcm": 2257175,
+      "Bi": 1319398,
+      "Bim": 588497
+    }
+  },
+  "step4b": {
+    "dependent-read-portable": {
+      "Ir": 164621064,
+      "Bc": 21238058,
+      "Bcm": 1816637,
+      "Bi": 1463312,
+      "Bim": 576353
+    },
+    "fanout-32-portable": {
+      "Ir": 1404504115,
+      "Bc": 299727076,
+      "Bcm": 5700505,
+      "Bi": 5894510,
+      "Bim": 426672
+    },
+    "pipelined-read-portable": {
+      "Ir": 161930720,
+      "Bc": 21231621,
+      "Bcm": 2228155,
+      "Bi": 1317318,
+      "Bim": 598580
+    }
+  },
+  "step5": {
+    "dependent-read-portable": {
+      "Ir": 163133142,
+      "Bc": 20884316,
+      "Bcm": 1756223,
+      "Bi": 1450166,
+      "Bim": 573316
+    },
+    "fanout-32-portable": {
+      "Ir": 1399900236,
+      "Bc": 298137584,
+      "Bcm": 5277395,
+      "Bi": 5890452,
+      "Bim": 688289
+    },
+    "pipelined-read-portable": {
+      "Ir": 160479708,
+      "Bc": 20876873,
+      "Bcm": 2126736,
+      "Bi": 1304175,
+      "Bim": 603576
+    }
+  },
+  "step5-quic": {
+    "dependent-read-portable": {
+      "Ir": 244647998,
+      "Bc": 32866480,
+      "Bcm": 3451993,
+      "Bi": 1913215,
+      "Bim": 758039
+    },
+    "fanout-32-portable": {
+      "Ir": 1486852055,
+      "Bc": 296043897,
+      "Bcm": 6951202,
+      "Bi": 6349739,
+      "Bim": 696797
+    },
+    "pipelined-read-portable": {
+      "Ir": 205371292,
+      "Bc": 27731645,
+      "Bcm": 3201216,
+      "Bi": 1545124,
+      "Bim": 713343
+    }
+  },
+  "step6-quic": {
+    "dependent-read-portable": {
+      "Ir": 238052715,
+      "Bc": 31882536,
+      "Bcm": 3336328,
+      "Bi": 1834912,
+      "Bim": 747372
+    },
+    "fanout-32-portable": {
+      "Ir": 1483619234,
+      "Bc": 295476658,
+      "Bcm": 7032185,
+      "Bi": 6312720,
+      "Bim": 654618
+    },
+    "pipelined-read-portable": {
+      "Ir": 202510010,
+      "Bc": 27330804,
+      "Bcm": 3194244,
+      "Bi": 1505948,
+      "Bim": 697541
+    }
+  }
+}

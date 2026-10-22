@@ -874,6 +874,12 @@ impl Route {
     }
 }
 impl Connection<VatId> for Route {
+    fn control_mode(&self) -> capnp_rpc::ControlMode {
+        capnp_rpc::ControlMode::Network
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<capnp_rpc::FrameIo> {
+        self.0.wire.borrow_mut().take_frame_io()
+    }
     fn get_peer_vat_id(&self) -> VatId {
         self.0.peer
     }
@@ -1041,6 +1047,12 @@ impl OutgoingMessage for Unsent {
     }
 }
 impl Connection<VatId> for Missing {
+    fn control_mode(&self) -> capnp_rpc::ControlMode {
+        capnp_rpc::ControlMode::Network
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<capnp_rpc::FrameIo> {
+        Err(gone())
+    }
     fn get_peer_vat_id(&self) -> VatId {
         self.0
     }

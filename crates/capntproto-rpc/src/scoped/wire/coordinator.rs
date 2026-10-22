@@ -70,7 +70,7 @@ struct Pump<'id> {
     frames: usize,
     // Input admitted while output waits, retained across executor yields.
     output_frames: usize,
-    returned: Option<capntproto_rpc_engine::questions::Key<'id>>,
+    returned: Option<(capntproto_rpc_engine::questions::Key<'id>, Option<usize>)>,
     blocked: bool,
 }
 

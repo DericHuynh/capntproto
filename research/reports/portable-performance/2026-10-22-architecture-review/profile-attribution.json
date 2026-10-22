@@ -1,0 +1,1077 @@
+{
+  "reviewed_commit": "788103bc106df1c21e2ff17b5030b6a0870803fb",
+  "kind": "Reanalysis of existing accepted profiles; no new execution measurements",
+  "archive_sha256": "769c30b122f2eb13748b05aa60466648ce89be34c137ff0d60932c7e4e9d5ba0",
+  "command": [
+    "callgrind_annotate",
+    "--inclusive=no",
+    "--show=Ir,Bcm",
+    "--threshold=100",
+    "--auto=no"
+  ],
+  "limitations": [
+    "Whole-process simulated counters including startup, handshake and shutdown; 10 warmups and 1000 measured operations per peer.",
+    "Exclusive source-file attribution; inlined work can be attributed to caller, standard-library or dependency files. Selected groups are neither complete component costs nor removable overhead.",
+    "Annotation program totals checked against raw profile summaries. Parsed row sums and any unreported residual are recorded. Inclusive counts are not added."
+  ],
+  "profiles": [
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "peer": "client",
+      "input": "profile-maintenance/dependent-read-portable/client.callgrind",
+      "sha256": "6b10edf90f46bd4a6902edbb45d51f31d0190adf9ce85546d81b38169d6db51c",
+      "totals": {
+        "Ir": 86602682,
+        "Bcm": 978090
+      },
+      "unreported_annotation_residual": {
+        "Ir": 2,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 1909051,
+          "Bcm": 34489
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 1816126,
+          "Bcm": 16291
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 1095724,
+          "Bcm": 31489
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 1577826,
+          "Bcm": 18267
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 554031,
+          "Bcm": 4056
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 652030,
+          "Bcm": 6
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 411573,
+          "Bcm": 7102
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 1072588,
+          "Bcm": 11158
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 481312,
+          "Bcm": 23
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 396321,
+          "Bcm": 19216
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 595170,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 656100,
+          "Bcm": 6077
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 427954,
+          "Bcm": 6057
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 821083,
+          "Bcm": 11203
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 145580,
+          "Bcm": 5
+        },
+        "crates/capntproto-rpc/src/scoped/response.rs": {
+          "Ir": 595055,
+          "Bcm": 14176
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 77906,
+          "Bcm": 6074
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 53576,
+          "Bcm": 1015
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 36708,
+          "Bcm": 11
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 14220,
+          "Bcm": 3
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 105,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 4
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 4,
+          "Bcm": 0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "peer": "service-0",
+      "input": "profile-maintenance/dependent-read-portable/service-0.callgrind",
+      "sha256": "29c85d2819a73289baee6e73d49cf204685967e6a6fb0567772e952c742f2b2b",
+      "totals": {
+        "Ir": 79591869,
+        "Bcm": 805948
+      },
+      "unreported_annotation_residual": {
+        "Ir": 0,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 1369017,
+          "Bcm": 30890
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 827841,
+          "Bcm": 16195
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 712640,
+          "Bcm": 28420
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 907159,
+          "Bcm": 7176
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 1014973,
+          "Bcm": 2074
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 384817,
+          "Bcm": 9
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 257320,
+          "Bcm": 6092
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 275650,
+          "Bcm": 38
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 340889,
+          "Bcm": 3
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 331774,
+          "Bcm": 6080
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 316706,
+          "Bcm": 1021
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 84969,
+          "Bcm": 2036
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 81223,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 80944,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 84939,
+          "Bcm": 1017
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 40476,
+          "Bcm": 2031
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 65946,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 31376,
+          "Bcm": 1014
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 20220,
+          "Bcm": 0
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 41533,
+          "Bcm": 3040
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 89,
+          "Bcm": 2
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 4
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "peer": "client",
+      "input": "profile-maintenance/pipelined-read-portable/client.callgrind",
+      "sha256": "8f7d0fcd7822e50e36d47c25df4f4ae2e6c03090b6827dabfab1ea3a48703cd4",
+      "totals": {
+        "Ir": 86003218,
+        "Bcm": 1243040
+      },
+      "unreported_annotation_residual": {
+        "Ir": 2,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 2072382,
+          "Bcm": 37535
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 2294474,
+          "Bcm": 25427
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 1750493,
+          "Bcm": 27383
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 805655,
+          "Bcm": 20395
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 580353,
+          "Bcm": 5176
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 469103,
+          "Bcm": 11135
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 891607,
+          "Bcm": 14186
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 1201835,
+          "Bcm": 20296
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 350945,
+          "Bcm": 6090
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 985360,
+          "Bcm": 11133
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 376209,
+          "Bcm": 8
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 275204,
+          "Bcm": 1033
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 223567,
+          "Bcm": 12143
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 340566,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 111223,
+          "Bcm": 5
+        },
+        "crates/capntproto-rpc/src/scoped/response.rs": {
+          "Ir": 608105,
+          "Bcm": 10890
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 56689,
+          "Bcm": 6958
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 40468,
+          "Bcm": 4
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 41450,
+          "Bcm": 3034
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 19536,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 105,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 4
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 4,
+          "Bcm": 0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "peer": "service-0",
+      "input": "profile-maintenance/pipelined-read-portable/service-0.callgrind",
+      "sha256": "de21f430b6e57c35e63b6db2b3be7ed3610eb1279c2408ab06a85014b1f92e72",
+      "totals": {
+        "Ir": 76553557,
+        "Bcm": 917806
+      },
+      "unreported_annotation_residual": {
+        "Ir": 0,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 2676915,
+          "Bcm": 43563
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 1835065,
+          "Bcm": 19316
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 756966,
+          "Bcm": 14172
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 635836,
+          "Bcm": 24395
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 690307,
+          "Bcm": 2030
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 824995,
+          "Bcm": 5098
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 335756,
+          "Bcm": 8105
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 201076,
+          "Bcm": 9
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 129097,
+          "Bcm": 4071
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 138358,
+          "Bcm": 40
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 171293,
+          "Bcm": 3
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 70815,
+          "Bcm": 4053
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 81947,
+          "Bcm": 13
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 54606,
+          "Bcm": 1014
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 120480,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 80897,
+          "Bcm": 2026
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 40420,
+          "Bcm": 0
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 40825,
+          "Bcm": 11
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 61671,
+          "Bcm": 1021
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 40519,
+          "Bcm": 2032
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 89,
+          "Bcm": 3
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 4
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "peer": "client",
+      "input": "profile-quic-maintenance/dependent-read-portable/client.callgrind",
+      "sha256": "282bf3e107eb552a5a8722834b4e225bbf70bb730ecb0864210d2999398c73c6",
+      "totals": {
+        "Ir": 128269737,
+        "Bcm": 1925376
+      },
+      "unreported_annotation_residual": {
+        "Ir": 2,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 1909051,
+          "Bcm": 53521
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 1816126,
+          "Bcm": 25372
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 1095724,
+          "Bcm": 38588
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 1577826,
+          "Bcm": 28360
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 554031,
+          "Bcm": 8102
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 652030,
+          "Bcm": 10
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 411573,
+          "Bcm": 10064
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 1072588,
+          "Bcm": 11164
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 481312,
+          "Bcm": 20
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 396319,
+          "Bcm": 20233
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 595170,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 656100,
+          "Bcm": 6075
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 427954,
+          "Bcm": 7081
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 821083,
+          "Bcm": 11207
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 145580,
+          "Bcm": 4
+        },
+        "crates/capntproto-rpc/src/scoped/response.rs": {
+          "Ir": 595055,
+          "Bcm": 11143
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 77906,
+          "Bcm": 3043
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 53576,
+          "Bcm": 1026
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 36708,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 14220,
+          "Bcm": 3
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 105,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 7
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 4,
+          "Bcm": 0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "peer": "service-0",
+      "input": "profile-quic-maintenance/dependent-read-portable/service-0.callgrind",
+      "sha256": "a609ac5c962141a676f9b2633376b789f66aad5ec87c478092b26a41d633259d",
+      "totals": {
+        "Ir": 119398442,
+        "Bcm": 1683360
+      },
+      "unreported_annotation_residual": {
+        "Ir": 0,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 1369017,
+          "Bcm": 37586
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 827820,
+          "Bcm": 13170
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 712621,
+          "Bcm": 35461
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 907159,
+          "Bcm": 9226
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 1015117,
+          "Bcm": 4115
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 384870,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 257297,
+          "Bcm": 9302
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 275641,
+          "Bcm": 42
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 340889,
+          "Bcm": 3
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 331774,
+          "Bcm": 9124
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 316704,
+          "Bcm": 4051
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 85000,
+          "Bcm": 5071
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 81190,
+          "Bcm": 12
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 80944,
+          "Bcm": 13
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 84937,
+          "Bcm": 1016
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 40478,
+          "Bcm": 2032
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 65946,
+          "Bcm": 2030
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 31376,
+          "Bcm": 1013
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 20220,
+          "Bcm": 0
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 41533,
+          "Bcm": 3043
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 89,
+          "Bcm": 2
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 4
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "peer": "client",
+      "input": "profile-quic-maintenance/pipelined-read-portable/client.callgrind",
+      "sha256": "2c491c5e83867b92d69c363cbc79e0a3df6c8c07acd9430c034c50b9fe2e4448",
+      "totals": {
+        "Ir": 109571164,
+        "Bcm": 1860195
+      },
+      "unreported_annotation_residual": {
+        "Ir": 2,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 2072382,
+          "Bcm": 45668
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 2294474,
+          "Bcm": 31822
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 1750493,
+          "Bcm": 28819
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 805655,
+          "Bcm": 22957
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 580353,
+          "Bcm": 8091
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 469103,
+          "Bcm": 12151
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 891607,
+          "Bcm": 10585
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 1201835,
+          "Bcm": 22319
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 350945,
+          "Bcm": 9951
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 985360,
+          "Bcm": 11784
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 376209,
+          "Bcm": 10
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 275204,
+          "Bcm": 1030
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 223565,
+          "Bcm": 15172
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 340566,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 111223,
+          "Bcm": 5
+        },
+        "crates/capntproto-rpc/src/scoped/response.rs": {
+          "Ir": 608105,
+          "Bcm": 10192
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 56689,
+          "Bcm": 3802
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 40468,
+          "Bcm": 4
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 41450,
+          "Bcm": 3050
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 19536,
+          "Bcm": 14
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 105,
+          "Bcm": 1
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 7
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 4,
+          "Bcm": 0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "peer": "service-0",
+      "input": "profile-quic-maintenance/pipelined-read-portable/service-0.callgrind",
+      "sha256": "6042bff60bbb995e309af2b51fff2c40ad382a298b476bb122358ee8ef6f9cf7",
+      "totals": {
+        "Ir": 97898660,
+        "Bcm": 1480704
+      },
+      "unreported_annotation_residual": {
+        "Ir": 0,
+        "Bcm": 0
+      },
+      "selected_source_files": {
+        "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs": {
+          "Ir": 2676915,
+          "Bcm": 56665
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs": {
+          "Ir": 1835065,
+          "Bcm": 28830
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs": {
+          "Ir": 756945,
+          "Bcm": 11142
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs": {
+          "Ir": 635817,
+          "Bcm": 27080
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs": {
+          "Ir": 690305,
+          "Bcm": 2030
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs": {
+          "Ir": 825139,
+          "Bcm": 6131
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs": {
+          "Ir": 335756,
+          "Bcm": 13019
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs": {
+          "Ir": 201129,
+          "Bcm": 13
+        },
+        "crates/capntproto-rpc/src/portable/runtime.rs": {
+          "Ir": 129074,
+          "Bcm": 6054
+        },
+        "crates/capntproto-rpc/src/task_set.rs": {
+          "Ir": 138349,
+          "Bcm": 43
+        },
+        "crates/capntproto-rpc/src/portable/connection.rs": {
+          "Ir": 171293,
+          "Bcm": 3
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/notified.rs": {
+          "Ir": 70846,
+          "Bcm": 6077
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/bootstrap.rs": {
+          "Ir": 81947,
+          "Bcm": 14
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/introduction.rs": {
+          "Ir": 54606,
+          "Bcm": 1013
+        },
+        "crates/capntproto-rpc/src/scoped.rs": {
+          "Ir": 120480,
+          "Bcm": 2030
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/policy.rs": {
+          "Ir": 80895,
+          "Bcm": 2025
+        },
+        "crates/capntproto-rpc/src/scoped/wire.rs": {
+          "Ir": 40420,
+          "Bcm": 0
+        },
+        "crates/capntproto-rpc/src/portable.rs": {
+          "Ir": 40792,
+          "Bcm": 11
+        },
+        "crates/capntproto-rpc/src/scoped/wire/calls.rs": {
+          "Ir": 61673,
+          "Bcm": 1022
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs": {
+          "Ir": 40519,
+          "Bcm": 2036
+        },
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/handle.rs": {
+          "Ir": 89,
+          "Bcm": 2
+        },
+        "crates/capntproto-rpc/src/portable/options.rs": {
+          "Ir": 78,
+          "Bcm": 4
+        }
+      }
+    }
+  ],
+  "aggregates": [
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "totals": {
+        "Ir": 166194551,
+        "Bcm": 1784038
+      },
+      "selected_groups": {
+        "maintenance": {
+          "Ir": 3278068,
+          "Bcm": 65379,
+          "Ir_percent": 1.972
+        },
+        "coordinator/other": {
+          "Ir": 8136431,
+          "Bcm": 126971,
+          "Ir_percent": 4.896
+        },
+        "calls": {
+          "Ir": 1618302,
+          "Bcm": 20298,
+          "Ir_percent": 0.974
+        },
+        "coordinator/multiparty": {
+          "Ir": 917185,
+          "Bcm": 11150,
+          "Ir_percent": 0.552
+        },
+        "coordinator/transport": {
+          "Ir": 2087561,
+          "Bcm": 13232,
+          "Ir_percent": 1.256
+        },
+        "outer runtime/taskset": {
+          "Ir": 2464749,
+          "Bcm": 25404,
+          "Ir_percent": 1.483
+        },
+        "call/pipeline/completion": {
+          "Ir": 1271375,
+          "Bcm": 20253,
+          "Ir_percent": 0.765
+        },
+        "hook bridge": {
+          "Ir": 887029,
+          "Bcm": 11215,
+          "Ir_percent": 0.534
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "totals": {
+        "Ir": 162556775,
+        "Bcm": 2160846
+      },
+      "selected_groups": {
+        "maintenance": {
+          "Ir": 4749297,
+          "Bcm": 81098,
+          "Ir_percent": 2.922
+        },
+        "coordinator/other": {
+          "Ir": 9051088,
+          "Bcm": 135147,
+          "Ir_percent": 5.568
+        },
+        "calls": {
+          "Ir": 1812164,
+          "Bcm": 28404,
+          "Ir_percent": 1.115
+        },
+        "coordinator/multiparty": {
+          "Ir": 859469,
+          "Bcm": 20254,
+          "Ir_percent": 0.529
+        },
+        "coordinator/transport": {
+          "Ir": 1716602,
+          "Bcm": 19284,
+          "Ir_percent": 1.056
+        },
+        "hook bridge": {
+          "Ir": 1322315,
+          "Bcm": 20308,
+          "Ir_percent": 0.813
+        },
+        "call/pipeline/completion": {
+          "Ir": 1633885,
+          "Bcm": 22023,
+          "Ir_percent": 1.005
+        },
+        "outer runtime/taskset": {
+          "Ir": 1338602,
+          "Bcm": 17322,
+          "Ir_percent": 0.823
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "totals": {
+        "Ir": 247668179,
+        "Bcm": 3608736
+      },
+      "selected_groups": {
+        "maintenance": {
+          "Ir": 3278068,
+          "Bcm": 91107,
+          "Ir_percent": 1.324
+        },
+        "coordinator/other": {
+          "Ir": 8136471,
+          "Bcm": 156257,
+          "Ir_percent": 3.285
+        },
+        "calls": {
+          "Ir": 1618304,
+          "Bcm": 30392,
+          "Ir_percent": 0.653
+        },
+        "coordinator/multiparty": {
+          "Ir": 917185,
+          "Bcm": 18239,
+          "Ir_percent": 0.37
+        },
+        "coordinator/transport": {
+          "Ir": 2087705,
+          "Bcm": 15279,
+          "Ir_percent": 0.843
+        },
+        "outer runtime/taskset": {
+          "Ir": 2464682,
+          "Bcm": 29636,
+          "Ir_percent": 0.995
+        },
+        "call/pipeline/completion": {
+          "Ir": 1271375,
+          "Bcm": 17218,
+          "Ir_percent": 0.513
+        },
+        "hook bridge": {
+          "Ir": 887029,
+          "Bcm": 13237,
+          "Ir_percent": 0.358
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "totals": {
+        "Ir": 207469824,
+        "Bcm": 3340899
+      },
+      "selected_groups": {
+        "maintenance": {
+          "Ir": 4749297,
+          "Bcm": 102333,
+          "Ir_percent": 2.289
+        },
+        "coordinator/other": {
+          "Ir": 9051128,
+          "Bcm": 158942,
+          "Ir_percent": 4.363
+        },
+        "calls": {
+          "Ir": 1812166,
+          "Bcm": 29841,
+          "Ir_percent": 0.873
+        },
+        "coordinator/multiparty": {
+          "Ir": 859469,
+          "Bcm": 26183,
+          "Ir_percent": 0.414
+        },
+        "coordinator/transport": {
+          "Ir": 1716746,
+          "Bcm": 16716,
+          "Ir_percent": 0.827
+        },
+        "hook bridge": {
+          "Ir": 1322315,
+          "Bcm": 24349,
+          "Ir_percent": 0.637
+        },
+        "call/pipeline/completion": {
+          "Ir": 1633885,
+          "Bcm": 21976,
+          "Ir_percent": 0.788
+        },
+        "outer runtime/taskset": {
+          "Ir": 1338535,
+          "Bcm": 22339,
+          "Ir_percent": 0.645
+        }
+      }
+    }
+  ]
+}

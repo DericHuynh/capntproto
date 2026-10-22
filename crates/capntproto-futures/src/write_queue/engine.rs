@@ -328,6 +328,10 @@ pub struct ObservedSender<M: AsOutputSegments> {
     deferred: bool,
 }
 impl<M: AsOutputSegments> ObservedSender<M> {
+    /// End the same ordered queue without creating another sender handle.
+    pub fn terminate(&self, result: Result<(), Error>) -> impl Future<Output = Result<(), Error>> + Unpin {
+        self.sender.terminate(result)
+    }
     pub fn send(&mut self, message: M) -> Result<(), Error> {
         self.through = self.sender.enqueue(message, None, true)?;
         self.deferred = false;

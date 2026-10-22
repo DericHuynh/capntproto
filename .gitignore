@@ -273,3 +273,18 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-22-pipeline-cleanup/README.md
 !/research/reports/portable-performance/2026-10-22-pipeline-cleanup/report.json
 !/research/reports/portable-performance/2026-10-22-pipeline-cleanup/source.patch
+
+!/research/reports/portable-performance/2026-10-22-architecture-review/
+/research/reports/portable-performance/2026-10-22-architecture-review/*
+!/research/reports/portable-performance/2026-10-22-architecture-review/README.md
+!/research/reports/portable-performance/2026-10-22-architecture-review/profile-attribution.json
+
+# Portable architecture implementation with per-stage repeated evidence.
+!/research/reports/portable-performance/2026-10-22-architecture-implementation/
+/research/reports/portable-performance/2026-10-22-architecture-implementation/*
+!/research/reports/portable-performance/2026-10-22-architecture-implementation/README.md
+!/research/reports/portable-performance/2026-10-22-architecture-implementation/comparisons.json
+!/research/reports/portable-performance/2026-10-22-architecture-implementation/profiles.json
+!/research/reports/portable-performance/2026-10-22-architecture-implementation/socket-counts.json
+!/research/reports/portable-performance/2026-10-22-architecture-implementation/evidence-index.json
+!/research/reports/portable-performance/2026-10-22-architecture-implementation/archive.json

@@ -532,6 +532,15 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>>
             &entry.owner,
         ))
     }
+    /// Mutate the owner of an exact queued task without changing its route or
+    /// dispatch order. Published or reused task identities cannot match.
+    pub fn queued_owner_mut(&mut self, key: TaskKey<'id>) -> Option<&mut C> {
+        self.tasks
+            .iter_mut()
+            .filter_map(|slot| slot.entry.as_mut())
+            .find(|entry| entry.sequence == key.sequence)
+            .map(|entry| &mut entry.owner)
+    }
     /// Reserve enough slots for the next admission, including protocol headroom.
     /// Failure does not consume owners, references or task sequence identities.
     pub fn reserve_task_capacity(&mut self, required: usize) -> bool {

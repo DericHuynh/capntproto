@@ -408,7 +408,7 @@ pub trait IncomingMessageStream {
     ) -> Poll<capnp::Result<Option<Box<dyn IncomingMessage>>>>;
 }
 
-/// Exclusive reception of complete standard frames without ancillary resources.
+/// Exclusive reception of standard frames and their ancillary resources.
 /// A successful frame remains immutable and available until `finish_frame`;
 /// polling again before finishing returns that same frame, without reading IO.
 /// Dropping the stream ends reception. Partial progress survives Pending.
@@ -444,48 +444,63 @@ pub trait IncomingFrameStream {
     /// Release the current frame. An adapter abandoning incomplete input must
     /// stop polling this stream and retain it until output drain has finished.
     fn finish_frame(&mut self);
+    /// Transfer descriptors belonging to the complete current frame, once.
+    /// No descriptor from a prefetched successor may be returned. Untaken
+    /// descriptors are released by finish_frame. Partial reads retain them.
+    #[cfg(unix)]
+    fn take_fds(&mut self) -> Vec<std::os::fd::OwnedFd> {
+        Vec::new()
+    }
 }
 
 #[cfg(feature = "std")]
 /// Reusable frame publication into a connection's existing ordered output.
-/// Acceptance is synchronous; poll_flush observes physical completion of all
+/// Acceptance is synchronous and may defer IO until the caller ends its bounded
+/// publication turn with poll_flush. That method drives or schedules output and
+/// observes physical completion of all
 /// previously accepted frames. Implementations retain frame resources through
 /// that completion and never cancel accepted writes when this handle is dropped.
 pub trait OutgoingMessageStream {
+    /// Stop accepting frames and drain/close the physical write half. Enqueue
+    /// shutdown synchronously; dropping its observer must not cancel it.
+    fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error>;
     fn send(&mut self, frame: OutgoingFrame) -> Result<(), Error>;
-    /// Accept a frame whose caller will poll `poll_flush` after its bounded
-    /// publication batch. Transports may defer an eager drive until that poll;
-    /// ownership, FIFO order and physical completion remain identical to send.
-    fn send_buffered(&mut self, frame: OutgoingFrame) -> Result<(), Error> {
-        self.send(frame)
-    }
     fn poll_flush(
         &mut self,
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Result<(), Error>>;
 }
 
+/// Exclusive hosted frame transport. outgoing.poll_flush must arrange output
+/// progress and retain accepted resources until local physical completion.
+#[cfg(feature = "std")]
+pub struct FrameIo {
+    pub incoming: Box<dyn IncomingFrameStream>,
+    pub outgoing: Box<dyn OutgoingMessageStream>,
+    /// Independent physical-writer failure, when the transport has such a task.
+    pub write_finished: Option<Promise<(), Error>>,
+}
+
+/// Immutable control-plane capability selected when a connection is admitted.
+/// TwoParty never enables introductions, answer handoffs or multiparty Join.
+/// Networks whose features may activate later must select Network from the start.
+#[cfg(feature = "std")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlMode {
+    TwoParty,
+    Network,
+}
+
 /// A two-way RPC connection, created by [`VatNetwork::connect()`].
 #[cfg(feature = "std")]
 pub trait Connection<VatId> {
-    /// Transfer exclusive byte-only input without allocating a message object
-    /// per frame. Return None for transports carrying descriptor attachments.
-    /// This and take_incoming_stream consume the same single input owner.
-    fn take_incoming_frames(&mut self) -> Option<Box<dyn IncomingFrameStream>> {
-        None
-    }
-    /// Optional single-consumer flush observer over the existing FIFO. Other
-    /// outgoing message APIs retain their ordering and completion semantics.
-    fn take_outgoing_stream(&mut self) -> Option<Box<dyn OutgoingMessageStream>> {
-        None
-    }
-    /// Optionally transfer exclusive input ownership to a reusable poller.
-    /// Polling it must not borrow this connection. Keep it alive through output
-    /// drain and close even when input is canceled. Custom transports may keep
-    /// using the per-message future interface by returning None.
-    fn take_incoming_stream(&mut self) -> Option<Box<dyn IncomingMessageStream>> {
-        None
-    }
+    /// This value is fixed for the lifetime of this transport connection.
+    fn control_mode(&self) -> ControlMode;
+
+    /// Atomically transfer the portable connection's exclusive frame owners.
+    /// A second acquisition fails without changing existing owners. Portable
+    /// hosting does not negotiate per-message fallback interfaces.
+    fn take_frame_io(&mut self) -> capnp::Result<FrameIo>;
 
     /// Optionally lend exclusive input to a reusable poller with the same
     /// message lifetime rules as `receive_incoming_message`: Calls and Returns
@@ -558,8 +573,9 @@ pub trait Connection<VatId> {
     }
 
     /// Enqueue an immutable wire frame in the same FIFO as ordinary messages.
-    /// The portable driver uses this path to preserve capability indices without
-    /// decoding into a hook-imbued builder. Retain bytes and resources until the
+    /// This explicit submission preserves capability indices without decoding
+    /// into a hook-imbued builder. Portable hosting uses FrameIo's reusable stream.
+    /// Retain bytes and resources until the
     /// write completes, even if the returned completion promise is dropped.
     /// Completion means local write completion, never peer receipt.
     fn send_frame(&mut self, _frame: OutgoingFrame) -> Promise<(), Error> {
@@ -576,8 +592,8 @@ pub trait Connection<VatId> {
     /// receive. Buffered transports may lend immutable receive storage even for
     /// Calls and Returns. Keeping that storage alive must remain memory-safe;
     /// a transport may reject the next receive until the message is dropped.
-    /// The portable adapter uses this while copying into its caller-owned pool.
-    /// The default keeps compatibility with transports returning owned messages.
+    /// This message-oriented API is independent of the exclusive FrameIo input.
+    /// The default receives an owned message.
     fn receive_incoming_message_short_lived(
         &mut self,
     ) -> Promise<Option<Box<dyn IncomingMessage>>, Error> {
@@ -588,7 +604,7 @@ pub trait Connection<VatId> {
     /// second observer of the same FIFO, never a separate writer. It must not
     /// keep the network alive or require a Connection borrow while polled.
     /// The ordinary network driver remains responsible for progress and close.
-    /// Portable adapters may poll it after publishing to avoid a task round trip.
+    /// FrameIo's output stream owns cooperative flushing for portable hosting.
     fn output_driver(&self) -> Option<Promise<(), Error>> {
         None
     }

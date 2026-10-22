@@ -90,7 +90,7 @@ pub fn bounded_provision_exchange(release_first: bool) {
                             assert!(answer::finished(&finished, messages, &mut accepting.answers, &mut accepting.exports, &mut [0]).unwrap().unwrap().retired.is_none());
                             finished.release(messages);
                             assert_eq!(accepting.answers.release_pipeline(pipeline).unwrap().release(messages), 53);
-                            assert!(controls::release_one(0, &mut recipient.imports, messages, &mut queue, 776, Default::default()).unwrap().is_some());
+                            assert!(controls::release_one(&mut recipient.imports, messages, &mut queue, 776, Default::default()).unwrap().is_some());
                             let release = exchange(messages, &mut queue, 1);
                             release.with(messages, |root| {
                                 let capntproto_rpc_wire::rpc_capnp::message::Release(release) = root.which().unwrap() else {panic!("Release")};

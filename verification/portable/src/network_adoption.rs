@@ -87,7 +87,7 @@ pub fn owning_network_adoption(mode: u8) {
             let early_return = matches!(mode, 0 | 2 | 4);
             if early_return {
                 let frame=result(messages);
-                assert!(matches!(peer.receive(frame,messages,&mut [0;4], |_|(), ||panic!("Return")).unwrap_or_else(|r|panic!("{}",r.error)),Received::Returned(k) if k==key));
+                assert!(matches!(peer.receive(frame,messages,&mut [0;4], |_|(), ||panic!("Return")).unwrap_or_else(|r|panic!("{}",r.error)),Received::Returned(k, _) if k==key));
                 assert_eq!(peer.take_response(key).err(),Some(Error::PendingAuthorization), "unmatched adoption cannot expose an early Return");
                 job.with_completion(messages, |token| assert_eq!(token.get_as::<capnp::data::Reader<'_>>().unwrap(),b"authenticated completion")).unwrap();
             }
@@ -236,8 +236,8 @@ pub fn owning_adopted_capability(mode: u8) {
                 assert_eq!(f.unwrap().get_release_result_caps(),mode==2);
             }).unwrap();finish.release(messages);
             let mut releases=0;
-            for index in 0..4 {
-                if controls::release_one(index,&mut peer.ledgers.imports,messages,&mut queue,776,Default::default()).unwrap().is_some() {
+            for _ in 0..4 {
+                if controls::release_one(&mut peer.ledgers.imports,messages,&mut queue,776,Default::default()).unwrap().is_some() {
                     releases+=1;
                     let release=super::owning::exchange(messages,&mut queue,1);
                     release.with(messages,|root| {

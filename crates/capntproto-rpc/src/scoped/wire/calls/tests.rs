@@ -1317,7 +1317,10 @@ fn burst_admission_keeps_older_cancellation_fair_when_capacity_fills() {
                 result.unwrap();
             }
             drain(&mut queue, messages);
-            if calls.immediate_receiver(first).is_none() {
+            if calls
+                .immediate_receiver(first, driver.completion_owner(first))
+                .is_none()
+            {
                 retired = true;
                 break;
             }
@@ -1387,15 +1390,19 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                         key
                     })
                     .collect();
-                assert_eq!(calls.reply_owners.len(), 12);
+                assert_eq!(calls.published, 12);
                 assert_eq!(calls.live, 12);
                 assert_eq!(calls.first_free, calls.entries.len());
                 for old in &previous {
                     assert!(
-                        calls.plain_receiver(*old).is_none(),
+                        calls
+                            .plain_receiver(*old, driver.completion_owner(*old))
+                            .is_none(),
                         "stale generation selected a new owner"
                     );
-                    assert!(calls.immediate_receiver(*old).is_none());
+                    assert!(calls
+                        .immediate_receiver(*old, driver.completion_owner(*old))
+                        .is_none());
                 }
                 if round != 0 {
                     assert!(
@@ -1405,7 +1412,9 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                         "exercise question ID reuse"
                     );
                     drop(responses[1].take());
-                    assert!(calls.plain_receiver(questions[1]).is_none());
+                    assert!(calls
+                        .plain_receiver(questions[1], driver.completion_owner(questions[1]))
+                        .is_none());
                 }
                 // Replies arrive in reverse order, with a canceled reply mixed in.
                 for index in (0..12).rev() {
@@ -1425,7 +1434,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                         // An owned return admitted through the general reader uses
                         // the same indexed owner and full generation check.
                         match driver.receive(reply, messages, &mut [0; 24], |_| (), || ()) {
-                            Ok(connection::Received::Returned(returned)) => {
+                            Ok(connection::Received::Returned(returned, _)) => {
                                 assert_eq!(returned, key)
                             }
                             _ => panic!("ordinary return admission"),
@@ -1433,7 +1442,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                         assert_eq!(
                             calls
                                 .returned(
-                                    key,
+                                    (key, driver.completion_owner(key)),
                                     &mut hooks,
                                     &mut driver,
                                     messages,
@@ -1447,17 +1456,20 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                         ready(&mut response.promise).unwrap();
                         continue;
                     }
-                    let received = match driver
-                        .try_receive_plain_owned(reply, messages, |key| calls.plain_receiver(key))
-                    {
-                        Ok(received) => received,
-                        Err((error, _)) => panic!("plain return: {error:?}"),
-                    };
+                    let received =
+                        match driver.try_receive_plain_owned(reply, messages, |key, owner| {
+                            calls.plain_receiver(key, owner)
+                        }) {
+                            Ok(received) => received,
+                            Err((error, _)) => panic!("plain return: {error:?}"),
+                        };
                     match received {
                         connection::PlainReceived::Delivered(owner, message) => {
                             assert!(responses[index].is_some());
                             calls.deliver_plain(owner, message);
-                            assert!(calls.plain_receiver(key).is_none());
+                            assert!(calls
+                                .plain_receiver(key, driver.completion_owner(key))
+                                .is_none());
                             let mut response = responses[index].take().unwrap();
                             ready(&mut response.promise).unwrap();
                         }
@@ -1479,7 +1491,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                 assert_eq!(calls.live, 0);
                 assert_eq!(calls.first_free, 0);
                 assert!(
-                    calls.reply_owners.is_empty(),
+                    (calls.published == 0),
                     "retirement must release every index entry"
                 );
                 previous = questions;
@@ -1950,7 +1962,12 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
             let Some(DirectStage::Sent(question)) = entry.wire.direct else {
                 panic!("published parent")
             };
-            assert_eq!(calls.immediate_receiver(question).is_some(), !project_early);
+            assert_eq!(
+                calls
+                    .immediate_receiver(question, driver.completion_owner(question))
+                    .is_some(),
+                !project_early
+            );
             drain(&mut queue, messages);
             let reply = Frame::build(messages, 256, Default::default(), |builder| {
                 calls::dynamic_results(
@@ -1976,7 +1993,7 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
                 .unwrap_or_else(|rejected| panic!("Return: {:?}", rejected.error));
             let completed = calls
                 .returned(
-                    question,
+                    (question, driver.completion_owner(question)),
                     &mut hooks,
                     &mut driver,
                     messages,

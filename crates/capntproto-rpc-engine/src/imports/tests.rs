@@ -285,6 +285,8 @@ fn nonempty_backing_is_rejected_without_dropping_its_owner() {
     let mut remote = ImportRefs::new();
     remote.receive(1).unwrap();
     let mut storage = [Slot {
+        release_previous: None,
+        release_next: None,
         generation: 7,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -349,6 +351,57 @@ fn growing_import_batch_rollback_preserves_owners_and_generations() {
         assert!(imports.resolve(stale).is_none());
         imports.release(new);
         assert_eq!(imports.pending_release(0).unwrap().commit(), 37);
+    })
+    .unwrap();
+}
+
+#[test]
+fn release_queue_preserves_rejection_and_unlinks_revived_head_middle_and_tail() {
+    let mut slots = [const { Slot::EMPTY }; 64];
+    with_imports(&mut slots, |imports| {
+        let mut owners: [Option<_>; 64] = core::array::from_fn(|i| {
+            Some(imports.admit(ImportId::from_wire(i as u32), i).unwrap())
+        });
+        for i in [63, 17, 1, 42] {
+            imports.release(owners[i].take().unwrap());
+        }
+        assert_eq!(
+            imports.next_release().unwrap().id(),
+            ImportId::from_wire(63)
+        );
+        // Revive the head, an interior item, and the tail without disturbing 17.
+        for i in [63, 1, 42] {
+            owners[i] = Some(imports.receive(ImportId::from_wire(i as u32)).unwrap());
+        }
+        assert_eq!(imports.next_release().unwrap().commit(), 17);
+        assert!(!imports.has_pending_release());
+        for i in [42, 1, 63] {
+            imports.release(owners[i].take().unwrap());
+        }
+        for i in [42, 1, 63] {
+            let pending = imports.next_release().unwrap();
+            assert_eq!(pending.count(), 2);
+            assert_eq!(pending.commit(), i);
+        }
+        for owner in owners.into_iter().flatten() {
+            imports.release(owner);
+        }
+        while let Some(pending) = imports.next_release() {
+            pending.commit();
+        }
+        assert!(imports.is_empty());
+    })
+    .unwrap();
+    // Borrowed storage can be reused after terminal teardown with queued work.
+    with_imports(&mut slots, |imports| {
+        let owner = imports.admit(ImportId::from_wire(8), 8).unwrap();
+        imports.release(owner);
+    })
+    .unwrap();
+    with_imports(&mut slots, |imports| {
+        let owner = imports.admit(ImportId::from_wire(9), 9).unwrap();
+        imports.release(owner);
+        assert_eq!(imports.next_release().unwrap().commit(), 9);
     })
     .unwrap();
 }

@@ -45,10 +45,12 @@ impl<'id, 's> Questions<'id, 's> {
                     references: 1,
                     lifecycle: Question::new(),
                     finish: None,
+                    finish_next: None,
                     published: false,
                     destination: ResultsTo::Caller,
                     provision: false,
                     owner: None,
+                    observers: [0; 2],
                 },
             )
             .map_err(|rejected| match rejected.kind {

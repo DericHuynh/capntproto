@@ -24,15 +24,21 @@ pub(super) fn connect<V: 'static>(
     // Capture peer callbacks only after reserving the trusted connection ID.
     let connection = vat::Connection::with_identity(connection, id);
     let idle = connection.idle_notifier();
-    let network_commands = coordinator::multiparty::Commands::new(
-        context.options.concurrency.get(),
-        context.options.message_bytes.get(),
-    );
-    *network_commands.network.borrow_mut() = Some(Rc::new(super::introduction::Network {
-        connection: connection.network_connection(),
-        connections: Rc::downgrade(connections),
-        context: Rc::downgrade(context),
-    }));
+    let network_commands = match connection.network_connection().borrow().control_mode() {
+        crate::ControlMode::TwoParty => None,
+        crate::ControlMode::Network => {
+            let commands = coordinator::multiparty::Commands::new(
+                context.options.concurrency.get(),
+                context.options.message_bytes.get(),
+            );
+            *commands.network.borrow_mut() = Some(Rc::new(super::introduction::Network {
+                connection: connection.network_connection(),
+                connections: Rc::downgrade(connections),
+                context: Rc::downgrade(context),
+            }));
+            Some(commands)
+        }
+    };
     let state = Rc::new(State {
         id,
         handle: Handle::new(&commands),
@@ -40,7 +46,11 @@ pub(super) fn connect<V: 'static>(
         abort: RefCell::new(Some(abort)),
         policy: coordinator::policy::Policy::with_settings(context.policy.clone()),
         idle,
-        network_controls: network_commands.handle(),
+        network_controls: network_commands
+            .as_ref()
+            .map_or_else(coordinator::multiparty::Handle::unavailable, |commands| {
+                commands.handle()
+            }),
     });
     // Capture the transport peer only after reserving its identity. Custom
     // callbacks can reenter; the reserved identity cannot create a second driver.
@@ -93,7 +103,7 @@ async fn run<V: 'static>(
     aborted: shared::Receiver<Error>,
     policy: Rc<coordinator::policy::Policy>,
     idle: Rc<dyn Fn(bool)>,
-    network_commands: Rc<coordinator::multiparty::Commands>,
+    network_commands: Option<Rc<coordinator::multiparty::Commands>>,
     joins: Option<Rc<dyn crate::multiparty::JoinNetwork<V>>>,
 ) -> capnp::Result<()> {
     let mut buffers = messages::GrowingBuffers::new(
@@ -107,7 +117,7 @@ async fn run<V: 'static>(
     };
     let network_connection = connection.network_connection();
     let (peer, mut reader, mut writer, failure) =
-        connection.into_io_and_peer(options.message_bytes);
+        connection.into_io_and_peer(options.message_bytes)?;
     let peer = &peer;
     let mut scratch = Vec::new();
     scratch
@@ -167,15 +177,18 @@ async fn run<V: 'static>(
                 });
                 driver.set_descriptors(coordinator::multiparty::introduction::descriptors());
                 driver.use_owned_output_queues(true);
+                let mut hooks = ClientHooks::new(options.hooks.get(), options.concurrency.get())
+                    .with_message_pool(capnp::message::SegmentPool::new(
+                        options.cached_message_words,
+                        options.cached_message_segments,
+                    ))
+                    .with_admission(policy.admission.clone());
+                if let Some(commands) = &network_commands {
+                    hooks = hooks.with_joins(commands.handle());
+                }
                 let mut coordinator = coordinator::Coordinator::new_using_commands(
                     driver,
-                    ClientHooks::new(options.hooks.get(), options.concurrency.get())
-                        .with_message_pool(capnp::message::SegmentPool::new(
-                            options.cached_message_words,
-                            options.cached_message_segments,
-                        ))
-                        .with_admission(policy.admission.clone())
-                        .with_joins(network_commands.handle()),
+                    hooks,
                     options.concurrency,
                     Some(executor),
                     coordinator::Options {
@@ -187,21 +200,16 @@ async fn run<V: 'static>(
                     commands,
                 )?
                 .with_policy(policy);
-                coordinator.foreign = coordinator.foreign.with_introductions(
-                    coordinator::multiparty::introduction::policy(network_commands.handle()),
-                );
+                if let Some(commands) = &network_commands {
+                    coordinator.foreign = coordinator.foreign.with_introductions(
+                        coordinator::multiparty::introduction::policy(commands.handle()),
+                    );
+                }
                 let controls = coordinator::TwoParty::new(
                     || bootstrap.for_peer(peer).map(capability::Client::new),
                     options.concurrency,
                 )
                 .with_idle_notifier(move |value| idle(value));
-                let mut controls = coordinator::multiparty::NetworkControl::new(
-                    controls,
-                    network_connection,
-                    joins,
-                    network_commands,
-                    options.concurrency.get(),
-                );
                 let mut queue = messages::Queue::<vat::Bundle>::growing_with_resources(
                     0,
                     options.output_queue.get(),
@@ -218,20 +226,50 @@ async fn run<V: 'static>(
                     }
                     failure.as_mut().poll(cx)
                 });
-                coordinator
-                    .run_connection(
-                        messages,
-                        &mut queue,
-                        &mut reader,
-                        &mut writer,
-                        &mut scratch,
-                        &vat::Resources::new(options.maximum_fds),
-                        &mut controls,
-                        async { stopped.await.unwrap_or_else(|_| Err(closing())) },
-                        abort,
-                    )
-                    .await
-                    .map_err(run_error)
+                // Select the handler once. The ordinary stream loop has no
+                // multiparty collections, weak command queues or feature probes.
+                if let Some(network_commands) = network_commands {
+                    let mut controls = coordinator::multiparty::NetworkControl::new(
+                        controls,
+                        network_connection,
+                        joins,
+                        network_commands,
+                        options.concurrency.get(),
+                    );
+                    coordinator
+                        .run_connection(
+                            messages,
+                            &mut queue,
+                            &mut reader,
+                            &mut writer,
+                            &mut scratch,
+                            &vat::Resources::new(options.maximum_fds),
+                            &mut controls,
+                            async { stopped.await.unwrap_or_else(|_| Err(closing())) },
+                            abort,
+                        )
+                        .await
+                        .map_err(run_error)
+                } else {
+                    let mut controls = controls;
+                    let result = coordinator
+                        .run_connection(
+                            messages,
+                            &mut queue,
+                            &mut reader,
+                            &mut writer,
+                            &mut scratch,
+                            &vat::Resources::new(options.maximum_fds),
+                            &mut controls,
+                            async { stopped.await.unwrap_or_else(|_| Err(closing())) },
+                            abort,
+                        )
+                        .await;
+                    // The idle notifier is weak. Retain this transport owner
+                    // through drain even though no NetworkControl owns it.
+                    drop(network_connection);
+                    result.map_err(run_error)
+                }
             })
             .await
         },

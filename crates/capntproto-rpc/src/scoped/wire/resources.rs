@@ -51,7 +51,7 @@ impl<T> Import<T> {
 }
 
 impl<'id> ClientHooks<'id> {
-    /// Subscribe imported routes to stable revision sources before publishing
+    /// Subscribe imported routes to change sources before publishing
     /// hooks. None declares no remote metadata. Local opaque hooks retain their
     /// policy-preserving observer, since their authority cannot be unwrapped.
     pub fn collect_wire<I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>(

@@ -85,7 +85,7 @@ pub fn owning_tail_driver(chunk: usize) {
             assert!(matches!(bob.tail_answer(parent,child,messages,&mut queue,776,Default::default()),Err(owned::connection::Error::TailAlreadyUsed)));
             let request = bob.runtime.complete(running_parent).into_call().unwrap_or_else(|_| panic!("Call"));
             bob.release_call(request,messages);
-            assert!(matches!(receive(&mut alice,messages,&mut queue,chunk,0),Received::Returned(key) if key == original));
+            assert!(matches!(receive(&mut alice,messages,&mut queue,chunk,0),Received::Returned(key, _) if key == original));
             assert_eq!(alice.poll_outgoing(0,messages).unwrap(),Propagation::Pending);
             assert!(matches!(alice.take_response(original),Err(owned::connection::Error::PendingResponse)));
             // The redirected service keeps its actual result locally. No
@@ -111,7 +111,7 @@ pub fn owning_tail_driver(chunk: usize) {
             pipelines::complete(&mut alice.ledgers.answers,producer,Ok(published)).unwrap_or_else(|_| panic!("publish"));
             let request=alice.runtime.complete(running_child).into_call().unwrap_or_else(|_| panic!("Call"));
             alice.release_call(request,messages);
-            assert!(matches!(receive(&mut bob,messages,&mut queue,chunk,0),Received::Returned(key) if key==child));
+            assert!(matches!(receive(&mut bob,messages,&mut queue,chunk,0),Received::Returned(key, _) if key==child));
             let child_response=bob.take_response(child).unwrap();
             child_response.with(messages,|reply| assert!(matches!(reply,owned::Reply::ResultsSentElsewhere))).unwrap();
             bob.release_response(child_response,messages);

@@ -9,7 +9,7 @@ use std::sync::{
 type Remote = capability::RemotePromise<any_pointer::Owned>;
 
 #[test]
-fn metadata_revisions_preserve_late_changes_and_dynamic_projection() {
+fn metadata_subscriptions_preserve_late_changes_and_dynamic_projection() {
     clients::with_growing_graph::<Rc<MetadataSource>, u8, _>(0, 8, |graph| {
         let source = Rc::new(MetadataSource::default());
         let route = graph
@@ -31,9 +31,18 @@ fn metadata_revisions_preserve_late_changes_and_dynamic_projection() {
             );
         }
         assert_eq!(reads.get(), 1, "stable imports project metadata once");
+        assert!(
+            hooks.refresh.is_empty(),
+            "subscribed endpoints leave the refresh set"
+        );
         assert!(client.hook.get_failure().is_none());
         source
             .update(|metadata| metadata.failure = Some(Error::overloaded("late metadata".into())));
+        assert_eq!(
+            client.hook.get_failure().unwrap().extra,
+            "late metadata",
+            "source updates publish without a collection walk"
+        );
         hooks.synchronize(
             graph,
             |_| panic!("subscribed owner needs no graph projection"),
@@ -47,6 +56,12 @@ fn metadata_revisions_preserve_late_changes_and_dynamic_projection() {
             ..Default::default()
         });
         assert_eq!(client.hook.get_failure().unwrap().extra, "dynamic override");
+        source.update(|metadata| metadata.failure = Some(Error::failed("late metadata".into())));
+        assert_eq!(
+            client.hook.get_failure().unwrap().extra,
+            "dynamic override",
+            "old source lease was disarmed"
+        );
         hooks.synchronize(
             graph,
             |owner| owner.snapshot(),
@@ -1838,4 +1853,46 @@ fn general_request_fallback_preserves_envelopes_and_direct_response_ownership() 
         })
         .unwrap();
     }
+}
+
+#[test]
+fn hook_index_preserves_converged_aliases_and_recycled_generations() {
+    clients::with_growing_graph::<(), u8, _>(0, 8, |graph| {
+        let mut hooks = ClientHooks::new(3, 1);
+        let terminal = graph.endpoint((), Location::Local).unwrap();
+        let a = graph.promise(&mut None).unwrap();
+        let b = graph.promise(&mut None).unwrap();
+        let a_hook = hooks.export_client(graph, &a).unwrap();
+        let b_hook = hooks.export_client(graph, &b).unwrap();
+        for promise in [&a, &b] {
+            let mut target = Some(graph.retain_key(terminal.key()).unwrap());
+            graph
+                .resolve(promise.key(), &mut target, clients::Source::Direct)
+                .unwrap();
+        }
+        hooks.collect(graph);
+        assert_eq!(hooks.bindings.len(), 1);
+        let head = hooks.export_client(graph, &terminal).unwrap();
+        assert_eq!(head.hook.get_ptr(), b_hook.hook.get_ptr());
+        drop((head, b_hook));
+        hooks.reclaim_released(graph);
+        let remaining = hooks.export_client(graph, &terminal).unwrap();
+        assert_eq!(remaining.hook.get_ptr(), a_hook.hook.get_ptr());
+        drop((remaining, a_hook));
+        hooks.reclaim_released(graph);
+        assert!(hooks.bindings.is_empty());
+        graph.release(a);
+        graph.release(b);
+        graph.release(terminal);
+        while graph.take_retired().is_some() {}
+        let reused = graph.endpoint((), Location::Local).unwrap();
+        let fresh = hooks.export_client(graph, &reused).unwrap();
+        assert_eq!(hooks.bindings.len(), 1);
+        drop(fresh);
+        hooks.reclaim_released(graph);
+        graph.release(reused);
+        while graph.take_retired().is_some() {}
+        assert!(graph.is_empty());
+    })
+    .unwrap();
 }

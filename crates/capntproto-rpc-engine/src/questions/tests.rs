@@ -311,3 +311,76 @@ fn adapter_owner_pins_generation_and_stale_release_cannot_clear_reuse() {
     })
     .unwrap();
 }
+
+#[test]
+fn weak_observer_counts_are_separate_and_cannot_cross_question_generations() {
+    let mut slots = [Slot::EMPTY];
+    with_questions(&mut slots, |questions| {
+        let first = questions.reserve().unwrap().accept();
+        let old = first.key();
+        questions.add_observer(old, false);
+        questions.add_observer(old, false);
+        questions.add_observer(old, true);
+        questions.remove_observer(old, false);
+        assert!(questions.has_observers(old, false));
+        questions.remove_observer(old, false);
+        assert!(!questions.has_observers(old, false));
+        assert!(questions.has_observers(old, true));
+        questions
+            .prepare_receive_owned(old, true)
+            .unwrap()
+            .accept_releasing_owner(first)
+            .unwrap();
+        assert!(
+            questions.is_empty(),
+            "weak observers do not retain authority"
+        );
+        let next = questions.reserve().unwrap().accept();
+        let key = next.key();
+        assert_eq!(old.id(), key.id());
+        assert_ne!(old, key);
+        questions.add_observer(key, true);
+        questions.remove_observer(old, true);
+        assert!(!questions.has_observers(old, true));
+        assert!(questions.has_observers(key, true));
+        questions.remove_observer(key, true);
+        assert!(!questions.has_observers(key, true));
+        questions
+            .prepare_receive_owned(key, true)
+            .unwrap()
+            .accept_releasing_owner(next)
+            .unwrap();
+    })
+    .unwrap();
+}
+
+#[test]
+fn finish_queue_preserves_sparse_retirement_order_and_rejected_output() {
+    let mut slots = [const { Slot::EMPTY }; 64];
+    with_questions(&mut slots, |questions| {
+        let mut owners: [Option<_>; 64] =
+            core::array::from_fn(|_| Some(questions.reserve().unwrap().accept()));
+        let first = owners[63].take().unwrap();
+        let first_id = first.key().id();
+        let second = owners[1].take().unwrap();
+        let second_id = second.key().id();
+        questions.release(first);
+        questions.release(second);
+        assert_eq!(questions.pending_finish().unwrap().id(), first_id);
+        questions.returned(first_id, true).unwrap();
+        let pending = questions.pending_finish().unwrap();
+        assert_eq!(pending.id(), first_id);
+        pending.accept();
+        let pending = questions.pending_finish().unwrap();
+        assert_eq!(pending.id(), second_id);
+        pending.accept();
+        questions.returned(second_id, true).unwrap();
+        assert!(!questions.has_pending_finish());
+        for owner in owners.into_iter().flatten() {
+            questions.returned(owner.key().id(), true).unwrap();
+            questions.release(owner);
+        }
+        assert!(questions.is_empty());
+    })
+    .unwrap();
+}

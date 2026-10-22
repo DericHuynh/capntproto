@@ -217,6 +217,13 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
             let Some(plan) = receipt.plan.take() else {
                 continue;
             };
+            if self.imports.slots[plan.index]
+                .entry
+                .as_ref()
+                .is_some_and(|entry| entry.local == 0)
+            {
+                self.imports.unlink_release(plan.index);
+            }
             let slot = &mut self.imports.slots[plan.index];
             let wire = receipt.wire.take().expect("planned wire identity");
             if let Some(entry) = slot.entry.as_mut() {
@@ -224,9 +231,6 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
                     .promise
                     .descriptor(receipt.promise)
                     .expect("preflighted promise obligation");
-                if entry.local == 0 {
-                    self.imports.pending_releases -= 1;
-                }
                 entry.local += 1;
                 entry
                     .remote

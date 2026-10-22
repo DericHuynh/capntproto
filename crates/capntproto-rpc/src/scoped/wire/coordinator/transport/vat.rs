@@ -1,4 +1,4 @@
-//! Adapt the existing message-oriented VatNetwork connection to caller-polled IO.
+//! Host one exclusive frame transport with a single end-of-turn flush owner.
 //! The network's own driver must still run concurrently. This bridge owns no
 //! socket, executor or protocol state and never derives identity from wire IDs.
 use super::*;
@@ -9,8 +9,7 @@ use std::task::ready;
 pub(crate) type Shared<V> = Rc<RefCell<Box<dyn crate::Connection<V>>>>;
 
 /// Capture the transport identity once, then split its input, output and writer
-/// failure observation. Custom transports must implement IncomingMessage's
-/// get_segments and Connection's send_frame to use this migration adapter.
+/// failure observation. Frame ownership is selected once at construction.
 pub struct Connection<V> {
     connection: Shared<V>,
     id: usize,
@@ -61,57 +60,48 @@ impl<V> Connection<V> {
     /// Bound the full input frame, including its segment table. The existing
     /// transport must also bound allocation while receiving its original message.
     /// Keep Failure polled as an abort input, including while output drains.
-    pub fn into_io(self, maximum: NonZeroUsize) -> (Reader<V>, Writer<V>, Failure) {
-        let (_, reader, writer, failure) = self.into_io_and_peer(maximum);
-        (reader, writer, failure)
+    pub fn into_io(self, maximum: NonZeroUsize) -> capnp::Result<(Reader, Writer, Failure)> {
+        let (_, reader, writer, failure) = self.into_io_and_peer(maximum)?;
+        Ok((reader, writer, failure))
     }
-    /// Transfer the captured peer identity with the IO owners. No Clone bound
-    /// or second transport callback is needed by a task-owned bootstrap factory.
-    pub fn into_io_and_peer(self, maximum: NonZeroUsize) -> (V, Reader<V>, Writer<V>, Failure) {
+    pub fn into_io_and_peer(
+        self,
+        maximum: NonZeroUsize,
+    ) -> capnp::Result<(V, Reader, Writer, Failure)> {
         self.connection.borrow_mut().set_idle(false);
-        let finished = self.connection.borrow().when_write_finished();
-        let output_driver = self.connection.borrow().output_driver();
-        let input_frames = self.connection.borrow_mut().take_incoming_frames();
-        let input_driver = if input_frames.is_none() {
-            self.connection.borrow_mut().take_incoming_stream()
-        } else {
-            None
-        };
-        let output_stream = self.connection.borrow_mut().take_outgoing_stream();
+        let crate::FrameIo {
+            incoming,
+            outgoing,
+            write_finished,
+        } = self.connection.borrow_mut().take_frame_io()?;
         let closing = Rc::new(Cell::new(false));
-        (
+        Ok((
             self.peer,
             Reader {
-                connection: self.connection.clone(),
-                input_driver,
-                input_frames,
-                borrowed_frame: false,
-                receiving: None,
-                message: None,
-                header: Vec::new(),
+                input: incoming,
+                active: false,
                 position: 0,
-                segment: 0,
-                offset: 0,
                 remaining: 0,
                 maximum: maximum.get(),
                 ended: false,
                 #[cfg(unix)]
                 fds: Vec::new(),
+                #[cfg(unix)]
+                fds_loaded: false,
             },
             Writer {
-                connection: self.connection,
-                receipts: VecDeque::new(),
                 shutdown: None,
                 closing: closing.clone(),
                 result: None,
                 failure: None,
-                output_driver,
-                output_stream,
-                stream_pending: 0,
-                buffer_batch: false,
+                output: outgoing,
+                pending: 0,
             },
-            Failure { finished, closing },
-        )
+            Failure {
+                finished: write_finished,
+                closing,
+            },
+        ))
     }
 }
 
@@ -140,151 +130,38 @@ impl Future for Failure {
     }
 }
 
-pub struct Reader<V> {
-    connection: Shared<V>,
-    input_driver: Option<Box<dyn crate::IncomingMessageStream>>,
-    input_frames: Option<Box<dyn crate::IncomingFrameStream>>,
-    borrowed_frame: bool,
-    receiving: Option<Promise<Option<Box<dyn crate::IncomingMessage>>, Error>>,
-    message: Option<Box<dyn crate::IncomingMessage>>,
-    header: Vec<u8>,
+pub struct Reader {
+    input: Box<dyn crate::IncomingFrameStream>,
+    active: bool,
     position: usize,
-    segment: u32,
-    offset: usize,
     remaining: usize,
     maximum: usize,
     ended: bool,
     #[cfg(unix)]
     fds: Vec<Option<Rc<std::os::fd::OwnedFd>>>,
+    #[cfg(unix)]
+    fds_loaded: bool,
 }
-impl<V> Reader<V> {
-    fn start(&mut self, message: Box<dyn crate::IncomingMessage>) -> capnp::Result<()> {
-        if let Some(bytes) = message.framed_bytes() {
-            if bytes.len() > self.maximum {
-                return Err(Error::from_kind(capnp::ErrorKind::BufferNotLargeEnough));
-            }
-            self.remaining = bytes.len();
-            self.position = 0;
-            #[cfg(unix)]
-            let message = {
-                let mut message = message;
-                self.fds = message
-                    .take_fds()
-                    .into_iter()
-                    .take(253)
-                    .map(|fd| Some(Rc::new(fd)))
-                    .collect();
-                message
-            };
-            self.message = Some(message);
-            return Ok(());
-        }
-        let segments = message.get_segments().ok_or_else(|| {
-            Error::unimplemented("transport does not expose original RPC segments".into())
-        })?;
-        let count = u32::try_from(segments.len()).map_err(wire_error)?;
-        let first = count
-            .checked_sub(1)
-            .ok_or_else(|| Error::failed("empty segment table".into()))?;
-        let mut prefix = [0u8; 8];
-        prefix[..4].copy_from_slice(&first.to_le_bytes());
-        let table = capnp::serialize::SegmentTableHeader::parse(&prefix)?.table_bytes();
-        if table > self.maximum {
-            return Err(Error::from_kind(capnp::ErrorKind::BufferNotLargeEnough));
-        }
-        self.header.clear();
-        self.header.try_reserve(table).map_err(wire_error)?;
-        self.header.resize(table, 0);
-        self.header[..4].copy_from_slice(&first.to_le_bytes());
-        let mut total = table;
-        for index in 0..count {
-            let bytes = segments
-                .get_segment(index)
-                .ok_or_else(|| Error::failed("missing transport segment".into()))?
-                .len();
-            if !bytes.is_multiple_of(8) {
-                return Err(Error::failed(
-                    "transport segment is not a whole number of words".into(),
-                ));
-            }
-            let words = u32::try_from(bytes / 8).map_err(wire_error)?;
-            total = total
-                .checked_add(bytes)
-                .filter(|total| *total <= self.maximum)
-                .ok_or_else(|| Error::from_kind(capnp::ErrorKind::BufferNotLargeEnough))?;
-            let at = (index as usize + 1) * 4;
-            self.header[at..at + 4].copy_from_slice(&words.to_le_bytes());
-        }
-        if (total - table) / 8 != message.size_in_words() {
-            return Err(Error::failed(
-                "transport message size disagrees with its segments".into(),
-            ));
-        }
-        #[cfg(unix)]
-        let message = {
-            let mut message = message;
-            self.fds = message
-                .take_fds()
-                .into_iter()
-                .take(253)
-                .map(|fd| Some(Rc::new(fd)))
-                .collect();
-            message
-        };
-        // No subsequent receive can replace these resources before admission.
-        self.message = Some(message);
-        self.position = 0;
-        self.segment = 0;
-        self.offset = 0;
-        self.remaining = total;
-        Ok(())
-    }
+impl Reader {
     fn poll_message(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<bool>> {
         if self.ended {
             return Poll::Ready(Ok(false));
         }
-        if self.borrowed_frame {
+        if self.active {
             return Poll::Ready(Ok(true));
         }
-        if let Some(stream) = &mut self.input_frames {
-            let Some(length) = ready!(stream.poll_frame_size(cx))? else {
-                self.ended = true;
-                return Poll::Ready(Ok(false));
-            };
-            if length > self.maximum {
-                return Poll::Ready(Err(Error::from_kind(
-                    capnp::ErrorKind::BufferNotLargeEnough,
-                )));
-            }
-            self.remaining = length;
-            self.position = 0;
-            self.borrowed_frame = true;
-            return Poll::Ready(Ok(true));
+        let Some(length) = ready!(self.input.poll_frame_size(cx))? else {
+            self.ended = true;
+            return Poll::Ready(Ok(false));
+        };
+        if length > self.maximum {
+            return Poll::Ready(Err(Error::from_kind(
+                capnp::ErrorKind::BufferNotLargeEnough,
+            )));
         }
-        if self.message.is_none() {
-            if let Some(driver) = &mut self.input_driver {
-                let Some(message) = ready!(driver.poll_receive(cx))? else {
-                    self.ended = true;
-                    return Poll::Ready(Ok(false));
-                };
-                self.start(message)?;
-                return Poll::Ready(Ok(true));
-            }
-            if self.receiving.is_none() {
-                let receiving = self
-                    .connection
-                    .borrow_mut()
-                    .receive_incoming_message_short_lived();
-                self.receiving = Some(receiving);
-            }
-            let received = ready!(Pin::new(self.receiving.as_mut().unwrap()).poll(cx));
-            self.receiving = None;
-            let Some(message) = received? else {
-                self.ended = true;
-                return Poll::Ready(Ok(false));
-            };
-            self.start(message)?;
-        }
+        self.remaining = length;
+        self.position = 0;
+        self.active = true;
         Poll::Ready(Ok(true))
     }
     fn read(&mut self, cx: &mut Context<'_>, bytes: &mut [u8]) -> Poll<capnp::Result<usize>> {
@@ -296,59 +173,41 @@ impl<V> Reader<V> {
                 "previous frame has not finished admission".into(),
             )));
         }
-        let frame = if self.borrowed_frame {
-            self.input_frames.as_ref().and_then(|stream| stream.frame())
+        let count = if let Some(frame) = self.input.frame() {
+            let source = frame
+                .get(self.position..)
+                .ok_or_else(|| Error::failed("frame changed during admission".into()))?;
+            let count = bytes.len().min(source.len()).min(self.remaining);
+            bytes[..count].copy_from_slice(&source[..count]);
+            count
         } else {
-            self.message.as_ref().unwrap().framed_bytes()
-        };
-        if let Some(frame) = frame {
-            let count = bytes.len().min(frame.len() - self.position);
-            bytes[..count].copy_from_slice(&frame[self.position..self.position + count]);
-            self.position += count;
-            self.remaining -= count;
-            return Poll::Ready(Ok(count));
-        }
-        if self.borrowed_frame {
-            let count = ready!(self
-                .input_frames
-                .as_mut()
-                .unwrap()
-                .poll_read_frame(cx, bytes))?;
+            let count = ready!(self.input.poll_read_frame(cx, bytes))?;
             if count > self.remaining || count > bytes.len() {
                 return Poll::Ready(Err(Error::failed(
                     "stream exceeded its prepared frame".into(),
                 )));
             }
-            self.position += count;
-            self.remaining -= count;
-            return Poll::Ready(Ok(count));
-        }
-        let source = if self.position < self.header.len() {
-            &self.header[self.position..]
-        } else {
-            let segments = self.message.as_ref().unwrap().get_segments().unwrap();
-            loop {
-                let segment = segments.get_segment(self.segment).ok_or_else(|| {
-                    Error::failed("transport segments changed during read".into())
-                })?;
-                if self.offset < segment.len() {
-                    break &segment[self.offset..];
-                }
-                self.segment += 1;
-                self.offset = 0;
-            }
+            count
         };
-        let count = bytes.len().min(source.len()).min(self.remaining);
-        bytes[..count].copy_from_slice(&source[..count]);
-        if self.position >= self.header.len() {
-            self.offset += count;
-        }
         self.position += count;
         self.remaining -= count;
         Poll::Ready(Ok(count))
     }
+    #[cfg(unix)]
+    fn load_fds(&mut self) {
+        if !self.fds_loaded {
+            self.fds_loaded = true;
+            self.fds = self
+                .input
+                .take_fds()
+                .into_iter()
+                .take(253)
+                .map(|fd| Some(Rc::new(fd)))
+                .collect();
+        }
+    }
 }
-impl<V> io::Read for Reader<V> {
+impl io::Read for Reader {
     type Error = Error;
     fn poll_read(
         &mut self,
@@ -362,7 +221,7 @@ impl<V> io::Read for Reader<V> {
         result.map_err(IoError::Failed)
     }
 }
-impl<V> ImportReceiver<resources::Import> for Reader<V> {
+impl ImportReceiver<resources::Import> for Reader {
     fn make_import(&mut self, _: ImportId) -> resources::Import {
         resources::Import::default()
     }
@@ -392,6 +251,7 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
             if index == u8::MAX {
                 return;
             }
+            self.load_fds();
             if let Some(fd) = self.fds.get_mut(index as usize).and_then(Option::take) {
                 if let Some(owner) = owner {
                     owner.attach(fd);
@@ -402,18 +262,13 @@ impl<V> ImportReceiver<resources::Import> for Reader<V> {
         let _ = (owner, index);
     }
 }
-impl<V> Input<resources::Import> for Reader<V> {
+impl Input<resources::Import> for Reader {
     fn has_buffered_next_frame(&self) -> bool {
-        !self.borrowed_frame
-            && !self.ended
-            && self
-                .input_frames
-                .as_ref()
-                .is_some_and(|stream| stream.has_buffered_next_frame())
+        !self.active && !self.ended && self.input.has_buffered_next_frame()
     }
     fn buffered_frame(&self) -> Option<&[u8]> {
-        if self.borrowed_frame && self.position == 0 {
-            self.input_frames.as_ref().and_then(|stream| stream.frame())
+        if self.active && self.position == 0 {
+            self.input.frame()
         } else {
             None
         }
@@ -423,53 +278,34 @@ impl<V> Input<resources::Import> for Reader<V> {
         self.remaining = 0;
         self.finish_frame();
     }
-
     fn take_buffered_frame<'p>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
-        if self.borrowed_frame && self.position == 0 {
-            let Some(bytes) = self.input_frames.as_ref().and_then(|stream| stream.frame()) else {
-                return Ok(None);
-            };
-            let frame = Frame::copy_from(messages, bytes, options)?;
-            self.position = bytes.len();
-            self.remaining = 0;
-            return Ok(Some(frame));
-        }
-        let Some(message) = self.message.as_ref() else {
-            return Ok(None);
-        };
-        let Some(bytes) = message.framed_bytes() else {
-            return Ok(None);
-        };
-        if self.position != 0 {
+        if !self.active || self.position != 0 {
             return Ok(None);
         }
-        let frame = Frame::copy_from(messages, bytes, options)?;
-        if frame.size_in_words(messages)? != message.size_in_words() {
-            frame.release(messages);
+        let Some(bytes) = self.input.frame() else {
+            return Ok(None);
+        };
+        if bytes.len() != self.remaining {
             return Err(capntproto_rpc_wire::owned::Error::WrongMessage);
         }
+        let frame = Frame::copy_from(messages, bytes, options)?;
         self.position = bytes.len();
         self.remaining = 0;
         Ok(Some(frame))
     }
-
     fn take_shared_frame<'p>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
-        if !self.borrowed_frame || self.position != 0 {
+        if !self.active || self.position != 0 {
             return Ok(None);
         }
-        let Some((allocation, range)) = self
-            .input_frames
-            .as_mut()
-            .and_then(|stream| stream.share_frame())
-        else {
+        let Some((allocation, range)) = self.input.share_frame() else {
             return Ok(None);
         };
         if range.len() != self.remaining {
@@ -477,8 +313,6 @@ impl<V> Input<resources::Import> for Reader<V> {
         }
         let lease = match messages.adopt_received(allocation, range) {
             Ok(Some(lease)) => lease,
-            // A larger prefetched allocation may not fit even when copying its
-            // single used frame would. Leave the ordinary path available.
             Ok(None) | Err(messages::Error::NoBuffer | messages::Error::GenerationExhausted) => {
                 return Ok(None)
             }
@@ -493,8 +327,9 @@ impl<V> Input<resources::Import> for Reader<V> {
         self.remaining = 0;
         Ok(Some(frame))
     }
-
     fn poll_frame_size(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<usize>>> {
+        // EOF still needs an eight-byte reservation so the byte reader can
+        // report zero without reserving the configured maximum frame size.
         let result = self
             .poll_message(cx)
             .map_ok(|_| Some(self.remaining.max(8)));
@@ -504,57 +339,43 @@ impl<V> Input<resources::Import> for Reader<V> {
         result
     }
     fn finish_frame(&mut self) {
-        // Canceling an incomplete receive is terminal. In particular, never
-        // reinterpret a consumed prefix as the header of the next message.
-        self.ended |= self.receiving.is_some()
-            || self.remaining != 0
-            || (self.input_driver.is_some() && self.message.is_none())
-            || (self.input_frames.is_some() && !self.borrowed_frame);
-        // Keep an unfinished transport receive alive until this reader drops.
-        // Some existing transports close BOTH halves when a receive is canceled;
-        // dropping it here would discard accepted output before managed drain.
-        self.message = None;
-        if let Some(stream) = &mut self.input_frames {
-            stream.finish_frame();
-        }
-        self.borrowed_frame = false;
-        self.header.clear();
+        self.ended |= self.remaining != 0 || !self.active;
+        self.input.finish_frame();
+        self.active = false;
         #[cfg(unix)]
-        self.fds.clear();
+        {
+            self.fds.clear();
+            self.fds_loaded = false;
+        }
     }
 }
 
 /// A bounded batch of outstanding frames. Write acceptance transfers shared
 /// allocating buffers, or copies caller-backed bytes; flush waits for every
-/// ordered receipt. This avoids keeping
+/// accepted frame. This avoids keeping
 /// a scoped pool borrow in a 'static transport task or losing detached errors.
 /// Each nonempty write must contain exactly one complete standard frame. The
 /// coordinator's FIFO supplies such windows; arbitrary stream chunks are rejected.
-pub struct Writer<V> {
-    connection: Shared<V>,
-    receipts: VecDeque<Promise<(), Error>>,
+pub struct Writer {
     shutdown: Option<Promise<(), Error>>,
     closing: Rc<Cell<bool>>,
     result: Option<capnp::Result<()>>,
     failure: Option<Error>,
-    output_driver: Option<Promise<(), Error>>,
-    output_stream: Option<Box<dyn crate::OutgoingMessageStream>>,
-    stream_pending: usize,
-    buffer_batch: bool,
+    output: Box<dyn crate::OutgoingMessageStream>,
+    pending: usize,
 }
 // Leave room for retirement/control frames alongside an application burst.
 // This count bounds retained frame/receipt overhead independently of the
 // message pool's byte budget and application admission credits.
-const MAXIMUM_RECEIPTS: usize = 64;
-impl<V> Drop for Writer<V> {
+const MAXIMUM_PENDING_FRAMES: usize = 64;
+impl Drop for Writer {
     fn drop(&mut self) {
         if !self.closing.replace(true) {
             // Error/cancellation ends IO. Enqueue transport shutdown even when
             // a caller drops the coordinator before its first poll. Completion
             // is not claimed here; the originating network still owns its driver.
             let shutdown = self
-                .connection
-                .borrow_mut()
+                .output
                 .shutdown(Err(self.failure.clone().unwrap_or_else(|| {
                     Error::disconnected("portable transport IO abandoned".into())
                 })));
@@ -562,59 +383,23 @@ impl<V> Drop for Writer<V> {
         }
     }
 }
-impl<V> io::Flush for Writer<V> {
+impl io::Flush for Writer {
     type Error = Error;
     fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Error>>> {
         if let Some(error) = &self.failure {
             return Poll::Ready(Err(IoError::Failed(error.clone())));
         }
-        if self.stream_pending != 0 {
-            if let Some(stream) = self.output_stream.as_mut() {
-                match stream.poll_flush(cx) {
-                    Poll::Ready(Ok(())) => {
-                        self.stream_pending = 0;
-                    }
-                    Poll::Ready(Err(error)) => {
-                        self.failure = Some(error.clone());
-                        return Poll::Ready(Err(IoError::Failed(error)));
-                    }
-                    Poll::Pending => (),
-                }
-            }
-        }
-        if !self.receipts.is_empty() || self.stream_pending != 0 {
-            if let Some(driver) = self.output_driver.as_mut() {
-                if let Poll::Ready(result) = Pin::new(driver).poll(cx) {
-                    self.output_driver = None;
-                    if let Err(error) = result {
-                        self.failure = Some(error.clone());
-                        return Poll::Ready(Err(IoError::Failed(error)));
-                    }
-                }
-            }
-        }
-        if self.stream_pending != 0 {
-            if let Some(stream) = self.output_stream.as_mut() {
-                if let Err(error) = ready!(stream.poll_flush(cx)) {
-                    self.failure = Some(error.clone());
-                    return Poll::Ready(Err(IoError::Failed(error)));
-                }
-                self.stream_pending = 0;
-            }
-        }
-        while let Some(receipt) = self.receipts.front_mut() {
-            let result = ready!(Pin::new(receipt).poll(cx));
-            self.receipts.pop_front();
-            if let Err(error) = result {
+        if self.pending != 0 {
+            if let Err(error) = ready!(self.output.poll_flush(cx)) {
                 self.failure = Some(error.clone());
                 return Poll::Ready(Err(IoError::Failed(error)));
             }
+            self.pending = 0;
         }
-        self.buffer_batch = false;
         Poll::Ready(Ok(()))
     }
 }
-impl<V> io::Close for Writer<V> {
+impl io::Close for Writer {
     fn poll_close(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Error>>> {
         if let Some(result) = &self.result {
             return Poll::Ready(result.clone().map_err(IoError::Failed));
@@ -622,7 +407,7 @@ impl<V> io::Close for Writer<V> {
         ready!(io::Flush::poll_flush(self, cx))?;
         if self.shutdown.is_none() {
             self.closing.set(true);
-            let shutdown = self.connection.borrow_mut().shutdown(Ok(()));
+            let shutdown = self.output.shutdown(Ok(()));
             self.shutdown = Some(shutdown);
         }
         let result = ready!(Pin::new(self.shutdown.as_mut().unwrap()).poll(cx));
@@ -639,7 +424,7 @@ pub struct Bundle {
     credit: Option<Rc<crate::admission::Permit>>,
 }
 
-impl<V> io::WriteResources<Bundle> for Writer<V> {
+impl io::WriteResources<Bundle> for Writer {
     fn can_write_while_flushing(&self) -> bool {
         // OutgoingFrame owns the bytes, resources and credit. poll_capacity
         // bounds admission; poll_flush remains the physical completion fence.
@@ -659,9 +444,6 @@ impl<V> io::WriteResources<Bundle> for Writer<V> {
         let frame = crate::OutgoingFrame::from_parts(parts).map_err(IoError::Failed)?;
         self.enqueue(frame, resources)?;
         Poll::Ready(Ok(length))
-    }
-    fn start_batch(&mut self, frames: usize) {
-        self.buffer_batch = frames > 1;
     }
     fn accepts_shared(&self) -> bool {
         true
@@ -696,7 +478,7 @@ impl<V> io::WriteResources<Bundle> for Writer<V> {
         Poll::Ready(Ok(bytes.len()))
     }
 }
-impl<V> Writer<V> {
+impl Writer {
     fn poll_capacity(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Error>>> {
         if self.closing.get() {
             return Poll::Ready(Err(IoError::Failed(Error::disconnected(
@@ -706,7 +488,7 @@ impl<V> Writer<V> {
         if let Some(error) = &self.failure {
             return Poll::Ready(Err(IoError::Failed(error.clone())));
         }
-        if self.receipts.len() + self.stream_pending == MAXIMUM_RECEIPTS {
+        if self.pending == MAXIMUM_PENDING_FRAMES {
             ready!(io::Flush::poll_flush(self, cx))?;
         }
         Poll::Ready(Ok(()))
@@ -728,30 +510,8 @@ impl<V> Writer<V> {
         };
         #[cfg(not(unix))]
         let _ = resources;
-        if let Some(stream) = self.output_stream.as_mut() {
-            // OutgoingMessageStream retains the frame and its resources until
-            // physical completion, even if this observer is dropped. The frame
-            // already owns admission credit; a second owner/list is redundant.
-            if self.buffer_batch {
-                stream.send_buffered(frame)
-            } else {
-                stream.send(frame)
-            }
-            .map_err(IoError::Failed)?;
-            self.stream_pending += 1;
-            return Ok(());
-        }
-        self.receipts
-            .try_reserve(1)
-            .map_err(|error| IoError::Failed(wire_error(error)))?;
-        let credit = frame.credit.clone();
-        let receipt = self.connection.borrow_mut().send_frame(frame);
-        use crate::attach::Attach;
-        self.receipts.push_back(match credit {
-            Some(credit) => Promise::from_future(receipt.attach(credit)),
-            None => receipt,
-        });
-        // This is transport queue acceptance; flush supplies physical completion.
+        self.output.send(frame).map_err(IoError::Failed)?;
+        self.pending += 1;
         Ok(())
     }
 }

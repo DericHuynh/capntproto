@@ -1,12 +1,8 @@
 //! Outgoing owned calls and local execution over one portable invocation ledger.
 use super::*;
 use capntproto_rpc_engine::clients::{Destination, Location};
-use capntproto_rpc_engine::ids::WireId;
 use capntproto_rpc_wire::clients::{Endpoint, Route};
 use std::num::NonZeroUsize;
-
-mod reply_index;
-use reply_index::ReplyOwners;
 
 type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
@@ -29,9 +25,8 @@ struct Execution<'p, 'id, I, const C: usize, const H: usize> {
 struct Entry<'p, 'id, I, const C: usize, const H: usize> {
     wire: WireCall<'p, 'id, I, C>,
     local: Option<Box<Execution<'p, 'id, I, C, H>>>,
-    // Survives completion/cancellation taking WireCall::direct, so retirement
-    // always removes its lookup owner before this application slot is reused.
-    reply_id: Option<u32>,
+    // Occupancy only; the full generation lives in the existing wire route.
+    published: bool,
 }
 
 pub(super) enum Publication<'a, 'id> {
@@ -101,10 +96,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
     live: usize,
     first_free: usize,
-    // An owner lookup, not a protocol ledger. Only immediate calls are indexed;
-    // the entry's full branded/generational key remains authoritative. Allocate
-    // lazily beyond the small-call scan, and remove owners on every retirement.
-    reply_owners: ReplyOwners,
+    published: usize,
     pending: Option<Box<Call>>,
     maximum: usize,
     cursor: usize,
@@ -127,7 +119,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             entries: Vec::new(),
             live: 0,
             first_free: 0,
-            reply_owners: ReplyOwners::default(),
+            published: 0,
             pending: None,
             maximum,
             cursor: 0,
@@ -158,18 +150,11 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     pub(super) fn invalidate_scan(&mut self) {
         self.remaining = 0;
     }
-    pub(super) fn has_indexed_replies(&self) -> bool {
-        !self.reply_owners.is_empty()
+    pub(super) fn can_batch_replies(&self) -> bool {
+        self.entries.len() > 8 && self.published != 0
     }
     pub(super) fn has_plain_receivers(&self) -> bool {
-        if self.entries.len() > 8 {
-            !self.reply_owners.is_empty()
-        } else {
-            self.entries
-                .iter()
-                .flatten()
-                .any(|entry| entry.reply_id.is_some())
-        }
+        self.published != 0
     }
     /// Immediately after publication, a lone direct call can only progress on
     /// input or an application wake (including cancellation). Do not apply this
@@ -187,14 +172,15 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     #[inline(always)]
     pub(super) fn returned<A, P: Copy + Eq>(
         &mut self,
-        key: capntproto_rpc_engine::questions::Key<'id>,
+        completion: (capntproto_rpc_engine::questions::Key<'id>, Option<usize>),
         hooks: &mut ClientHooks<'id>,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         cx: &mut Context<'_>,
         mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> capnp::Result<Option<bool>> {
-        let Some(index) = self.immediate_receiver(key) else {
+        let (key, owner) = completion;
+        let Some(index) = self.immediate_receiver(key, owner) else {
             return Ok(None);
         };
         if self.entries[index]
@@ -227,20 +213,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     pub(super) fn plain_receiver(
         &self,
         key: capntproto_rpc_engine::questions::Key<'id>,
+        owner: Option<usize>,
     ) -> Option<usize> {
-        let accepts = |entry: &Option<Entry<'p, 'id, I, C, H>>| {
-            entry
-                .as_ref()
+        owner.filter(|&index| {
+            self.entries
+                .get(index)
+                .and_then(Option::as_ref)
                 .is_some_and(|entry| entry.local.is_none() && entry.wire.accepts_plain(key))
-        };
-        if self.entries.len() <= 8 {
-            self.entries.iter().position(accepts)
-        } else {
-            self.reply_owners
-                .get(&key.id().to_wire())
-                .copied()
-                .filter(|&index| self.entries.get(index).is_some_and(accepts))
-        }
+        })
     }
     #[inline(always)]
     pub(super) fn deliver_plain(
@@ -253,71 +233,30 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.retire_entry(index);
     }
     #[inline(always)]
-    fn immediate_receiver(&self, key: capntproto_rpc_engine::questions::Key<'id>) -> Option<usize> {
-        let matches = |entry: &Option<Entry<'p, 'id, I, C, H>>| {
-            entry.as_ref().is_some_and(|entry| {
-                entry.local.is_none()
-                    && entry.wire.task.is_none()
-                    // An unused pipeline has no outgoing projections to settle
-                    // before taking its parent result. Keep the normal pipeline
-                    // completion so later projections still see the response.
-                    && entry.wire.pipeline.as_ref().is_none_or(|state| !state.used.get())
-                    && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key)
-            })
-        };
-        if self.entries.len() <= 8 {
-            self.entries.iter().position(matches)
-        } else {
-            self.reply_owners
-                .get(&key.id().to_wire())
-                .copied()
-                .filter(|&index| self.entries.get(index).is_some_and(matches))
-        }
-    }
-    #[inline(always)]
-    fn prepare_reply_index(&mut self, index: usize) -> capnp::Result<bool> {
-        if self.entries.len().max(index + 1) <= 8 {
-            return Ok(false);
-        }
-        if self.reply_owners.capacity() == 0 {
-            self.reply_owners
-                .try_reserve(self.entries.len() + 1)
-                .map_err(wire_error)?;
-            for (index, entry) in self.entries.iter().enumerate() {
-                if let Some(id) = entry.as_ref().and_then(|entry| entry.reply_id) {
-                    self.reply_owners.insert(id, index);
-                }
-            }
-        } else {
-            self.reply_owners.try_reserve(1).map_err(wire_error)?;
-        }
-        Ok(true)
+    fn immediate_receiver(
+        &self,
+        key: capntproto_rpc_engine::questions::Key<'id>,
+        owner: Option<usize>,
+    ) -> Option<usize> {
+        owner.filter(|&index| self.entries.get(index).and_then(Option::as_ref)
+            .is_some_and(|entry| entry.local.is_none() && entry.wire.task.is_none()
+                && entry.wire.pipeline.as_ref().is_none_or(|state| !state.used.get())
+                && matches!(entry.wire.direct, Some(DirectStage::Sent(question)) if question == key)))
     }
     #[inline(always)]
     fn retire_entry(&mut self, index: usize) {
-        if !self.reply_owners.is_empty() {
-            if let Some(id) = self.entries[index]
-                .as_ref()
-                .and_then(|entry| entry.reply_id)
-            {
-                if let std::collections::hash_map::Entry::Occupied(owner) =
-                    self.reply_owners.entry(id)
-                {
-                    if *owner.get() == index {
-                        owner.remove();
-                    }
-                }
-            }
-        }
-        self.entries[index] = None;
+        let entry = self.entries[index].take().expect("live call owner");
+        self.published -= usize::from(entry.published);
         self.live -= 1;
         self.first_free = self.first_free.min(index);
+        drop(entry);
     }
     /// Advance allocation only after admission commits. Failed publication
     /// leaves the free position available; retirement restores the lowest
     /// hole. This preserves scan order without searching from zero each time.
     fn insert_entry(&mut self, index: usize, entry: Entry<'p, 'id, I, C, H>) {
         debug_assert_eq!(index, self.first_free);
+        self.published += usize::from(entry.published);
         if index == self.entries.len() {
             self.entries.push(Some(entry));
         } else {
@@ -892,12 +831,18 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             return Ok(None);
         }
         let task = ready.key();
+        let connection::Task::Invoke(invocation) = ready.owner() else {
+            return Ok(None);
+        };
+        let Some(index) = invocation.completion_owner() else {
+            return Ok(None);
+        };
         drop(ready);
         let Some(entry) = self
             .entries
-            .iter_mut()
-            .flatten()
-            .find(|entry| entry.wire.task == Some(task))
+            .get_mut(index)
+            .and_then(Option::as_mut)
+            .filter(|entry| entry.wire.task == Some(task))
         else {
             return Ok(None);
         };
@@ -946,9 +891,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         let SendOutcome::Queued(sent) = sent else {
             unreachable!("queued publication")
         };
+        entry.published = true;
+        self.published += 1;
         if direct {
             debug_assert_eq!(sent.task, task);
             entry.wire.direct = Some(DirectStage::Sent(sent.question));
+            // The queued invocation was consumed by publication. Its observers
+            // now belong to the question; keep only the live remote route.
+            entry.wire.task = None;
         }
         if let Some(credit) = credit {
             driver
@@ -1064,9 +1014,6 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             && call.third_party.is_none()
             && call.endpoint.remote.get()
         {
-            // Reserve only for immediate calls, before publication can commit
-            // their question. Queued/local calls need no reply-owner index.
-            let indexed = self.prepare_reply_index(index)?;
             let call = self.pending.as_ref().expect("pending call");
             // This is only a refreshed routing hint. The driver's exclusive
             // immediate ticket validates routability, ordering, exact import
@@ -1176,12 +1123,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         tail_response: None,
                     },
                     local: None,
-                    reply_id: Some(question.id().to_wire()),
+                    published: true,
                 };
+                driver
+                    .bind_completion_owner(question, index)
+                    .map_err(wire_error)?;
                 self.insert_entry(index, entry);
-                if indexed {
-                    self.reply_owners.insert(question.id().to_wire(), index);
-                }
                 // Publication committed this question and its authority. Resolve
                 // already-requested projections now, allowing their forwarded
                 // calls to join the parent's pending transport batch. Retain the
@@ -1243,10 +1190,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 return Err(rejected.error);
             }
         };
+        driver
+            .bind_invocation_completion(wire.task.expect("queued invocation"), index)
+            .map_err(wire_error)?;
         let entry = Entry {
             wire,
             local: None,
-            reply_id: None,
+            published: false,
         };
         self.insert_entry(index, entry);
         Ok(Some(Progress::Advanced))

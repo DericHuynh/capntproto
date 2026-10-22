@@ -168,8 +168,6 @@ pub fn poll_queue_resources<'pool, R, W: WriteResources<R>>(
                 window.advance(0).map_err(SendError::State)
             } else {
                 #[cfg(feature = "alloc")]
-                let shared = writer.accepts_shared().then(|| window.share()).flatten();
-                #[cfg(feature = "alloc")]
                 let parts = writer
                     .accepts_parts()
                     .then(|| window.share_parts())
@@ -179,7 +177,7 @@ pub fn poll_queue_resources<'pool, R, W: WriteResources<R>>(
                 #[cfg(feature = "alloc")]
                 let result = match parts {
                     Some(parts) => writer.poll_write_parts(cx, parts, window.resources()),
-                    None => match shared {
+                    None => match writer.accepts_shared().then(|| window.share()).flatten() {
                         Some(bytes) => writer.poll_write_shared(cx, bytes, window.resources()),
                         None => writer.poll_write_resources(cx, window.bytes(), window.resources()),
                     },

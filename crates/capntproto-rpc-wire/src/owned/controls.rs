@@ -70,17 +70,16 @@ pub fn finish_one<'pool>(
     Ok(true)
 }
 
-/// Inspect one caller-selected import slot per invocation. Returning its owner
+/// Publish the oldest ready Release obligation. Returning its owner
 /// transfers cleanup outside all ledger borrows; output failure keeps it live.
 pub fn release_one<'pool, I>(
-    index: usize,
     imports: &mut imports::Imports<'_, '_, I>,
     messages: &mut messages::Messages<'pool, '_, '_>,
     queue: &mut messages::Queue<'pool, '_, impl Default>,
     minimum: usize,
     options: capnp::message::ReaderOptions,
 ) -> Result<Option<I>, Error> {
-    let Some(pending) = imports.pending_release(index) else {
+    let Some(pending) = imports.next_release() else {
         return Ok(None);
     };
     let slot = queue.reserve().map_err(Error::Storage)?;

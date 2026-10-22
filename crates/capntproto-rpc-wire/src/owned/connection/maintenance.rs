@@ -262,7 +262,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             (4, self.ledgers.exports.capacity().max(1)),
             (6, self.ledgers.answers.capacity().max(1)),
             (8, self.exported.capacity().max(1)),
-            (10, self.ledgers.imports.capacity().max(1)),
+            (10, 1),
             (15, self.tails.len().max(1)),
             (16, self.invocation_pipelines.len().max(1)),
         ];
@@ -433,16 +433,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             )
             .map_err(Error::Input)?
             .then_some(Progress::Advanced),
-            10 => controls::release_one(
-                index,
-                &mut self.ledgers.imports,
-                messages,
-                queue,
-                minimum,
-                options,
-            )
-            .map_err(Error::Input)?
-            .map(Progress::Import),
+            10 => {
+                controls::release_one(&mut self.ledgers.imports, messages, queue, minimum, options)
+                    .map_err(Error::Input)?
+                    .map(Progress::Import)
+            }
             11 => self.cancel_queued(messages, queue, minimum, options)?,
             12 => self
                 .send_loopback(messages, queue, minimum, options)?

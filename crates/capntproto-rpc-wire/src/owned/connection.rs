@@ -75,6 +75,7 @@ impl<'id, I, const CAPS: usize> Exchange<'_, 'id, I, CAPS> {
 pub struct ExchangeSlot<'pool, 'id, I, const CAPS: usize> {
     exchange: Option<Exchange<'pool, 'id, I, CAPS>>,
     authorized: bool,
+    completion_owner: Option<core::num::NonZeroUsize>,
     canceled: bool,
     tail_taken: bool,
     retain_handoff_routes: bool,
@@ -84,6 +85,7 @@ impl<'pool, 'id, I, const CAPS: usize> ExchangeSlot<'pool, 'id, I, CAPS> {
     pub const EMPTY: Self = Self {
         exchange: None,
         authorized: false,
+        completion_owner: None,
         canceled: false,
         tail_taken: false,
         retain_handoff_routes: false,
@@ -248,7 +250,7 @@ pub enum Received<'id, A> {
     Queued(answers::Key<'id>),
     DeferredCall(answers::Key<'id>),
     Bootstrap(Bootstrap<'id>),
-    Returned(questions::Key<'id>),
+    Returned(questions::Key<'id>, Option<usize>),
     Resolved,
     DeferredResolution,
     Finished(Option<A>),
@@ -416,7 +418,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             1,
             storage.exported.len().max(1),
             1,
-            connection.ledgers.imports.capacity().max(1),
+            1, // The ready Release queue is independent of table capacity.
             1,
             1,
             1,
@@ -522,6 +524,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             return Err(question);
         }
         let slot = &mut self.exchanges[slot_index];
+        slot.completion_owner = None;
         slot.exchange = Some(Exchange::Pending(question));
         slot.authorized = true;
         slot.canceled = false;
@@ -632,11 +635,40 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .questions
             .bind_owner(question.key(), slot_index)
             .expect("new exchange owner");
+        slot.completion_owner = None;
         slot.exchange = Some(Exchange::Pending(question));
         slot.authorized = true;
         slot.canceled = false;
         slot.tail_taken = false;
         Ok(key)
+    }
+
+    /// Bind local completion routing to the exact question generation. This
+    /// token grants no capability authority and survives application cancellation.
+    pub fn bind_completion_owner(
+        &mut self,
+        key: questions::Key<'id>,
+        owner: usize,
+    ) -> Result<(), Error> {
+        let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
+            .ok_or(Error::UnknownQuestion)?;
+        let slot = &mut self.exchanges[index];
+        if slot.completion_owner.is_some() {
+            return Err(Error::Question(questions::Error::AlreadyOwned));
+        }
+        slot.completion_owner = Some(
+            core::num::NonZeroUsize::new(owner.checked_add(1).ok_or(Error::Busy)?)
+                .ok_or(Error::Busy)?,
+        );
+        Ok(())
+    }
+    /// An application must still validate its own slot against the full key.
+    #[inline(always)]
+    pub fn completion_owner(&self, key: questions::Key<'id>) -> Option<usize> {
+        let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)?;
+        self.exchanges[index]
+            .completion_owner
+            .map(|owner| owner.get() - 1)
     }
 
     pub fn pipeline(
@@ -658,16 +690,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 &mut self.runtime,
                 path,
             ),
-            Exchange::Returned(response) => {
-                self.outgoing
-                    .observe_returned(response, &mut self.runtime, path)
-            }
+            Exchange::Returned(response) => self.outgoing.observe_returned(
+                response,
+                &mut self.ledgers.questions,
+                &mut self.runtime,
+                path,
+            ),
         }
         .map_err(Error::Outgoing)
     }
 
     pub fn cancel(&mut self, key: questions::Key<'id>) -> Result<(), Error> {
-        let pending_invocation = self.invocation_pipelines.pending_for(key);
+        let pending_invocation = self
+            .invocation_pipelines
+            .pending_for(key, &self.ledgers.questions);
         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
             .ok_or(Error::UnknownQuestion)?;
         let slot = &mut self.exchanges[index];
@@ -687,7 +723,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         &mut self,
         key: questions::Key<'id>,
     ) -> Result<Response<'pool, 'id, I, CAPS>, Error> {
-        if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
+        if self.outgoing.pending_for(key, &self.ledgers.questions)
+            || self
+                .invocation_pipelines
+                .pending_for(key, &self.ledgers.questions)
+        {
             return Err(Error::PendingResponse);
         }
         let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
@@ -745,8 +785,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         self.exchanges.iter().any(|slot| {
             matches!(&slot.exchange, Some(Exchange::Returned(response))
                 if (response.requires_ordered_propagation() || slot.handoff.is_some())
-                    && (self.outgoing.pending_for(response.key())
-                        || self.invocation_pipelines.pending_for(response.key())))
+                    && (self.outgoing.pending_for(response.key(), &self.ledgers.questions)
+                        || self.invocation_pipelines.pending_for(response.key(), &self.ledgers.questions)))
         })
     }
 
@@ -786,6 +826,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     self.outgoing.poll_handoff::<S, _, CAPS>(
                         index,
                         response.key(),
+                        &mut self.ledgers.questions,
                         Err(capnp::ErrorKind::Disconnected),
                         messages,
                         &mut self.runtime,
@@ -795,6 +836,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     self.outgoing.poll_handoff(
                         index,
                         response.key(),
+                        &mut self.ledgers.questions,
                         result.as_ref().map_err(|e| *e),
                         messages,
                         &mut self.runtime,
@@ -804,6 +846,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     self.outgoing.poll_one(
                         index,
                         response,
+                        &mut self.ledgers.questions,
                         messages,
                         &mut self.runtime,
                         &mut self.imports,
@@ -1445,7 +1488,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         if awaiting {
                             Ok(Received::Network)
                         } else {
-                            Ok(Received::Returned(key))
+                            Ok(Received::Returned(
+                                key,
+                                slot.completion_owner.map(|owner| owner.get() - 1),
+                            ))
                         }
                     }
                     Err(rejected) => {
@@ -1516,6 +1562,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                             .questions
                             .bind_owner(question.key(), slot_index)
                             .expect("new exchange owner");
+                        slot.completion_owner = None;
                         slot.exchange = Some(Exchange::Pending(question));
                         slot.authorized = false;
                         slot.canceled = false;
@@ -1878,7 +1925,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let slot = self.exchanges.iter_mut().find(|slot| {
             let live = slot.canceled && slot.exchange.is_some();
             canceled |= live;
-            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key()) && !self.invocation_pipelines.pending_for(response.key()))
+            live && matches!(&slot.exchange, Some(Exchange::Returned(response)) if !self.outgoing.pending_for(response.key(), &self.ledgers.questions) && !self.invocation_pipelines.pending_for(response.key(), &self.ledgers.questions))
         });
         let Some(slot) = slot else {
             self.canceled_exchanges = canceled;

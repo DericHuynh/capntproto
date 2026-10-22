@@ -18,6 +18,9 @@ struct Probe {
     accept_error: RefCell<Option<Error>>,
     live: Cell<usize>,
     peer_reads: Cell<usize>,
+    two_party: Cell<bool>,
+    mode_reads: Cell<usize>,
+    feature_reads: Cell<usize>,
     writes: RefCell<Vec<usize>>,
     idle: RefCell<Vec<bool>>,
     shutdowns: Cell<usize>,
@@ -32,6 +35,19 @@ struct Probe {
     on_peer: RefCell<Option<Box<dyn Fn()>>>,
 }
 impl Probe {
+    fn shutdown(self: &Rc<Self>) -> Promise<(), Error> {
+        self.shutdowns.set(self.shutdowns.get() + 1);
+        let probe = self.clone();
+        Promise::from_future(std::future::poll_fn(move |cx| {
+            if probe.close_ready.get() {
+                probe.closed.set(probe.closed.get() + 1);
+                Poll::Ready(probe.close_error.borrow().clone().map_or(Ok(()), Err))
+            } else {
+                probe.register(cx);
+                Poll::Pending
+            }
+        }))
+    }
     fn wake(&self) {
         let wakes = std::mem::take(&mut *self.wakes.borrow_mut());
         for wake in wakes {
@@ -58,7 +74,58 @@ impl Drop for Transport {
         self.probe.live.set(self.probe.live.get() - 1);
     }
 }
+struct FrameInput;
+impl crate::IncomingFrameStream for FrameInput {
+    fn poll_frame(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>> {
+        Poll::Pending
+    }
+    fn frame(&self) -> Option<&[u8]> {
+        None
+    }
+    fn finish_frame(&mut self) {}
+}
+struct FrameOutput {
+    probe: Rc<Probe>,
+    id: usize,
+}
+impl crate::OutgoingMessageStream for FrameOutput {
+    fn shutdown(&mut self, _: capnp::Result<()>) -> Promise<(), Error> {
+        self.probe.shutdown()
+    }
+    fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+        assert!(frame.size_in_words() > 0);
+        self.probe.writes.borrow_mut().push(self.id);
+        Ok(())
+    }
+    fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
 impl crate::Connection<Peer> for Transport {
+    fn control_mode(&self) -> crate::ControlMode {
+        self.probe.mode_reads.set(self.probe.mode_reads.get() + 1);
+        if self.probe.two_party.get() {
+            crate::ControlMode::TwoParty
+        } else {
+            crate::ControlMode::Network
+        }
+    }
+    fn supports_third_party_answers(&self) -> bool {
+        self.probe
+            .feature_reads
+            .set(self.probe.feature_reads.get() + 1);
+        false
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<crate::FrameIo> {
+        Ok(crate::FrameIo {
+            incoming: Box::new(FrameInput),
+            outgoing: Box::new(FrameOutput {
+                probe: self.probe.clone(),
+                id: self.id,
+            }),
+            write_finished: None,
+        })
+    }
     fn set_idle(&mut self, idle: bool) {
         self.probe.idle.borrow_mut().push(idle);
     }
@@ -87,17 +154,7 @@ impl crate::Connection<Peer> for Transport {
         Promise::from_future(std::future::pending())
     }
     fn shutdown(&mut self, _: capnp::Result<()>) -> Promise<(), Error> {
-        self.probe.shutdowns.set(self.probe.shutdowns.get() + 1);
-        let probe = self.probe.clone();
-        Promise::from_future(std::future::poll_fn(move |cx| {
-            if probe.close_ready.get() {
-                probe.closed.set(probe.closed.get() + 1);
-                Poll::Ready(probe.close_error.borrow().clone().map_or(Ok(()), Err))
-            } else {
-                probe.register(cx);
-                Poll::Pending
-            }
-        }))
+        self.probe.shutdown()
     }
 }
 struct TransportNetwork(Rc<Probe>);
@@ -508,4 +565,44 @@ fn diagnostics_are_live_sorted_weak_and_policy_reaches_current_and_future_connec
     assert!(diagnostics.snapshot().iter().all(|s| s.questions == 1)); // Late Return still owed.
     drop(system);
     assert!(diagnostics.snapshot().is_empty());
+}
+
+#[test]
+fn two_party_selection_preserves_idle_and_shutdown_without_network_feature_probes() {
+    for two_party in [true, false] {
+        let (mut system, probe) = fixture(options());
+        probe.two_party.set(two_party);
+        probe.accepts.borrow_mut().push_back(1);
+        pump(&mut system);
+        assert_eq!(probe.mode_reads.get(), 1);
+        assert_eq!(probe.live.get(), 1);
+        assert_eq!(&*probe.idle.borrow(), &[false, true]);
+        if two_party {
+            assert_eq!(probe.feature_reads.get(), 0);
+        } else {
+            assert!(probe.feature_reads.get() > 0);
+        }
+        let client: capability::Client = system.bootstrap(Peer(1));
+        assert_eq!(&*probe.idle.borrow(), &[false, true, false]);
+        pump(&mut system);
+        assert_eq!(probe.mode_reads.get(), 1);
+        if two_party {
+            assert_eq!(probe.feature_reads.get(), 0);
+        }
+        drop(client);
+        let mut close = system.get_disconnector();
+        assert!(poll(&mut close).is_pending());
+        pump(&mut system);
+        assert_eq!(
+            probe.live.get(),
+            1,
+            "transport retained through pending close"
+        );
+        probe.close_ready.set(true);
+        probe.wake();
+        pump(&mut system);
+        assert!(matches!(poll(&mut close), Poll::Ready(Ok(()))));
+        assert_eq!(probe.closed.get(), 1);
+        assert_eq!(probe.live.get(), 0);
+    }
 }

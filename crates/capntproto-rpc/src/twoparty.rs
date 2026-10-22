@@ -53,6 +53,7 @@ enum IncomingPayload {
 }
 
 struct IncomingStream<T> {
+    _connection: Rc<dyn std::any::Any>,
     input: Box<capnp_futures::BufferedRead<T>>,
 }
 
@@ -506,15 +507,6 @@ impl OutputDriver {
             None => self.poll_inner(cx),
         }
     }
-    fn drive_ready(&self) {
-        if self.extracted.get() {
-            return;
-        }
-        let wake = self.network.borrow().clone();
-        if let Some(wake) = wake {
-            let _ = self.poll_inner(&mut std::task::Context::from_waker(&wake));
-        }
-    }
 }
 
 struct ConnectionInner<T>
@@ -543,22 +535,19 @@ where
 }
 
 struct OutgoingStream {
+    _connection: Rc<dyn std::any::Any>,
     sender: capnp_futures::LocalObservedSender<QueuedMessage>,
     driver: Weak<OutputDriver>,
-    sent: bool,
-    deferred: bool,
+    closed: futures::future::Shared<Promise<(), capnp::Error>>,
 }
 impl crate::OutgoingMessageStream for OutgoingStream {
-    fn send_buffered(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
-        #[cfg(unix)]
-        let frame = {
-            let mut frame = frame;
-            drop(frame.take_fds());
-            frame
-        };
-        self.sent = true;
-        self.deferred = true;
-        self.sender.send_buffered(QueuedMessage::Frame(frame))
+    fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), capnp::Error> {
+        let drained = self.sender.terminate(result);
+        let closed = self.closed.clone();
+        Promise::from_future(async move {
+            drained.await?;
+            closed.await
+        })
     }
     fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
         #[cfg(unix)]
@@ -567,33 +556,20 @@ impl crate::OutgoingMessageStream for OutgoingStream {
             drop(frame.take_fds());
             frame
         };
-        if self.sent {
-            self.deferred = true;
-            return self.sender.send_buffered(QueuedMessage::Frame(frame));
-        }
-        self.sent = true;
-        let driver = &self.driver;
-        self.sender.send_and_drive(QueuedMessage::Frame(frame), || {
-            if let Some(driver) = driver.upgrade() {
-                driver.drive_ready();
-            }
-        })
+        self.sender.send_buffered(QueuedMessage::Frame(frame))
     }
     fn poll_flush(
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<capnp::Result<()>> {
-        if self.deferred {
-            if let Some(driver) = self.driver.upgrade() {
-                driver.drive_ready();
+        if let Some(driver) = self.driver.upgrade() {
+            if !driver.extracted.get() {
+                if let std::task::Poll::Ready(Err(error)) = driver.poll_cooperative(cx) {
+                    return std::task::Poll::Ready(Err(error));
+                }
             }
         }
-        let result = self.sender.poll_flush(cx);
-        if result.is_ready() {
-            self.sent = false;
-            self.deferred = false;
-        }
-        result
+        self.sender.poll_flush(cx)
     }
 }
 
@@ -666,19 +642,54 @@ where
     }
 }
 
-impl<T> crate::Connection<crate::rpc_twoparty_capnp::Side> for Connection<T>
-where
-    T: AsyncRead + Unpin,
-{
+impl<T: AsyncRead + Unpin> Connection<T> {
     fn take_outgoing_stream(&mut self) -> Option<Box<dyn crate::OutgoingMessageStream>> {
         let inner = self.inner.borrow();
         inner.sender.observe().map(|sender| {
             Box::new(OutgoingStream {
+                _connection: self.inner.clone(),
                 sender,
                 driver: inner.output_driver.clone(),
-                sent: false,
-                deferred: false,
+                closed: inner.output_closed.clone(),
             }) as Box<dyn crate::OutgoingMessageStream>
+        })
+    }
+    #[cfg(test)]
+    fn take_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
+        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
+        Some(Box::new(IncomingStream {
+            input,
+            _connection: self.inner.clone(),
+        }))
+    }
+
+    fn take_incoming_frames(&mut self) -> Option<Box<dyn crate::IncomingFrameStream>> {
+        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
+        Some(Box::new(IncomingStream {
+            input,
+            _connection: self.inner.clone(),
+        }))
+    }
+}
+
+impl<T> crate::Connection<crate::rpc_twoparty_capnp::Side> for Connection<T>
+where
+    T: AsyncRead + Unpin,
+{
+    fn control_mode(&self) -> crate::ControlMode {
+        crate::ControlMode::TwoParty
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<crate::FrameIo> {
+        let outgoing = self
+            .take_outgoing_stream()
+            .ok_or_else(|| capnp::Error::failed("output already owned".into()))?;
+        let incoming = self
+            .take_incoming_frames()
+            .ok_or_else(|| capnp::Error::failed("input already owned".into()))?;
+        Ok(crate::FrameIo {
+            incoming,
+            outgoing,
+            write_finished: self.when_write_finished(),
         })
     }
     fn get_peer_vat_id(&self) -> crate::rpc_twoparty_capnp::Side {
@@ -861,11 +872,6 @@ where
         self.receive(true)
     }
 
-    fn take_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
-        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
-        Some(Box::new(IncomingStream { input }))
-    }
-
     fn take_owned_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
         let return_to = self.inner.borrow().input_stream.clone();
         let input = return_to.borrow_mut().take()?;
@@ -873,11 +879,6 @@ where
             input: Some(input),
             return_to,
         }))
-    }
-
-    fn take_incoming_frames(&mut self) -> Option<Box<dyn crate::IncomingFrameStream>> {
-        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
-        Some(Box::new(IncomingStream { input }))
     }
 
     fn new_stream(&mut self) -> (Box<dyn crate::FlowController>, Promise<(), capnp::Error>) {

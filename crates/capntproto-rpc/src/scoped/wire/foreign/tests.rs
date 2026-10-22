@@ -154,7 +154,13 @@ fn failed_resolution_retries_capacity_once_and_retains_full_diagnostics() {
             }
         }
         for _ in 0..3 {
-            let Poll::Ready(Err(error)) = poll_tied(&mut foreign, &mut hooks, graph) else {
+            // Ready retries alternate with bounded weak-key retirement work.
+            let Poll::Ready(Err(error)) = foreign.poll(
+                &mut hooks,
+                graph,
+                &mut Context::from_waker(Waker::noop()),
+                NonZeroUsize::new(2).unwrap(),
+            ) else {
                 panic!()
             };
             assert_eq!(error.kind, capnp::ErrorKind::Overloaded);
@@ -306,6 +312,57 @@ fn opaque_hook_identity_does_not_deduplicate_or_unwrap_policy() {
         graph.release(route);
         hooks.close(graph, Error::disconnected("done".into()));
         foreign.terminate();
+        drain(graph);
+        assert!(graph.is_empty());
+    });
+}
+
+#[test]
+fn unrelated_protocol_changes_do_not_poll_sleeping_foreign_futures() {
+    with_graph(8, |graph| {
+        let polls = Rc::new(Cell::new(0));
+        let wake = Rc::new(RefCell::new(None::<Waker>));
+        let source: capability::Client = crate::new_future_client(futures::future::poll_fn({
+            let polls = polls.clone();
+            let wake = wake.clone();
+            move |cx| {
+                polls.set(polls.get() + 1);
+                *wake.borrow_mut() = Some(cx.waker().clone());
+                Poll::<capnp::Result<capability::Client>>::Pending
+            }
+        }));
+        let mut foreign = ForeignPromises::new(1);
+        let mut hooks = ClientHooks::new(1, 1);
+        let client = foreign.import(graph, &*source.hook).unwrap();
+        for _ in 0..4 {
+            let _ = poll_tied(&mut foreign, &mut hooks, graph);
+        }
+        let initial = polls.get();
+        assert!(initial > 0);
+        for _ in 0..100 {
+            foreign.invalidate_scan();
+            let _ = poll_tied(&mut foreign, &mut hooks, graph);
+        }
+        assert_eq!(polls.get(), initial);
+        let notification = wake.borrow_mut().take().unwrap();
+        std::thread::spawn(move || notification.wake())
+            .join()
+            .unwrap();
+        for _ in 0..4 {
+            let _ = poll_tied(&mut foreign, &mut hooks, graph);
+        }
+        assert!(polls.get() > initial);
+        graph.release(client);
+        for _ in 0..4 {
+            let _ = poll_tied(&mut foreign, &mut hooks, graph);
+        }
+        assert!(
+            foreign.is_empty(),
+            "sleeping abandoned entries are still reclaimed"
+        );
+        foreign.terminate();
+        hooks.close(graph, Error::disconnected("done".into()));
+        drop(source);
         drain(graph);
         assert!(graph.is_empty());
     });

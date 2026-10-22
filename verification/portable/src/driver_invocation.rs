@@ -463,7 +463,7 @@ pub fn owning_invocation_driver(chunk: usize) {
             let call=server.runtime.complete(running).into_call().unwrap_or_else(|_|panic!("Call"));
             server.release_call(call,messages);
             let frame=super::owning::exchange(messages,&mut queue,chunk);
-            assert!(matches!(client.receive(frame,messages,&mut [0;4],|_|(),||panic!("Return")).unwrap_or_else(|_|panic!("Return")),Received::Returned(key)if key==sent.question));
+            assert!(matches!(client.receive(frame,messages,&mut [0;4],|_|(),||panic!("Return")).unwrap_or_else(|_|panic!("Return")),Received::Returned(key, _)if key==sent.question));
             let response=client.take_response(sent.question).unwrap();
             client.release_response(response,messages);
             assert!(controls::finish_one(&mut client.ledgers.questions,messages,&mut queue,776,Default::default()).unwrap());
@@ -472,7 +472,7 @@ pub fn owning_invocation_driver(chunk: usize) {
             // Finish on the result must not release the separately advertised
             // parameter grant; its import emits exactly one Release.
             while let Some(owner)=server.drain_endpoint(){assert!(owner.is_none());}
-            assert!(controls::release_one(0,&mut server.ledgers.imports,messages,&mut queue,776,Default::default()).unwrap().is_some());
+            assert!(controls::release_one(&mut server.ledgers.imports,messages,&mut queue,776,Default::default()).unwrap().is_some());
             let frame=super::owning::exchange(messages,&mut queue,chunk);
             assert!(matches!(client.receive(frame,messages,&mut [0;4],|_|(),||panic!("Release")).unwrap_or_else(|_|panic!("Release")),Received::Released));
             client.runtime.release(target);

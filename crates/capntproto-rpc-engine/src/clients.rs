@@ -8,12 +8,12 @@ mod store;
 pub use store::Capabilities;
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Raw {
     index: usize,
     generation: u64,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Key<'id> {
     raw: Raw,
     brand: Brand<'id>,

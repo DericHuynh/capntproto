@@ -1,0 +1,111 @@
+{
+  "base": "788103bc106df1c21e2ff17b5030b6a0870803fb",
+  "binaries": {
+    "step1": {
+      "sha256": "5e767ffb2a6d215b6d8b0868437eb7e43bca94a40f85d682f6e624a591a4401d",
+      "size": 99122704,
+      "patch_sha256": "7923ea6342b52ebb6eb1518667d9a762871b8fb25b9bae81274c835efc8efd66"
+    },
+    "step1b": {
+      "sha256": "a5ab3c48728e9e8a86aee36c308bbb44da9a14bbc114bdbbb9c25114c51404fb",
+      "size": 99122104,
+      "patch_sha256": "792c858be1f28efa4ef3ce634611691908b8fdb7b670213b0fc21ca68333cac8"
+    },
+    "step2": {
+      "sha256": "40eacd3cf0317e0cd9bfdbee5e9d2131585b8294e83846d9e0e6558188427358",
+      "size": 99098168,
+      "patch_sha256": "e7d58d6402f50705ec156dd0c80ed8c6765c2790d12d903c77b891c0fce38df6"
+    },
+    "step3": {
+      "sha256": "7a7b2352b3064262ecbc2d1ea8b65030554dd15b8f927ac661764b63ff97c90d",
+      "size": 98901448,
+      "patch_sha256": "e2f76f1bf6b9a5962e9893fda0a580e2e930976fec302374d7b7716981aa10dd"
+    },
+    "step4": {
+      "sha256": "ff49c16bc952bcb00754633a0a965a095b5181f0417366db71a065b04853b2ba",
+      "size": 99003304,
+      "patch_sha256": "72b4d33455659c9db4758a84c8b6528a85b4674c9c73d2ba2ac496d271a8db31"
+    },
+    "step4b": {
+      "sha256": "b0e1fa6911595d05b6faefb3c5e7702944e616732552c20d7d2ed21d8ba9914d",
+      "size": 98996712,
+      "patch_sha256": "00ba17ab31668b53c5ca7f87747eaa9c47378ea7c0b91609a8fddc4d830fd3a3"
+    },
+    "step5": {
+      "sha256": "00e923512640b06906f302a091fbb1f032aa0c7bfe823f9e4c1936a5e44980d5",
+      "size": 99348464,
+      "patch_sha256": "1de3c4196babd1d22a10b72db748f287c089b6fb921c145a5f355a3dddc2067c"
+    },
+    "step6": {
+      "sha256": "31482ebaadd9372a612ccf316b2e6d45775bf7accd1832f79a36c2309e72834c",
+      "size": 99349200,
+      "patch_sha256": "d43d67c67c68feb2af26d16b17ead7f6b2bde91c86a1f0ead5d7febdb3250be6"
+    },
+    "step6b": {
+      "sha256": "957c878894698b22181b9747d1cf781e9bdc9c3fd2757f69314eec27de8ecac2",
+      "size": 99349592,
+      "patch_sha256": "543c177e020c3351d95bdc608acdc2d930d7bd7a2f11377dd1fa91a94886819a"
+    },
+    "step6c": {
+      "sha256": "9bb683f625aa806ff6ce6924c38e128b3e08009ea7b1911e456dcd3eaf72e725",
+      "size": 99369440,
+      "patch_sha256": "ffcc5173aeae5e8fec92b87235a81f265f46db5db3e5f7fc4bf661cccb64bbb0"
+    }
+  },
+  "validation": {
+    "tests5c": [
+      "340",
+      "206",
+      "155"
+    ],
+    "portable5": [
+      "86"
+    ],
+    "secure5": [
+      "1",
+      "1",
+      "200",
+      "19"
+    ],
+    "integration5c": [
+      "2",
+      "10",
+      "4",
+      "6",
+      "6"
+    ],
+    "unix3e": [
+      "1",
+      "30"
+    ]
+  },
+  "retained": {
+    "name": "step5",
+    "sha256": "00e923512640b06906f302a091fbb1f032aa0c7bfe823f9e4c1936a5e44980d5",
+    "source_check": {
+      "retained_binary": "00e923512640b06906f302a091fbb1f032aa0c7bfe823f9e4c1936a5e44980d5",
+      "restored": [
+        "crates/capntproto-rpc-engine/src/io.rs",
+        "crates/capntproto-rpc/src/lib.rs",
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs",
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/tests/plain.rs",
+        "crates/capntproto-rpc/src/scoped/wire/coordinator/transport/vat.rs",
+        "crates/capntproto-rpc/src/twoparty.rs",
+        "crates/capntproto-rpc/src/twoparty/output_driver_tests.rs",
+        "src/rpc/quic.rs",
+        "src/rpc/quic/driver.rs"
+      ],
+      "all_manifest_code_sources_match": true
+    }
+  },
+  "controls": {
+    "secure52": {
+      "commit": "788103bc106df1c21e2ff17b5030b6a0870803fb",
+      "sha256": "6ec8ab2a87223d0308af75eed275691fafbf080d82a67ed82629672429cb9590"
+    },
+    "cpp": {
+      "commit": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+      "sha256": "5817fd52501b8a908e17ce9451336080776ccd3cb9629164dc19da37368c0da5"
+    }
+  }
+}

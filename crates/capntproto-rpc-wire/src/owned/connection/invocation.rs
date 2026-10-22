@@ -35,6 +35,7 @@ pub struct Invocation<'pool, 'id, const CAPS: usize> {
     template: Option<PlainTemplate>,
     capabilities: Buffer<Option<clients::Client<'id>>, CAPS>,
     count: usize,
+    completion_owner: Option<core::num::NonZeroUsize>,
 }
 /// A local invocation's parameters retain their message and capability domain.
 /// The template's placeholder wire IDs are deliberately not exposed.
@@ -133,6 +134,9 @@ impl<'m, 'r, 'id, const CAPS: usize> InvocationParams<'m, 'r, 'id, CAPS> {
     }
 }
 impl<'pool, 'id, const CAPS: usize> Invocation<'pool, 'id, CAPS> {
+    pub fn completion_owner(&self) -> Option<usize> {
+        self.completion_owner.map(|owner| owner.get() - 1)
+    }
     pub(super) fn allows_pipeline(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
@@ -333,6 +337,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             template,
             capabilities: retained,
             count: capabilities.len(),
+            completion_owner: None,
         };
         for (index, client) in capabilities.iter().enumerate() {
             let Some(client) = client else { continue };
@@ -433,6 +438,25 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 Ok(())
             },
         )
+    }
+    /// Bind a hosted completion before publication, preserving its identity
+    /// when dispatch later assigns a wire question.
+    pub fn bind_invocation_completion(
+        &mut self,
+        task: dispatch::TaskKey<'id>,
+        owner: usize,
+    ) -> Result<(), Error> {
+        let Some(Task::Invoke(invocation)) = self.runtime.queued_owner_mut(task) else {
+            return Err(Error::UnknownInvocation);
+        };
+        if invocation.completion_owner.is_some() {
+            return Err(Error::Question(questions::Error::AlreadyOwned));
+        }
+        invocation.completion_owner = Some(
+            core::num::NonZeroUsize::new(owner.checked_add(1).ok_or(Error::Busy)?)
+                .ok_or(Error::Busy)?,
+        );
+        Ok(())
     }
     /// Cancel only a queued outgoing invocation. It owes no Finish or peer
     /// Release because neither a question nor parameter grant was published.
@@ -565,6 +589,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             }
         };
         let task = ready.key();
+        let completion_owner = invocation.completion_owner;
         let count = invocation.count;
         let template = invocation.template.filter(|_| import.is_some());
         if let Some(template) = template {
@@ -622,11 +647,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .questions
                 .bind_owner(question.key(), slot_index)
                 .expect("new exchange owner");
+            slot.completion_owner = completion_owner;
             slot.exchange = Some(Exchange::Pending(question));
             slot.canceled = false;
             slot.tail_taken = false;
             slot.authorized = true;
-            self.invocation_pipelines.sent(task, key);
+            self.invocation_pipelines
+                .sent(task, key, &mut self.ledgers.questions);
             let Task::Invoke(invocation) =
                 self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())
             else {
@@ -817,11 +844,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .questions
             .bind_owner(question.key(), slot_index)
             .expect("new exchange owner");
+        slot.completion_owner = completion_owner;
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;
         slot.tail_taken = false;
         slot.authorized = true;
-        self.invocation_pipelines.sent(task, key);
+        self.invocation_pipelines
+            .sent(task, key, &mut self.ledgers.questions);
         // No callback or graph resolution occurs between selecting this task
         // and FIFO acceptance. Release its route only after output owns the Call.
         let Task::Invoke(invocation) = self.runtime.cancel(task).unwrap_or_else(|_| unreachable!())

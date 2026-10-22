@@ -55,6 +55,12 @@ impl crate::VatNetwork<()> for Network {
 }
 struct Peer(Rc<Transport>);
 impl Connection<()> for Peer {
+    fn control_mode(&self) -> crate::ControlMode {
+        crate::ControlMode::TwoParty
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<crate::FrameIo> {
+        Err(Error::unimplemented("legacy fixture".into()))
+    }
     fn get_peer_vat_id(&self) {}
     fn connection_id(&self) -> usize {
         1

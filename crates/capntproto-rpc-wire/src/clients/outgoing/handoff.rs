@@ -2,10 +2,12 @@
 use super::*;
 use crate::owned::connection::LocalResult;
 impl<'id, P: Copy + Eq, const PATH: usize> Bindings<'_, 'id, P, PATH> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn poll_handoff<'pool, S, G, const CAPS: usize>(
         &mut self,
         index: usize,
         question: questions::Key<'id>,
+        questions: &mut questions::Questions<'id, '_>,
         result: Result<&LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>,
         messages: &messages::Messages<'pool, '_, '_>,
         graph: &mut G,
@@ -25,6 +27,7 @@ impl<'id, P: Copy + Eq, const PATH: usize> Bindings<'_, 'id, P, PATH> {
         let observed = match graph.retain_key(entry.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
+                questions.remove_observer(question, false);
                 slot.entry = None;
                 self.live -= 1;
                 return Ok(Progress::Abandoned);
@@ -74,6 +77,7 @@ impl<'id, P: Copy + Eq, const PATH: usize> Bindings<'_, 'id, P, PATH> {
         graph.release(observed);
         match resolved {
             Ok(barrier) => {
+                questions.remove_observer(question, false);
                 slot.entry = None;
                 self.live -= 1;
                 Ok(Progress::Resolved(barrier))

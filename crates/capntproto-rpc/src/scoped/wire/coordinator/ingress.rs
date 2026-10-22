@@ -74,9 +74,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 let frame = if controls.accepts_direct_plain_return()
                     && self.calls.has_plain_receivers()
                 {
-                    match self.driver.try_receive_plain_owned(frame, messages, |key| {
-                        self.calls.plain_receiver(key)
-                    }) {
+                    match self
+                        .driver
+                        .try_receive_plain_owned(frame, messages, |key, owner| {
+                            self.calls.plain_receiver(key, owner)
+                        }) {
                         Ok(connection::PlainReceived::Delivered(index, message)) => {
                             reader.finish_frame();
                             pump.frames += 1;
@@ -84,7 +86,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             pump.blocked = false;
                             self.delivered_plain(index, message, controls);
                             if pump.frames < self.options.budget.get().min(8)
-                                && (self.calls.has_indexed_replies() || !self.worker.is_empty())
+                                && (self.calls.can_batch_replies() || !self.worker.is_empty())
                             {
                                 continue;
                             }
@@ -154,8 +156,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 } else {
                     Lane::Calls
                 };
-                if let connection::Received::Returned(key) = &event {
-                    pump.returned = Some(*key);
+                if let connection::Received::Returned(key, owner) = &event {
+                    pump.returned = Some((*key, *owner));
                 }
                 // Pending outgoing calls were already certified idle before
                 // this descriptor-free request arrived. It does not settle
@@ -233,11 +235,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         .map_err(|error| Box::new(Cause::Protocol(error))),
                 );
             }
-            if let Some(key) = pump.returned.take() {
+            if let Some((key, owner)) = pump.returned.take() {
                 let completed = self
                     .calls
                     .returned(
-                        key,
+                        (key, owner),
                         &mut self.hooks,
                         &mut self.driver,
                         messages,
@@ -350,9 +352,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     }
                     if let Some((index, message)) = self
                         .driver
-                        .try_receive_plain_buffered(bytes, self.options.reader, messages, |key| {
-                            self.calls.plain_receiver(key)
-                        })
+                        .try_receive_plain_buffered(
+                            bytes,
+                            self.options.reader,
+                            messages,
+                            |key, owner| self.calls.plain_receiver(key, owner),
+                        )
                         .map_err(|error| Box::new(Cause::Protocol(wire_error(error))))?
                     {
                         reader.consume_buffered_frame();
@@ -360,7 +365,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.delivered_plain(index, message, controls);
                         pump.frames += 1;
                         if pump.frames < self.options.budget.get().min(8)
-                            && (self.calls.has_indexed_replies() || !self.worker.is_empty())
+                            && (self.calls.can_batch_replies() || !self.worker.is_empty())
                         {
                             continue;
                         }

@@ -184,13 +184,12 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             path_capacity,
         })
     }
-    pub fn pending_for(&self, question: questions::Key<'id>) -> bool {
-        self.live != 0
-            && self.slots.iter().any(|slot| {
-                slot.entry
-                    .as_ref()
-                    .is_some_and(|entry| entry.question == question)
-            })
+    pub fn pending_for(
+        &self,
+        question: questions::Key<'id>,
+        questions: &questions::Questions<'id, '_>,
+    ) -> bool {
+        self.live != 0 && questions.has_observers(question, false)
     }
 
     /// Register an observer whose invocation was still queued when Return
@@ -199,6 +198,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
     pub(crate) fn observe_returned<I, const N: usize, G: clients::Capabilities<'id>>(
         &mut self,
         response: &Response<'_, 'id, 'id, 'id, 'id, I, N>,
+        questions: &mut questions::Questions<'id, '_>,
         graph: &mut G,
         path: pipeline::Path<'_>,
     ) -> Result<clients::Client<'id>, Error> {
@@ -215,6 +215,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             .ok_or(Error::Capacity)?;
         let client = graph.promise(&mut None).map_err(Error::Graph)?;
         self.live += 1;
+        questions.add_observer(response.key(), false);
         slot.entry = Some(Entry {
             question: response.key(),
             client: client.key(),
@@ -242,6 +243,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         &mut self,
         index: usize,
         response: &Response<'pool, 'id, 'id, 'id, 'id, I, N>,
+        questions: &mut questions::Questions<'id, '_>,
         messages: &messages::Messages<'pool, '_, '_>,
         graph: &mut G,
         bindings: &mut super::Imports<'_, 'id, 'id, P>,
@@ -268,6 +270,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         let observed = match graph.retain_key(entry.client) {
             Ok(client) => client,
             Err(clients::Error::Stale) => {
+                questions.remove_observer(entry.question, false);
                 slot.entry = None;
                 self.live -= 1;
                 return Ok(Progress::Abandoned);
@@ -347,6 +350,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         graph.release(observed);
         match resolved {
             Ok(barrier) => {
+                questions.remove_observer(entry.question, false);
                 slot.entry = None;
                 self.live -= 1;
                 Ok(Progress::Resolved(barrier))
@@ -395,6 +399,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
                 self.slots.iter_mut().enumerate().find_map(|(index, slot)| {
                     match graph.retain_key(slot.entry.as_ref()?.client) {
                         Err(clients::Error::Stale) => {
+                            questions.remove_observer(slot.entry.as_ref().unwrap().question, false);
                             slot.entry = None;
                             self.live -= 1;
                             Some(index)
@@ -438,6 +443,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             })?;
         if self.slots[index].entry.is_none() {
             self.live += 1;
+            questions.add_observer(question.key(), false);
         }
         self.slots[index].entry = Some(Entry {
             question: question.key(),

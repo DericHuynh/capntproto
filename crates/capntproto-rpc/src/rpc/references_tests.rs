@@ -157,6 +157,12 @@ fn receive_budget_counts_uninterrupted_work_in_both_transport_interfaces() {
         owned: bool,
     }
     impl crate::Connection<Side> for Connection {
+        fn control_mode(&self) -> crate::ControlMode {
+            crate::ControlMode::TwoParty
+        }
+        fn take_frame_io(&mut self) -> capnp::Result<crate::FrameIo> {
+            Err(Error::unimplemented("legacy fixture".into()))
+        }
         fn get_peer_vat_id(&self) -> Side {
             self.inner.get_peer_vat_id()
         }

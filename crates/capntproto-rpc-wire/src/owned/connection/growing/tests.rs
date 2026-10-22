@@ -883,11 +883,11 @@ fn maintenance_idle_phase_cost_does_not_grow_with_retained_capacity() {
                 .unwrap()
                 .commit();
             driver.invalidate_maintenance();
-            let total = 16 + driver.tails.len() + driver.ledgers.imports.capacity();
-            // The import phase has grown, but its live no-release certificate
-            // joins the same bounded empty-phase walk. Only individual tail
-            // slots and the final idle proof consume budget; physical scan
-            // coverage still tracks every slot.
+            let total = 17 + driver.tails.len();
+            // Import cleanup selects its queue head, so retained import capacity
+            // never expands the maintenance span. Only individual tail slots
+            // and the final idle proof consume this idle walk's budget.
+            assert_eq!(driver.maintenance_sizes[10], 1);
             for _ in 1..initial.div_ceil(quantum) {
                 assert!(matches!(poll!(), Progress::Yield));
             }
@@ -2267,7 +2267,7 @@ fn plain_results_preserve_parameter_grants_until_the_peer_releases_them() {
             })
             .unwrap();
             let received = driver
-                .try_receive_plain_owned(frame, messages, |_| Some(()))
+                .try_receive_plain_owned(frame, messages, |_, _| Some(()))
                 .unwrap_or_else(|(error, _)| panic!("{error:?}"));
             if release_params {
                 let PlainReceived::Deferred(frame) = received else {
@@ -2355,7 +2355,7 @@ fn plain_results_cannot_complete_a_redirected_question() {
         })
         .unwrap();
         let PlainReceived::Deferred(frame) = driver
-            .try_receive_plain_owned(frame, messages, |_| Some(()))
+            .try_receive_plain_owned(frame, messages, |_, _| Some(()))
             .unwrap_or_else(|(error, _)| panic!("{error:?}"))
         else {
             panic!("redirected call cannot receive direct Results");
@@ -2442,14 +2442,14 @@ fn plain_return_shortcuts_preserve_cancellation_pipeline_and_control_owners() {
                             &bytes,
                             Default::default(),
                             messages,
-                            |_| panic!("{reason} cannot select a direct sink")
+                            |_, _| panic!("{reason} cannot select a direct sink")
                         )
                         .unwrap()
                         .is_none());
                     frame
                 } else {
                     let PlainReceived::Deferred(frame) = driver
-                        .try_receive_plain_owned::<()>(frame, messages, |_| {
+                        .try_receive_plain_owned::<()>(frame, messages, |_, _| {
                             panic!("{reason} cannot select a direct sink")
                         })
                         .unwrap_or_else(|(error, _)| panic!("{error:?}"))
@@ -2550,7 +2550,7 @@ fn question_owner_bindings_route_distinct_slots_and_reject_corrupted_ownership()
             .unwrap();
             if index == 0 {
                 let PlainReceived::Delivered(selected, _) = driver
-                    .try_receive_plain_owned(frame, messages, Some)
+                    .try_receive_plain_owned(frame, messages, |key, _| Some(key))
                     .unwrap_or_else(|(error, _)| panic!("{error}"))
                 else {
                     panic!("plain reply must find its registered owner")
@@ -2559,7 +2559,7 @@ fn question_owner_bindings_route_distinct_slots_and_reject_corrupted_ownership()
             } else {
                 assert!(
                     matches!(driver.receive(frame, messages, &mut [0; 8], |_| (), || ()),
-                    Ok(Received::Returned(selected)) if selected == key)
+                    Ok(Received::Returned(selected, _)) if selected == key)
                 );
                 let response = driver.take_response(key).unwrap();
                 driver.release_response(response, messages);
@@ -2637,7 +2637,7 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
         }
         let frame = reply(messages, key.id().to_wire(), false, true);
         let PlainReceived::Deferred(frame) = driver
-            .try_receive_plain_owned::<()>(frame, messages, |_| None)
+            .try_receive_plain_owned::<()>(frame, messages, |_, _| None)
             .unwrap_or_else(|(e, _)| panic!("{e:?}"))
         else {
             panic!("unclaimed result")
@@ -2651,7 +2651,8 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
         bytes[48..56].copy_from_slice(&0x0001_0000_7fff_fffcu64.to_le_bytes());
         frame.release(messages);
         let frame = Frame::copy_from(messages, &bytes, Default::default()).unwrap();
-        let (error, frame) = match driver.try_receive_plain_owned(frame, messages, |_| Some(17)) {
+        let (error, frame) = match driver.try_receive_plain_owned(frame, messages, |_, _| Some(17))
+        {
             Err(rejected) => rejected,
             Ok(_) => panic!("invalid envelope must be rejected"),
         };
@@ -2660,7 +2661,7 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
         frame.release(messages);
         let frame = reply(messages, key.id().to_wire(), false, false);
         let PlainReceived::Deferred(frame) = driver
-            .try_receive_plain_owned(frame, messages, |_| Some(17))
+            .try_receive_plain_owned(frame, messages, |_, _| Some(17))
             .unwrap_or_else(|(e, _)| panic!("{e:?}"))
         else {
             panic!("Finish obligation uses ordinary receive")
@@ -2669,7 +2670,7 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
         frame.release(messages);
         let frame = reply(messages, key.id().to_wire(), false, true);
         let PlainReceived::Delivered(sink, result) = driver
-            .try_receive_plain_owned(frame, messages, |selected| {
+            .try_receive_plain_owned(frame, messages, |selected, _| {
                 assert_eq!(selected, key);
                 Some(17)
             })
@@ -2796,7 +2797,9 @@ fn buffered_plain_return_is_transactional_and_pins_the_original_result() {
         select: impl FnOnce(questions::Key<'id>) -> Option<T>,
     ) -> Result<PlainReceived<'p, T>, (Error, Frame<'p>)> {
         let bytes = messages.read(&frame.lease).to_vec();
-        match driver.try_receive_plain_buffered(&bytes, frame.options, messages, select) {
+        match driver
+            .try_receive_plain_buffered(&bytes, frame.options, messages, |key, _| select(key))
+        {
             Ok(Some((sink, result))) => {
                 frame.release(messages);
                 Ok(PlainReceived::Delivered(sink, result))
@@ -2966,7 +2969,7 @@ fn buffered_plain_prefilter_preserves_callbacks_and_finish_obligations_without_c
                         &bytes,
                         Default::default(),
                         messages,
-                        |_| panic!("ineligible frame cannot select a sink"),
+                        |_, _| panic!("ineligible frame cannot select a sink"),
                     )
                     .unwrap()
                     .is_none());
@@ -3032,7 +3035,7 @@ fn buffered_plain_return_rejects_invalid_framing_and_defers_unknown_questions() 
         let bytes = messages.read(&frame.lease).to_vec();
         frame.release(messages);
         assert!(driver
-            .try_receive_plain_buffered::<()>(&bytes, Default::default(), messages, |_| panic!(
+            .try_receive_plain_buffered::<()>(&bytes, Default::default(), messages, |_, _| panic!(
                 "unknown question must not select a sink"
             ))
             .unwrap()
@@ -3042,7 +3045,7 @@ fn buffered_plain_return_rejects_invalid_framing_and_defers_unknown_questions() 
                 &bytes[..length],
                 Default::default(),
                 messages,
-                |_| panic!("invalid frame must not select a sink"),
+                |_, _| panic!("invalid frame must not select a sink"),
             );
             assert!(matches!(result, Err(Error::Input(_))));
             assert!(driver.ledgers.questions.contains(key));

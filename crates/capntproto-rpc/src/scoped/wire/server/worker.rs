@@ -5,7 +5,7 @@ use capntproto_rpc_engine::{answers, clients};
 use capntproto_rpc_wire::clients::{Endpoint, Route};
 use std::num::NonZeroUsize;
 
-mod ready;
+use super::super::ready;
 
 type Running<'p, 'id, I, const C: usize, const P: usize> =
     dispatch::Running<'id, connection::Request<'p, 'id, I, C, P>>;

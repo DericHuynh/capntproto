@@ -23,11 +23,6 @@ impl<'id, const PATH: usize> InvocationPipelineSlot<'id, PATH> {
     pub(super) fn is_occupied(&self) -> bool {
         self.entry.is_some()
     }
-    pub(super) fn pending_for(&self, question: questions::Key<'id>) -> bool {
-        self.entry
-            .as_ref()
-            .is_some_and(|entry| matches!(entry.stage, Stage::Sent(key) if key == question))
-    }
     pub(super) fn pending_local(&self, task: dispatch::TaskKey<'id>) -> bool {
         self.entry
             .as_ref()
@@ -61,13 +56,25 @@ impl<'s, 'id, const PATH: usize> Bindings<'s, 'id, PATH> {
     pub(super) fn is_empty(&self) -> bool {
         self.live == 0
     }
-    pub(super) fn pending_for(&self, question: questions::Key<'id>) -> bool {
-        self.live != 0 && self.slots.iter().any(|slot| slot.pending_for(question))
+    pub(super) fn pending_for(
+        &self,
+        question: questions::Key<'id>,
+        questions: &questions::Questions<'id, '_>,
+    ) -> bool {
+        self.live != 0 && questions.has_observers(question, true)
     }
-    pub(super) fn sent(&mut self, task: dispatch::TaskKey<'id>, question: questions::Key<'id>) {
+    pub(super) fn sent(
+        &mut self,
+        task: dispatch::TaskKey<'id>,
+        question: questions::Key<'id>,
+        questions: &mut questions::Questions<'id, '_>,
+    ) {
         if self.live != 0 {
             for slot in &mut *self.slots {
-                slot.sent(task, question);
+                if slot.entry.as_ref().is_some_and(|entry| entry.task == task) {
+                    questions.add_observer(question, true);
+                    slot.sent(task, question);
+                }
             }
         }
     }
@@ -204,10 +211,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         &mut self.runtime,
                         path,
                     ),
-                    Exchange::Returned(response) => {
-                        self.outgoing
-                            .observe_returned(response, &mut self.runtime, path)
-                    }
+                    Exchange::Returned(response) => self.outgoing.observe_returned(
+                        response,
+                        &mut self.ledgers.questions,
+                        &mut self.runtime,
+                        path,
+                    ),
                 }
                 .map(Some)
                 .map_err(Error::Outgoing)
@@ -347,7 +356,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let entry = self.invocation_pipelines.slots[index].entry.take().unwrap();
         self.invocation_pipelines.live -= 1;
         if let Stage::Sent(question) = entry.stage {
-            if !self.invocation_pipelines.pending_for(question) {
+            self.ledgers.questions.remove_observer(question, true);
+            if !self
+                .invocation_pipelines
+                .pending_for(question, &self.ledgers.questions)
+            {
                 if let Some(Exchange::Pending(pending)) =
                     ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, question)
                         .and_then(|index| self.exchanges.get_mut(index))

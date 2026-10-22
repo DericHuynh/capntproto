@@ -174,6 +174,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .questions
             .bind_owner(question.key(), slot_index)
             .expect("new exchange owner");
+        slot.completion_owner = None;
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;
         slot.tail_taken = false;
@@ -342,6 +343,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         .questions
                         .bind_owner(question.key(), slot_index)
                         .expect("new exchange owner");
+                    slot.completion_owner = None;
                     slot.exchange = Some(Exchange::Pending(question));
                     slot.canceled = false;
                     slot.tail_taken = false;
@@ -428,6 +430,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .questions
             .bind_owner(question.key(), slot_index)
             .expect("new exchange owner");
+        slot.completion_owner = None;
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;
         slot.tail_taken = false;

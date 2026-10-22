@@ -61,8 +61,83 @@ impl Drop for PendingRead {
         self.0.canceled_reads.set(self.0.canceled_reads.get() + 1);
     }
 }
+struct FrameInput {
+    state: Rc<State>,
+    frame: Option<Vec<u8>>,
+    waiting: Option<PendingRead>,
+}
+impl FrameInput {
+    fn new(state: Rc<State>, frame: Option<Vec<u8>>) -> Self {
+        Self {
+            state,
+            frame,
+            waiting: None,
+        }
+    }
+}
+impl crate::IncomingFrameStream for FrameInput {
+    fn poll_frame(&mut self, _: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>> {
+        if self.frame.is_none() {
+            if self.waiting.is_none() {
+                self.state.reads.set(self.state.reads.get() + 1);
+            }
+            if let Some(message) = self.state.incoming.borrow_mut().pop_front() {
+                self.frame = Some(capnp::serialize::write_message_segments_to_words(
+                    &message.segments,
+                ));
+            } else {
+                if self.waiting.is_none() {
+                    self.waiting = Some(PendingRead(self.state.clone()));
+                }
+                return Poll::Pending;
+            }
+        }
+        Poll::Ready(Ok(self.frame.as_deref()))
+    }
+    fn frame(&self) -> Option<&[u8]> {
+        self.frame.as_deref()
+    }
+    fn finish_frame(&mut self) {
+        self.frame = None;
+    }
+}
+struct FrameOutput(Rc<State>);
+impl crate::OutgoingMessageStream for FrameOutput {
+    fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
+        self.0.shutdowns.borrow_mut().push(result);
+        self.0.close.promise()
+    }
+    fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
+        self.0
+            .sends
+            .borrow_mut()
+            .push(capnp::serialize::write_message_segments_to_words(
+                &frame.segments(),
+            ));
+        self.0.frames.borrow_mut().push(frame);
+        Ok(())
+    }
+    fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>> {
+        *self.0.send.wake.borrow_mut() = Some(cx.waker().clone());
+        let result = self.0.send.result.borrow().clone();
+        if result.is_some() && !self.0.retain_frames.get() {
+            self.0.frames.borrow_mut().clear();
+        }
+        result.map_or(Poll::Pending, Poll::Ready)
+    }
+}
 struct Transport(Rc<State>);
 impl crate::Connection<u8> for Transport {
+    fn control_mode(&self) -> crate::ControlMode {
+        crate::ControlMode::TwoParty
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<crate::FrameIo> {
+        Ok(crate::FrameIo {
+            incoming: Box::new(FrameInput::new(self.0.clone(), None)),
+            outgoing: Box::new(FrameOutput(self.0.clone())),
+            write_finished: Some(self.0.finished.promise()),
+        })
+    }
     fn get_peer_vat_id(&self) -> u8 {
         7
     }
@@ -141,7 +216,8 @@ fn shared_input_adoption_validates_ranges_and_falls_back_without_consuming() {
     }
     for fault in 0..5 {
         let (connection, state) = fixture();
-        let (mut reader, _writer, _failure) = connection.into_io(NonZeroUsize::new(32).unwrap());
+        let (mut reader, _writer, _failure) =
+            connection.into_io(NonZeroUsize::new(32).unwrap()).unwrap();
         let expected = frame();
         let mut bytes = vec![0; if fault == 1 { 256 } else { expected.len() + 7 }];
         let start = bytes.as_ptr().align_offset(8);
@@ -149,12 +225,12 @@ fn shared_input_adoption_validates_ranges_and_falls_back_without_consuming() {
         let bytes = std::sync::Arc::new(bytes);
         let length = if fault == 2 { 16 } else { expected.len() };
         let finished = Rc::new(Cell::new(0));
-        reader.input_frames = Some(Box::new(Frames {
+        reader.input = Box::new(Frames {
             bytes: bytes.clone(),
             range: start..start + length,
             wrong_range: fault == 4,
             finished: finished.clone(),
-        }));
+        });
         assert!(
             matches!(reader.poll_frame_size(&mut cx()), Poll::Ready(Ok(Some(n))) if n == length)
         );
@@ -248,33 +324,19 @@ fn attachment_storage_is_lazy_and_preserves_limits_and_ownership() {
 
 #[test]
 fn buffered_frame_transfer_validates_bytes_and_holds_the_message_through_admission() {
-    struct Raw {
-        bytes: Vec<u8>,
-        size: usize,
-    }
-    impl crate::IncomingMessage for Raw {
-        fn framed_bytes(&self) -> Option<&[u8]> {
-            Some(&self.bytes)
-        }
-        fn size_in_words(&self) -> usize {
-            self.size
-        }
-        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-            panic!("must not traverse raw input")
-        }
-    }
-    for (length, size, limit, valid) in [
-        (24, 2, 2, true),
-        (16, 2, 2, false),
-        (32, 2, 2, false),
-        (24, 1, 2, false),
-        (24, 2, 1, false),
+    for (length, limit, valid) in [
+        (24, 2, true),
+        (16, 2, false),
+        (32, 2, false),
+        (24, 1, false),
     ] {
         let (connection, state) = fixture();
-        let (mut reader, _writer, _failure) = connection.into_io(NonZeroUsize::new(32).unwrap());
+        let (mut reader, _writer, _failure) =
+            connection.into_io(NonZeroUsize::new(32).unwrap()).unwrap();
         let mut bytes = frame();
         bytes.resize(length, 0);
-        reader.start(Box::new(Raw { bytes, size })).unwrap();
+        reader.input = Box::new(FrameInput::new(state.clone(), Some(bytes)));
+        assert!(reader.poll_frame_size(&mut cx()).is_ready());
         let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 4];
         let mut buffers = [messages::Buffer::new(capnp::Word::words_to_bytes_mut(
             &mut words,
@@ -290,7 +352,7 @@ fn buffered_frame_transfer_validates_bytes_and_holds_the_message_through_admissi
             assert_eq!(result.is_ok(), valid);
             if let Ok(Some(frame)) = result {
                 assert!(
-                    reader.message.is_some(),
+                    reader.input.frame().is_some(),
                     "admission still owns the message and attachments"
                 );
                 assert!(reader
@@ -301,7 +363,7 @@ fn buffered_frame_transfer_validates_bytes_and_holds_the_message_through_admissi
             }
             assert_eq!(state.reads.get(), 0);
             reader.finish_frame();
-            assert!(reader.message.is_none());
+            assert!(reader.input.frame().is_none());
             let writer = messages.reserve(32).unwrap();
             messages.discard(writer);
         })
@@ -317,24 +379,13 @@ fn ready_ok<T>(value: Poll<Result<T, IoError<Error>>>) -> T {
 }
 
 #[test]
-fn raw_frame_fallback_preserves_partial_reads_and_admission_boundary() {
-    struct Raw(Vec<u8>);
-    impl crate::IncomingMessage for Raw {
-        fn framed_bytes(&self) -> Option<&[u8]> {
-            Some(&self.0)
-        }
-        fn size_in_words(&self) -> usize {
-            2
-        }
-        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-            panic!("raw fallback must not traverse the payload")
-        }
-    }
+fn frame_input_preserves_partial_reads_and_admission_boundary() {
     for consume in [false, true] {
         let (connection, state) = fixture();
-        let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(32).unwrap());
+        let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(32).unwrap()).unwrap();
         let expected = frame();
-        reader.start(Box::new(Raw(expected.clone()))).unwrap();
+        reader.input = Box::new(FrameInput::new(state.clone(), Some(expected.clone())));
+        assert!(reader.poll_frame_size(&mut cx()).is_ready());
         let mut received = Vec::new();
         while received.len() < expected.len() {
             let mut bytes = [0xa5; 5];
@@ -356,7 +407,7 @@ fn raw_frame_fallback_preserves_partial_reads_and_admission_boundary() {
             ));
             reader.finish_frame();
         }
-        assert!(reader.message.is_none());
+        assert!(reader.input.frame().is_none());
         if consume {
             assert!(reader.poll_read(&mut cx(), &mut [0; 1]).is_pending());
             assert_eq!(state.reads.get(), 1);
@@ -382,7 +433,8 @@ fn incoming_segment_bytes_and_capability_indices_are_preserved_without_traversal
         segments,
         size: None,
     });
-    let (mut reader, _writer, _failure) = connection.into_io(NonZeroUsize::new(256).unwrap());
+    let (mut reader, _writer, _failure) =
+        connection.into_io(NonZeroUsize::new(256).unwrap()).unwrap();
     for _ in 0..2 {
         assert!(
             matches!(reader.poll_frame_size(&mut cx()), Poll::Ready(Ok(Some(size))) if size == expected.len())
@@ -415,41 +467,13 @@ fn next_input_cannot_prefetch_before_admission_finishes() {
             size: None,
         });
     }
-    let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap());
-    assert_eq!(ready_ok(reader.poll_read(&mut cx(), &mut [0; 64])), 8);
-    assert_eq!(ready_ok(reader.poll_read(&mut cx(), &mut [0; 64])), 8);
+    let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
+    assert_eq!(ready_ok(reader.poll_read(&mut cx(), &mut [0; 64])), 16);
     assert!(matches!(
         reader.poll_read(&mut cx(), &mut [0; 64]),
         Poll::Ready(Err(_))
     ));
     assert_eq!(state.reads.get(), 1);
-}
-
-#[test]
-fn invalid_segment_shapes_sizes_and_capacity_are_rejected_before_exposing_bytes() {
-    for (segments, size, maximum) in [
-        (vec![], None, 64),
-        (vec![vec![0; 7]], None, 64),
-        (vec![vec![0; 8]], Some(0), 64),
-        (vec![vec![0; 64]], None, 64),
-        (vec![vec![], vec![]], None, 8),
-        (vec![vec![]; 512], None, 4096),
-    ] {
-        let (connection, state) = fixture();
-        state
-            .incoming
-            .borrow_mut()
-            .push_back(Message { segments, size });
-        let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(maximum).unwrap());
-        let mut bytes = [0xa5; 8];
-        assert!(matches!(
-            reader.poll_read(&mut cx(), &mut bytes),
-            Poll::Ready(Err(_))
-        ));
-        assert_eq!(bytes, [0xa5; 8]);
-        assert_eq!(ready_ok(reader.poll_read(&mut cx(), &mut bytes)), 0);
-        assert_eq!(state.reads.get(), 1);
-    }
 }
 
 #[test]
@@ -459,7 +483,7 @@ fn frame_sizing_rejects_oversize_before_reservation_and_preserves_pending_receiv
         segments: vec![vec![0; 64]],
         size: None,
     });
-    let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap());
+    let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
     assert!(matches!(
         reader.poll_frame_size(&mut cx()),
         Poll::Ready(Err(_))
@@ -468,7 +492,9 @@ fn frame_sizing_rejects_oversize_before_reservation_and_preserves_pending_receiv
     assert_eq!(state.reads.get(), 1);
 
     let (connection, state) = fixture();
-    let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(512 * 1024).unwrap());
+    let (mut reader, _writer, _) = connection
+        .into_io(NonZeroUsize::new(512 * 1024).unwrap())
+        .unwrap();
     assert!(reader.poll_frame_size(&mut cx()).is_pending());
     assert!(reader.poll_frame_size(&mut cx()).is_pending());
     assert_eq!(state.reads.get(), 1);
@@ -485,7 +511,7 @@ fn frame_sizing_rejects_oversize_before_reservation_and_preserves_pending_receiv
 #[test]
 fn interrupted_message_receive_stays_alive_until_output_can_drain() {
     let (connection, state) = fixture();
-    let (mut reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap());
+    let (mut reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
     assert!(reader.poll_read(&mut cx(), &mut [0; 8]).is_pending());
     reader.finish_frame();
     assert_eq!(
@@ -512,12 +538,13 @@ fn interrupted_message_receive_stays_alive_until_output_can_drain() {
 }
 
 #[test]
-fn output_receipts_apply_backpressure_and_close_is_a_separate_idempotent_fence() {
+fn output_frames_apply_backpressure_and_close_is_a_separate_idempotent_fence() {
     let (connection, state) = fixture();
-    let (_reader, mut writer, mut failure) = connection.into_io(NonZeroUsize::new(64).unwrap());
+    let (_reader, mut writer, mut failure) =
+        connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
     let bytes = frame();
     assert!(writer.can_write_while_flushing());
-    for _ in 0..MAXIMUM_RECEIPTS {
+    for _ in 0..MAXIMUM_PENDING_FRAMES {
         ready_ok(writer.poll_write_resources(&mut cx(), &bytes, None));
         assert!(writer.poll_flush(&mut cx()).is_pending());
     }
@@ -525,12 +552,12 @@ fn output_receipts_apply_backpressure_and_close_is_a_separate_idempotent_fence()
         .poll_write_resources(&mut cx(), &bytes, None)
         .is_pending());
     assert!(writer.poll_flush(&mut cx()).is_pending());
-    assert_eq!(state.sends.borrow().len(), MAXIMUM_RECEIPTS);
+    assert_eq!(state.sends.borrow().len(), MAXIMUM_PENDING_FRAMES);
     state.send.complete(Ok(()));
     ready_ok(writer.poll_write_resources(&mut cx(), &bytes, None));
     assert_eq!(
         state.sends.borrow().as_slice(),
-        vec![bytes; MAXIMUM_RECEIPTS + 1]
+        vec![bytes; MAXIMUM_PENDING_FRAMES + 1]
     );
     assert!(writer.poll_close(&mut cx()).is_pending());
     state.finished.complete(Ok(()));
@@ -552,7 +579,7 @@ fn output_receipts_apply_backpressure_and_close_is_a_separate_idempotent_fence()
 fn allocating_output_shares_bytes_and_pins_pool_until_transport_releases_frame() {
     let (connection, state) = fixture();
     state.retain_frames.set(true);
-    let (_reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap());
+    let (_reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
     let bytes = frame();
     let mut pool = messages::GrowingBuffers::new(1, bytes.len(), bytes.len() + 7);
     messages::with_growing_messages(
@@ -614,9 +641,10 @@ fn allocating_output_shares_bytes_and_pins_pool_until_transport_releases_frame()
 }
 
 #[test]
-fn receipt_failure_is_sticky_and_reaches_independent_observer_while_input_is_parked() {
+fn flush_failure_is_sticky_and_reaches_independent_observer_while_input_is_parked() {
     let (connection, state) = fixture();
-    let (mut reader, mut writer, mut failure) = connection.into_io(NonZeroUsize::new(64).unwrap());
+    let (mut reader, mut writer, mut failure) =
+        connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
     assert!(reader.poll_read(&mut cx(), &mut [0; 8]).is_pending());
     assert!(Pin::new(&mut failure).poll(&mut cx()).is_pending());
     ready_ok(writer.poll_write_resources(&mut cx(), &frame(), None));
@@ -647,7 +675,8 @@ fn receipt_failure_is_sticky_and_reaches_independent_observer_while_input_is_par
 #[test]
 fn unexpectedly_finished_writer_disconnects_but_empty_input_reads_do_not_start_receiving() {
     let (connection, state) = fixture();
-    let (mut reader, _writer, mut failure) = connection.into_io(NonZeroUsize::new(64).unwrap());
+    let (mut reader, _writer, mut failure) =
+        connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
     assert_eq!(ready_ok(reader.poll_read(&mut cx(), &mut [])), 0);
     assert_eq!(state.reads.get(), 0);
     state.finished.complete(Ok(()));
@@ -689,11 +718,11 @@ fn outgoing_frames_preserve_raw_segments_and_reject_truncation_or_concatenation(
 }
 
 #[test]
-fn call_credit_is_retained_until_physical_receipt_or_abandoned_frame_release() {
+fn call_credit_is_retained_until_physical_flush_or_abandoned_frame_release() {
     for retain_frame in [false, true] {
         let (connection, state) = fixture();
         state.retain_frames.set(retain_frame);
-        let (_reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap());
+        let (_reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
         let admission = crate::admission::Admission::new(1);
         let policy = Resources::default();
         let mut bundle = policy.bundle();

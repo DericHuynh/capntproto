@@ -83,7 +83,7 @@ pub fn owning_terminal_cleanup(budget: usize) {
                 assert!(matches!(
                     peer.receive(frame, messages, &mut [0; 4], |_| (), || panic!("Return"))
                         .unwrap_or_else(|_| panic!("Return")),
-                    Received::Returned(_)
+                    Received::Returned(_, _)
                 ));
                 assert_eq!(
                     peer.poll_outgoing(1, messages).unwrap(),

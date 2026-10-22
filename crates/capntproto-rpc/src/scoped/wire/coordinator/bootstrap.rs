@@ -25,6 +25,33 @@ impl<'id, F: FnMut() -> capnp::Result<capability::Client>> TwoParty<'id, F> {
             idle: None,
         }
     }
+    // NetworkControl composes bootstrap publication without inheriting the
+    // two-party handler's rejection policy for authenticated network requests.
+    pub(super) fn poll_bootstrap<
+        'p,
+        's,
+        I,
+        P: Copy + Eq,
+        const C: usize,
+        const H: usize,
+        O: Output<I>,
+    >(
+        &mut self,
+        context: &mut ControlContext<'_, 'p, 'id, 's, I, P, C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        scratch: &mut [u32],
+        output: &O,
+    ) -> Poll<capnp::Result<bool>> {
+        let Some(bootstrap) = self.pending.front() else {
+            return Poll::Pending;
+        };
+        let result = context.publish_bootstrap(bootstrap, messages, queue, scratch, output);
+        if matches!(result, Poll::Ready(Ok(true))) {
+            self.pending.pop_front();
+        }
+        result
+    }
     pub fn with_idle_notifier(mut self, notify: impl FnMut(bool) + 'id) -> Self {
         self.idle = Some(Box::new(notify));
         self
@@ -44,21 +71,18 @@ where
         output: &O,
         _: &mut Context<'_>,
     ) -> Poll<capnp::Result<bool>> {
-        let Some(bootstrap) = self.pending.front() else {
-            return Poll::Pending;
-        };
-        let result = context.publish_bootstrap(bootstrap, messages, queue, scratch, output);
-        if matches!(result, Poll::Ready(Ok(true))) {
-            self.pending.pop_front();
+        if self.pending.is_empty() {
+            context.reject_network(messages, queue, scratch, output)
+        } else {
+            self.poll_bootstrap(context, messages, queue, scratch, output)
         }
-        result
     }
     fn observes_hooks(&self, event: &connection::Received<'id, server::Results>) -> bool {
         !matches!(
             event,
             connection::Received::Queued(_)
                 | connection::Received::DeferredCall(_)
-                | connection::Received::Returned(_)
+                | connection::Received::Returned(_, _)
         )
     }
     fn accepts_direct_plain_return(&self) -> bool {
@@ -82,9 +106,9 @@ where
         let bootstrap = match event {
             connection::Received::Bootstrap(bootstrap) => bootstrap,
             connection::Received::Network | connection::Received::QueuedNetwork => {
-                return Err(Error::unimplemented(
-                    "two-party connection has no handoff network".into(),
-                ));
+                // The driver's pending request retains its authority until the
+                // output lane can publish the unsupported-operation response.
+                return Ok(());
             }
             _ => return Ok(()),
         };

@@ -1,0 +1,27 @@
+{
+  "archive": "target/portable-architecture-20261022.tar.xz",
+  "bytes": 212196396,
+  "sha256": "7f44782e5d884947f47565e22af2537d335304b11adf7416d2602aeddd8c1562",
+  "availability": "Local workspace artifact; not stored in Git",
+  "verified_files": 88361,
+  "checksum_manifest": "evidence/SHA256SUMS",
+  "reconstruction": "evidence/RECONSTRUCT.md",
+  "base_commit": "788103bc106df1c21e2ff17b5030b6a0870803fb",
+  "retained_candidate": "step5",
+  "retained_binary_sha256": "00e923512640b06906f302a091fbb1f032aa0c7bfe823f9e4c1936a5e44980d5",
+  "rejected_candidates": [
+    "step6",
+    "step6b",
+    "step6c"
+  ],
+  "binary_representation": "All ten candidates are stored as verified chained xdelta3 deltas; decoder and license included. Decode in binary-deltas.json order, verifying each base and output hash.",
+  "dependency_archive": {
+    "path": "target/portable-pipeline-cleanup-20261022.tar.xz",
+    "bytes": 29899440,
+    "sha256": "769c30b122f2eb13748b05aa60466648ce89be34c137ff0d60932c7e4e9d5ba0",
+    "binary": "maintenance",
+    "binary_sha256": "6ec8ab2a87223d0308af75eed275691fafbf080d82a67ed82629672429cb9590",
+    "instructions": "Follow this dependency archive reconstruction instructions and its dependencies before decoding the first candidate."
+  },
+  "scope": "Per-stage source snapshots, patches, manifests, raw five-run samples, native summaries, correctness logs, profiles, ciphertext syscall traces, rejected experiments and report generator. The report snapshot inside the archive precedes this external archive manifest."
+}

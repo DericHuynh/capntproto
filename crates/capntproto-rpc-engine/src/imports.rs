@@ -24,8 +24,8 @@
 //!     assert_eq!(imports.get(&local), &42);
 //!     imports.release(local);
 //!     assert!(imports.resolve(callback).is_none());
-//!     // The caller can inspect one slot per poll to bound cleanup work.
-//!     let release = imports.pending_release(0).unwrap();
+//!     // Select the oldest actual obligation without inspecting unrelated slots.
+//!     let release = imports.next_release().unwrap();
 //!     assert_eq!(release.count(), 1);
 //!     // Commit only after the adapter accepts the Release(id, count) message.
 //!     let owner = release.commit();
@@ -94,11 +94,15 @@ struct Entry<T> {
 #[cfg_attr(capntproto_verus, verus_verify)]
 pub struct Slot<T> {
     generation: u64,
+    release_previous: Option<core::num::NonZeroUsize>,
+    release_next: Option<core::num::NonZeroUsize>,
     entry: Option<Entry<T>>,
 }
 impl<T> Slot<T> {
     pub const EMPTY: Self = Self {
         generation: 0,
+        release_previous: None,
+        release_next: None,
         entry: None,
     };
     #[inline]
@@ -167,14 +171,35 @@ pub struct Imports<'id, 'storage, T> {
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
-    pending_releases: usize,
+    release_head: Option<core::num::NonZeroUsize>,
+    release_tail: Option<core::num::NonZeroUsize>,
     brand: Brand<'id>,
 }
 impl<T> Imports<'_, '_, T> {
+    fn enqueue_release(&mut self, index: usize) {
+        let slot = &mut self.slots[index];
+        debug_assert!(slot.release_previous.is_none() && slot.release_next.is_none());
+        slot.release_previous = self.release_tail;
+        if let Some(tail) = self.release_tail {
+            self.slots[tail.get() - 1].release_next = core::num::NonZeroUsize::new(index + 1);
+        } else {
+            self.release_head = core::num::NonZeroUsize::new(index + 1);
+        }
+        self.release_tail = core::num::NonZeroUsize::new(index + 1);
+    }
+    fn unlink_release(&mut self, index: usize) {
+        unlink_release(
+            &mut self.slots,
+            index,
+            &mut self.release_head,
+            &mut self.release_tail,
+        );
+    }
+
     pub(crate) fn take_terminal_owner(&mut self, index: usize) -> Option<T> {
         let entry = self.slots.get_mut(index)?.entry.take()?;
         if entry.local == 0 {
-            self.pending_releases -= 1;
+            self.unlink_release(index);
         }
         Some(entry.value)
     }
@@ -207,7 +232,8 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Imports<'id, '_
         return Err(Error::NonemptyStorage);
     }
     Ok(Imports {
-        pending_releases: 0,
+        release_head: None,
+        release_tail: None,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(slots),
@@ -223,7 +249,8 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
     let slots =
         crate::storage::Storage::growing(initial, maximum, || Slot::EMPTY).ok_or(Error::Full)?;
     Ok(Imports {
-        pending_releases: 0,
+        release_head: None,
+        release_tail: None,
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         slots,
@@ -345,7 +372,7 @@ impl<'id, T> Imports<'id, '_, T> {
         let index = self.index(id).ok_or(Error::Missing)?;
         let slot = &mut self.slots[index];
         if slot.receive()? {
-            self.pending_releases -= 1;
+            self.unlink_release(index);
         }
         Ok(self.local(index))
     }
@@ -386,7 +413,7 @@ impl<'id, T> Imports<'id, '_, T> {
             .expect("live local reference");
         entry.local -= 1;
         if entry.local == 0 {
-            self.pending_releases += 1;
+            self.enqueue_release(reference.key.index);
         }
     }
 
@@ -404,12 +431,19 @@ impl<'id, T> Imports<'id, '_, T> {
             return None;
         }
         Some(Release {
-            slot,
-            pending: &mut self.pending_releases,
+            slots: &mut self.slots,
+            index,
+            head: &mut self.release_head,
+            tail: &mut self.release_tail,
         })
     }
+    /// Select only an actual obligation. Its slot remains owned until the
+    /// transport accepts Release; revival unlinks it in constant time.
+    pub fn next_release(&mut self) -> Option<Release<'_, T>> {
+        self.pending_release(self.release_head?.get() - 1)
+    }
     pub fn has_pending_release(&self) -> bool {
-        self.pending_releases != 0
+        self.release_head.is_some()
     }
 }
 
@@ -418,8 +452,32 @@ impl<T> Drop for Imports<'_, '_, T> {
         for slot in &mut *self.slots {
             // Clear the slot before dropping its owner. No implicit wire IO.
             let entry = slot.entry.take();
+            slot.release_previous = None;
+            slot.release_next = None;
             drop(entry);
         }
+    }
+}
+
+fn unlink_release<T>(
+    slots: &mut [Slot<T>],
+    index: usize,
+    head: &mut Option<core::num::NonZeroUsize>,
+    tail: &mut Option<core::num::NonZeroUsize>,
+) {
+    let previous = slots[index].release_previous.take();
+    let next = slots[index].release_next.take();
+    if let Some(previous) = previous {
+        slots[previous.get() - 1].release_next = next;
+    } else {
+        debug_assert_eq!(head.map(|link| link.get() - 1), Some(index));
+        *head = next;
+    }
+    if let Some(next) = next {
+        slots[next.get() - 1].release_previous = previous;
+    } else {
+        debug_assert_eq!(tail.map(|link| link.get() - 1), Some(index));
+        *tail = previous;
     }
 }
 
@@ -427,15 +485,21 @@ impl<T> Drop for Imports<'_, '_, T> {
 /// reference; commit detaches the owner for disposal outside the engine borrow.
 #[must_use = "commit only after output acceptance; dropping retains pending cleanup"]
 pub struct Release<'a, T> {
-    slot: &'a mut Slot<T>,
-    pending: &'a mut usize,
+    slots: &'a mut [Slot<T>],
+    index: usize,
+    head: &'a mut Option<core::num::NonZeroUsize>,
+    tail: &'a mut Option<core::num::NonZeroUsize>,
 }
 impl<T> Release<'_, T> {
     pub fn id(&self) -> ImportId {
-        self.slot.entry.as_ref().expect("pending cleanup").wire
+        self.slots[self.index]
+            .entry
+            .as_ref()
+            .expect("pending cleanup")
+            .wire
     }
     pub fn count(&self) -> u32 {
-        self.slot
+        self.slots[self.index]
             .entry
             .as_ref()
             .expect("pending cleanup")
@@ -443,8 +507,11 @@ impl<T> Release<'_, T> {
             .count()
     }
     pub fn commit(self) -> T {
-        let mut entry = self.slot.entry.take().expect("pending cleanup");
-        *self.pending -= 1;
+        unlink_release(self.slots, self.index, self.head, self.tail);
+        let mut entry = self.slots[self.index]
+            .entry
+            .take()
+            .expect("pending cleanup");
         entry
             .remote
             .pending_release()

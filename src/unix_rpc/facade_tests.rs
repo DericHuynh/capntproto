@@ -53,14 +53,15 @@ async fn borrowed_partial_frame_cancellation_releases_ancillary_fds_without_shut
 #[tokio::test(flavor = "current_thread")]
 async fn unix_queue_metrics_exclude_active_io_and_cancellation_releases_queued_fds() {
     let (socket, _peer) = UnixStream::pair().unwrap();
-    let raw = socket.as_raw_fd();
     let mut network = VatNetwork::new(socket, Side::Client, Default::default());
+    let socket_lifetime = Rc::downgrade(&network.inner.socket);
     let metrics = network.outgoing_queue();
     let closed = network.output_closed();
     let mut connection = network.connect(Side::Server).unwrap();
     let mut receipts = Vec::new();
-    let fd = tests::descriptor(42);
-    let raw_fd = fd.as_raw_fd();
+    let (passed, mut witness) = std::os::unix::net::UnixStream::pair().unwrap();
+    witness.set_nonblocking(true).unwrap();
+    let fd = Rc::new(OwnedFd::from(passed));
     for fds in [vec![], vec![fd]] {
         let mut message = connection.new_outgoing_message(0);
         message
@@ -86,13 +87,12 @@ async fn unix_queue_metrics_exclude_active_io_and_cancellation_releases_queued_f
     }
     assert!(closed.await.is_err());
     assert_eq!(metrics.snapshot(), Default::default());
-    // SAFETY: F_GETFD only inspects descriptor liveness, including EBADF.
-    assert_eq!(unsafe { libc::fcntl(raw_fd, libc::F_GETFD) }, -1);
+    // EOF observes this descriptor's actual final owner, even when a parallel
+    // test immediately reuses its former numeric file descriptor.
+    assert_eq!(Read::read(&mut witness, &mut [0]).unwrap(), 0);
     drop(connection);
-    assert_eq!(
-        // SAFETY: F_GETFD safely reports EBADF for a descriptor closed above.
-        unsafe { libc::fcntl(raw, libc::F_GETFD) },
-        -1,
+    assert!(
+        socket_lifetime.upgrade().is_none(),
         "diagnostics retained the socket"
     );
 }

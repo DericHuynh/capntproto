@@ -133,11 +133,11 @@ impl<'pool, 'storage, R> Queue<'pool, 'storage, R> {
         }
         #[cfg(feature = "alloc")]
         if let QueuedMessage::Parts(parts) = &self.slots[self.head].as_ref().unwrap().message {
-            let parts = parts.clone();
+            let position = parts.position();
             return Ok(Some(QueueWindow {
-                position: parts.position(),
+                position,
                 queue: self,
-                body: WindowBody::Parts(parts),
+                body: WindowBody::Parts,
             }));
         }
         let (tracked, buffer, bytes, position) =
@@ -285,14 +285,21 @@ enum WindowBody<'a, 'buffers, 'bytes> {
         bytes: Ref<'buffers, [u8]>,
     },
     #[cfg(feature = "alloc")]
-    Parts(SharedParts),
+    Parts,
 }
 impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
     pub fn bytes(&self) -> &[u8] {
         match &self.body {
             WindowBody::Buffer { bytes, .. } => bytes,
             #[cfg(feature = "alloc")]
-            WindowBody::Parts(parts) => parts.first_remaining(),
+            WindowBody::Parts => {
+                let QueuedMessage::Parts(parts) =
+                    &self.queue.slots[self.queue.head].as_ref().unwrap().message
+                else {
+                    unreachable!("parts window")
+                };
+                parts.first_remaining()
+            }
         }
     }
     #[cfg(feature = "alloc")]
@@ -302,13 +309,20 @@ impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
                 .bytes
                 .borrow()
                 .share(self.position..self.position + bytes.len()),
-            WindowBody::Parts(_) => None,
+            WindowBody::Parts => None,
         }
     }
     #[cfg(feature = "alloc")]
     pub fn share_parts(&self) -> Option<SharedParts> {
         match &self.body {
-            WindowBody::Parts(parts) => Some(parts.clone()),
+            WindowBody::Parts => {
+                let QueuedMessage::Parts(parts) =
+                    &self.queue.slots[self.queue.head].as_ref().unwrap().message
+                else {
+                    unreachable!("parts window")
+                };
+                Some(parts.clone())
+            }
             WindowBody::Buffer { .. } => None,
         }
     }
@@ -330,7 +344,7 @@ impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
     /// may span more bytes than the first borrowed slice exposed by bytes().
     #[cfg(feature = "alloc")]
     pub fn advance_parts(self, count: usize) -> Result<bool, Error> {
-        if !matches!(&self.body, WindowBody::Parts(_)) {
+        if !matches!(&self.body, WindowBody::Parts) {
             return Err(Error::InvalidWriteCount);
         }
         self.advance_inner(count)
@@ -343,7 +357,7 @@ impl<R> QueueWindow<'_, '_, '_, '_, '_, R> {
                 bytes,
             } => (tracked, buffer, bytes),
             #[cfg(feature = "alloc")]
-            WindowBody::Parts(_) => {
+            WindowBody::Parts => {
                 let QueuedMessage::Parts(parts) =
                     &mut self.queue.slots[self.queue.head].as_mut().unwrap().message
                 else {

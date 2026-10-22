@@ -29,6 +29,7 @@ use std::{
 use tokio::{io::Interest, net::UnixStream};
 
 mod ancillary;
+mod framed;
 mod portable;
 use ancillary::{recv_once, send_once};
 pub use portable::{ResourceReader, ResourceWriter};
@@ -86,8 +87,9 @@ enum Write {
     Frame(
         capnp_rpc::OutgoingFrame,
         Vec<Rc<OwnedFd>>,
-        oneshot::Sender<capnp::Result<()>>,
+        Option<oneshot::Sender<capnp::Result<()>>>,
         queue::Pending,
+        u64,
     ),
     Message(
         Body,
@@ -180,12 +182,14 @@ struct Inner {
     borrowed: bool,
     stop_writer: RefCell<Option<oneshot::Sender<()>>>,
     metrics: queue::Metrics,
+    frame_output: Rc<framed::State>,
     send_fds: bool,
     window: capnp_rpc::twoparty::SendBufferWindow,
 }
 impl Inner {
     fn close(&self) {
         if !self.closed.replace(true) {
+            self.frame_output.stop(Err(stopped()));
             if !self.borrowed {
                 // SAFETY: socket owns this descriptor. shutdown does not close or
                 // transfer it; pending reads/writes wake and observe the shutdown.
@@ -223,6 +227,12 @@ impl Drop for ReadGuard {
 }
 struct Endpoint(Rc<Inner>);
 impl Connection<Side> for Endpoint {
+    fn control_mode(&self) -> capnp_rpc::ControlMode {
+        capnp_rpc::ControlMode::TwoParty
+    }
+    fn take_frame_io(&mut self) -> capnp::Result<capnp_rpc::FrameIo> {
+        framed::take(&self.0)
+    }
     fn send_frame(&mut self, mut frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
         let pending = capnp_rpc::pry!(self.0.metrics.enqueue(frame.size_in_words() * 8));
         let fds = if self.0.send_fds {
@@ -235,7 +245,7 @@ impl Connection<Side> for Endpoint {
         if self
             .0
             .sender
-            .unbounded_send(Write::Frame(frame, fds, tx, pending))
+            .unbounded_send(Write::Frame(frame, fds, Some(tx), pending, 0))
             .is_err()
         {
             return Promise::err(stopped());
@@ -357,17 +367,20 @@ impl VatNetwork {
             borrowed,
             stop_writer: RefCell::new(Some(stop_writer)),
             metrics: queue::Metrics::default(),
+            frame_output: Rc::new(framed::State::default()),
             send_fds: options.max_fds > 0,
             window,
         });
         // Only retain the socket in the writer, so connection handles do not
         // form a cycle through the queue that their destruction must close.
         let weak = Rc::downgrade(&inner);
+        let frame_output = inner.frame_output.clone();
+        let writer_frames = frame_output.clone();
         let writer = async move {
             let mut bytes = Vec::new();
             while let Some(command) = receiver.next().await {
                 match command {
-                    Write::Frame(frame, fds, done, pending) => {
+                    Write::Frame(frame, fds, done, pending, sequence) => {
                         drop(pending);
                         bytes.clear();
                         let result = async {
@@ -381,8 +394,15 @@ impl VatNetwork {
                         if bytes.capacity() > 64 * 1024 {
                             bytes = Vec::new();
                         }
-                        let _ = done.send(result.clone());
+                        drop(frame);
+                        if result.is_ok() {
+                            writer_frames.complete(sequence);
+                        }
+                        if let Some(done) = done {
+                            let _ = done.send(result.clone());
+                        }
                         if result.is_err() {
+                            writer_frames.stop(result.clone());
                             if let Some(inner) = weak.upgrade() {
                                 inner.close();
                             }
@@ -406,6 +426,7 @@ impl VatNetwork {
                             let _ = done.send(result.clone());
                         }
                         if result.is_err() {
+                            writer_frames.stop(result.clone());
                             if let Some(inner) = weak.upgrade() {
                                 inner.close();
                             }
@@ -433,6 +454,7 @@ impl VatNetwork {
                 futures::future::Either::Right((result, _)) => result,
                 futures::future::Either::Left(_) => Err(stopped()),
             };
+            frame_output.stop(result.clone());
             let _ = closed_tx.send(result.clone());
             result
         }

@@ -2,7 +2,7 @@
 use super::*;
 use transport::vat;
 
-/// A registered portable driver and its message-oriented transport. Identity
+/// A registered portable driver and its exclusive frame transport. Identity
 /// and peer authorization come from the supplied connection, never wire data.
 /// Drive the originating VatNetwork concurrently with run.
 #[must_use = "drive this connection or end its entire message-pool scope"]
@@ -53,9 +53,24 @@ impl<'p, 'id, 's, P: Copy + Eq, V, const C: usize, const H: usize>
         shutdown: impl Future<Output = capnp::Result<()>>,
         abort: impl Future<Output = Error>,
     ) -> Result<(), RunError<Error, Error>> {
-        let (mut reader, mut writer, failure) = self
+        let (mut reader, mut writer, failure) = match self
             .transport
-            .into_io(self.registered.0.options.input_bytes);
+            .into_io(self.registered.0.options.input_bytes)
+        {
+            Ok(io) => io,
+            Err(error) => {
+                return self
+                    .registered
+                    .0
+                    .terminate::<vat::Resources, Error, Error>(
+                        messages,
+                        queue,
+                        controls,
+                        Err(Cause::Protocol(error)),
+                    )
+                    .await
+            }
+        };
         let mut failure = std::pin::pin!(failure);
         let mut abort = std::pin::pin!(abort);
         let aborted = std::future::poll_fn(|cx| {

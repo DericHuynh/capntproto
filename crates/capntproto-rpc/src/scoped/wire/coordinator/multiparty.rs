@@ -120,6 +120,9 @@ fn closed() -> Error {
     Error::disconnected("portable network control ended".into())
 }
 impl Handle {
+    pub(crate) fn unavailable() -> Self {
+        Self(Weak::new())
+    }
     pub(crate) fn close(&self, error: Error) {
         if let Some(commands) = self.0.upgrade() {
             commands.close(error);
@@ -690,13 +693,12 @@ impl<
                     }
                 }
                 5 => {
-                    if let Poll::Ready(result) = self.bootstrap.poll(
+                    if let Poll::Ready(result) = self.bootstrap.poll_bootstrap(
                         &mut ControlContext::new(coordinator),
                         messages,
                         queue,
                         scratch,
                         output,
-                        cx,
                     ) {
                         return Poll::Ready(result);
                     }
@@ -1092,13 +1094,12 @@ impl<
             && !coordinator.driver.has_network()
             && coordinator.worker.pending_redirect().is_none()
         {
-            return self.bootstrap.poll(
+            return self.bootstrap.poll_bootstrap(
                 &mut ControlContext::new(coordinator),
                 messages,
                 queue,
                 scratch,
                 output,
-                cx,
             );
         }
         self.poll_active(coordinator, messages, queue, scratch, output, cx)
@@ -1154,7 +1155,7 @@ impl<
                 drop(previous);
             }
             self.bootstrap
-                .poll(context, messages, queue, scratch, output, cx)
+                .poll_bootstrap(context, messages, queue, scratch, output)
         } else {
             self.poll_network(context.network(), messages, queue, scratch, output, cx)
         }
@@ -1164,7 +1165,7 @@ impl<
             event,
             connection::Received::Queued(_)
                 | connection::Received::DeferredCall(_)
-                | connection::Received::Returned(_)
+                | connection::Received::Returned(_, _)
         )
     }
     fn accepts_direct_plain_return(&self) -> bool {

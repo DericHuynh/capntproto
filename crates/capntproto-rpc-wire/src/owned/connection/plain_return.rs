@@ -46,7 +46,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         &mut self,
         frame: Frame<'pool>,
         messages: &mut messages::Messages<'pool, '_, '_>,
-        select: impl FnOnce(questions::Key<'id>) -> Option<T>,
+        select: impl FnOnce(questions::Key<'id>, Option<usize>) -> Option<T>,
     ) -> Result<PlainReceived<'pool, T>, (Error, Frame<'pool>)> {
         if self.disconnected.is_some()
             || self.resolution.is_some()
@@ -79,7 +79,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         bytes: &[u8],
         options: capnp::message::ReaderOptions,
         messages: &mut messages::Messages<'pool, '_, '_>,
-        select: impl FnOnce(questions::Key<'id>) -> Option<T>,
+        select: impl FnOnce(questions::Key<'id>, Option<usize>) -> Option<T>,
     ) -> Result<Option<(T, alloc::boxed::Box<super::super::PlainResults>)>, Error> {
         if self.disconnected.is_some()
             || self.resolution.is_some()
@@ -114,7 +114,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
         >,
         messages: &mut messages::Messages<'pool, '_, '_>,
-        select: impl FnOnce(questions::Key<'id>) -> Option<T>,
+        select: impl FnOnce(questions::Key<'id>, Option<usize>) -> Option<T>,
     ) -> Result<Option<(T, alloc::boxed::Box<super::super::PlainResults>)>, Error> {
         let admitted = (|| -> Result<_, super::super::Error> {
             let root = source.get_root::<capnp::any_pointer::Reader>()?;
@@ -143,10 +143,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 unreachable!("selected pending question")
             };
             let key = question.key();
-            if self.outgoing.pending_for(key) || self.invocation_pipelines.pending_for(key) {
+            if self.outgoing.pending_for(key, &self.ledgers.questions)
+                || self
+                    .invocation_pipelines
+                    .pending_for(key, &self.ledgers.questions)
+            {
                 return Ok(None);
             }
-            let Some(receiver) = select(key) else {
+            let Some(receiver) = select(key, slot.completion_owner.map(|owner| owner.get() - 1))
+            else {
                 return Ok(None);
             };
             let Some((pending, content)) =

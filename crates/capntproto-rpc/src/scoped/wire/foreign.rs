@@ -12,6 +12,7 @@ struct Entry<'id> {
     // registrations cannot keep their promise or its protocol exports alive.
     key: clients::Key<'id>,
     state: State,
+    wake: Waker,
 }
 enum State {
     Waiting {
@@ -22,7 +23,7 @@ enum State {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Progress {
-    /// The bounded scan has more slots to visit; poll again.
+    /// Ready work or the bounded retirement sweep has more slots; poll again.
     Yield,
     Idle,
     Advanced,
@@ -42,7 +43,9 @@ pub struct ForeignPromises<'id> {
     maximum: usize,
     cursor: usize,
     remaining: usize,
-    wake: Option<Waker>,
+    ready: ready::Queue,
+    live: usize,
+    prefer_ready: bool,
     introductions: Option<coordinator::multiparty::introduction::Policy>,
 }
 impl<'id> ForeignPromises<'id> {
@@ -52,12 +55,14 @@ impl<'id> ForeignPromises<'id> {
             maximum,
             cursor: 0,
             remaining: 0,
-            wake: None,
+            ready: ready::Queue::default(),
+            live: 0,
+            prefer_ready: true,
             introductions: None,
         }
     }
     pub fn is_empty(&self) -> bool {
-        self.entries.iter().all(Option::is_none)
+        self.live == 0
     }
     pub(crate) fn with_introductions(
         mut self,
@@ -121,6 +126,7 @@ impl<'id> ForeignPromises<'id> {
             }
         };
         let entry = Some(Entry {
+            wake: self.ready.insert(index),
             key: client.key(),
             state: State::Waiting {
                 _hook: original,
@@ -133,9 +139,8 @@ impl<'id> ForeignPromises<'id> {
             self.entries[index] = entry;
         }
         self.remaining = 0;
-        if let Some(wake) = self.wake.take() {
-            wake.wake();
-        }
+        self.live += 1;
+        self.ready.notify_parent();
         Ok(client)
     }
 
@@ -153,13 +158,7 @@ impl<'id> ForeignPromises<'id> {
     where
         G: Capabilities<'id, Peer = P, Owner = Route<'p, P, Rc<dyn ClientHook>, H>>,
     {
-        if self
-            .wake
-            .as_ref()
-            .is_none_or(|wake| !wake.will_wake(cx.waker()))
-        {
-            self.wake = Some(cx.waker().clone());
-        }
+        self.ready.register(cx.waker());
         if self.is_empty() {
             return Poll::Ready(Ok(Progress::Idle));
         }
@@ -167,24 +166,58 @@ impl<'id> ForeignPromises<'id> {
             self.remaining = self.entries.len();
         }
         for _ in 0..budget.get() {
-            let index = self.cursor % self.entries.len();
-            self.cursor = (index + 1) % self.entries.len();
-            self.remaining -= 1;
+            let ready = if self.prefer_ready || self.remaining == 0 {
+                self.ready.pop()
+            } else {
+                None
+            };
+            self.prefer_ready = !self.prefer_ready;
+            let index = if let Some(index) = ready {
+                index
+            } else {
+                let index = self.cursor % self.entries.len();
+                self.cursor = (index + 1) % self.entries.len();
+                self.remaining -= 1;
+                index
+            };
             if let Some(entry) = self.entries[index].as_mut() {
                 let source = match graph.retain_key(entry.key) {
                     Ok(source) => source,
                     Err(clients::Error::Stale) => {
                         self.entries[index] = None;
+                        self.ready.remove(index);
+                        self.live -= 1;
                         self.remaining = 0;
                         return Poll::Ready(Ok(Progress::Abandoned));
                     }
-                    Err(error) => return Poll::Ready(Err(graph_error(error))),
+                    Err(error) => {
+                        if ready.is_some() {
+                            self.ready.push(index);
+                        }
+                        return Poll::Ready(Err(graph_error(error)));
+                    }
                 };
-                let progress = advance(entry, &source, graph, cx, self.introductions.as_ref());
+                // Protocol changes still require a bounded weak-key retirement
+                // sweep, but only a per-promise wake may poll an opaque future.
+                let progress = if ready.is_some() {
+                    let mut operation_cx = Context::from_waker(&entry.wake);
+                    advance(
+                        entry.key,
+                        &mut entry.state,
+                        &source,
+                        graph,
+                        &mut operation_cx,
+                        self.introductions.as_ref(),
+                    )
+                } else {
+                    Ok(None)
+                };
                 graph.release(source);
                 match progress {
                     Ok(Some(Progress::Settled)) => {
                         self.entries[index] = None;
+                        self.ready.remove(index);
+                        self.live -= 1;
                         // Publish full failure details before ordinary collection
                         // can signal an awaiting generated client.
                         hooks.collect_with_metadata(graph, metadata);
@@ -192,14 +225,18 @@ impl<'id> ForeignPromises<'id> {
                         return Poll::Ready(Ok(Progress::Settled));
                     }
                     Ok(Some(progress)) => {
+                        self.ready.push(index);
                         self.remaining = 0;
                         return Poll::Ready(Ok(progress));
                     }
-                    Err(error) => return Poll::Ready(Err(error)),
+                    Err(error) => {
+                        self.ready.push(index);
+                        return Poll::Ready(Err(error));
+                    }
                     Ok(None) => (),
                 }
             }
-            if self.remaining == 0 {
+            if self.remaining == 0 && self.ready.is_empty() {
                 return Poll::Pending;
             }
         }
@@ -209,7 +246,8 @@ impl<'id> ForeignPromises<'id> {
 }
 
 fn advance<'p, 'id, P: Copy + Eq, const H: usize, G>(
-    entry: &mut Entry<'id>,
+    key: clients::Key<'id>,
+    state: &mut State,
     source: &Client<'id>,
     graph: &mut G,
     cx: &mut Context<'_>,
@@ -218,12 +256,12 @@ fn advance<'p, 'id, P: Copy + Eq, const H: usize, G>(
 where
     G: Capabilities<'id, Peer = P, Owner = Route<'p, P, Rc<dyn ClientHook>, H>>,
 {
-    match &mut entry.state {
+    match state {
         State::Waiting { future, .. } => {
             let Poll::Ready(result) = Pin::new(future).poll(cx) else {
                 return Ok(None);
             };
-            entry.state = match result {
+            *state = match result {
                 Err(error) => State::Ready(Err(error)),
                 Ok(hook) => {
                     let hook: Rc<dyn ClientHook> = Rc::from(hook);
@@ -266,7 +304,7 @@ where
                     .map_err(graph_error)?,
             };
             let mut replacement = Some(replacement);
-            match graph.resolve(entry.key, &mut replacement, clients::Source::Direct) {
+            match graph.resolve(key, &mut replacement, clients::Source::Direct) {
                 Ok(None) => Ok(Some(Progress::Settled)),
                 Ok(Some(_)) => unreachable!("local proxy resolution requires no remote barrier"),
                 Err(error) => {

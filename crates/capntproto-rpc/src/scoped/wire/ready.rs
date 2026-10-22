@@ -131,6 +131,9 @@ impl Queue {
     pub(super) fn register(&self, parent: &Waker) {
         self.0.parent.register(parent);
     }
+    pub(super) fn notify_parent(&self) {
+        self.0.parent.wake();
+    }
     pub(super) fn push(&self, index: usize) {
         self.0.state.lock().unwrap().push(index);
     }

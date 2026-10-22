@@ -53,7 +53,7 @@ fn frame(text: &str) -> (crate::OutgoingFrame, Vec<u8>) {
 }
 
 #[test]
-fn optional_stream_methods_preserve_legacy_transport_behavior() {
+fn frame_contract_preserves_raw_bytes_and_explicit_flush() {
     use crate::{IncomingFrameStream as _, IncomingMessage as _, OutgoingMessageStream as _};
     struct Input(Vec<u8>);
     impl crate::IncomingFrameStream for Input {
@@ -79,6 +79,9 @@ fn optional_stream_methods_preserve_legacy_transport_behavior() {
     #[derive(Default)]
     struct Sink(Vec<crate::OutgoingFrame>);
     impl crate::OutgoingMessageStream for Sink {
+        fn shutdown(&mut self, _: capnp::Result<()>) -> Promise<(), capnp::Error> {
+            Promise::ok(())
+        }
         fn send(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
             self.0.push(frame);
             Ok(())
@@ -118,7 +121,7 @@ fn optional_stream_methods_preserve_legacy_transport_behavior() {
         "legacy transport"
     );
     let mut sink = Sink::default();
-    sink.send_buffered(outgoing).unwrap();
+    sink.send(outgoing).unwrap();
     assert_eq!(sink.0.len(), 1);
     assert!(sink.poll_flush(&mut cx).is_ready());
 }
@@ -732,17 +735,17 @@ fn buffered_stream_publication_preserves_pending_flush_resources_and_fifo() {
     let admission = crate::admission::Admission::new(1);
     let (mut first, mut expected) = frame("buffered first");
     first.credit = Some(admission.reserve().unwrap());
-    stream.send_buffered(first).unwrap();
+    stream.send(first).unwrap();
     let (second, bytes) = frame("buffered second");
     expected.extend(bytes);
-    stream.send_buffered(second).unwrap();
+    stream.send(second).unwrap();
     assert!(output.bytes.borrow().is_empty());
     assert!(stream.poll_flush(&mut cx).is_pending());
     assert_eq!(*output.bytes.borrow(), expected);
     assert_eq!(admission.used(), 1);
     let (third, bytes) = frame("behind pending physical flush");
     expected.extend(bytes);
-    stream.send_buffered(third).unwrap();
+    stream.send(third).unwrap();
     assert!(stream.poll_flush(&mut cx).is_pending());
     assert!(output.bytes.borrow().len() < expected.len());
     drop(stream);
@@ -756,7 +759,7 @@ fn buffered_stream_publication_preserves_pending_flush_resources_and_fifo() {
 }
 
 #[test]
-fn reusable_output_sends_first_frame_eagerly_and_flushes_a_following_burst() {
+fn reusable_output_defers_every_frame_to_one_end_of_turn_flush() {
     let output = Rc::new(Output::default());
     output.allowed.set(usize::MAX);
     output.flushed.set(true);
@@ -772,18 +775,19 @@ fn reusable_output_sends_first_frame_eagerly_and_flushes_a_following_burst() {
     assert!(network._output_driver.poll_network(&mut cx).is_pending());
     let (first, mut expected) = frame("first");
     stream.send(first).unwrap();
-    assert_eq!(*output.bytes.borrow(), expected);
+    assert!(output.bytes.borrow().is_empty());
     let (second, bytes) = frame("second");
     stream.send(second).unwrap();
-    assert_eq!(*output.bytes.borrow(), expected);
+    assert!(output.bytes.borrow().is_empty());
     expected.extend(bytes);
     assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Ok(()))));
     assert_eq!(*output.bytes.borrow(), expected);
     let (third, bytes) = frame("first after flush");
     stream.send(third).unwrap();
-    expected.extend(bytes);
     assert_eq!(*output.bytes.borrow(), expected);
+    expected.extend(bytes);
     assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+    assert_eq!(*output.bytes.borrow(), expected);
 }
 
 #[test]
@@ -858,15 +862,19 @@ fn reusable_output_observes_partial_writes_physical_flush_and_shared_fifo_order(
     output.allowed.set(usize::MAX);
     let _ = Pin::new(&mut pump).poll(&mut cx);
     assert!(stream.poll_flush(&mut cx).is_pending());
-    assert_eq!(*output.bytes.borrow(), expected);
+    // The prior observer already ended its output turn. Its physical flush
+    // fences the successor batch even after its observer was dropped.
+    assert!(output.bytes.borrow().len() < expected.len());
     assert_eq!(admission.used(), 1);
-    output.fail.set(true);
     output.flushed.set(true);
     if let Some(wake) = output.wake.borrow_mut().take() {
         wake.wake();
     }
     let _ = Pin::new(&mut pump).poll(&mut cx);
     assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Ok(()))));
+    assert_eq!(*output.bytes.borrow(), expected);
+    assert_eq!(admission.used(), 0);
+    output.fail.set(true);
     stream.send(frame("failure").0).unwrap();
     let _ = Pin::new(&mut pump).poll(&mut cx);
     assert!(matches!(stream.poll_flush(&mut cx), Poll::Ready(Err(_))));
@@ -1170,4 +1178,41 @@ fn extracted_output_has_one_physical_owner_and_reports_failure_to_lifecycle() {
         Pin::new(&mut lifecycle).poll(&mut cx),
         Poll::Ready(Err(_))
     ));
+}
+
+#[test]
+fn frame_io_acquisition_is_atomic_and_keeps_its_exclusive_owners() {
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        futures::io::sink(),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let input = connection.take_owned_incoming_stream().unwrap();
+    assert!(connection.take_frame_io().is_err());
+    // Failed input acquisition must return the output observer reservation.
+    drop(input);
+    let mut io = connection.take_frame_io().unwrap();
+    assert!(connection.take_frame_io().is_err());
+    let mut cx = Context::from_waker(Waker::noop());
+    io.outgoing.send(frame("still owned").0).unwrap();
+    assert!(matches!(
+        io.outgoing.poll_flush(&mut cx),
+        Poll::Ready(Ok(()))
+    ));
+    assert!(matches!(
+        io.incoming.poll_frame(&mut cx),
+        Poll::Ready(Ok(None))
+    ));
+    let lifetime = Rc::downgrade(&connection.inner);
+    drop(connection);
+    assert!(lifetime.upgrade().is_some());
+    drop(io.outgoing);
+    assert!(
+        lifetime.upgrade().is_some(),
+        "input still owns the live transport"
+    );
+    drop(io.incoming);
+    assert!(lifetime.upgrade().is_none());
 }
