@@ -2,7 +2,7 @@
 
 ## Status
 
-**Latest measured scheduler comparison: 12/48 allocation targets met, 36 gaps, zero unmeasured cases. See the [scheduler report](../2026-10-23-scheduler-allocation/README.md). Further optimization is in progress.**
+**Latest measured encrypted-batching comparison: 27/48 allocation targets met, 21 gaps, zero unmeasured cases. See the [batching report](../2026-10-23-encrypted-batching/README.md). Later candidates are being qualified; full parity remains unmet.**
 
 The ownership comparison preserved below met 10/48 targets. It predates the scheduler and subsequent candidates.
 
@@ -223,3 +223,8 @@ Layout regressions enforce the existing limits of three machine words for Promis
 The final implementation passes all 82 core and 371 RPC unit tests, warnings-denied core/RPC Clippy, all 177 selected integration tests (including TLS and QUIC), the alloc-only/no-std core check, and every workspace target. Core/RPC documentation tests pass; their existing ignored examples remain ignored. The known pre-existing native portable early-pipeline timeout remains explicitly excluded. One local compiler invocation was killed by memory pressure; clearing only older rebuildable debug test executables allowed the affected checks to pass. Benchmark measurements remain confined to CI droplets, and evidence archives were preserved.
 
 This reply change and lazy streaming ownership are later than the `1a2d772` qualification source. They need their own allocation campaign against that frozen legacy revision before measured savings or full parity can be claimed. Shared core changes are also present in the current portable comparator.
+
+
+## Follow-up qualification of direct replies and lazy streaming
+
+[Run 40030571555](https://github.com/DericHuynh/capntproto/actions/runs/40030571555) invokes the same full dedicated campaign for implementation `3aec134` against frozen `1a2d772`. Qualification source `4fa3011` adds only a workflow caller on the isolated `codex/legacy-allocation-qualification-20261023` branch. The GitHub connector started it after the previous candidate acquired the dedicated slot. Native means/spread, syscall traces, Callgrind and all 48 allocation comparisons remain pending for this source.
