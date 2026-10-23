@@ -11,6 +11,8 @@ use tokio::{
 };
 
 const MAX_CONNECTIONS: usize = 1024;
+// All locally issued connection IDs come from transport::cid().
+const LOCAL_CID_LEN: usize = 16;
 const MAX_PENDING: usize = 64;
 pub(super) struct Packet {
     pub bytes: Vec<u8>,
@@ -216,10 +218,31 @@ async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<I
         let Some(core) = core.upgrade() else {
             return;
         };
-        let Ok(header) = quiche::Header::from_slice(&mut bytes[..n], 16) else {
+        let Some(first) = bytes[..n].first().copied() else {
             continue;
         };
-        let destination = core.routes.borrow().get(header.dcid.as_ref()).cloned();
+        // Established packets only need the destination ID for routing. Its
+        // bytes are outside header protection; quiche still authenticates and
+        // validates the complete packet in receive(). Avoid its owned Header
+        // parser here, which would copy this ID before recv() parses it again.
+        let header = if first & 0x80 == 0 {
+            None
+        } else {
+            let Ok(header) = quiche::Header::from_slice(&mut bytes[..n], LOCAL_CID_LEN) else {
+                continue;
+            };
+            Some(header)
+        };
+        let dcid = match &header {
+            Some(header) => header.dcid.as_ref(),
+            None => {
+                let Some(dcid) = bytes[..n].get(1..1 + LOCAL_CID_LEN) else {
+                    continue;
+                };
+                dcid
+            }
+        };
+        let destination = core.routes.borrow().get(dcid).cloned();
         if let Some(destination) = destination {
             match destination {
                 Destination::Pending(sender) => {
@@ -238,6 +261,10 @@ async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<I
             }
             continue;
         }
+        let Some(header) = header else {
+            // Unknown short-header destinations cannot admit a connection.
+            continue;
+        };
         if !core.admitting.get()
             || header.ty != quiche::Type::Initial
             || n < 1200
@@ -329,6 +356,64 @@ async fn route(core: Weak<Core>, socket: Rc<UdpSocket>, incoming: mpsc::Sender<I
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn short_header_routing_matches_quiche_and_ignores_unknown_or_truncated_packets() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let endpoint = Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+                    let peer = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                    let address = endpoint.local_addr().unwrap();
+                    let id = crate::transport::cid();
+                    assert_eq!(id.len(), LOCAL_CID_LEN);
+                    let mut route = register(&endpoint.0, vec![id.to_vec()]).unwrap();
+                    let mut packet = vec![0];
+                    packet.extend_from_slice(&id);
+
+                    // Header form is the only flag used for demultiplexing.
+                    // Reserved/fixed/key-phase bits remain quiche's concern.
+                    for first in 0..128 {
+                        packet[0] = first;
+                        let header =
+                            quiche::Header::from_slice(&mut packet, LOCAL_CID_LEN).unwrap();
+                        assert_eq!(header.ty, quiche::Type::Short);
+                        assert_eq!(header.dcid.as_ref(), id);
+                        peer.send_to(&packet, address).await.unwrap();
+                        let received = route.packets.recv().await.unwrap();
+                        assert_eq!(received.bytes, packet);
+                        assert_eq!(received.from, peer.local_addr().unwrap());
+                    }
+
+                    for length in 0..packet.len() {
+                        assert!(
+                            quiche::Header::from_slice(&mut packet[..length], LOCAL_CID_LEN)
+                                .is_err()
+                        );
+                        peer.send_to(&packet[..length], address).await.unwrap();
+                    }
+                    let mut unknown = packet.clone();
+                    unknown[1] ^= 1;
+                    peer.send_to(&unknown, address).await.unwrap();
+                    // A malformed long header also cannot enter an existing
+                    // route or create a pending connection.
+                    peer.send_to(&[0x80], address).await.unwrap();
+                    // This known packet is a socket-order barrier, not a sleep.
+                    peer.send_to(&packet, address).await.unwrap();
+                    assert_eq!(route.packets.recv().await.unwrap().bytes, packet);
+                    assert!(matches!(
+                        endpoint.0.incoming.borrow_mut().try_recv(),
+                        Err(mpsc::error::TryRecvError::Empty)
+                    ));
+                    assert_eq!(endpoint.0.routes.borrow().len(), 1);
+                    drop(route);
+                    endpoint.wait_idle().await;
+                })
+                .await
+                .unwrap();
+            })
+            .await;
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn stopped_listener_rejects_initials_but_routes_existing_packets() {

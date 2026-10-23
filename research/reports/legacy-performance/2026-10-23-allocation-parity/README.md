@@ -228,3 +228,14 @@ This reply change and lazy streaming ownership are later than the `1a2d772` qual
 ## Follow-up qualification of direct replies and lazy streaming
 
 [Run 40030571555](https://github.com/DericHuynh/capntproto/actions/runs/40030571555) invokes the same full dedicated campaign for implementation `3aec134` against frozen `1a2d772`. Qualification source `4fa3011` adds only a workflow caller on the isolated `codex/legacy-allocation-qualification-20261023` branch. The GitHub connector started it after the previous candidate acquired the dedicated slot. Native means/spread, syscall traces, Callgrind and all 48 allocation comparisons remain pending for this source.
+
+
+## Follow-up: borrow QUIC routing IDs
+
+The completed [encrypted batching profile](../2026-10-23-encrypted-batching/README.md) attributes 571.20 legacy blocks per bulk-4m operation to copying short-header connection IDs in the endpoint router, followed by the same copies inside quiche's receive parser. Current portable has the same duplication (567.98 router blocks in that trial).
+
+The router now reads the unprotected destination ID directly from its UDP receive buffer for short headers. Quiche still receives the complete packet and performs packet parsing, validation, authentication, and decryption. Long headers retain the full parser for admission/version/Retry handling. Empty or truncated packets and unknown short-header destinations are discarded. The existing fixed 16-byte local connection-ID policy is unchanged. No payload, route, or connection ownership is borrowed across an await.
+
+Both endpoint tests, all 22 encrypted RPC integration tests, and warnings-denied root-library Clippy pass with the QUIC feature enabled. The new regression compares routing against quiche for every short-header first byte, exercises every truncated destination length, and checks unknown destinations and malformed long headers using a packet-order barrier. Existing tests cover listener shutdown, certificate rejection, TLS/QUIC capabilities, pipelining, large messages, and transport teardown.
+
+This shared transport change follows the direct-reply qualification source. Neither run 40022705577 nor 40030571555 contains it. Its complete count, cumulative-byte, and latency effects remain unmeasured; the 571.20-block trace identifies removed work and must not be reported as a measured candidate improvement.
