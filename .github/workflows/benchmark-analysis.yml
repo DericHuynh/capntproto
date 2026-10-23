@@ -18,7 +18,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install saved-profile reader (no workloads run here)
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y valgrind
+        run: |
+          if ! command -v callgrind_annotate >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y valgrind
+          fi
       - name: Validate and summarize saved droplet measurements
         env:
           GH_TOKEN: ${{ github.token }}

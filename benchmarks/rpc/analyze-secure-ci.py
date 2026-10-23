@@ -48,7 +48,8 @@ for trial in scope['trials']:
         delta=[b-a for a,b in zip(first[cpu],last[cpu])]
         if sum(delta)>0:steals[cpu]=100*delta[7]/sum(delta)
     first,last=named_counts(before.get('/sys/fs/cgroup/cpu.stat')),named_counts(after.get('/sys/fs/cgroup/cpu.stat'))
-    host_samples.append(dict(transport=trial['transport'],case=trial['case'],variant=trial['client'],path=trial['path'],steal_percent=steals,cpu_stat_available=bool(first and last),throttled_usec=(last.get('throttled_usec',0)-first.get('throttled_usec',0)) if first and last else None,nr_throttled=(last.get('nr_throttled',0)-first.get('nr_throttled',0)) if first and last else None))
+    counters_available=all(key in counts for counts in (first,last) for key in ('nr_throttled','throttled_usec'))
+    host_samples.append(dict(transport=trial['transport'],case=trial['case'],variant=trial['client'],path=trial['path'],steal_percent=steals,cpu_stat_available=counters_available,throttled_usec=(last.get('throttled_usec',0)-first.get('throttled_usec',0)) if counters_available else None,nr_throttled=(last.get('nr_throttled',0)-first.get('nr_throttled',0)) if counters_available else None))
 for row in native['rows']:
     for label,cell in row['variants'].items():
         values=cells[row['transport'],row['case']['name'],label]
