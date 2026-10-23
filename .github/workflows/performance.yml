@@ -14,6 +14,10 @@ on:
         description: Optional full commit SHA to build as an interleaved portable control
         default: ''
         type: string
+      legacy_base:
+        description: Optional full commit SHA to build as an interleaved legacy control
+        default: ''
+        type: string
       campaign:
         default: run-remote
         type: string
@@ -27,6 +31,10 @@ on:
     inputs:
       portable_base:
         description: Optional full commit SHA to build as an interleaved portable control
+        default: ''
+        type: string
+      legacy_base:
+        description: Optional full commit SHA to build as an interleaved legacy control
         default: ''
         type: string
       campaign:
@@ -118,6 +126,31 @@ jobs:
           data = dict(commit=os.environ['PORTABLE_BASE'], sha256=hashlib.sha256((bundle/'driver-baseline').read_bytes()).hexdigest(), profile='release, fat LTO, one codegen unit, debug=1, overflow checks enabled')
           (bundle/'portable-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
           PYTHON
+      - name: Validate the optional frozen legacy revision
+        if: inputs.legacy_base != ''
+        env:
+          LEGACY_BASE: ${{ inputs.legacy_base }}
+        run: test "${#LEGACY_BASE}" -eq 40 && test -z "${LEGACY_BASE//[0-9a-f]/}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: inputs.legacy_base != ''
+        with:
+          ref: ${{ inputs.legacy_base }}
+          path: target/legacy-baseline-source
+          persist-credentials: false
+      - name: Build the frozen legacy control with the same compiler and release profile
+        if: inputs.legacy_base != ''
+        env:
+          LEGACY_BASE: ${{ inputs.legacy_base }}
+        run: |
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path target/legacy-baseline-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cp benchmarks/rpc/target/release/capntproto-rpc-bench target/benchmark-build/bundle/driver-legacy-baseline
+          python3 - <<'PYTHON'
+          import hashlib, json, os
+          from pathlib import Path
+          bundle = Path('target/benchmark-build/bundle')
+          data = dict(commit=os.environ['LEGACY_BASE'], sha256=hashlib.sha256((bundle/'driver-legacy-baseline').read_bytes()).hexdigest(), profile='release, fat LTO, one codegen unit, debug=1, overflow checks enabled')
+          (bundle/'legacy-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
+          PYTHON
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -165,7 +198,7 @@ jobs:
       - name: Install report validation prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev valgrind
       - name: Restore pinned sources for bundle identity validation
         run: git submodule update --init --depth 1 -- vendor/capnproto
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -211,6 +244,17 @@ jobs:
       - name: Generate validated README and comparison bar charts
         if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign == 'run-remote' }}
         run: cargo run --locked -p capntproto-quality -- report "$RUNNER_TEMP/benchmark-quality" benchmark
+      - name: Analyze saved encrypted latency, allocation and concurrency evidence
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign != 'run-remote' }}
+        run: |
+          python3 benchmarks/rpc/analyze-secure-ci.py "$GITHUB_RUN_ID" "$RUNNER_TEMP/benchmark-quality/analysis" --saved-root "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: encrypted-benchmark-analysis
+          path: ${{ runner.temp }}/benchmark-quality/analysis/
+          if-no-files-found: warn
+          retention-days: 90
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
         run: cargo run --locked -p capntproto-dev -- reports collect --input "$RUNNER_TEMP/benchmark-quality" --kind benchmark --output target/readme-data/publication.json

@@ -41,6 +41,7 @@ def main():
     parser.add_argument('--rust', type=Path, required=True)
     parser.add_argument('--cpp', type=Path, required=True)
     parser.add_argument('--portable-baseline', type=Path)
+    parser.add_argument('--legacy-baseline', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     r.idle_host()
@@ -50,12 +51,16 @@ def main():
                     cpp=args.cpp.resolve(strict=True))
     if args.portable_baseline:
         binaries['portable-baseline'] = args.portable_baseline.resolve(strict=True)
+    if args.legacy_baseline:
+        binaries['legacy-baseline'] = args.legacy_baseline.resolve(strict=True)
     certs = r.certificates.generate(output / 'certificates')
     cpus, cpu_topology = r.physical_cpus()
     campaign = Diagnostic(binaries, output, certs, cpus)
-    scope = dict(diagnostic=True, warmup=10, points=[50, 500], cpu_topology=cpu_topology, cpus=cpus,
+    workloads = [(t, name, [50, 500]) for t, name in [('tls', 'dependent-read'), ('tls', 'pipelined-read'), ('quic', 'pipelined-read')]]
+    workloads += [(t, name, [5, 50]) for t in ['tls', 'quic'] for name in ['concurrent-32', 'deep-32-concurrent-32', 'services-4-deep-16-clients-8']]
+    scope = dict(diagnostic=True, warmup=10, workloads=[dict(transport=t, case=n, points=p) for t,n,p in workloads], cpu_topology=cpu_topology, cpus=cpus,
                  binaries={k: dict(path=str(v), sha256=r.topology.digest(v)) for k, v in binaries.items()},
-                 metric='Both peers: (500-operation profile minus 50-operation profile) / 450. '
+                 metric='All peers: (long profile minus short profile) / difference in iterations, with per-workload points. '
                         'Callgrind instructions/cache/branches are simulated. DHAT reports cumulative allocations.',
                  trials=[])
     def save():
@@ -64,15 +69,15 @@ def main():
     cases = {c['name']: c for c in r.catalog()}
     for mode in ['callgrind', 'dhat']:
         campaign.mode = mode
-        for transport, name in [('tls', 'dependent-read'), ('tls', 'pipelined-read'), ('quic', 'pipelined-read')]:
+        for transport, name, points in workloads:
             for label in binaries:
                 if not r.supported(label, transport, cases[name]):
                     continue
-                for iterations in [50, 500]:
+                for iterations in points:
                     prefix = f'{mode}-{transport}-{name}-{label}-{iterations}'
                     result = campaign.trial(cases[name], label, transport, prefix, 10, iterations)
                     scope['trials'].append(dict(path=prefix, mode=mode, transport=transport,
-                                               case=name, implementation=label, iterations=iterations,
+                                               case=name, implementation=label, iterations=iterations, points=points,
                                                services=result['services']))
                     save()
                     print(prefix, flush=True)

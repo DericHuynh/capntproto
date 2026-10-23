@@ -23,7 +23,7 @@ class SecurityEvidenceTests(unittest.TestCase):
             root = Path(directory)
             campaign = object.__new__(profiler.Diagnostic)
             campaign.certs = root / 'certificates'
-            campaign.binaries = {label: root / 'driver' for label in ['legacy', 'portable', 'portable-baseline']}
+            campaign.binaries = {label: root / 'driver' for label in ['legacy', 'portable', 'portable-baseline', 'legacy-baseline']}
             for mode in ['callgrind', 'dhat']:
                 campaign.mode = mode
                 for label in campaign.binaries:
@@ -34,7 +34,7 @@ class SecurityEvidenceTests(unittest.TestCase):
                         command = launch.call_args.args[0]
                         env = launch.call_args.kwargs['env']
                         self.assertIn('--tool=' + mode, command)
-                        self.assertEqual(env['CAPNTPROTO_BENCH_PORTABLE'], '0' if label == 'legacy' else '1')
+                        self.assertEqual(env['CAPNTPROTO_BENCH_PORTABLE'], '0' if runner.engine(label) == 'legacy' else '1')
                         self.assertEqual(env['CAPNTPROTO_BENCH_TRANSPORT'], 'quic')
                         self.assertEqual(env['CAPNTPROTO_BENCH_CERTS'], str(campaign.certs))
 
@@ -75,6 +75,17 @@ class SecurityEvidenceTests(unittest.TestCase):
         data['implementation'] = 'legacy'
         with self.assertRaises(AssertionError):
             runner.validate(data, case, 'quic', 'portable-baseline', 2, 2)
+
+    def test_frozen_legacy_control_keeps_engine_and_transport_identity(self):
+        case = dict(family='topology', name='concurrent-32', depth=1, width=32)
+        data = dict(case={k:v for k,v in case.items() if k != 'family'}, topology_version=1,
+                    implementation='legacy', security=runner.security('quic'),
+                    warmup=2, iterations=2, latency_ns=[10,20], elapsed_ns=35)
+        runner.validate(data, case, 'quic', 'legacy-baseline', 2, 2)
+        self.assertTrue(runner.supported('legacy-baseline', 'quic', case))
+        data['implementation'] = 'portable'
+        with self.assertRaises(AssertionError):
+            runner.validate(data, case, 'quic', 'legacy-baseline', 2, 2)
 
     def test_ciphertext_counters_pair_resumed_calls_and_separate_datagrams_from_bytes(self):
         trace = '10 1.000 read(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, <unfinished ...>\n11 1.001 write(1</tmp/file>, "abc", 3) = 3 <0.001>\n11 1.002 sendmmsg(4<UDP:[127.0.0.1:3]>, [], 2, 0) = 2 <0.001>\n10 1.003 <... read resumed>"abc", 3) = 3 <0.003>\n10 1.004 recvfrom(4<UDP:[127.0.0.1:3]>, 0x1, 1200, 0, NULL, NULL) = -1 EAGAIN (Resource temporarily unavailable) <0.001>\n10 1.005 write(3<TCP:[127.0.0.1:1->127.0.0.1:2]>, "data", 4) = 4 <0.001>\n'

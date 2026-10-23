@@ -1,26 +1,38 @@
 """Analyze saved CI droplet artifacts; never launches benchmark workloads."""
-import collections, json, math, os, re, statistics, subprocess, sys, time
+import argparse, collections, json, math, os, re, statistics, subprocess, sys, time
 from pathlib import Path
-run_id, directory = sys.argv[1], Path(sys.argv[2])
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('run_id')
+parser.add_argument('directory', type=Path)
+parser.add_argument('--saved-root', type=Path, help='Analyze already extracted evidence inside the measurement job.')
+args = parser.parse_args()
+run_id, directory = args.run_id, args.directory
 assert run_id.isdecimal()
 directory.mkdir(parents=True, exist_ok=True)
 def command(*args):
     return subprocess.check_output(args, text=True)
-deadline = time.monotonic() + 50 * 60
-while True:
-    run = json.loads(command('gh', 'run', 'view', run_id, '--json', 'status,conclusion,headSha,url'))
-    if run['status'] == 'completed':
-        break
-    assert time.monotonic() < deadline, 'measurement did not finish before analysis deadline'
-    time.sleep(30)
-print('MEASUREMENT_RUN', json.dumps(run), flush=True)
-artifacts = json.loads(command('gh', 'api', f"repos/{os.environ['GH_REPO']}/actions/runs/{run_id}/artifacts"))
-provenance = dict(run=run, artifacts=[a for a in artifacts['artifacts'] if a['name']=='dedicated-benchmark-report'])
+if args.saved_root:
+    root = args.saved_root
+    run = dict(headSha=os.environ['GITHUB_SHA'], url=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run_id}",
+               status='analysis-before-upload', conclusion=None)
+    provenance = dict(run=run, source='same-job extracted droplet archive; final job status must be checked separately')
+    summaries = [root/'native/summary.json']
+else:
+    deadline = time.monotonic() + 50 * 60
+    while True:
+        run = json.loads(command('gh', 'run', 'view', run_id, '--json', 'status,conclusion,headSha,url'))
+        if run['status'] == 'completed':
+            break
+        assert time.monotonic() < deadline, 'measurement did not finish before analysis deadline'
+        time.sleep(30)
+    print('MEASUREMENT_RUN', json.dumps(run), flush=True)
+    artifacts = json.loads(command('gh', 'api', f"repos/{os.environ['GH_REPO']}/actions/runs/{run_id}/artifacts"))
+    provenance = dict(run=run, artifacts=[a for a in artifacts['artifacts'] if a['name']=='dedicated-benchmark-report'])
+    command('gh', 'run', 'download', run_id, '--name', 'dedicated-benchmark-report', '--dir', str(directory/'raw'))
+    summaries = list((directory/'raw').glob('**/native/summary.json'))
+    assert len(summaries)==1, f'expected one native summary, found {summaries}'
+    root = summaries[0].parent.parent
 (directory/'provenance.json').write_text(json.dumps(provenance, indent=2)+'\n')
-command('gh', 'run', 'download', run_id, '--name', 'dedicated-benchmark-report', '--dir', str(directory/'raw'))
-summaries = list((directory/'raw').glob('**/native/summary.json'))
-assert len(summaries)==1, f'expected one native summary, found {summaries}'
-root = summaries[0].parent.parent
 native = json.loads(summaries[0].read_text())
 scope = json.loads((root/'native/scope.json').read_text())
 assert not scope['diagnostic'] and not native['diagnostic']
@@ -60,8 +72,10 @@ aggregate={}
 for transport in ['tls','quic']:
     rows=[r for r in native['rows'] if r['transport']==transport]
     aggregate[transport]={}
-    for reference in ['portable-baseline','legacy','cpp']:
-        pairs=[(r['variants']['portable']['mean_ns'],r['variants'][reference]['mean_ns']) for r in rows if reference in r['variants']]
+    candidate = 'legacy' if 'legacy-baseline' in scope['binaries'] else 'portable'
+    references = ['legacy-baseline', 'portable', 'cpp'] if candidate == 'legacy' else ['portable-baseline', 'legacy', 'cpp']
+    for reference in references:
+        pairs=[(r['variants'][candidate]['mean_ns'],r['variants'][reference]['mean_ns']) for r in rows if reference in r['variants']]
         if pairs:
             aggregate[transport][reference]=dict(cases=len(pairs),lower_means=sum(a<b for a,b in pairs),
                 geometric_mean_latency_change_percent=100*(math.exp(statistics.mean(math.log(a/b) for a,b in pairs))-1))
@@ -72,9 +86,9 @@ report['host_counters']=dict(quotas=sorted(quotas),trials=len(host_samples),maxi
 (directory/'host-counters.json').write_text(json.dumps(host_samples,indent=2)+'\n')
 print('NATIVE_AGGREGATE',json.dumps(aggregate),flush=True)
 profiles=json.loads((root/'profiles/scope.json').read_text())
-raw=[];arena=[]
+raw=[];arena=[];allocation_sites=[]
 for trial in profiles['trials']:
-    for peer in ['client','service-0']:
+    for peer in ['client', *[f"service-{service['hop']}" for service in trial['services']]]:
         path=root/'profiles'/trial['path']
         if trial['mode']=='callgrind':
             events=values=None
@@ -90,14 +104,16 @@ for trial in profiles['trials']:
             counts={key:sum(p[field] for p in data['pps']) for key,field in [('blocks','tbk'),('bytes','tb')]}
             sites=[dict(blocks=p['tbk'],bytes=p['tb'],frames=[data['ftbl'][i] for i in p['fs']]) for p in data['pps'] if any('ReaderArena' in data['ftbl'][i] for i in p['fs'])]
             arena.append(dict(transport=trial['transport'],case=trial['case'],variant=trial['implementation'],iterations=trial['iterations'],peer=peer,sites=sites))
-        raw.append(dict(mode=trial['mode'],transport=trial['transport'],case=trial['case'],variant=trial['implementation'],iterations=trial['iterations'],peer=peer,counts=counts))
+            allocation_sites.append(dict(transport=trial['transport'],case=trial['case'],variant=trial['implementation'],iterations=trial['iterations'],points=trial.get('points',[50,500]),peer=peer,sites=[dict(blocks=p['tbk'],bytes=p['tb'],frames=[data['ftbl'][i] for i in p['fs']]) for p in data['pps']]))
+        raw.append(dict(points=trial.get('points',[50,500]),mode=trial['mode'],transport=trial['transport'],case=trial['case'],variant=trial['implementation'],iterations=trial['iterations'],peer=peer,counts=counts))
 index={(r['mode'],r['transport'],r['case'],r['variant'],r['iterations'],r['peer']):r for r in raw}
 marginal=[]
 totals=collections.defaultdict(collections.Counter)
 for r in raw:
-    if r['iterations']!=500:continue
-    short=index[r['mode'],r['transport'],r['case'],r['variant'],50,r['peer']]
-    counts={k:(v-short['counts'].get(k,0))/450 for k,v in r['counts'].items()}
+    lo,hi=r['points']
+    if r['iterations']!=hi:continue
+    short=index[r['mode'],r['transport'],r['case'],r['variant'],lo,r['peer']]
+    counts={k:(v-short['counts'].get(k,0))/(hi-lo) for k,v in r['counts'].items()}
     marginal.append({k:v for k,v in r.items() if k not in ['counts','iterations']}|dict(per_operation=counts))
     totals[r['mode'],r['transport'],r['case'],r['variant']].update(counts)
 report['profiles']=[dict(mode=k[0],transport=k[1],case=k[2],variant=k[3],per_operation=v) for k,v in totals.items()]
@@ -112,7 +128,7 @@ for n in [10,100]:
     groups=collections.defaultdict(list)
     for trial in trace_scope['trials']:
         total=collections.Counter()
-        for peer in ['client','service-0']:
+        for peer in ['client', *[f"service-{service['hop']}" for service in trial['services']]]:
             total.update(journals[trial['path']+'/'+peer+'.strace']['counts'])
         groups[trial['transport'],trial['case'],trial['client']].append(dict(total))
     for (transport,case,label),values in groups.items():
@@ -127,7 +143,7 @@ print('CORE_RESULT_JSON '+json.dumps(report),flush=True)
 pattern=re.compile(r'^\s*([\d,]+|\.)\s+([\d,]+|\.)\s+(.*)$')
 num=lambda s:0 if s=='.' else int(s.replace(',',''))
 def normalize(source):
-    for prefix in ['/home/runner/work/capntproto/capntproto/target/portable-baseline-source/','/home/runner/work/capntproto/capntproto/']:
+    for prefix in ['/home/runner/work/capntproto/capntproto/target/legacy-baseline-source/', '/home/runner/work/capntproto/capntproto/target/portable-baseline-source/','/home/runner/work/capntproto/capntproto/']:
         source=source.removeprefix(prefix)
     return source
 def category(source):
@@ -148,7 +164,7 @@ def category(source):
 attribution=[]
 for trial in profiles['trials']:
     if trial['mode']!='callgrind' or trial['implementation']=='cpp':continue
-    for peer in ['client','service-0']:
+    for peer in ['client', *[f"service-{service['hop']}" for service in trial['services']]]:
         path=root/'profiles'/trial['path']/(peer+'.callgrind')
         annotated=command('callgrind_annotate','--inclusive=no','--show=Ir,Bcm','--show-percs=no','--threshold=100','--auto=no',str(path))
         files=collections.defaultdict(collections.Counter);functions=collections.defaultdict(collections.Counter);categories=collections.defaultdict(collections.Counter);parsed=collections.Counter();total=None
@@ -168,16 +184,17 @@ for trial in profiles['trials']:
         if any(residual.values()):
             files['[unattributed Callgrind summary]'].update(residual)
             categories['unattributed'].update(residual)
-        attribution.append(dict(iterations=trial['iterations'],transport=trial['transport'],case=trial['case'],variant=trial['implementation'],peer=peer,files=dict(files),functions=dict(functions),categories=dict(categories)))
+        attribution.append(dict(points=trial.get('points',[50,500]),iterations=trial['iterations'],transport=trial['transport'],case=trial['case'],variant=trial['implementation'],peer=peer,files=dict(files),functions=dict(functions),categories=dict(categories)))
 indexed={(r['iterations'],r['transport'],r['case'],r['variant'],r['peer']):r for r in attribution}
 costs=[]
 for key,long in indexed.items():
-    if key[0]!=500:continue
-    short=indexed[(50,*key[1:])]
+    lo,hi=long['points']
+    if key[0]!=hi:continue
+    short=indexed[(lo,*key[1:])]
     row={k:long[k] for k in ['transport','case','variant','peer']}
     for kind in ['files','functions','categories']:
         keys=set(long[kind])|set(short[kind])
-        row[kind]={k:{m:(long[kind].get(k,{}).get(m,0)-short[kind].get(k,{}).get(m,0))/450 for m in ['Ir','Bcm']} for k in keys}
+        row[kind]={k:{m:(long[kind].get(k,{}).get(m,0)-short[kind].get(k,{}).get(m,0))/(hi-lo) for m in ['Ir','Bcm']} for k in keys}
     costs.append(row)
 (directory/'attribution.json').write_text(json.dumps(dict(marginal=costs,reader_arenas=arena),indent=2)+'\n')
 report['categories']=[{k:v for k,v in row.items() if k not in ['files','functions']} for row in costs]
@@ -185,4 +202,24 @@ report['hot_files']=[{k:v for k,v in row.items() if k not in ['files','functions
 report['hot_functions']=[{k:row[k] for k in ['transport','case','variant','peer']}|dict(functions=sorted(row['functions'].items(),key=lambda kv:kv[1]['Ir'],reverse=True)[:10]) for row in costs]
 (directory/'summary.json').write_text(json.dumps(report,indent=2)+'\n')
 print('RESULT_JSON '+json.dumps(report),flush=True)
-assert run['conclusion']=='success', 'measurement or cleanup failed; retained evidence is diagnostic only'
+assert args.saved_root or run['conclusion']=='success', 'measurement or cleanup failed; retained evidence is diagnostic only'
+
+# Full allocation stacks support attribution beyond one preselected arena.
+# Normalize instruction addresses and checkout prefixes before subtracting runs.
+def allocation_key(frames):
+    return tuple(normalize(re.sub(r'^0x[0-9A-Fa-f]+: ', '', frame)) for frame in frames)
+def allocation_counts(row):
+    result = collections.defaultdict(collections.Counter)
+    for site in row['sites']:
+        result[allocation_key(site['frames'])].update({k:site[k] for k in ['blocks','bytes']})
+    return result
+allocation_index={(r['transport'],r['case'],r['variant'],r['iterations'],r['peer']):r for r in allocation_sites}
+allocation_costs=[]
+for key,long in allocation_index.items():
+    lo,hi=long['points']
+    if key[3]!=hi: continue
+    short=allocation_index[(*key[:3],lo,key[4])]
+    first,last=allocation_counts(short),allocation_counts(long)
+    sites=[dict(frames=frames, **{m:(last[frames][m]-first[frames][m])/(hi-lo) for m in ['blocks','bytes']}) for frames in first.keys()|last.keys()]
+    allocation_costs.append({k:long[k] for k in ['transport','case','variant','peer']} | dict(sites=sorted(sites,key=lambda s:s['blocks'],reverse=True)))
+(directory/'allocation-sites.json').write_text(json.dumps(allocation_costs,indent=2)+'\n')

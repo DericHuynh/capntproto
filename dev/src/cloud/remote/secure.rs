@@ -17,10 +17,11 @@ pub(super) fn run(
 {
 cd /root/bench
 baseline=()
-if test -f driver-baseline; then baseline=(--portable-baseline /root/bench/driver-baseline); fi
+if test -f driver-baseline; then baseline+=(--portable-baseline /root/bench/driver-baseline); fi
+if test -f driver-legacy-baseline; then baseline+=(--legacy-baseline /root/bench/driver-legacy-baseline); fi
 python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/native --repetitions 5 --warmup 100 --iterations 1000
 for n in 10 100; do
-    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32 --trace
+    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
 done
 python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles
 } 2>&1 | tee /root/results/secure/runner.log'"#;
@@ -28,7 +29,7 @@ python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-refe
         &host.options,
         &host.public.to_string(),
         command,
-        2400,
+        3600,
         cancel,
     );
     // Salvage partial output independently of failure/cancellation, before the
