@@ -39,6 +39,7 @@ class SecurityEvidenceTests(unittest.TestCase):
                         self.assertIn('--tool=' + mode, command)
                         self.assertEqual(env['CAPNTPROTO_BENCH_PORTABLE'], '0' if runner.engine(label) == 'legacy' else '1')
                         self.assertEqual(env['CAPNTPROTO_BENCH_TRANSPORT'], 'quic')
+                        self.assertEqual(env['CAPNTPROTO_BENCH_QUIC_IDLE_MS'], '120000')
                         self.assertEqual(env['CAPNTPROTO_BENCH_CERTS'], str(campaign.certs))
 
     def test_profile_failure_preserves_later_controls_and_fails_campaign(self):
@@ -67,8 +68,10 @@ class SecurityEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, '1 profile trials failed'):
                 profiler.main()
             scope = json.loads((output / 'scope.json').read_text())
-            self.assertEqual(len(calls), 128)
-            self.assertEqual(len(scope['trials']), 127)
+            self.assertEqual(len(calls), 400)
+            self.assertEqual(len(scope['trials']), 399)
+            measured = {(trial['transport'], trial['case']) for trial in scope['trials'] if trial['mode'] == 'dhat'}
+            self.assertEqual(measured, {(t, c['name']) for t in ['tls', 'quic'] for c in runner.catalog()})
             self.assertEqual(len(scope['failures']), 1)
             self.assertIn('fixture disconnect', scope['failures'][0]['error'])
             self.assertEqual(scope['trials'][-1]['implementation'], 'legacy-baseline')

@@ -44,6 +44,16 @@ fn identity() -> Result<capntproto::rpc::tls::Identity> {
         private_key,
     })
 }
+// Instrumentation can leave already-connected service hops idle during setup.
+// This explicit diagnostic override applies identically to both Rust drivers;
+// native trials keep the library's normal idle timeout.
+fn profile_idle_timeout() -> Result<u64> {
+    match std::env::var("CAPNTPROTO_BENCH_QUIC_IDLE_MS") {
+        Ok(value) => Ok(value.parse()?),
+        Err(std::env::VarError::NotPresent) => Ok(10_000),
+        Err(error) => Err(error.into()),
+    }
+}
 pub enum Listener {
     Tls(TcpListener, Arc<tokio_rustls::rustls::ServerConfig>),
     Quic(quic::Endpoint),
@@ -55,10 +65,11 @@ impl Listener {
                 TcpListener::bind(address).await?,
                 tls::server_config()?,
             )),
-            _ => Ok(Self::Quic(quic::Endpoint::server(
-                quic::server_config(identity()?, None)?,
-                address.parse()?,
-            )?)),
+            _ => {
+                let mut config = quic::server_config(identity()?, None)?;
+                config.max_idle_timeout(profile_idle_timeout()?);
+                Ok(Self::Quic(quic::Endpoint::server(config, address.parse()?)?))
+            },
         }
     }
     pub fn local_addr(&self) -> Result<std::net::SocketAddr> {
@@ -93,10 +104,9 @@ pub async fn connect(address: &str) -> Result<Stream> {
         "[::]:0"
     };
     let mut endpoint = quic::Endpoint::client(bind.parse()?)?;
-    endpoint.set_default_client_config(quic::client_config(
-        vec![tls::read("ca.der")?.into()],
-        None,
-    )?);
+    let mut config = quic::client_config(vec![tls::read("ca.der")?.into()], None)?;
+    config.max_idle_timeout(profile_idle_timeout()?);
+    endpoint.set_default_client_config(config);
     Ok(Stream::Quic(
         quic::connect(&endpoint, address, &tls::name(), tls::DEADLINE).await?,
     ))

@@ -21,6 +21,8 @@ pub enum Action {
     RunRemote,
     /// Measure TLS/QUIC and profile legacy/portable on the dedicated client.
     RunSecure,
+    /// Trace cumulative TLS/QUIC allocations on dedicated hosts without timing.
+    RunAllocations,
     /// Exercise every workflow locally without credentials or performance claims.
     Smoke,
     Cleanup,
@@ -863,7 +865,7 @@ pub fn run(args: Args) -> Result<()> {
             Ok(())
         }
         Action::Janitor => janitor(&api, &owner),
-        Action::RunRemote | Action::RunSecure => remote::run(
+        Action::RunRemote | Action::RunSecure | Action::RunAllocations => remote::run(
             &api,
             &args
                 .bundle
@@ -874,7 +876,9 @@ pub fn run(args: Args) -> Result<()> {
             &owner,
             &cancel,
             &SystemCommands,
-            if matches!(args.action, Action::RunSecure) {
+            if matches!(args.action, Action::RunAllocations) {
+                remote::Campaign::Allocations
+            } else if matches!(args.action, Action::RunSecure) {
                 remote::Campaign::Secure
             } else {
                 remote::Campaign::Workflows {

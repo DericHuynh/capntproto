@@ -6,6 +6,7 @@ pub(super) fn run(
     host: &Host,
     output: &Path,
     cancel: &Cancellation,
+    allocations_only: bool,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
     crate::write_json(output.join("host.json"), &host.receipt)?;
@@ -13,7 +14,17 @@ pub(super) fn run(
         "DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 openssl strace && mkdir -p /root/results/secure && uname -a > /root/results/secure/kernel.txt && lscpu > /root/results/secure/cpu.txt && valgrind --version > /root/results/secure/valgrind.txt && sha256sum /root/bench/driver /root/bench/capnp-reference /root/bench/*.py /root/bench/*.json > /root/results/secure/hashes.txt", 180, cancel)?;
     // Tracing/profiling always follows every native repetition. Per-trial host
     // state, explicit TLS identity and all samples are saved by the same runner.
-    let command = r#"bash -o pipefail -c 'set -eu
+    let command = if allocations_only {
+        r#"bash -o pipefail -c 'set -eu
+{
+cd /root/bench
+baseline=()
+if test -f driver-baseline; then baseline+=(--portable-baseline /root/bench/driver-baseline); fi
+if test -f driver-legacy-baseline; then baseline+=(--legacy-baseline /root/bench/driver-legacy-baseline); fi
+python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles --allocation-only
+} 2>&1 | tee /root/results/secure/runner.log'"#
+    } else {
+        r#"bash -o pipefail -c 'set -eu
 {
 cd /root/bench
 baseline=()
@@ -24,7 +35,8 @@ for n in 10 100; do
     python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
 done
 python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles
-} 2>&1 | tee /root/results/secure/runner.log'"#;
+} 2>&1 | tee /root/results/secure/runner.log'"#
+    };
     let measured = commands.ssh(
         &host.options,
         &host.public.to_string(),

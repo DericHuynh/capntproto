@@ -41,7 +41,7 @@ on:
         description: Encrypted dedicated-loopback profiles or two-peer VPC workflows
         default: run-secure
         type: choice
-        options: [run-secure, run-remote]
+        options: [run-secure, run-allocations, run-remote]
       region:
         description: DigitalOcean region, or auto to select an available region
         default: auto

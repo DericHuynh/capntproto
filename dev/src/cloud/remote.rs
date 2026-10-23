@@ -7,6 +7,7 @@ mod secure;
 pub(super) enum Campaign {
     Workflows { trace_io: bool },
     Secure,
+    Allocations,
 }
 mod timing;
 mod trace;
@@ -397,8 +398,14 @@ pub(super) fn run(
         for host in &hosts {
             upload(commands, host, &archive, cancel)?;
         }
-        if matches!(campaign, Campaign::Secure) {
-            return secure::run(commands, client, &output.join("secure"), cancel);
+        if matches!(campaign, Campaign::Secure | Campaign::Allocations) {
+            return secure::run(
+                commands,
+                client,
+                &output.join("secure"),
+                cancel,
+                matches!(campaign, Campaign::Allocations),
+            );
         }
         // Bind only the VPC address; admit benchmark TCP only from this run's
         // client. Management SSH stays on the independently pinned public path.

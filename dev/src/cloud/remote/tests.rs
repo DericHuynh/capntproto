@@ -605,3 +605,42 @@ fn encrypted_campaign_salvages_profiles_and_cleans_up_on_failure() {
         }
     }
 }
+
+#[test]
+fn allocation_campaign_runs_only_profiles_and_always_cleans_up() {
+    for fail_at in ["", "python3 secure-profile.py"] {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        let commands = CompletedCommands {
+            commands: PairCommands::default(),
+            manifest: fixture_bundle(&bundle),
+            fail_at,
+        };
+        let api = PairApi::default();
+        let output = dir.path().join("output");
+        let state = dir.path().join("state");
+        let result = run(
+            &api,
+            &bundle,
+            &output,
+            &state,
+            &tag("test/allocation-pair"),
+            &Cancellation::default(),
+            &commands,
+            Campaign::Allocations,
+        );
+        assert_eq!(result.is_ok(), fail_at.is_empty());
+        assert!(api.hosts.borrow().is_empty());
+        assert!(api.keys.borrow().is_empty());
+        assert!(output.join("secure/secure.tar.gz").is_file());
+        if fail_at.is_empty() {
+            let calls = commands.commands.0.borrow();
+            let script = calls
+                .iter()
+                .find(|s| s.contains("python3 secure-profile.py"))
+                .unwrap();
+            assert!(script.contains("--allocation-only"));
+            assert!(!script.contains("secure-runner.py"));
+        }
+    }
+}

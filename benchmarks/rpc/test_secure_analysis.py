@@ -81,5 +81,28 @@ class SavedAnalysisTests(unittest.TestCase):
             self.assertEqual(len(allocations), 5)
             self.assertTrue(all(row['sites'][0]['blocks'] == 2 for row in allocations))
 
+
+    def test_allocation_only_has_no_native_or_io_claims(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'secure'
+            output=Path(directory)/'analysis'
+            save(root.parent/'host.json', {})
+            root.mkdir()
+            (root/'cpu.txt').write_text('synthetic fixture')
+            trials=[]
+            for n in [5,50]:
+                path=f'dhat-{n}'
+                trials.append(dict(path=path,mode='dhat',transport='tls',case='fixture',implementation='legacy',iterations=n,points=[5,50],services=[]))
+                save(root/'profiles'/path/'client.dhat.json',dict(ftbl=['site'],pps=[dict(tbk=2*n,tb=16*n,fs=[0])]))
+            save(root/'profiles/scope.json',dict(allocation_only=True,diagnostic=True,binaries={'legacy':{}},trials=trials,failures=[]))
+            subprocess.run([sys.executable,str(HERE/'analyze-secure-ci.py'),'1',str(output),'--saved-root',str(root),'--measurement-outcome','success'],env=dict(os.environ,GITHUB_SHA='fixture',GITHUB_REPOSITORY='fixture/repo'),stdout=subprocess.DEVNULL,check=True)
+            report=json.loads((output/'summary.json').read_text())
+            self.assertTrue(report['allocation_only'])
+            self.assertEqual(report['native_trials'],0)
+            self.assertEqual(report['latency'],[])
+            self.assertEqual(report['traces'],[])
+            self.assertEqual(report['profiles'][0]['per_operation'],dict(blocks=2,bytes=16))
+            self.assertEqual(json.loads((output/'allocation-sites.json').read_text())[0]['sites'][0]['blocks'],2)
+
 if __name__ == '__main__':
     unittest.main()
