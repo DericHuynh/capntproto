@@ -509,7 +509,7 @@ pub(crate) struct Export {
 
     // If this export is a promise (not a settled capability), the `resolve_op` represents the
     // ongoing operation to wait for that promise to resolve and then send a `Resolve` message.
-    resolve_op: Promise<(), Error>,
+    resolve_op: Option<Promise<(), Error>>,
     vine: Option<Rc<dyn Fn(&[u8]) -> capnp::Result<()>>>,
     reflected_vine: Option<Rc<dyn Fn() -> Box<dyn ClientHook>>>,
 }
@@ -520,7 +520,7 @@ impl Export {
             references: ExportRefs::new(),
             canonical: false,
             client_hook,
-            resolve_op: Promise::err(Error::failed("no resolve op".to_string())),
+            resolve_op: None,
             vine: None,
             reflected_vine: None,
         }

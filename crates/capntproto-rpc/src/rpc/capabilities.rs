@@ -512,7 +512,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                         // This is a promise.  Arrange for the `Resolve` message to be sent later.
                         if let Some(exp) = state.exports.borrow_mut().find(export_id) {
                             exp.resolve_op =
-                                Self::resolve_exported_promise(state, export_id, wrapped);
+                                Some(Self::resolve_exported_promise(state, export_id, wrapped));
                         }
                         descriptor.set_sender_promise(export_id.to_wire());
                     }
