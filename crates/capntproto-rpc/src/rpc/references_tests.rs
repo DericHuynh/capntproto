@@ -1561,3 +1561,154 @@ fn shared_cancellation_context_retains_abandoned_results_until_final_guard() {
         assert!(matches!(replies[0].which().unwrap(), return_::Canceled(())));
     }
 }
+
+#[test]
+fn borrowed_capability_completion_publishes_pipeline_before_reentrant_projection() {
+    #[derive(Clone)]
+    struct Service {
+        state: Weak<ConnectionState<Side>>,
+        target: Rc<dyn ClientHook>,
+        projection: Rc<RefCell<Option<Box<dyn ClientHook>>>>,
+        initially_pending: bool,
+        entered: Rc<Cell<bool>>,
+    }
+    impl ClientHook for Service {
+        fn call_during_dispatch(
+            &self,
+            _: u64,
+            _: u16,
+            context: &mut dyn capnp::private::capability::CallContextHook,
+            _: CallHints,
+        ) -> Promise<(), Error> {
+            assert!(context.results().permits_immediate_poll());
+            let state = self.state.upgrade().unwrap();
+            assert!(state.answers.try_borrow_mut().is_ok());
+            // Reenter target resolution before this handler publishes results.
+            let mut target = capnp::message::Builder::new_default();
+            target
+                .init_root::<message_target::Builder>()
+                .init_promised_answer()
+                .set_question_id(42);
+            *self.projection.borrow_mut() = Some(
+                state
+                    .get_message_target(target.get_root_as_reader().unwrap())
+                    .unwrap(),
+            );
+            context
+                .borrow()
+                .1
+                .get()
+                .unwrap()
+                .set_as_capability(self.target.add_ref());
+            assert!(!self.entered.replace(true));
+            let mut pending = self.initially_pending;
+            Promise::from_future(future::poll_fn(move |cx| {
+                if std::mem::take(&mut pending) {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Ok(()))
+                }
+            }))
+        }
+        fn call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Box<dyn ParamsHook>,
+            _: Box<dyn ResultsHook>,
+        ) -> Promise<(), Error> {
+            panic!("the inbound call must borrow its original context")
+        }
+        fn add_ref(&self) -> Box<dyn ClientHook> {
+            Box::new(self.clone())
+        }
+        fn new_call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Option<capnp::MessageSize>,
+        ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+            unreachable!()
+        }
+        fn get_ptr(&self) -> usize {
+            Rc::as_ptr(&self.entered) as usize
+        }
+        fn get_brand(&self) -> usize {
+            0
+        }
+        fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+            None
+        }
+        fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+            None
+        }
+        fn when_resolved(&self) -> Promise<(), Error> {
+            Promise::ok(())
+        }
+    }
+    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Incoming {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    for initially_pending in [false, true] {
+        let mut fixture = Fixture::new();
+        fixture.drain();
+        fixture.bytes.borrow_mut().clear();
+        let service = Service {
+            state: Rc::downgrade(&fixture.state),
+            target: Rc::from(local_cap()),
+            projection: Rc::default(),
+            initially_pending,
+            entered: Rc::default(),
+        };
+        let export = fixture.export(&service);
+        let mut message = capnp::message::Builder::new_default();
+        let mut call = message.init_root::<message::Builder>().init_call();
+        call.set_question_id(42);
+        call.reborrow()
+            .init_target()
+            .set_imported_cap(export.to_wire());
+        call.init_params();
+        ConnectionState::handle_message(
+            &Rc::downgrade(&fixture.state),
+            Box::new(Incoming(message)),
+        )
+        .unwrap();
+        assert!(service.entered.get());
+        {
+            let answers = fixture.state.answers.borrow();
+            let answer = answers.slots.get(&AnswerId::from_wire(42)).unwrap();
+            assert_eq!(answer.call_completion_promise.is_some(), initially_pending);
+            assert_eq!(answer.status.return_has_been_sent.get(), !initially_pending);
+        }
+        let messages = fixture.drain();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| matches!(
+                    message
+                        .get_root::<message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap(),
+                    message::Return(_)
+                ))
+                .count(),
+            1
+        );
+        let projection = service.projection.borrow();
+        let projected = projection
+            .as_ref()
+            .unwrap()
+            .get_resolved()
+            .expect("early projection resolves");
+        assert_eq!(projected.get_ptr(), service.target.get_ptr());
+        assert_eq!(fixture.state.call_words.get(), 0);
+    }
+}

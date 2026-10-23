@@ -617,6 +617,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
                         (None, None)
                     };
 
+                // A synchronous handler may reenter RPC and project its own
+                // answer. Publish the queued pipeline before application entry;
+                // completion can then resolve it without a scheduled wrapper.
+                answer.pipeline = pipeline
+                    .as_ref()
+                    .map(|pipeline| Box::new(pipeline.clone()) as Box<dyn PipelineHook>);
                 {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
                     if slots.contains_key(&question_id) {
@@ -627,7 +633,8 @@ impl<VatId: 'static> ConnectionState<VatId> {
 
                 // No table borrow spans application code. Immediate ordinary
                 // calls need no independently scheduled cancellation owner.
-                results.permits_immediate_poll = pipeline.is_none();
+                let permits_immediate_poll = !redirect_results && !only_promise_pipeline;
+                results.permits_immediate_poll = permits_immediate_poll;
                 let mut context = InboundCall {
                     params: Some(params),
                     results: Some(results),
@@ -666,12 +673,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     Poll::Ready(Ok(()))
                 });
 
-                // A non-pipelined call may complete on its first poll. Drive
-                // that bounded step before allocating a background task and
-                // two cancellation/completion channels. No table borrow may
-                // span application code. Pending work is always enqueued and
-                // polled again with the task set's real waker.
-                let completed = pipeline.is_none() && (&mut promise).now_or_never().is_some();
+                // Ordinary calls, including capability-bearing replies, may
+                // complete on their first poll. The published answer pipeline
+                // preserves reentrant projection. Pending work is enqueued and
+                // polled again with the task set's real waker; redirected and
+                // pipeline-only execution keep their independent owners.
+                let completed = permits_immediate_poll && (&mut promise).now_or_never().is_some();
                 if !completed {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
                     let Some(answer) = slots.get_mut(&question_id) else {
@@ -684,7 +691,6 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     answer.call_completion_promise = Some(if let Some(mut pipeline) = pipeline {
                         let fork = promise.shared();
                         pipeline.drive(fork.clone());
-                        answer.pipeline = Some(Box::new(pipeline));
                         connection_state.eagerly_evaluate(fork)
                     } else {
                         connection_state.eagerly_evaluate(promise)
