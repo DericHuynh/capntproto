@@ -205,7 +205,7 @@ pub(super) fn receive<VatId>(
     let running = owner.eagerly_evaluate(task);
     if let Some(answer) = owner.answers.borrow_mut().slots.get_mut(&id) {
         answer.pipeline = Some(Box::new(pipeline));
-        answer.call_completion_promise = Some(running);
+        answer.call_task = Some(running.into());
     }
     Ok(())
 }

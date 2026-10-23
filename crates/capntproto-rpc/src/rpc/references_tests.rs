@@ -1684,7 +1684,7 @@ fn borrowed_capability_completion_publishes_pipeline_before_reentrant_projection
         {
             let answers = fixture.state.answers.borrow();
             let answer = answers.slots.get(&AnswerId::from_wire(42)).unwrap();
-            assert_eq!(answer.call_completion_promise.is_some(), initially_pending);
+            assert_eq!(answer.call_task.is_some(), initially_pending);
             assert_eq!(answer.status.return_has_been_sent.get(), !initially_pending);
         }
         let messages = fixture.drain();
@@ -1760,4 +1760,82 @@ fn consumed_request_boxes_reuse_only_empty_bounded_storage() {
         weak.upgrade().is_none(),
         "empty cached requests cannot retain a connection"
     );
+}
+
+#[test]
+fn answer_task_cancellation_wakes_pending_work_and_clears_cached_interests() {
+    struct Work {
+        polls: Rc<Cell<usize>>,
+        dropped: Rc<Cell<bool>>,
+        ready: bool,
+    }
+    impl Future for Work {
+        type Output = capnp::Result<()>;
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            self.polls.set(self.polls.get() + 1);
+            if self.ready {
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+    impl Drop for Work {
+        fn drop(&mut self) {
+            assert!(!self.dropped.replace(true));
+        }
+    }
+    #[derive(Default)]
+    struct Wakes(std::sync::atomic::AtomicUsize);
+    impl futures::task::ArcWake for Wakes {
+        fn wake_by_ref(wakes: &std::sync::Arc<Self>) {
+            wakes.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    // Cancellation before polling, cancellation while parked, completion, and
+    // driver shutdown while the answer owner still lives.
+    for mode in 0..4 {
+        let cache = AnswerStatusCache::default();
+        let status = AnswerStatusRef::acquire(&cache);
+        let mut owner = Some(CancelAnswerTask(status.clone()));
+        let polls = Rc::new(Cell::new(0));
+        let dropped = Rc::new(Cell::new(false));
+        let mut driver = Box::pin(AnswerTaskDriver {
+            status: status.clone(),
+            future: Work {
+                polls: polls.clone(),
+                dropped: dropped.clone(),
+                ready: mode == 2,
+            },
+        });
+        let wakes = std::sync::Arc::new(Wakes::default());
+        let waker = futures::task::waker(wakes.clone());
+        let mut cx = Context::from_waker(&waker);
+        if mode == 0 {
+            drop(owner.take());
+        }
+        assert_eq!(
+            driver.as_mut().poll(&mut cx).is_ready(),
+            mode == 0 || mode == 2
+        );
+        if mode == 1 {
+            drop(owner.take());
+            assert!(driver.as_mut().poll(&mut cx).is_ready());
+        }
+        assert!(!dropped.get());
+        drop(driver);
+        assert!(dropped.get());
+        assert!(status.task_waker.borrow().is_none());
+        drop(owner);
+        assert_eq!(polls.get(), usize::from(mode != 0));
+        assert_eq!(
+            wakes.0.load(std::sync::atomic::Ordering::Relaxed),
+            usize::from(mode == 1)
+        );
+        drop(status);
+        assert_eq!(cache.borrow().len(), 1);
+        let reused = AnswerStatusRef::acquire(&cache);
+        assert!(!reused.task_canceled.get());
+        assert!(reused.task_waker.borrow().is_none());
+    }
 }

@@ -224,7 +224,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     exports = result_exports;
                 }
                 pipeline = answer.pipeline.take();
-                task = answer.call_completion_promise.take();
+                task = answer.call_task.take();
                 pipeline_only_guard = answer.pipeline_only_guard.take();
                 join = answer.join.take();
                 if answer.status.return_has_been_sent.get() {
@@ -499,7 +499,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         let mut answers = state.answers.borrow_mut();
         let answer = answers.slots.get_mut(&id).unwrap();
         answer.pipeline = Some(Box::new(pipeline));
-        answer.call_completion_promise = Some(running);
+        answer.call_task = Some(running.into());
         Ok(())
     }
 
@@ -688,12 +688,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     if redirect_results {
                         answer.redirected_results = redirected_results_done_promise;
                     }
-                    answer.call_completion_promise = Some(if let Some(mut pipeline) = pipeline {
+                    answer.call_task = Some(if let Some(mut pipeline) = pipeline {
                         let fork = promise.shared();
                         pipeline.drive(fork.clone());
-                        connection_state.eagerly_evaluate(fork)
+                        connection_state.run_answer_task(&answer.status, fork)
                     } else {
-                        connection_state.eagerly_evaluate(promise)
+                        connection_state.run_answer_task(&answer.status, promise)
                     });
                 }
             }
@@ -810,11 +810,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                     Error::failed("takeFromOtherQuestion: invalid answer".into())
                                 })?;
                                 let response = answer.redirected_results.take().ok_or_else(|| Error::failed("takeFromOtherQuestion: already adopted or not redirected".into()))?;
-                                (
-                                    response,
-                                    answer.status.clone(),
-                                    answer.call_completion_promise.take(),
-                                )
+                                (response, answer.status.clone(), answer.call_task.take())
                             };
                             // Taking the response also takes ownership of its producer.
                             // Finish may release the old answer before the adopted call
@@ -846,7 +842,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             answers.slots.get_mut(&id).map(|answer| {
                                 (
                                     answer.redirected_results.take(),
-                                    answer.call_completion_promise.take(),
+                                    answer.call_task.take(),
                                     answer.status.clone(),
                                 )
                             })

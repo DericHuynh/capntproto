@@ -385,6 +385,8 @@ struct AnswerStatus {
     return_has_been_sent: Cell<bool>,
     received_finish: Cell<bool>,
     return_guards: Cell<usize>,
+    task_canceled: Cell<bool>,
+    task_waker: RefCell<Option<std::task::Waker>>,
 }
 
 type AnswerStatusCache = Rc<RefCell<Vec<Rc<AnswerStatus>>>>;
@@ -424,11 +426,81 @@ impl Drop for AnswerStatusRef {
         drop(context);
         self.return_has_been_sent.set(false);
         self.received_finish.set(false);
+        self.task_canceled.set(false);
+        let wake = self.task_waker.borrow_mut().take();
+        drop(wake);
         debug_assert_eq!(self.return_guards.get(), 0);
         let mut cache = cache.borrow_mut();
         if cache.len() < 64 {
             cache.push(self.0.clone());
         }
+    }
+}
+
+// Ordinary answer execution only needs a cancellation interest. Redirected,
+// adopted and joined producers may retain a result-bearing continuation.
+#[allow(dead_code)] // Both variants own work through their destructors.
+enum AnswerTask {
+    Cancel(CancelAnswerTask),
+    Continuation(Promise<(), Error>),
+}
+impl From<Promise<(), Error>> for AnswerTask {
+    fn from(promise: Promise<(), Error>) -> Self {
+        Self::Continuation(promise)
+    }
+}
+struct CancelAnswerTask(AnswerStatusRef);
+impl Drop for CancelAnswerTask {
+    fn drop(&mut self) {
+        self.0.task_canceled.set(true);
+        let wake = self.0.task_waker.borrow_mut().take();
+        if let Some(wake) = wake {
+            wake.wake();
+        }
+    }
+}
+struct AnswerTaskDriver<F> {
+    status: AnswerStatusRef,
+    future: F,
+}
+impl<F: Future<Output = Result<(), Error>> + Unpin> Future for AnswerTaskDriver<F> {
+    type Output = Result<(), Error>;
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        if this.status.task_canceled.get() {
+            return Poll::Ready(Ok(()));
+        }
+        let registered = this
+            .status
+            .task_waker
+            .borrow()
+            .as_ref()
+            .is_some_and(|wake| wake.will_wake(cx.waker()));
+        if !registered {
+            let wake = cx.waker().clone();
+            let previous = this.status.task_waker.borrow_mut().replace(wake);
+            // Custom waker operations may reenter Finish. Hold no cell borrow.
+            drop(previous);
+        }
+        if this.status.task_canceled.get() {
+            return Poll::Ready(Ok(()));
+        }
+        if Pin::new(&mut this.future).poll(cx).is_ready() {
+            let wake = this.status.task_waker.borrow_mut().take();
+            drop(wake);
+            // The answer completion itself handles Return/Exception. As with
+            // the former unobserved receiver, no result goes to the task reaper.
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
+    }
+}
+impl<F> Drop for AnswerTaskDriver<F> {
+    fn drop(&mut self) {
+        // Driver shutdown can drop suspended work without another poll.
+        let wake = self.status.task_waker.borrow_mut().take();
+        drop(wake);
     }
 }
 
@@ -447,7 +519,7 @@ where
     // result, to be picked up by a subsequent `Return`.
     redirected_results: Option<Promise<Response<VatId>, Error>>,
 
-    call_completion_promise: Option<Promise<(), Error>>,
+    call_task: Option<AnswerTask>,
 
     // List of exports that were sent in the results.  If the finish has `releaseResultCaps` these
     // will need to be released.
@@ -469,7 +541,7 @@ impl<VatId> Answer<VatId> {
             pipeline_only_guard: None,
             pipeline: None,
             redirected_results: None,
-            call_completion_promise: None,
+            call_task: None,
             result_exports: Vec::new(),
             provision: None,
             join: None,
@@ -488,7 +560,7 @@ impl<VatId> Answer<VatId> {
             pipeline_only_guard: None,
             pipeline: None,
             redirected_results: None,
-            call_completion_promise: None,
+            call_task: None,
             result_exports: Vec::new(),
             provision: None,
             join: None,
@@ -1069,6 +1141,18 @@ impl<VatId> ConnectionState<VatId> {
         if let Some(source) = self.metadata_changes.get() {
             source.notify();
         }
+    }
+
+    fn run_answer_task<F>(&self, status: &AnswerStatusRef, future: F) -> AnswerTask
+    where
+        F: Future<Output = Result<(), Error>> + 'static + Unpin,
+    {
+        let owner = CancelAnswerTask(status.clone());
+        self.add_task(AnswerTaskDriver {
+            status: status.clone(),
+            future,
+        });
+        AnswerTask::Cancel(owner)
     }
 
     // Transform a future into a promise that gets executed even if it is never polled.

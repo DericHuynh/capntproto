@@ -430,14 +430,14 @@ pub(super) fn receive_call<VatId>(
         let mut answers = origin.answers.borrow_mut();
         if let Some(parent) = answers.slots.get_mut(&original_id) {
             parent.pipeline = Some(Box::new(pipeline.clone()));
-            parent.call_completion_promise = Some(original_running);
+            parent.call_task = Some(original_running.into());
         }
     }
     {
         let mut answers = destination.answers.borrow_mut();
         if let Some(direct) = answers.slots.get_mut(&id) {
             direct.pipeline = Some(Box::new(pipeline));
-            direct.call_completion_promise = Some(direct_running);
+            direct.call_task = Some(direct_running.into());
         }
     }
     Ok(())
@@ -512,7 +512,7 @@ fn receive_self_call<VatId>(
         let mut answers = origin.answers.borrow_mut();
         if let Some(answer) = answers.slots.get_mut(&id) {
             answer.pipeline = Some(Box::new(pipeline));
-            answer.call_completion_promise = Some(running);
+            answer.call_task = Some(running.into());
         }
     }
     let response = Promise::from_future(

@@ -472,7 +472,7 @@ pub(super) fn receive<VatId>(
         let mut answers = owner.answers.borrow_mut();
         let a = answers.slots.get_mut(&id).unwrap();
         a.pipeline = Some(Box::new(pipeline));
-        a.call_completion_promise = Some(running);
+        a.call_task = Some(running.into());
     }
     if ready {
         let pending = mem::take(&mut group.state.borrow_mut().pending);
