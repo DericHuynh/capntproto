@@ -76,14 +76,14 @@ jobs:
             --output "$RUNNER_TEMP/benchmark-topology-smoke"
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: benchmark-bundle
           overwrite: true
           path: ${{ runner.temp }}/benchmark-bundle.tar.gz
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: benchmark-build-provenance
@@ -162,7 +162,7 @@ jobs:
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
         run: cargo run --locked -p capntproto-dev -- reports collect --input "$RUNNER_TEMP/benchmark-quality" --kind benchmark --output target/readme-data/publication.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: readme-data-benchmark-${{ github.run_attempt }}
@@ -170,7 +170,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
       - id: report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: dedicated-benchmark-report
