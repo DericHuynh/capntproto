@@ -1474,7 +1474,10 @@ struct Projected {
     pipeline: PipelineRef,
 }
 impl Projected {
-    fn drive<T: 'static>(&self, mut promise: Promise<T, Error>) -> Promise<T, Error> {
+    fn drive<T: 'static>(
+        &self,
+        mut promise: impl Future<Output = Result<T, Error>> + Unpin + 'static,
+    ) -> Promise<T, Error> {
         use crate::attach::Attach;
         let endpoint = direct_response_hook(self).map(|hook| hook.0.clone());
         Promise::from_future(
@@ -1529,7 +1532,7 @@ pub(super) fn request_projected(
         params,
         context,
     );
-    response.promise = projected.drive(response.promise);
+    response.promise = capability::ResponsePromise::new(projected.drive(response.promise));
     response
 }
 impl ClientHook for Projected {

@@ -22,6 +22,49 @@
 //! Incoming RPC dispatch and peer message validation.
 use super::*;
 
+// Keep immediate invocations on the receive stack. Only taking ownership
+// creates the completion channel and the two type-erased application hooks.
+struct InboundCall<VatId: 'static> {
+    params: Option<Box<dyn ParamsHook>>,
+    results: Option<Results<VatId>>,
+    completion: Option<oneshot::Receiver<ResultsInner<VatId>>>,
+}
+impl<VatId> capnp::private::capability::CallContextHook for InboundCall<VatId> {
+    fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook) {
+        (
+            &**self.params.as_ref().expect("consumed call"),
+            self.results.as_mut().expect("consumed call"),
+        )
+    }
+    fn results(&self) -> &dyn ResultsHook {
+        self.results.as_ref().expect("consumed call")
+    }
+    fn take(&mut self) -> (Box<dyn ParamsHook>, Box<dyn ResultsHook>) {
+        let mut results = self.results.take().expect("consumed call");
+        let (sender, receiver) = oneshot::channel();
+        results.results_done_fulfiller = Some(sender);
+        self.completion = Some(receiver);
+        (
+            self.params.take().expect("consumed call"),
+            Box::new(results),
+        )
+    }
+}
+impl<VatId> InboundCall<VatId> {
+    fn into_completion(mut self) -> impl Future<Output = capnp::Result<ResultsInner<VatId>>> {
+        match self.completion.take() {
+            Some(receiver) => future::Either::Left(receiver.map_err(crate::canceled_to_error)),
+            None => future::Either::Right(future::ready(Ok(self
+                .results
+                .as_mut()
+                .expect("unconsumed results")
+                .inner
+                .take()
+                .unwrap()))),
+        }
+    }
+}
+
 impl<VatId: 'static> ConnectionState<VatId> {
     pub(super) fn send_unimplemented(
         connection_state: &Rc<Self>,
@@ -536,14 +579,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     no_promise_pipelining: call.get_no_promise_pipelining(),
                 };
                 let allow_third_party = call.get_allow_third_party_tail_call();
-                let params = Params::new(message, cap_table_array);
-                let mut answer = Answer::new();
+                let params = message.into_params(cap_table_array);
+                let mut answer = Answer::for_call(&connection_state);
                 answer.request_words = request_words;
                 connection_state.call_words.set(total);
-
-                let (results_inner_fulfiller, results_inner_promise) = oneshot::channel();
-                let mut results_inner_promise =
-                    results_inner_promise.map_err(crate::canceled_to_error);
 
                 let (pipeline_sender, pipeline) =
                     if hints.no_promise_pipelining && !only_promise_pipeline && !redirect_results {
@@ -556,7 +595,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     &connection_state,
                     question_id,
                     redirect_results,
-                    results_inner_fulfiller,
+                    None,
                     answer.status.clone(),
                     Some(pipeline_sender.weak_clone()),
                 );
@@ -565,7 +604,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 inner.allow_third_party = allow_third_party;
                 inner.only_promise_pipeline = only_promise_pipeline;
                 if only_promise_pipeline {
-                    Rc::get_mut(&mut inner.return_guard).unwrap().only_pipeline = true;
+                    inner.return_guard.only_pipeline = true;
                     answer.pipeline_only_guard = Some(inner.return_guard.clone());
                 }
 
@@ -589,13 +628,14 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 // No table borrow spans application code. Immediate ordinary
                 // calls need no independently scheduled cancellation owner.
                 results.permits_immediate_poll = pipeline.is_none();
-                let call_promise = capability.call_with_hints(
-                    interface_id,
-                    method_id,
-                    Box::new(params),
-                    Box::new(results),
-                    hints,
-                );
+                let mut context = InboundCall {
+                    params: Some(params),
+                    results: Some(results),
+                    completion: None,
+                };
+                let call_promise =
+                    capability.call_during_dispatch(interface_id, method_id, &mut context, hints);
+                let mut results_inner_promise = context.into_completion();
 
                 // Keep completion in one future. Chained Then adapters move the
                 // result owner between states even for immediately ready calls.

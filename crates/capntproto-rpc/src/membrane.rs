@@ -903,7 +903,7 @@ impl RequestHook for MembraneRequest {
             )))
         });
         capnp::capability::RemotePromise {
-            promise,
+            promise: capnp::capability::ResponsePromise::new(promise),
             pipeline: any_pointer::Pipeline::new(pipeline),
         }
     }

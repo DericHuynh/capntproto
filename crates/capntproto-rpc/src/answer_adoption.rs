@@ -385,13 +385,7 @@ pub(super) fn receive_call<VatId>(
     parent.request_words = words;
     let mut direct = Answer::new();
     direct.callee_allocated = true;
-    let ack = Rc::new(ReturnGuard {
-        state: Rc::downgrade(origin),
-        id: original_id,
-        status: parent.status.clone(),
-        redirect: true,
-        only_pipeline: false,
-    });
+    let ack = ReturnGuard::new(origin, original_id, parent.status.clone(), true);
     let (sender, receiver) = oneshot::channel();
     let (pipeline_sender, mut pipeline) = queued::Pipeline::new();
     let results = Results::new(

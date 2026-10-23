@@ -44,6 +44,7 @@ pub type VatId = crate::rpc_twoparty_capnp::Side;
 struct IncomingMessage {
     message: ::capnp::message::StructReaderCache<capnp_futures::BufferedSegments>,
     selection: core::cell::Cell<Option<IncomingPayload>>,
+    caps: Vec<Option<Box<dyn capnp::private::capability::ClientHook>>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -138,11 +139,28 @@ impl IncomingMessage {
         Self {
             message: capnp::message::StructReaderCache::new(message),
             selection: core::cell::Cell::new(None),
+            caps: Vec::new(),
         }
     }
 }
 
+impl capnp::private::capability::ParamsHook for IncomingMessage {
+    fn get(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+        use capnp::traits::Imbue;
+        let mut content = crate::IncomingMessage::get_params(self)?;
+        content.imbue(&self.caps);
+        Ok(content)
+    }
+}
 impl crate::IncomingMessage for IncomingMessage {
+    fn into_params(
+        mut self: Box<Self>,
+        caps: Vec<Option<Box<dyn capnp::private::capability::ClientHook>>>,
+    ) -> Box<dyn capnp::private::capability::ParamsHook> {
+        self.caps = caps;
+        self
+    }
+
     fn cache_params(&self, payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {
         use capnp::traits::IntoInternalStructReader;
         self.message.select(payload.into_internal_struct_reader())?;
@@ -210,8 +228,22 @@ struct BuiltMessage {
 }
 enum QueuedMessage {
     Built(BuiltMessage),
-    Owned(Box<OutgoingMessage>),
+    Owned(QueuedOutgoing),
     Frame(crate::OutgoingFrame),
+}
+// Recycle only the empty envelope after the physical writer releases it.
+// Payloads, admission guards and the sender never enter the cache.
+struct QueuedOutgoing(Option<Box<OutgoingMessage>>);
+impl std::ops::Deref for QueuedOutgoing {
+    type Target = OutgoingMessage;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().unwrap()
+    }
+}
+impl Drop for QueuedOutgoing {
+    fn drop(&mut self) {
+        self.0.take().unwrap().recycle();
+    }
 }
 impl capnp_futures::serialize::AsOutputSegments for QueuedMessage {
     fn framed_bytes(&self) -> Option<&[u8]> {
@@ -328,10 +360,61 @@ impl MessageBuilder {
     }
 }
 
+type MessageCache = Rc<RefCell<Vec<Box<OutgoingMessage>>>>;
+const CACHED_ENVELOPES: usize = 64;
 struct OutgoingMessage {
+    // Preserve the allocation consumed by the boxed public message hook.
+    #[allow(clippy::vec_box)]
+    cache: Weak<RefCell<Vec<Box<OutgoingMessage>>>>,
     message: MessageBuilder,
     sender: Option<Rc<capnp_futures::LocalSender<QueuedMessage>>>,
     guard: Option<Rc<dyn std::any::Any>>,
+}
+
+impl OutgoingMessage {
+    fn acquire(
+        cache: &MessageCache,
+        message: MessageBuilder,
+        sender: Rc<capnp_futures::LocalSender<QueuedMessage>>,
+    ) -> Box<Self> {
+        let cached = cache.borrow_mut().pop();
+        if let Some(mut cached) = cached {
+            cached.message = message;
+            cached.sender = Some(sender);
+            cached
+        } else {
+            Box::new(Self {
+                cache: Rc::downgrade(cache),
+                message,
+                sender: Some(sender),
+                guard: None,
+            })
+        }
+    }
+    fn recycle(mut self: Box<Self>) {
+        drop(self.message.take());
+        drop(self.sender.take());
+        drop(self.guard.take());
+        if let Some(cache) = self.cache.upgrade() {
+            let mut cache = cache.borrow_mut();
+            if cache.len() < CACHED_ENVELOPES {
+                cache.push(self);
+            }
+        }
+    }
+    fn into_parts(
+        mut self: Box<Self>,
+    ) -> (
+        capnp::message::Builder<capnp::message::HeapAllocator>,
+        Rc<capnp_futures::LocalSender<QueuedMessage>>,
+        Option<Rc<dyn std::any::Any>>,
+    ) {
+        let body = self.message.take();
+        let sender = self.sender.take().expect("unsent message has sender");
+        let guard = self.guard.take();
+        self.recycle();
+        (body, sender, guard)
+    }
 }
 
 impl crate::OutgoingMessage for OutgoingMessage {
@@ -359,18 +442,11 @@ impl crate::OutgoingMessage for OutgoingMessage {
         Promise<(), ::capnp::Error>,
         Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>,
     ) {
-        let tmp = *self;
-        let Self {
-            message,
-            sender,
-            guard,
-            ..
-        } = tmp;
-        let m = Rc::new(message.into_inner());
+        let (message, sender, guard) = self.into_parts();
+        let m = Rc::new(message);
         (
             Promise::from_future(
                 sender
-                    .expect("unsent message has sender")
                     .send(QueuedMessage::Built(BuiltMessage {
                         body: m.clone(),
                         _guard: guard,
@@ -384,19 +460,12 @@ impl crate::OutgoingMessage for OutgoingMessage {
     fn send_detached(
         self: Box<Self>,
     ) -> Rc<capnp::message::Builder<capnp::message::HeapAllocator>> {
-        let Self {
-            message,
-            sender,
-            guard,
-            ..
-        } = *self;
-        let body = Rc::new(message.into_inner());
-        sender
-            .expect("unsent message has sender")
-            .send_detached(QueuedMessage::Built(BuiltMessage {
-                body: body.clone(),
-                _guard: guard,
-            }));
+        let (message, sender, guard) = self.into_parts();
+        let body = Rc::new(message);
+        sender.send_detached(QueuedMessage::Built(BuiltMessage {
+            body: body.clone(),
+            _guard: guard,
+        }));
         body
     }
 
@@ -405,7 +474,7 @@ impl crate::OutgoingMessage for OutgoingMessage {
         // write related messages together. Remove the sender before enqueueing
         // so queued output cannot retain its own queue in a cycle.
         let sender = self.sender.take().expect("unsent message has sender");
-        sender.send_detached(QueuedMessage::Owned(self));
+        sender.send_detached(QueuedMessage::Owned(QueuedOutgoing(Some(self))));
     }
 
     fn retain_until_sent(
@@ -420,7 +489,7 @@ impl crate::OutgoingMessage for OutgoingMessage {
     }
 
     fn take(self: Box<Self>) -> ::capnp::message::Builder<::capnp::message::HeapAllocator> {
-        self.message.into_inner()
+        self.into_parts().0
     }
 
     fn size_in_words(&self) -> usize {
@@ -526,6 +595,7 @@ where
     output_closed: futures::future::Shared<Promise<(), capnp::Error>>,
     output_driver: Weak<OutputDriver>,
     segments: capnp::message::SegmentPool,
+    message_cache: MessageCache,
     call_template:
         Option<capnp::message::SelectedStructBuilderTemplate<capnp::message::HeapAllocator>>,
     return_template:
@@ -641,6 +711,7 @@ where
                 // Includes a 64 KiB body plus framing/envelope growth, while
                 // bounding retained storage independently of live messages.
                 segments: capnp::message::SegmentPool::new(16 * 1024, 64),
+                message_cache: Rc::default(),
                 call_template: None,
                 return_template: None,
                 finish_template: None,
@@ -734,11 +805,11 @@ where
                 first_segment_word_size
             });
         let message = ::capnp::message::Builder::new(allocator);
-        Box::new(OutgoingMessage {
-            message: MessageBuilder::Root(message),
-            sender: Some(inner.sender.clone()),
-            guard: None,
-        })
+        OutgoingMessage::acquire(
+            &inner.message_cache,
+            MessageBuilder::Root(message),
+            inner.sender.clone(),
+        )
     }
 
     fn send_frame(&mut self, frame: crate::OutgoingFrame) -> Promise<(), capnp::Error> {
@@ -782,11 +853,11 @@ where
                 first_segment_word_size
             });
         let message = inner.call_template.as_ref().unwrap().instantiate(allocator);
-        Ok(Box::new(OutgoingMessage {
-            message: MessageBuilder::Call(message),
-            sender: Some(inner.sender.clone()),
-            guard: None,
-        }))
+        Ok(OutgoingMessage::acquire(
+            &inner.message_cache,
+            MessageBuilder::Call(message),
+            inner.sender.clone(),
+        ))
     }
 
     fn new_outgoing_return(
@@ -821,11 +892,11 @@ where
             .as_ref()
             .unwrap()
             .instantiate(allocator);
-        Ok(Box::new(OutgoingMessage {
-            message: MessageBuilder::Return(message),
-            sender: Some(inner.sender.clone()),
-            guard: None,
-        }))
+        Ok(OutgoingMessage::acquire(
+            &inner.message_cache,
+            MessageBuilder::Return(message),
+            inner.sender.clone(),
+        ))
     }
 
     fn new_outgoing_finish(
@@ -860,11 +931,11 @@ where
         let mut finish = message.get_as::<crate::rpc_capnp::finish::Owned>()?;
         finish.set_question_id(question_id);
         finish.set_release_result_caps(release_result_caps);
-        Ok(Box::new(OutgoingMessage {
-            message: MessageBuilder::Root(message.into_inner()),
-            sender: Some(inner.sender.clone()),
-            guard: None,
-        }))
+        Ok(OutgoingMessage::acquire(
+            &inner.message_cache,
+            MessageBuilder::Root(message.into_inner()),
+            inner.sender.clone(),
+        ))
     }
 
     fn receive_incoming_message(

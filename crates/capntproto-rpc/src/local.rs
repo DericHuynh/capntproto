@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+mod protected;
+
 use capnp::capability::CallHints;
 use capnp::capability::{self, Promise};
 use capnp::private::capability::{
@@ -848,11 +850,11 @@ impl RequestHook for Request {
 
         if hints.no_promise_pipelining {
             return capability::RemotePromise {
-                promise: Promise::from_future(async move {
+                promise: capability::ResponsePromise::new(Promise::from_future(async move {
                     let ((), results) =
                         futures::future::try_join(promise, results_done_promise).await?;
                     Ok(capability::Response::new(Box::new(Response::new(results))))
-                }),
+                })),
                 pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
             };
         }
@@ -875,7 +877,7 @@ impl RequestHook for Request {
         let pipeline = any_pointer::Pipeline::new(Box::new(pipeline));
 
         capability::RemotePromise {
-            promise: Promise::from_future(left),
+            promise: capability::ResponsePromise::new(Promise::from_future(left)),
             pipeline,
         }
     }
@@ -1272,18 +1274,23 @@ where
                     return Promise::from(result);
                 }
             }
-            let retained_server = state.clone();
-            let task = Promise::from_future(async move {
-                let result = f.promise.await;
-                drop(guard);
-                drop(retained_server);
-                result
-            })
-            .shared();
-            if let Err(error) = executor.spawn(Promise::from_future(task.clone())) {
+            let mut retained_server = Some(state.clone());
+            let mut guard = guard;
+            let mut operation = Some(f.promise);
+            let work = futures::future::poll_fn(move |cx| {
+                let result = futures::ready!(Pin::new(operation.as_mut().unwrap()).poll(cx));
+                drop(operation.take());
+                drop(guard.take());
+                drop(retained_server.take());
+                Poll::Ready(result)
+            });
+            // Both caller and executor can drive protected execution. The two
+            // fixed interests need no dynamic waiter slab or boxed shared task.
+            let (task, completion) = protected::pair(work);
+            if let Err(error) = executor.spawn(Promise::from_future(task)) {
                 return Promise::err(error);
             }
-            f.promise = Promise::from_future(task);
+            f.promise = Promise::from_future(completion);
         }
 
         if f.is_streaming {

@@ -91,7 +91,7 @@ impl RequestHook for Request {
     fn send(self: Box<Self>) -> RemotePromise<any_pointer::Owned> {
         let pipeline = Pipeline::new(self.error.clone());
         RemotePromise {
-            promise: Promise::err(self.error),
+            promise: capnp::capability::ResponsePromise::new(Promise::err(self.error)),
             pipeline: any_pointer::Pipeline::new(Box::new(pipeline)),
         }
     }

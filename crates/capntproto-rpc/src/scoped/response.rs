@@ -688,7 +688,7 @@ pub(crate) fn request_scoped(
         Err(error) => Promise::err(*error),
     };
     capability::RemotePromise {
-        promise,
+        promise: capnp::capability::ResponsePromise::new(promise),
         pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
     }
 }
@@ -709,7 +709,7 @@ pub(super) fn request_prepared(
         Err(error) => Promise::err(*error),
     };
     capability::RemotePromise {
-        promise,
+        promise: capnp::capability::ResponsePromise::new(promise),
         pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
     }
 }
@@ -740,7 +740,7 @@ pub(super) fn request_pipelined_prepared(
         }
     };
     capability::RemotePromise {
-        promise,
+        promise: capnp::capability::ResponsePromise::new(promise),
         pipeline: any_pointer::Pipeline::new(pipeline.owned(interest)),
     }
 }

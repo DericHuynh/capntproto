@@ -1080,7 +1080,7 @@ impl<'a> Request<'a> {
     }
 }
 pub struct RemoteCall<'a> {
-    promise: capability::Promise<capability::Response<any_pointer::Owned>, Error>,
+    promise: capability::ResponsePromise<any_pointer::Owned>,
     pub pipeline: Pipeline<'a>,
     schema: Schema<'a>,
 }

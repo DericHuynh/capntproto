@@ -325,6 +325,19 @@ pub fn is_short_lived_rpc_message(body: capnp::any_pointer::Reader<'_>) -> capnp
 /// A message received from a [`VatNetwork`].
 #[cfg(feature = "std")]
 pub trait IncomingMessage {
+    /// Transfer this message directly into an application parameter owner.
+    /// Transports may reuse the message allocation; opaque implementations keep
+    /// their normal ownership and capability-imbuing adapter.
+    fn into_params(
+        self: Box<Self>,
+        caps: Vec<Option<Box<dyn ClientHook>>>,
+    ) -> Box<dyn capnp::private::capability::ParamsHook>
+    where
+        Self: 'static,
+    {
+        Box::new(rpc::Params::new(self, caps))
+    }
+
     /// Remember the already decoded parameters of this Call. Cached views must
     /// belong to this immutable message; capability hooks are imbued by RPC.
     fn cache_params(&self, _payload: crate::rpc_capnp::payload::Reader<'_>) -> capnp::Result<()> {
