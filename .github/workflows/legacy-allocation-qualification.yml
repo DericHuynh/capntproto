@@ -1,0 +1,15 @@
+name: Performance / Legacy allocation qualification
+on:
+  push:
+    branches: [codex/legacy-allocation-qualification-20261023]
+permissions:
+  contents: read
+jobs:
+  qualify:
+    uses: ./.github/workflows/performance.yml
+    with:
+      campaign: run-secure
+      legacy_base: 1a2d77250d49691a600ca97552003d95d053c202
+      region: auto
+      size: auto
+    secrets: inherit
