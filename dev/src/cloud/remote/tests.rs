@@ -333,6 +333,12 @@ fn fixture_bundle(path: &Path) -> Value {
         crate::write(path.join(name), "fake binary").unwrap();
         binaries.insert(name.into(), json!(crate::hash("fake binary")));
     }
+    fs::create_dir(path.join("certificates")).unwrap();
+    crate::write(
+        path.join("certificates/manifest.json"),
+        "synthetic certificate fixture",
+    )
+    .unwrap();
     let manifest = json!({"binaries": binaries});
     crate::write_json(path.join("manifest.json"), &manifest).unwrap();
     manifest
@@ -370,7 +376,7 @@ fn complete_remote_campaign_runs_both_controls_and_salvages_failed_portable_cont
             &tag("test/complete-pair"),
             &Cancellation::default(),
             &commands,
-            true,
+            Campaign::Workflows { trace_io: true },
         );
         assert_eq!(result.is_ok(), fail_at.is_empty(), "{fail_at}: {result:?}");
         assert!(api.hosts.borrow().is_empty());
@@ -512,7 +518,7 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
             &tag("test/remote-pair"),
             &Cancellation::default(),
             &commands,
-            false,
+            Campaign::Workflows { trace_io: false },
         );
         assert!(result.is_err(), "{mode}");
         assert!(api.hosts.borrow().is_empty(), "{mode}: leaked host");
@@ -552,6 +558,50 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
             assert!(calls
                 .iter()
                 .any(|c| c.contains("-s 10.0.0.2/32 -d 10.0.0.1/32")));
+        }
+    }
+}
+
+#[test]
+fn encrypted_campaign_salvages_profiles_and_cleans_up_on_failure() {
+    for fail_at in ["", "python3 secure-runner.py"] {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        let commands = CompletedCommands {
+            commands: PairCommands::default(),
+            manifest: fixture_bundle(&bundle),
+            fail_at,
+        };
+        let api = PairApi::default();
+        let output = dir.path().join("output");
+        let state = dir.path().join("state");
+        let result = run(
+            &api,
+            &bundle,
+            &output,
+            &state,
+            &tag("test/secure-pair"),
+            &Cancellation::default(),
+            &commands,
+            Campaign::Secure,
+        );
+        assert_eq!(result.is_ok(), fail_at.is_empty());
+        assert!(api.hosts.borrow().is_empty());
+        assert!(api.keys.borrow().is_empty());
+        assert!(!state.join("client/host").exists());
+        assert!(output.join("secure/secure.tar.gz").is_file());
+        assert!(output.join("secure/host.json").is_file());
+        if fail_at.is_empty() {
+            let calls = commands.commands.0.borrow();
+            let script = calls
+                .iter()
+                .find(|s| s.contains("python3 secure-runner.py"))
+                .unwrap();
+            assert!(script.find("secure-runner.py").unwrap() < script.find("--trace").unwrap());
+            assert!(script.find("--trace").unwrap() < script.find("secure-profile.py").unwrap());
+            assert!(!calls
+                .iter()
+                .any(|s| s.contains("workflow-client") || s.contains("compare-portable")));
         }
     }
 }

@@ -4,6 +4,31 @@ The existing `workflows.json` catalog and four loopback payloads retain their
 contracts and sampling budgets. `topologies.json` adds a separate, versioned
 suite compiled into both the Rust driver and the C++ reference executable.
 
+## Performance evidence runs on CI droplets
+
+Use the dedicated workflow for timing, tracing and profiling; this development
+workspace is suitable for builds and correctness checks only:
+
+```sh
+gh workflow run performance.yml --ref codex/portable-qualification -f campaign=run-secure
+```
+
+`run-secure` uses the existing CI provisioning, dedicated-vCPU plan selection,
+resource receipts and unconditional cleanup. Encrypted peers run on separate
+physical cores of the client droplet. Deep service chains share those cores as
+recorded in each trial. This isolates driver costs; it does not measure VPC
+network latency. The other peer remains idle during this campaign. Select
+`run-remote` for the existing two-droplet VPC workloads and loopback controls.
+
+The encrypted campaign retains all 24 cases, TLS and QUIC, five repetitions with
+100 warmups and 1,000 measured operations, then separate 10/100-operation syscall
+traces. Post-timing Callgrind and DHAT profiles cover dependent/pipelined TLS
+reads and pipelined QUIC reads for portable, legacy and supported C++ paths.
+Each profile uses 50 and 500 operations with ten warmups, allowing setup costs
+to be subtracted. Simulated instruction counts and cumulative allocations are
+diagnostics, never native latency evidence. Artifacts include the droplet
+receipt, executable hashes, CPU topology, host state, raw samples and profiles.
+
 ## Encrypted comparison (current default)
 
 Every benchmark connection is encrypted. Capability RPC defaults to TLS 1.3 over

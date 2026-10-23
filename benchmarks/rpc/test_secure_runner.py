@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 
@@ -16,6 +17,27 @@ runner = module('secure_runner', 'secure-runner.py')
 counts = module('ciphertext_counts', 'ciphertext-counts.py')
 
 class SecurityEvidenceTests(unittest.TestCase):
+    def test_profiler_keeps_legacy_and_portable_selection_distinct(self):
+        profiler = module('secure_profile', 'secure-profile.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            campaign = object.__new__(profiler.Diagnostic)
+            campaign.certs = root / 'certificates'
+            campaign.binaries = {label: root / 'driver' for label in ['legacy', 'portable', 'portable-baseline']}
+            for mode in ['callgrind', 'dhat']:
+                campaign.mode = mode
+                for label in campaign.binaries:
+                    path = root / (mode + '-' + label)
+                    path.mkdir()
+                    with patch.object(profiler.subprocess, 'Popen') as launch:
+                        campaign.launch(label, ['workflow-measure'], 'quic', path, 'client', 2)
+                        command = launch.call_args.args[0]
+                        env = launch.call_args.kwargs['env']
+                        self.assertIn('--tool=' + mode, command)
+                        self.assertEqual(env['CAPNTPROTO_BENCH_PORTABLE'], '0' if label == 'legacy' else '1')
+                        self.assertEqual(env['CAPNTPROTO_BENCH_TRANSPORT'], 'quic')
+                        self.assertEqual(env['CAPNTPROTO_BENCH_CERTS'], str(campaign.certs))
+
     def test_plaintext_downgrade_wrong_transport_and_partial_samples_are_rejected(self):
         case = dict(family='loopback', name='loopback-64', payload_bytes=64)
         valid = dict(measurement_version=2, protocol='tcp', payload_bytes=64,
