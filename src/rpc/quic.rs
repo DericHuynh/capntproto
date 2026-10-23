@@ -218,7 +218,8 @@ pub async fn accept(incoming: Incoming, timeout: Duration) -> io::Result<Stream>
 pub type Network = twoparty::VatNetwork<Compat<tokio::io::ReadHalf<Stream>>>;
 pub fn network(stream: Stream, side: Side, options: ReaderOptions) -> Network {
     let (read, write) = tokio::io::split(stream);
-    let mut network = twoparty::VatNetwork::new(read.compat(), TokioIo(write), side, options);
+    let mut network =
+        twoparty::VatNetwork::new(read.compat(), TokioIo::encrypted(write), side, options);
     network.set_task_yield(super::io::defer);
     network
 }

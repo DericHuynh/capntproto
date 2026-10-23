@@ -38,7 +38,7 @@ pub fn serve(
     bootstrap: capnp::capability::Client,
 ) -> tokio::task::JoinHandle<capnp::Result<()>> {
     tokio::task::spawn_local(capnp_rpc::twoparty::TwoPartyClient::with_bootstrap(
-        TokioIo(io),
+        TokioIo::new(io),
         Some(bootstrap),
         capnp_rpc::rpc_twoparty_capnp::Side::Server,
     ))
@@ -48,7 +48,7 @@ pub fn serve(
 pub fn client<T: capnp::capability::FromClientHook>(
     io: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
 ) -> (T, tokio::task::JoinHandle<capnp::Result<()>>) {
-    let mut system = capnp_rpc::twoparty::TwoPartyClient::new(TokioIo(io));
+    let mut system = capnp_rpc::twoparty::TwoPartyClient::new(TokioIo::new(io));
     let client = system.bootstrap();
     (client, tokio::task::spawn_local(system))
 }

@@ -380,18 +380,63 @@ impl<VatId> Drop for QuestionRef<VatId> {
 
 #[derive(Default)]
 struct AnswerStatus {
+    cache: Weak<RefCell<Vec<Rc<AnswerStatus>>>>,
     response_context: RefCell<Option<Rc<dyn std::any::Any>>>,
     return_has_been_sent: Cell<bool>,
     received_finish: Cell<bool>,
     return_guards: Cell<usize>,
 }
 
+type AnswerStatusCache = Rc<RefCell<Vec<Rc<AnswerStatus>>>>;
+
+// The answer table is not necessarily the final owner: no-Finish replies retire
+// it during completion, while ReturnGuard and the completion stack still hold
+// the status. Recycle on the last status owner, regardless of release order.
+#[derive(Clone, Default)]
+struct AnswerStatusRef(Rc<AnswerStatus>);
+impl std::ops::Deref for AnswerStatusRef {
+    type Target = AnswerStatus;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl AnswerStatusRef {
+    fn acquire(cache: &AnswerStatusCache) -> Self {
+        let status = cache.borrow_mut().pop();
+        Self(status.unwrap_or_else(|| {
+            Rc::new(AnswerStatus {
+                cache: Rc::downgrade(cache),
+                ..AnswerStatus::default()
+            })
+        }))
+    }
+}
+impl Drop for AnswerStatusRef {
+    fn drop(&mut self) {
+        if Rc::strong_count(&self.0) != 1 {
+            return;
+        }
+        let Some(cache) = self.cache.upgrade() else {
+            return;
+        };
+        let context = self.response_context.borrow_mut().take();
+        // User contexts can reenter RPC. Retire them before borrowing the cache.
+        drop(context);
+        self.return_has_been_sent.set(false);
+        self.received_finish.set(false);
+        debug_assert_eq!(self.return_guards.get(), 0);
+        let mut cache = cache.borrow_mut();
+        if cache.len() < 64 {
+            cache.push(self.0.clone());
+        }
+    }
+}
+
 struct Answer<VatId>
 where
     VatId: 'static,
 {
-    status: Rc<AnswerStatus>,
-    recycle_to: Weak<ConnectionState<VatId>>,
+    status: AnswerStatusRef,
     request_words: usize,
     pipeline_only_guard: Option<ReturnGuard<VatId>>,
 
@@ -419,8 +464,7 @@ where
 impl<VatId> Answer<VatId> {
     fn new() -> Self {
         Self {
-            status: Rc::default(),
-            recycle_to: Weak::new(),
+            status: AnswerStatusRef::default(),
             request_words: 0,
             pipeline_only_guard: None,
             pipeline: None,
@@ -437,11 +481,9 @@ impl<VatId> Answer<VatId> {
 
 impl<VatId> Answer<VatId> {
     fn for_call(state: &Rc<ConnectionState<VatId>>) -> Self {
-        let status = state.answer_status_cache.borrow_mut().pop();
-        // Construct the remaining fields without a temporary default Rc.
+        let status = AnswerStatusRef::acquire(&state.answer_status_cache);
         Self {
-            status: status.unwrap_or_default(),
-            recycle_to: Rc::downgrade(state),
+            status,
             request_words: 0,
             pipeline_only_guard: None,
             pipeline: None,
@@ -452,25 +494,6 @@ impl<VatId> Answer<VatId> {
             join: None,
             callee_allocated: false,
             join_response: None,
-        }
-    }
-}
-impl<VatId> Drop for Answer<VatId> {
-    fn drop(&mut self) {
-        if Rc::strong_count(&self.status) != 1 {
-            return;
-        }
-        let Some(state) = self.recycle_to.upgrade() else {
-            return;
-        };
-        let context = self.status.response_context.borrow_mut().take();
-        drop(context);
-        self.status.return_has_been_sent.set(false);
-        self.status.received_finish.set(false);
-        debug_assert_eq!(self.status.return_guards.get(), 0);
-        let mut cache = state.answer_status_cache.borrow_mut();
-        if cache.len() < 64 {
-            cache.push(self.status.clone());
         }
     }
 }
@@ -687,7 +710,7 @@ where
     questions: RefCell<LocalTable<QuestionId, Question<VatId>>>,
     got_return_for_high_id: Cell<bool>,
     answers: RefCell<PeerTable<AnswerId, Answer<VatId>>>,
-    answer_status_cache: RefCell<Vec<Rc<AnswerStatus>>>,
+    answer_status_cache: AnswerStatusCache,
     response_cache: RefCell<Vec<Rc<ResponseVariant<VatId>>>>,
     retained_results_cache: RefCell<Vec<Rc<RetainedResults<VatId>>>>,
     joins: RefCell<join::Table<VatId>>,
@@ -739,7 +762,7 @@ impl<VatId> ConnectionState<VatId> {
             questions: RefCell::new(LocalTable::new()),
             got_return_for_high_id: Cell::new(false),
             answers: RefCell::new(PeerTable::new()),
-            answer_status_cache: RefCell::default(),
+            answer_status_cache: Rc::default(),
             response_cache: RefCell::default(),
             retained_results_cache: RefCell::default(),
             joins: RefCell::new(join::Table::default()),
@@ -2260,7 +2283,7 @@ async fn yield_once() {
 struct ReturnGuard<VatId: 'static> {
     state: Weak<ConnectionState<VatId>>,
     id: AnswerId,
-    status: Rc<AnswerStatus>,
+    status: AnswerStatusRef,
     redirect: bool,
     only_pipeline: bool,
 }
@@ -2268,7 +2291,7 @@ impl<VatId> ReturnGuard<VatId> {
     fn new(
         state: &Rc<ConnectionState<VatId>>,
         id: AnswerId,
-        status: Rc<AnswerStatus>,
+        status: AnswerStatusRef,
         redirect: bool,
     ) -> Self {
         status.return_guards.set(
@@ -2464,7 +2487,7 @@ where
         answer_id: AnswerId,
         redirect_results: bool,
         fulfiller: impl Into<Option<oneshot::Sender<ResultsInner<VatId>>>>,
-        status: Rc<AnswerStatus>,
+        status: AnswerStatusRef,
         pipeline_sender: Option<queued::PipelineInnerSender>,
     ) -> Self {
         Self {
@@ -4003,6 +4026,50 @@ mod references_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn answer_status_recycles_after_the_last_completion_owner() {
+        struct Context {
+            cache: AnswerStatusCache,
+            dropped: Rc<Cell<bool>>,
+        }
+        impl Drop for Context {
+            fn drop(&mut self) {
+                // Reentry is allowed before storage reaches the cache.
+                assert!(self.cache.borrow_mut().is_empty());
+                self.dropped.set(true);
+            }
+        }
+        let cache = AnswerStatusCache::default();
+        let status = AnswerStatusRef::acquire(&cache);
+        let address = Rc::as_ptr(&status.0);
+        let completion = status.clone();
+        status.return_has_been_sent.set(true);
+        status.received_finish.set(true);
+        let dropped = Rc::new(Cell::new(false));
+        *status.response_context.borrow_mut() = Some(Rc::new(Context {
+            cache: cache.clone(),
+            dropped: dropped.clone(),
+        }));
+        drop(status);
+        assert!(cache.borrow().is_empty());
+        assert!(!dropped.get());
+        drop(completion);
+        assert!(dropped.get());
+        assert_eq!(cache.borrow().len(), 1);
+        let reused = AnswerStatusRef::acquire(&cache);
+        assert_eq!(Rc::as_ptr(&reused.0), address);
+        assert!(!reused.return_has_been_sent.get());
+        assert!(!reused.received_finish.get());
+        assert!(reused.response_context.borrow().is_none());
+        let retained: Vec<_> = (0..64).map(|_| AnswerStatusRef::acquire(&cache)).collect();
+        drop(reused);
+        drop(retained);
+        assert_eq!(cache.borrow().len(), 64);
+        let owner = AnswerStatusRef::acquire(&cache);
+        drop(cache);
+        drop(owner); // A late completion cannot retain the driver or its cache.
+    }
 
     #[test]
     fn dropped_promise_cannot_be_upgraded_on_live_connection() {

@@ -41,7 +41,9 @@ python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-refe
         &host.options,
         &host.public.to_string(),
         command,
-        3600,
+        // The complete 48-case DHAT matrix alone took 57 minutes on the
+        // dedicated host. Leave room for the native and Callgrind phases.
+        7200,
         cancel,
     );
     // Salvage partial output independently of failure/cancellation, before the

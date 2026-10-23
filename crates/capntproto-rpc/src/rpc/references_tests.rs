@@ -1343,7 +1343,7 @@ fn unobserved_results_publish_answer_state_and_keep_capabilities_through_driven_
     struct Inspect {
         inner: Box<dyn crate::OutgoingMessage>,
         state: Rc<ConnectionState<Side>>,
-        status: Rc<AnswerStatus>,
+        status: AnswerStatusRef,
         driven: Rc<Cell<bool>>,
     }
     impl crate::OutgoingMessage for Inspect {

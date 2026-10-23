@@ -95,7 +95,7 @@ Two failed experiments were corrected, rather than weakening the relevant tests:
 
 The performance workflow now offers campaign=run-allocations. It uses the existing dedicated-droplet provisioning, artifact capture, and unconditional cleanup path. It runs DHAT across 24 workloads on each of TLS and QUIC (48 cases), wherever supported by each implementation, using 10 warmups and paired 5/50-iteration profiles, with every service peer included.
 
-The profiler sets CAPNTPROTO_BENCH_QUIC_IDLE_MS=120000 for all Rust diagnostic peers and records it in scope.json. Native runs keep the normal 10,000 ms timeout. The prior failures were consistent with already-connected service hops idling during instrumented setup, but that explanation is not yet confirmed by a successful new comparison. Downstream/service RPC errors are now retained in fixture stderr.
+The profiler sets CAPNTPROTO_BENCH_QUIC_IDLE_MS=120000 for all Rust diagnostic peers and records it in scope.json. Native runs keep the normal 10,000 ms timeout. The prior failures were consistent with already-connected service hops idling during instrumented setup. The complete follow-up ran all 336 trials successfully with this diagnostic timeout; that result does not independently prove the cause of the earlier failures. Downstream/service RPC errors are now retained in fixture stderr.
 
 Allocation-only reports explicitly contain no native latency or syscall-comparison claims. Complete allocation stacks are written incrementally to avoid holding every expanded stack report in memory.
 
@@ -141,4 +141,15 @@ The raw profiles cover every peer. Archive SHA-256 values:
 - `encrypted-benchmark-analysis` (artifact 12527596421, 119657446 bytes): `396f904a242b99052e4c07ca61a0e9a6cdbbc5b76ba8e6860c4564eb752b1b1b`.
 - `dedicated-benchmark-report` (artifact 12527033432, 284725274 bytes): `69d0cb8e2f78e847d8d42071dd168d91071183b24941bcd88635475e82d598b7`.
 
-The full allocation-stacks JSON expands to 3.68 GB. It is preserved in the workflow artifacts; only compact summaries and the profile scope are committed here. All 336 diagnostic trials together took 3429 seconds, close to the current one-hour SSH command budget. The full native-plus-tracing qualification campaign needs a larger explicit budget before it is run with this expanded DHAT matrix.
+The full allocation-stacks JSON expands to 3.68 GB. It is preserved in the workflow artifacts; only compact summaries and the profile scope are committed here. All 336 diagnostic trials together took 3429 seconds, close to that revision’s one-hour SSH command budget. The next candidate increases that budget before the full native-plus-tracing qualification campaign is run with this expanded DHAT matrix.
+
+
+## Follow-up: encrypted batches and answer-status ownership
+
+The next candidate coalesces encrypted vectored writes into reusable plaintext scratch storage when the complete batch fits within 128 KiB. This removes the segment-table/payload split at the rustls/quiche boundary. Large batches retain scatter/gather; ordinary unencrypted sockets retain their existing path. Partial writes and Pending consume only the reported prefix and retain no input borrow. Scratch capacity grows on demand and stays bounded per encrypted writer. Both drivers use this transport adapter, so current portable must be rebuilt for the comparison too.
+
+Answer status now returns to its bounded cache when the final status owner releases it, rather than only when the answer-table entry drops. That covers the no-Finish completion order seen in the allocation trace. User response contexts drop before the cache is borrowed; cached statuses contain no response context. The cache retains at most 64 statuses and its owners cannot keep the connection alive.
+
+Validation for this candidate: all 366 RPC unit tests, all 6 transport-adapter tests, and 100 selected encrypted transport, cancellation, admission, reply, pipeline, disconnect, and adoption integration tests passed. The known native portable early-pipeline failure described above was explicitly excluded from that selected run. RPC and root-library Clippy pass with warnings denied; all 26 cloud orchestration tests pass. Performance savings remain unmeasured until the dedicated campaign completes.
+
+The encrypted remote-command budget is now two hours and its CI measurement job allows 150 minutes, based on the measured 57-minute allocation matrix. This leaves room for the later native and Callgrind phases without dropping workload coverage. The planned frozen legacy control is scheduler candidate `8aa48c0367ab0a49d27babf4211abaa4d152da1d`.
