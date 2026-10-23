@@ -102,6 +102,8 @@ for n in [10,100]:
         traces.append(dict(iterations=n,transport=transport,case=case,variant=label,
             counts={k:dict(mean=statistics.mean(v.get(k,0) for v in values),sd=statistics.stdev(v.get(k,0) for v in values)) for k in sorted(keys)}))
 report['traces']=traces
+(directory/'summary.json').write_text(json.dumps(report,indent=2)+'\n')
+print('CORE_RESULT_JSON '+json.dumps(report),flush=True)
 # Exclusive instruction attribution from saved profiles; simulated, not native CPU time.
 pattern=re.compile(r'^\s*([\d,]+|\.)\s+([\d,]+|\.)\s+(.*)$')
 num=lambda s:0 if s=='.' else int(s.replace(',',''))
@@ -130,16 +132,23 @@ for trial in profiles['trials']:
     for peer in ['client','service-0']:
         path=root/'profiles'/trial['path']/(peer+'.callgrind')
         annotated=command('callgrind_annotate','--inclusive=no','--show=Ir,Bcm','--show-percs=no','--threshold=100','--auto=no',str(path))
-        files=collections.defaultdict(collections.Counter);categories=collections.defaultdict(collections.Counter);parsed=0;total=None
+        files=collections.defaultdict(collections.Counter);categories=collections.defaultdict(collections.Counter);parsed=collections.Counter();total=None
         for line in annotated.splitlines():
             match=pattern.match(line)
             if not match:continue
             ir,bcm,label=match.groups();cost=dict(Ir=num(ir),Bcm=num(bcm))
-            if label=='PROGRAM TOTALS':total=cost['Ir'];continue
-            parsed+=cost['Ir']
+            if label=='PROGRAM TOTALS':total=cost;continue
+            parsed.update(cost)
             source=normalize(label.split(' [',1)[0].split(':',1)[0])
             files[source].update(cost);categories[category(source)].update(cost)
-        assert total==parsed,(path,total,parsed)
+        assert total and parsed['Ir']>0 and all(parsed[k]<=v for k,v in total.items()),(path,total,parsed)
+        # Annotated functions can omit a few termination/threshold instructions.
+        # Preserve the exact raw summary as the authoritative total and expose
+        # every residual; never silently drop it from component attribution.
+        residual={k:v-parsed[k] for k,v in total.items()}
+        if any(residual.values()):
+            files['[unattributed Callgrind summary]'].update(residual)
+            categories['unattributed'].update(residual)
         attribution.append(dict(iterations=trial['iterations'],transport=trial['transport'],case=trial['case'],variant=trial['implementation'],peer=peer,files=dict(files),categories=dict(categories)))
 indexed={(r['iterations'],r['transport'],r['case'],r['variant'],r['peer']):r for r in attribution}
 costs=[]
