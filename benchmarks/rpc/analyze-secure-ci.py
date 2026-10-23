@@ -48,7 +48,7 @@ for trial in scope['trials']:
         delta=[b-a for a,b in zip(first[cpu],last[cpu])]
         if sum(delta)>0:steals[cpu]=100*delta[7]/sum(delta)
     first,last=named_counts(before.get('/sys/fs/cgroup/cpu.stat')),named_counts(after.get('/sys/fs/cgroup/cpu.stat'))
-    host_samples.append(dict(transport=trial['transport'],case=trial['case'],variant=trial['client'],path=trial['path'],steal_percent=steals,throttled_usec=last.get('throttled_usec',0)-first.get('throttled_usec',0),nr_throttled=last.get('nr_throttled',0)-first.get('nr_throttled',0)))
+    host_samples.append(dict(transport=trial['transport'],case=trial['case'],variant=trial['client'],path=trial['path'],steal_percent=steals,cpu_stat_available=bool(first and last),throttled_usec=(last.get('throttled_usec',0)-first.get('throttled_usec',0)) if first and last else None,nr_throttled=(last.get('nr_throttled',0)-first.get('nr_throttled',0)) if first and last else None))
 for row in native['rows']:
     for label,cell in row['variants'].items():
         values=cells[row['transport'],row['case']['name'],label]
@@ -67,7 +67,7 @@ for transport in ['tls','quic']:
 host=json.loads((root.parent/'host.json').read_text())
 report=dict(run=run,host=host,hardware=(root/'cpu.txt').read_text(),
     binaries=scope['binaries'],native_trials=len(scope['trials']),aggregate=aggregate,latency=native['rows'])
-report['host_counters']=dict(quotas=sorted(quotas),trials=len(host_samples),maximum_all_cpu_steal_percent=max((s['steal_percent'].get('cpu',0) for s in host_samples),default=0),maximum_single_cpu_steal_percent=max((v for s in host_samples for k,v in s['steal_percent'].items() if k!='cpu'),default=0),throttled_trials=sum(s['nr_throttled']>0 for s in host_samples),total_throttled_usec=sum(s['throttled_usec'] for s in host_samples))
+report['host_counters']=dict(quotas=sorted(quotas),trials=len(host_samples),maximum_all_cpu_steal_percent=max((s['steal_percent'].get('cpu',0) for s in host_samples),default=0),maximum_single_cpu_steal_percent=max((v for s in host_samples for k,v in s['steal_percent'].items() if k!='cpu'),default=0),trials_with_cpu_stat=sum(s['cpu_stat_available'] for s in host_samples),throttled_trials=sum((s['nr_throttled'] or 0)>0 for s in host_samples) if any(s['cpu_stat_available'] for s in host_samples) else None,total_throttled_usec=sum(s['throttled_usec'] or 0 for s in host_samples) if any(s['cpu_stat_available'] for s in host_samples) else None)
 (directory/'host-counters.json').write_text(json.dumps(host_samples,indent=2)+'\n')
 print('NATIVE_AGGREGATE',json.dumps(aggregate),flush=True)
 profiles=json.loads((root/'profiles/scope.json').read_text())
