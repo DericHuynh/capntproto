@@ -2,7 +2,9 @@
 
 ## Status
 
-**Complete measured comparison: 10/48 allocation targets met, 38 gaps, zero unmeasured cases. Further optimization is in progress.**
+**Latest measured scheduler comparison: 12/48 allocation targets met, 36 gaps, zero unmeasured cases. See the [scheduler report](../2026-10-23-scheduler-allocation/README.md). Further optimization is in progress.**
+
+The ownership comparison preserved below met 10/48 targets. It predates the scheduler and subsequent candidates.
 
 Implementation: [9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f](https://github.com/DericHuynh/capntproto/commit/9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f).
 Frozen legacy control with the same diagnostic fixtures: [b00460e3f6452449296c3b56b34372c6e6c23831](https://github.com/DericHuynh/capntproto/commit/b00460e3f6452449296c3b56b34372c6e6c23831).
@@ -21,7 +23,7 @@ The [complete comparison table](allocation-comparison.md) and [machine-readable 
 | QUIC concurrent-32 | 888.98 | 472.96 | 432.13 | unsupported |
 | QUIC services-4-deep-16-clients-8 | 5298.18 | 3337.18 | 2836.04 | unsupported |
 
-The scheduler follow-up `8aa48c0367ab0a49d27babf4211abaa4d152da1d` is being measured in [run 40010928237](https://github.com/DericHuynh/capntproto/actions/runs/40010928237), with `931c91ce3dd2751208fbdd3365c8286d126cac45` as its frozen legacy control. Its build and fixture checks passed; no scheduler savings are claimed yet.
+The scheduler follow-up `8aa48c0367ab0a49d27babf4211abaa4d152da1d` completed [run 40010928237](https://github.com/DericHuynh/capntproto/actions/runs/40010928237), with `931c91ce3dd2751208fbdd3365c8286d126cac45` as its frozen legacy control. Its [measured report](../2026-10-23-scheduler-allocation/README.md) attributes 128–384 removed driver nodes per concurrent service-chain batch. The target remains unmet overall; no native latency was measured in that allocation-only campaign.
 
 
 The target is legacy allocation blocks per complete operation <= min(portable, C++) for each equivalent workload. C++ QUIC is unsupported; portable supplies that target. Shared-library changes also affect portable, so the new candidate must be compared against portable rebuilt from the same source.
@@ -126,7 +128,7 @@ The change trades a larger fixed notification array and additional atomic operat
 
 Validation: all 365 RPC unit tests, 28 cancellation/ownership/admission integration tests, and warnings-denied RPC Clippy pass. The scheduler tests cover simultaneous producers and consumption, duplicate data publication, FIFO order, cursor wraparound, a suspended producer reservation, reused wake identities, foreign-thread wakes, fallback promotion, teardown, and bounded self-wakes. The preceding ownership candidate also passed 72 further streaming, flow-control, reconnect, join, authentication, and native multiparty tests.
 
-The next allocation campaign uses `931c91c` as its frozen legacy control to isolate this scheduler change, while comparing candidate legacy with current portable and pinned C++. Run 40002634814 remains the comparison of the earlier ownership changes against b00460e. The earlier ownership candidate met 10/48 targets; the scheduler follow-up is not measured yet.
+The next allocation campaign uses `931c91c` as its frozen legacy control to isolate this scheduler change, while comparing candidate legacy with current portable and pinned C++. Run 40002634814 remains the comparison of the earlier ownership changes against b00460e. The earlier ownership candidate met 10/48 targets; the completed scheduler follow-up meets 12/48. Its same-run frozen control meets 11/48; the extra large-QUIC passing row is not attributed to scheduler reuse. See the linked measured scheduler report for exact stack attribution.
 
 ## Residual allocation attribution
 
@@ -156,7 +158,7 @@ The encrypted remote-command budget is now two hours and its CI measurement job 
 
 ## Follow-up: borrowed completion for capability-bearing calls
 
-The encrypted-batch/status candidate `bbe8af44a55f49b3c82138aef9955e4e23aa9bde` is queued for measurement in [run 40016773400](https://github.com/DericHuynh/capntproto/actions/runs/40016773400). Its allocation savings remain unmeasured.
+The encrypted-batch/status candidate `bbe8af44a55f49b3c82138aef9955e4e23aa9bde` is measuring in [run 40016773400](https://github.com/DericHuynh/capntproto/actions/runs/40016773400). Its allocation savings remain unmeasured.
 
 The next dispatch change publishes the queued answer pipeline before entering application code. Ordinary capability-bearing handlers can then borrow the inbound context and complete on the first poll, as data-only handlers already do. Pending calls keep their independently scheduled execution; redirected and pipeline-only calls retain their existing ownership policy. Streaming barriers and protected-call admission remain in the local dispatcher.
 
@@ -176,7 +178,7 @@ For encrypted writers that do not support scatter/gather, the transport now also
 
 Local server shortening cancellation is now allocated only when `shorten_path()` supplies a task. Settled servers previously allocated a canceler and then created/cloned cancellation errors while dropping it, despite having no resolution work. Active shortening retains the existing cancellation path, including revocation and last-client teardown. This shared change affects both legacy and portable and must not be credited as a legacy-only advantage. Five focused local unit tests, 28 shortening/revocation/pipeline integration tests, and RPC Clippy passed.
 
-The next candidate will use the full encrypted qualification campaign: five native repetitions with mean and spread, selected ciphertext syscall traces, Callgrind diagnostics, and the complete 48-case DHAT matrix. Its frozen legacy control is `bbe8af44a55f49b3c82138aef9955e4e23aa9bde`. Dispatch is deferred until that preceding run has acquired the dedicated benchmark slot, so GitHub's single pending concurrency slot cannot cancel its measurement. No measurements are run in this workspace.
+Candidate `1a2d77250d49691a600ca97552003d95d053c202` is dispatched in [run 40022705577](https://github.com/DericHuynh/capntproto/actions/runs/40022705577) using the full encrypted qualification campaign: five native repetitions with mean and spread, selected ciphertext syscall traces, Callgrind diagnostics, and the complete 48-case DHAT matrix. Its frozen legacy control is `bbe8af44a55f49b3c82138aef9955e4e23aa9bde`. It was dispatched after the preceding run acquired the dedicated benchmark slot, so GitHub's single pending concurrency slot cannot cancel that measurement. No measurements are run in this workspace.
 
 ## Correctness gate: explicit executor admission
 
