@@ -26,6 +26,12 @@ scope = json.loads((root/'native/scope.json').read_text())
 assert not scope['diagnostic'] and not native['diagnostic']
 assert scope['repetitions']==5 and scope['iterations']==1000 and len(native['rows'])==48
 cells=collections.defaultdict(list)
+host_samples=[]
+quotas=set()
+def cpu_rows(value):
+    return {line.split()[0]: list(map(int,line.split()[1:9])) for line in (value or '').splitlines() if line.startswith('cpu')}
+def named_counts(value):
+    return {parts[0]: int(parts[1]) for line in (value or '').splitlines() if len(parts:=line.split())==2 and parts[1].isdigit()}
 for trial in scope['trials']:
     assert not trial['mixed']
     data=json.loads((root/'native'/trial['path']/'trial.json').read_text())
@@ -33,6 +39,16 @@ for trial in scope['trials']:
     assert data['security']['tls']=='1.3' and data['security']['authentication']=='server-certificate'
     assert all(type(n) is int and n>0 for n in data['latency_ns'])
     cells[trial['transport'],trial['case'],trial['client']].append(statistics.mean(data['latency_ns']))
+    state=json.loads((root/'native'/trial['path']/'host.json').read_text())
+    before,after=state['before'],state['after']
+    quotas.add(str(before.get('/sys/fs/cgroup/cpu.max')))
+    first,last=cpu_rows(before.get('/proc/stat')),cpu_rows(after.get('/proc/stat'))
+    steals={}
+    for cpu in first.keys() & last.keys():
+        delta=[b-a for a,b in zip(first[cpu],last[cpu])]
+        if sum(delta)>0:steals[cpu]=100*delta[7]/sum(delta)
+    first,last=named_counts(before.get('/sys/fs/cgroup/cpu.stat')),named_counts(after.get('/sys/fs/cgroup/cpu.stat'))
+    host_samples.append(dict(transport=trial['transport'],case=trial['case'],variant=trial['client'],path=trial['path'],steal_percent=steals,throttled_usec=last.get('throttled_usec',0)-first.get('throttled_usec',0),nr_throttled=last.get('nr_throttled',0)-first.get('nr_throttled',0)))
 for row in native['rows']:
     for label,cell in row['variants'].items():
         values=cells[row['transport'],row['case']['name'],label]
@@ -51,6 +67,8 @@ for transport in ['tls','quic']:
 host=json.loads((root.parent/'host.json').read_text())
 report=dict(run=run,host=host,hardware=(root/'cpu.txt').read_text(),
     binaries=scope['binaries'],native_trials=len(scope['trials']),aggregate=aggregate,latency=native['rows'])
+report['host_counters']=dict(quotas=sorted(quotas),trials=len(host_samples),maximum_all_cpu_steal_percent=max((s['steal_percent'].get('cpu',0) for s in host_samples),default=0),maximum_single_cpu_steal_percent=max((v for s in host_samples for k,v in s['steal_percent'].items() if k!='cpu'),default=0),throttled_trials=sum(s['nr_throttled']>0 for s in host_samples),total_throttled_usec=sum(s['throttled_usec'] for s in host_samples))
+(directory/'host-counters.json').write_text(json.dumps(host_samples,indent=2)+'\n')
 print('NATIVE_AGGREGATE',json.dumps(aggregate),flush=True)
 profiles=json.loads((root/'profiles/scope.json').read_text())
 raw=[];arena=[]
@@ -132,7 +150,7 @@ for trial in profiles['trials']:
     for peer in ['client','service-0']:
         path=root/'profiles'/trial['path']/(peer+'.callgrind')
         annotated=command('callgrind_annotate','--inclusive=no','--show=Ir,Bcm','--show-percs=no','--threshold=100','--auto=no',str(path))
-        files=collections.defaultdict(collections.Counter);categories=collections.defaultdict(collections.Counter);parsed=collections.Counter();total=None
+        files=collections.defaultdict(collections.Counter);functions=collections.defaultdict(collections.Counter);categories=collections.defaultdict(collections.Counter);parsed=collections.Counter();total=None
         for line in annotated.splitlines():
             match=pattern.match(line)
             if not match:continue
@@ -140,7 +158,7 @@ for trial in profiles['trials']:
             if label=='PROGRAM TOTALS':total=cost;continue
             parsed.update(cost)
             source=normalize(label.split(' [',1)[0].split(':',1)[0])
-            files[source].update(cost);categories[category(source)].update(cost)
+            files[source].update(cost);functions[normalize(label.split(' [',1)[0])].update(cost);categories[category(source)].update(cost)
         assert total and parsed['Ir']>0 and all(parsed[k]<=v for k,v in total.items()),(path,total,parsed)
         # Annotated functions can omit a few termination/threshold instructions.
         # Preserve the exact raw summary as the authoritative total and expose
@@ -149,20 +167,21 @@ for trial in profiles['trials']:
         if any(residual.values()):
             files['[unattributed Callgrind summary]'].update(residual)
             categories['unattributed'].update(residual)
-        attribution.append(dict(iterations=trial['iterations'],transport=trial['transport'],case=trial['case'],variant=trial['implementation'],peer=peer,files=dict(files),categories=dict(categories)))
+        attribution.append(dict(iterations=trial['iterations'],transport=trial['transport'],case=trial['case'],variant=trial['implementation'],peer=peer,files=dict(files),functions=dict(functions),categories=dict(categories)))
 indexed={(r['iterations'],r['transport'],r['case'],r['variant'],r['peer']):r for r in attribution}
 costs=[]
 for key,long in indexed.items():
     if key[0]!=500:continue
     short=indexed[(50,*key[1:])]
     row={k:long[k] for k in ['transport','case','variant','peer']}
-    for kind in ['files','categories']:
+    for kind in ['files','functions','categories']:
         keys=set(long[kind])|set(short[kind])
         row[kind]={k:{m:(long[kind].get(k,{}).get(m,0)-short[kind].get(k,{}).get(m,0))/450 for m in ['Ir','Bcm']} for k in keys}
     costs.append(row)
 (directory/'attribution.json').write_text(json.dumps(dict(marginal=costs,reader_arenas=arena),indent=2)+'\n')
-report['categories']=[{k:v for k,v in row.items() if k!='files'} for row in costs]
-report['hot_files']=[{k:v for k,v in row.items() if k not in ['files','categories']}|dict(files=sorted(row['files'].items(),key=lambda kv:kv[1]['Ir'],reverse=True)[:10]) for row in costs]
+report['categories']=[{k:v for k,v in row.items() if k not in ['files','functions']} for row in costs]
+report['hot_files']=[{k:v for k,v in row.items() if k not in ['files','functions','categories']}|dict(files=sorted(row['files'].items(),key=lambda kv:kv[1]['Ir'],reverse=True)[:10]) for row in costs]
+report['hot_functions']=[{k:row[k] for k in ['transport','case','variant','peer']}|dict(functions=sorted(row['functions'].items(),key=lambda kv:kv[1]['Ir'],reverse=True)[:10]) for row in costs]
 (directory/'summary.json').write_text(json.dumps(report,indent=2)+'\n')
 print('RESULT_JSON '+json.dumps(report),flush=True)
 assert run['conclusion']=='success', 'measurement or cleanup failed; retained evidence is diagnostic only'
