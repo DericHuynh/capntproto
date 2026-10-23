@@ -533,7 +533,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 if let call::send_results_to::ThirdParty(_) = call.get_send_results_to().which()? {
                     return answer_adoption::receive_call(&connection_state, message, &mut fds);
                 }
-                let capability = connection_state.get_message_target(call.get_target()?)?;
+                let capability = connection_state.get_dispatch_target(call.get_target()?)?;
                 let (interface_id, method_id, question_id, cap_table_array, redirect_results) = {
                     let redirect_results = match call.get_send_results_to().which()? {
                         call::send_results_to::Caller(()) => false,

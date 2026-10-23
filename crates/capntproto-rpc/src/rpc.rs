@@ -570,6 +570,22 @@ impl<VatId> Answer<VatId> {
     }
 }
 
+// Exported targets already have shared ownership. A call can retain that
+// reference directly; a promised-answer projection still returns an owned hook.
+enum InboundTarget {
+    Exported(Rc<dyn ClientHook>),
+    Projected(Box<dyn ClientHook>),
+}
+impl std::ops::Deref for InboundTarget {
+    type Target = dyn ClientHook;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Exported(target) => &**target,
+            Self::Projected(target) => &**target,
+        }
+    }
+}
+
 pub(crate) struct Export {
     references: ExportRefs,
 
@@ -577,7 +593,7 @@ pub(crate) struct Export {
     /// `exports_by_cap[clientHook]` points to this entry.
     canonical: bool,
 
-    client_hook: Box<dyn ClientHook>,
+    client_hook: Rc<dyn ClientHook>,
 
     // If this export is a promise (not a settled capability), the `resolve_op` represents the
     // ongoing operation to wait for that promise to resolve and then send a `Resolve` message.
@@ -591,7 +607,7 @@ impl Export {
         Self {
             references: ExportRefs::new(),
             canonical: false,
-            client_hook,
+            client_hook: Rc::from(client_hook),
             resolve_op: None,
             vine: None,
             reflected_vine: None,

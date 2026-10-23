@@ -1839,3 +1839,121 @@ fn answer_task_cancellation_wakes_pending_work_and_clears_cached_interests() {
         assert!(reused.task_waker.borrow().is_none());
     }
 }
+
+#[test]
+fn incoming_call_retains_export_without_cloning_a_hook_or_borrowing_the_table() {
+    struct Life(Rc<Cell<bool>>);
+    impl Drop for Life {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+    #[derive(Clone)]
+    struct Service {
+        life: Rc<Life>,
+        clones: Rc<Cell<usize>>,
+        id: Rc<Cell<u32>>,
+        state: Weak<ConnectionState<Side>>,
+    }
+    impl ClientHook for Service {
+        fn call_during_dispatch(
+            &self,
+            _: u64,
+            _: u16,
+            _: &mut dyn capnp::private::capability::CallContextHook,
+            _: CallHints,
+        ) -> Promise<(), Error> {
+            let state = self.state.upgrade().unwrap();
+            assert!(state.exports.try_borrow_mut().is_ok());
+            state
+                .release_export(ExportId::from_wire(self.id.get()), 1)
+                .unwrap();
+            assert!(
+                !self.life.0.get(),
+                "dispatch must retain a released export until entry returns"
+            );
+            Promise::ok(())
+        }
+        fn call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Box<dyn ParamsHook>,
+            _: Box<dyn ResultsHook>,
+        ) -> Promise<(), Error> {
+            unreachable!()
+        }
+        fn add_ref(&self) -> Box<dyn ClientHook> {
+            self.clones.set(self.clones.get() + 1);
+            Box::new(self.clone())
+        }
+        fn new_call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Option<capnp::MessageSize>,
+        ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+            unreachable!()
+        }
+        fn get_ptr(&self) -> usize {
+            Rc::as_ptr(&self.life) as usize
+        }
+        fn get_brand(&self) -> usize {
+            0
+        }
+        fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+            None
+        }
+        fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+            None
+        }
+        fn when_resolved(&self) -> Promise<(), Error> {
+            Promise::ok(())
+        }
+    }
+    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Incoming {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    let mut fixture = Fixture::new();
+    fixture.drain();
+    let dropped = Rc::new(Cell::new(false));
+    let clones = Rc::new(Cell::new(0));
+    let id = Rc::new(Cell::new(0));
+    let service = Service {
+        life: Rc::new(Life(dropped.clone())),
+        clones: clones.clone(),
+        id: id.clone(),
+        state: Rc::downgrade(&fixture.state),
+    };
+    let export = fixture.export(&service);
+    id.set(export.to_wire());
+    drop(service);
+    let before = clones.get();
+    let mut message = capnp::message::Builder::new_default();
+    let mut call = message.init_root::<message::Builder>().init_call();
+    call.set_question_id(42);
+    call.set_no_promise_pipelining(true);
+    call.reborrow()
+        .init_target()
+        .set_imported_cap(export.to_wire());
+    call.init_params();
+    ConnectionState::handle_message(&Rc::downgrade(&fixture.state), Box::new(Incoming(message)))
+        .unwrap();
+    assert_eq!(
+        clones.get(),
+        before,
+        "ordinary dispatch must not allocate another hook clone"
+    );
+    assert!(
+        dropped.get(),
+        "the dispatch reference releases the final capability owner"
+    );
+    fixture.drain();
+    assert_eq!(fixture.state.call_words.get(), 0);
+}

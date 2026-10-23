@@ -34,6 +34,22 @@ pub(super) fn reference_error(error: capntproto_rpc_engine::references::Error) -
 }
 
 impl<VatId: 'static> ConnectionState<VatId> {
+    pub(super) fn get_dispatch_target(
+        &self,
+        target: message_target::Reader,
+    ) -> capnp::Result<InboundTarget> {
+        if let message_target::ImportedCap(id) = target.which()? {
+            self.exports
+                .borrow()
+                .get(ExportId::from_wire(id))
+                .map(|export| InboundTarget::Exported(export.client_hook.clone()))
+                .ok_or_else(|| Error::failed("Message target is not a current export ID.".into()))
+        } else {
+            self.get_message_target(target)
+                .map(InboundTarget::Projected)
+        }
+    }
+
     pub(super) fn get_message_target(
         &self,
         target: message_target::Reader,
@@ -41,7 +57,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         match target.which()? {
             message_target::ImportedCap(export_id) => {
                 match self.exports.borrow().get(ExportId::from_wire(export_id)) {
-                    Some(exp) => Ok(exp.client_hook.clone()),
+                    Some(exp) => Ok(exp.client_hook.add_ref()),
                     _ => Err(Error::failed(
                         "Message target is not a current export ID.".to_string(),
                     )),
@@ -152,7 +168,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             .borrow_mut()
                             .remove(&exp.client_hook.get_ptr());
                     }
-                    exp.client_hook = resolution.clone();
+                    exp.client_hook = Rc::from(resolution.clone());
 
                     // The export now points to `resolution`, but it is not necessarily the
                     // canonical export for `resolution`. The export itself still represents
