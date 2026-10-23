@@ -2,12 +2,27 @@
 
 ## Status
 
-**Allocation campaign running; allocation parity is not yet verified.**
+**Complete measured comparison: 10/48 allocation targets met, 38 gaps, zero unmeasured cases. Further optimization is in progress.**
 
 Implementation: [9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f](https://github.com/DericHuynh/capntproto/commit/9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f).
 Frozen legacy control with the same diagnostic fixtures: [b00460e3f6452449296c3b56b34372c6e6c23831](https://github.com/DericHuynh/capntproto/commit/b00460e3f6452449296c3b56b34372c6e6c23831).
 
-[Dedicated allocation run 40002634814](https://github.com/DericHuynh/capntproto/actions/runs/40002634814) is measuring source `42eccc56f3c3b2207bf9adef0c1ebd581855e7ec`, whose driver implementation is 9650ddb. Its build, benchmark fixture tests, encrypted topology smoke checks, and certificate rejection checks passed. No local performance measurements were run. This run predates the portable idle-publication correction below; it remains diagnostic evidence until its complete profiles and cleanup results are reviewed.
+[Dedicated allocation run 40002634814](https://github.com/DericHuynh/capntproto/actions/runs/40002634814) completed successfully for source `42eccc56f3c3b2207bf9adef0c1ebd581855e7ec` (driver implementation 9650ddb). All 336 DHAT trials completed, with no failures or unpaired peers. Build checks, encrypted fixtures, certificate rejection, and cleanup of both droplets and SSH keys passed. No local performance measurements were run. This source predates the portable idle-publication correction described below.
+
+The [complete comparison table](allocation-comparison.md) and [machine-readable comparison](allocation-comparison.json) retain all 48 cases and the frozen control. Legacy is below C++ in all 24 supported TLS cases; portable is the lower reference throughout. Legacy meets that lower target in 7 TLS and 3 QUIC cases. These are cumulative allocation counts, not native latency or peak-memory results.
+
+| Workload | Frozen legacy | Legacy | Portable | C++ |
+| --- | ---: | ---: | ---: | ---: |
+| TLS unary-small | 28 | 15 | 12 | 91.49 |
+| TLS dependent-read | 118 | 86 | 64 | 246.98 |
+| TLS pipelined-read | 135 | 106 | 76 | 233.49 |
+| TLS concurrent-32 | 754 | 338 | 362 | 2062.49 |
+| TLS services-4-deep-16-clients-8 | 4563.09 | 2612 | 2344.60 | 8564.47 |
+| QUIC concurrent-32 | 888.98 | 472.96 | 432.13 | unsupported |
+| QUIC services-4-deep-16-clients-8 | 5298.18 | 3337.18 | 2836.04 | unsupported |
+
+The scheduler follow-up `8aa48c0367ab0a49d27babf4211abaa4d152da1d` is being measured in [run 40010928237](https://github.com/DericHuynh/capntproto/actions/runs/40010928237), with `931c91ce3dd2751208fbdd3365c8286d126cac45` as its frozen legacy control. Its build and fixture checks passed; no scheduler savings are claimed yet.
+
 
 The target is legacy allocation blocks per complete operation <= min(portable, C++) for each equivalent workload. C++ QUIC is unsupported; portable supplies that target. Shared-library changes also affect portable, so the new candidate must be compared against portable rebuilt from the same source.
 
@@ -49,7 +64,7 @@ The implementation now:
 - Caches empty outgoing envelopes, response owners, answer statuses, and released retained-result contexts. Payloads, capabilities, admission guards, and cancellation interests are released before caching.
 - Reuses independently owned receive buffers only after their readers release them. Retained readers remain independent of later reads and stream teardown.
 
-These are implementation changes, not measured savings. The exact allocation and byte reductions still require the new droplet results.
+The complete measured counts and bytes are in the saved comparison. The main concurrent TLS batch falls from 754 to 338 blocks (55.2% fewer); the four-service/eight-client TLS batch falls from 4563.09 to 2612 (42.8% fewer). These improvements do not establish full parity.
 
 ## Public API and memory tradeoffs
 
@@ -111,4 +126,19 @@ The change trades a larger fixed notification array and additional atomic operat
 
 Validation: all 365 RPC unit tests, 28 cancellation/ownership/admission integration tests, and warnings-denied RPC Clippy pass. The scheduler tests cover simultaneous producers and consumption, duplicate data publication, FIFO order, cursor wraparound, a suspended producer reservation, reused wake identities, foreign-thread wakes, fallback promotion, teardown, and bounded self-wakes. The preceding ownership candidate also passed 72 further streaming, flow-control, reconnect, join, authentication, and native multiparty tests.
 
-The next allocation campaign uses `931c91c` as its frozen legacy control to isolate this scheduler change, while comparing candidate legacy with current portable and pinned C++. Run 40002634814 remains the comparison of the earlier ownership changes against b00460e. Neither candidate has verified allocation parity yet.
+The next allocation campaign uses `931c91c` as its frozen legacy control to isolate this scheduler change, while comparing candidate legacy with current portable and pinned C++. Run 40002634814 remains the comparison of the earlier ownership changes against b00460e. The earlier ownership candidate met 10/48 targets; the scheduler follow-up is not measured yet.
+
+## Residual allocation attribution
+
+The new unary TLS trace totals 9 client and 6 service blocks. In addition to the remaining request/question/response/message wrappers, it records an extra `Vec<&[u8]>` in rustls's vectored writer on each peer. Portable's contiguous frame avoids those two slice-vector allocations. The legacy answer-status allocation also remains at one block per call despite the earlier cache: the answer can retire while completion owners still retain its status.
+
+QUIC exposes the frame split more directly. In concurrent-32, legacy allocates 64 quiche send buffers on each peer, while portable allocates 32 on each. The separate segment-table and payload slices therefore account for 64 extra allocations per complete batch. Native bytes, partial-write semantics, and flushing still have to remain correct when removing that split.
+
+Intermediate legacy service peers retain protected execution interests, completion slots, boxed method futures, and scheduler nodes. The ordinary data-only TLS concurrent case is already below portable; capability-bearing dependent/pipelined calls and intermediate services remain the larger protocol gaps. Large QUIC cases also include variable packet/ACK/range-buffer work; a one-pair allocation delta is not a native timing result.
+
+The raw profiles cover every peer. Archive SHA-256 values:
+
+- `encrypted-benchmark-analysis` (artifact 12527596421, 119657446 bytes): `396f904a242b99052e4c07ca61a0e9a6cdbbc5b76ba8e6860c4564eb752b1b1b`.
+- `dedicated-benchmark-report` (artifact 12527033432, 284725274 bytes): `69d0cb8e2f78e847d8d42071dd168d91071183b24941bcd88635475e82d598b7`.
+
+The full allocation-stacks JSON expands to 3.68 GB. It is preserved in the workflow artifacts; only compact summaries and the profile scope are committed here. All 336 diagnostic trials together took 3429 seconds, close to the current one-hour SSH command budget. The full native-plus-tracing qualification campaign needs a larger explicit budget before it is run with this expanded DHAT matrix.
