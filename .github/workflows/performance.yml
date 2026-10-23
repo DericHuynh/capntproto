@@ -70,7 +70,8 @@ jobs:
       - name: Compile individual release benchmarks without running them
         run: cargo run --locked -p capntproto-quality -- benchmark-build target/benchmark-build
       - name: Test droplet packaging, orchestration and cleanup
-        run: cargo test --locked -p capntproto-dev --lib cloud::
+        run: |
+          cargo test --locked -p capntproto-dev --lib cloud::
       - name: Test benchmark identity, validation, and CPU placement
         run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
       - name: Test latency means and spread calculations
