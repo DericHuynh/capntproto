@@ -7,6 +7,86 @@ use core::{
 use rpc_capnp::api::{Call as WireCall, CapDescriptor, Message, MessageTarget, Payload};
 const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 
+#[cfg(feature = "alloc")]
+#[test]
+fn borrowed_validation_preserves_limits_before_and_after_reader_promotion() {
+    fn exercise<'pool>(
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        limit: Option<usize>,
+        mixed: bool,
+    ) -> alloc::vec::Vec<Result<u32, Error>> {
+        let frame = Frame::build(
+            messages,
+            128,
+            capnp::message::ReaderOptions {
+                traversal_limit_in_words: limit,
+                ..Default::default()
+            },
+            |builder| calls::acknowledge(builder, AnswerId::from_wire(42)),
+        )
+        .unwrap();
+        let mut results = alloc::vec::Vec::new();
+        for index in 0..16 {
+            let read = |root: rpc_capnp::message::Reader<'_>| -> Result<u32, Error> {
+                let rpc_capnp::message::Return(result) =
+                    root.which().map_err(|_| Error::WrongMessage)?
+                else {
+                    return Err(Error::WrongMessage);
+                };
+                Ok(result?.get_answer_id())
+            };
+            let borrowed = mixed && (index < 2 || index % 2 == 1);
+            let result = if borrowed {
+                frame.with_borrowed_root(messages, read)
+            } else {
+                frame.with(messages, read)
+            }
+            .and_then(core::convert::identity);
+            if mixed && index < 2 {
+                assert!(
+                    frame.reader.get().is_none(),
+                    "validation does not create a retained arena"
+                );
+            }
+            results.push(result);
+        }
+        frame.release(messages);
+        results
+    }
+    for limit in [Some(0), Some(8), Some(16), Some(32), None] {
+        let mut words = [ZERO; 32];
+        let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
+        let fixed = messages::with_messages(&mut buffers, &mut [], |messages| {
+            let reference = exercise(messages, limit, false);
+            assert_eq!(exercise(messages, limit, true), reference);
+            reference
+        })
+        .unwrap();
+        let mut pool = messages::GrowingBuffers::new(1, 256, 263);
+        messages::with_growing_messages(
+            &mut pool,
+            capntproto_rpc_engine::connection::Growth {
+                initial: 0,
+                maximum: 1,
+            },
+            |messages| {
+                assert_eq!(exercise(messages, limit, false), fixed);
+                assert_eq!(exercise(messages, limit, true), fixed);
+            },
+        )
+        .unwrap();
+        if limit.is_some_and(|limit| limit >= 8) {
+            assert!(fixed.iter().any(Result::is_ok));
+            assert!(
+                fixed.iter().any(Result::is_err),
+                "finite allowance must exhaust"
+            );
+        } else if limit.is_none() {
+            assert!(fixed.iter().all(Result::is_ok));
+        }
+    }
+}
+
 #[test]
 fn complete_frame_copy_validates_framing_limits_and_recovers_fixed_storage() {
     let mut words = [ZERO; 16];

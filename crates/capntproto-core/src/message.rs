@@ -273,6 +273,13 @@ pub struct ReadBudget {
     pub(crate) limiter: crate::private::read_limiter::ReadLimiter,
 }
 impl ReadBudget {
+    /// Remaining traversal allowance, or `None` for an unlimited reader.
+    /// This is a snapshot; inspecting it does not consume or replenish words.
+    #[inline]
+    pub fn remaining_words(&self) -> Option<usize> {
+        self.limiter.remaining()
+    }
+
     pub fn new(words: Option<usize>) -> Self {
         Self {
             limiter: crate::private::read_limiter::ReadLimiter::new(words),

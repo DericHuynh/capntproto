@@ -10,6 +10,10 @@ on:
         description: Dedicated benchmark provisioning and cleanup credential
         required: false # Fork and Dependabot PRs only compile the bundle.
     inputs:
+      portable_base:
+        description: Optional full commit SHA to build as an interleaved portable control
+        default: ''
+        type: string
       campaign:
         default: run-remote
         type: string
@@ -21,6 +25,10 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      portable_base:
+        description: Optional full commit SHA to build as an interleaved portable control
+        default: ''
+        type: string
       campaign:
         description: Encrypted dedicated-loopback profiles or two-peer VPC workflows
         default: run-secure
@@ -85,6 +93,31 @@ jobs:
             --cpp target/benchmark-build/bundle/capnp-reference \
             --upstream target/benchmark-build/bundle/capnp-rust \
             --output "$RUNNER_TEMP/benchmark-topology-smoke"
+      - name: Validate the optional frozen portable revision
+        if: inputs.portable_base != ''
+        env:
+          PORTABLE_BASE: ${{ inputs.portable_base }}
+        run: test "${#PORTABLE_BASE}" -eq 40 && test -z "${PORTABLE_BASE//[0-9a-f]/}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: inputs.portable_base != ''
+        with:
+          ref: ${{ inputs.portable_base }}
+          path: target/portable-baseline-source
+          persist-credentials: false
+      - name: Build the frozen portable control with the same compiler and release profile
+        if: inputs.portable_base != ''
+        env:
+          PORTABLE_BASE: ${{ inputs.portable_base }}
+        run: |
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path target/portable-baseline-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cp benchmarks/rpc/target/release/capntproto-rpc-bench target/benchmark-build/bundle/driver-baseline
+          python3 - <<'PYTHON'
+          import hashlib, json, os
+          from pathlib import Path
+          bundle = Path('target/benchmark-build/bundle')
+          data = dict(commit=os.environ['PORTABLE_BASE'], sha256=hashlib.sha256((bundle/'driver-baseline').read_bytes()).hexdigest(), profile='release, fat LTO, one codegen unit, debug=1, overflow checks enabled')
+          (bundle/'portable-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
+          PYTHON
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -108,9 +141,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Explain benchmark scope
-        run: printf 'Release compilation and workflow smoke checks completed. Trusted runs next measure two dedicated VPC peers. Fork and Dependabot PRs stop after local validation; no remote latency result is claimed for them.\n' >> "$GITHUB_STEP_SUMMARY"
+        run: printf 'Release compilation and workflow smoke checks completed. Trusted runs next measure on dedicated droplets; the selected campaign records loopback or VPC topology. Fork and Dependabot PRs stop after local validation; no remote latency result is claimed for them.\n' >> "$GITHUB_STEP_SUMMARY"
   benchmark:
-    name: Measure two-peer workflows, validate, and clean up
+    name: Measure on dedicated droplets, validate, and clean up
     needs: build
     # 49699333 is Dependabot's immutable GitHub actor ID.
     if: >-

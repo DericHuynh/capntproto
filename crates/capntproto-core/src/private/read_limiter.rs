@@ -47,6 +47,12 @@ mod sync {
         }
 
         #[inline]
+        pub(crate) fn remaining(&self) -> Option<usize> {
+            self.error_on_limit_exceeded
+                .then(|| self.limit.load(Ordering::Relaxed))
+        }
+
+        #[inline]
         pub(crate) fn can_read(&self, amount: usize) -> Result<()> {
             // We use separate AtomicUsize::load() and AtomicUsize::store() steps, which may
             // result in undercounting reads if multiple threads are reading at the same time.
@@ -94,6 +100,11 @@ mod unsync {
                     error_on_limit_exceeded: false,
                 },
             }
+        }
+
+        #[inline]
+        pub(crate) fn remaining(&self) -> Option<usize> {
+            self.error_on_limit_exceeded.then(|| self.limit.get())
         }
 
         #[inline]

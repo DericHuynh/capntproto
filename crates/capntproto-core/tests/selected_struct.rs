@@ -490,10 +490,12 @@ fn borrowed_readers_cannot_reset_an_external_budget() {
     ];
     let segments = [capnp::Word::words_to_bytes(&words)];
     let budget = message::ReadBudget::new(Some(2));
+    assert_eq!(budget.remaining_words(), Some(2));
     {
         let first = message::Reader::with_budget(&segments[..], Default::default(), &budget);
         assert!(first.get_root::<capnp::any_struct::Reader>().is_ok());
     }
+    assert_eq!(budget.remaining_words(), Some(0));
     let second = message::Reader::with_budget(&segments[..], Default::default(), &budget);
     assert_eq!(
         second

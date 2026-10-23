@@ -206,7 +206,13 @@ impl<'pool> Frame<'pool> {
             let Some(segments) = self.share_segments(messages)? else {
                 return Ok(None);
             };
-            let reader = capnp::message::Reader::new(segments, self.options).into_shared()?;
+            // A one-use validation may already have consumed words. After
+            // promotion every view uses this shared owner, never the old budget.
+            let options = capnp::message::ReaderOptions {
+                traversal_limit_in_words: self.budget.remaining_words(),
+                ..self.options
+            };
+            let reader = capnp::message::Reader::new(segments, options).into_shared()?;
             let _ = self.reader.set(reader);
         }
         Ok(self.reader.get())
@@ -303,6 +309,25 @@ impl<'pool> Frame<'pool> {
                 Err(error)
             }
         }
+    }
+    /// Validate without allocating a persistent arena. The root must not be
+    /// retained through `retain_pointer`; payload admission uses `with` instead.
+    /// Reuse an existing shared reader on retries so its budget stays authoritative.
+    #[inline(always)]
+    fn with_borrowed_root<R>(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        f: impl FnOnce(rpc_capnp::message::Reader<'_>) -> R,
+    ) -> Result<R, Error> {
+        #[cfg(feature = "alloc")]
+        if let Some(reader) = self.reader.get() {
+            return Ok(f(reader.get_root()?));
+        }
+        let view = messages.read(&self.lease);
+        let reader = self.reader(&view)?;
+        reader
+            .with_root(|root| root.get_as().map(f))?
+            .map_err(Into::into)
     }
     #[inline(always)]
     pub fn with<R>(

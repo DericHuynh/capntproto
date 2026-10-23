@@ -184,7 +184,7 @@ pub fn try_send_granting<'pool, 'a, 'batch, 'e, 'table, A, E>(
         }
     };
     let prepared = (|| {
-        let result_exports = frame.with(messages, |root| {
+        let result_exports = frame.with_borrowed_root(messages, |root| {
             crate::admission::check_return(&mut pending, root, true).map_err(Error::Output)?;
             crate::publication::validate_root(&batch, root, scratch, |_, _| Ok(false))
                 .map_err(|error| Error::Output(error.into()))
@@ -349,7 +349,7 @@ pub fn try_send_reflected<'pool, 'a, 'batch, 'e, 'table, A, E, I>(
     };
     let prepared = (|| {
         let mut count = 0;
-        let result_exports = frame.with(messages, |root| {
+        let result_exports = frame.with_borrowed_root(messages, |root| {
             crate::admission::check_return(&mut pending, root, true).map_err(Error::Output)?;
             crate::publication::validate_root(&batch, root, scratch, |descriptor, index| {
                 count += 1;
