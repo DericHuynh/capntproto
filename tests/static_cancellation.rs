@@ -716,3 +716,56 @@ async fn replay_tlc_call_executor_traces() {
         })
         .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn inbound_calls_cannot_bypass_a_stopped_explicit_executor() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for synchronous in [true, false] {
+                for no_pipeline in [false, true] {
+                    let (gate, receiver) = oneshot::channel();
+                    let state = Rc::new(State {
+                        synchronous,
+                        ..Default::default()
+                    });
+                    *state.gate.borrow_mut() = Some(receiver);
+                    let (executor, driver) = capnp_rpc::new_call_executor();
+                    drop(driver);
+                    let local: policy::Client =
+                        capnp_rpc::new_client_with_executor(Service(state.clone()), executor);
+                    let hub = Rc::new(RefCell::new(Hub::default()));
+                    let server =
+                        RpcSystem::new(Box::new(Hub::network(&hub, 2)), Some(local.client));
+                    let mut caller = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
+                    let remote: policy::Client = caller.bootstrap(2);
+                    let server = tokio::task::spawn_local(server);
+                    let caller = tokio::task::spawn_local(caller);
+                    let mut request = remote.pending_request();
+                    request.hook.set_hints(capnp::capability::CallHints {
+                        no_promise_pipelining: no_pipeline,
+                        only_promise_pipeline: false,
+                    });
+                    let result = tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        request.send().promise,
+                    )
+                    .await
+                    .expect("stopped executor must reject the inbound call");
+                    let error = result
+                        .err()
+                        .expect("a stopped explicit executor cannot admit a call");
+                    assert!(error.extra.contains("executor"));
+                    assert!(
+                        !state.started.get(),
+                        "protected application entry follows admission"
+                    );
+                    drop(gate);
+                    caller.abort();
+                    server.abort();
+                    let _ = caller.await;
+                    let _ = server.await;
+                }
+            }
+        })
+        .await;
+}

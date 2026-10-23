@@ -15,6 +15,7 @@ use core::marker::PhantomData;
 /// cancellation policy, streaming barriers, membranes, or early pipelines.
 pub struct CallContext<'call, P, R> {
     hook: &'call mut dyn CallContextHook,
+    immediate_protection: bool,
     marker: PhantomData<(P, R)>,
 }
 impl<'call, P, R> CallContext<'call, P, R> {
@@ -22,16 +23,28 @@ impl<'call, P, R> CallContext<'call, P, R> {
     pub fn new(hook: &'call mut dyn CallContextHook) -> Self {
         Self {
             hook,
+            immediate_protection: true,
             marker: PhantomData,
         }
     }
     #[doc(hidden)]
     pub fn into_typed<A, B>(self) -> CallContext<'call, A, B> {
-        CallContext::new(self.hook)
+        CallContext {
+            hook: self.hook,
+            immediate_protection: self.immediate_protection,
+            marker: PhantomData,
+        }
     }
     #[doc(hidden)]
     pub fn into_reply_context(self) -> ReplyContext<'call, P, R> {
         ReplyContext(self)
+    }
+    /// An explicitly selected executor must admit protected execution before
+    /// entering application code, even when the inbound driver allows a poll.
+    #[doc(hidden)]
+    pub fn with_deferred_protection(mut self) -> Self {
+        self.immediate_protection = false;
+        self
     }
     /// Enter a protected non-streaming method under the existing immediate-poll
     /// permission. The runtime retains the cancellation guard and executor;
@@ -47,7 +60,10 @@ impl<'call, P, R> CallContext<'call, P, R> {
         R: 'static,
     {
         let results = self.hook.results();
-        if results.permits_immediate_poll() && results.cancellation_executor().is_some() {
+        if self.immediate_protection
+            && results.permits_immediate_poll()
+            && results.cancellation_executor().is_some()
+        {
             f(self)
         } else {
             self.defer(f)

@@ -1233,27 +1233,34 @@ where
         method_id: u16,
         context: &mut dyn capnp::private::capability::CallContextHook,
     ) -> Promise<(), Error> {
-        let inner = {
+        let (inner, explicit_executor) = {
             let state_ref = state.borrow();
             if let Some(e) = &state_ref.broken_error {
                 return Promise::err(e.clone());
             }
-            state_ref.inner.as_ref().expect("live server").clone()
+            (
+                state_ref.inner.as_ref().expect("live server").clone(),
+                state_ref.executor.is_some(),
+            )
         };
 
         let results = context.results();
-        let permits_immediate_poll = results.permits_immediate_poll();
+        let permits_immediate_poll = results.permits_immediate_poll() && !explicit_executor;
         let guard = results.cancellation_context();
         let executor = state
             .borrow()
             .executor
             .clone()
             .or_else(|| results.cancellation_executor());
-        let mut f = inner.dispatch_call(
-            interface_id,
-            method_id,
-            ::capnp::capability::CallContext::new(context),
-        );
+        let context = ::capnp::capability::CallContext::new(context);
+        // A user-supplied executor may already be stopped. Its spawn() must
+        // accept the protected task before either entry or the first poll.
+        let context = if explicit_executor {
+            context.with_deferred_protection()
+        } else {
+            context
+        };
+        let mut f = inner.dispatch_call(interface_id, method_id, context);
 
         let revocation = state.borrow().revocation.clone();
         if let Some(revocation) = revocation {
