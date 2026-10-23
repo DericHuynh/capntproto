@@ -25,15 +25,20 @@ impl Ready {
         loop {
             let mut remaining = old;
             let mut shift = 0;
-            while remaining != 0 {
+            let new = loop {
+                if remaining == 0 {
+                    // A missing slot leaves at most seven distinct IDs queued.
+                    break old | ((index as u32 + 1) << shift);
+                }
                 if remaining & 15 == index as u32 + 1 {
-                    return;
+                    // Even a duplicate must publish the producer's data to
+                    // the poll that consumes this notification. A load-only
+                    // return can race with dequeue and lose that publication.
+                    break old;
                 }
                 remaining >>= 4;
                 shift += 4;
-            }
-            // A missing slot means at most seven other distinct IDs are queued.
-            let new = old | ((index as u32 + 1) << shift);
+            };
             match self
                 .queue
                 .compare_exchange_weak(old, new, Ordering::AcqRel, Ordering::Acquire)
@@ -339,6 +344,56 @@ mod tests {
         }
         assert_eq!(packed, 0);
         assert_eq!(seen, u8::MAX);
+    }
+
+    #[test]
+    fn duplicate_notifications_publish_before_the_queued_poll() {
+        use std::sync::{atomic::AtomicBool, Barrier};
+        let ready = Ready {
+            queue: AtomicU32::new(0),
+            parent: AtomicWaker::new(),
+        };
+        let data = AtomicBool::new(false);
+        let start = Barrier::new(2);
+        let done = Barrier::new(2);
+        let rounds = if cfg!(miri) { 8 } else { 100_000 };
+        let mut lost = None;
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                for _ in 0..rounds {
+                    start.wait();
+                    data.store(true, Ordering::Release);
+                    ready.enqueue(0);
+                    done.wait();
+                }
+            });
+            for round in 0..rounds {
+                data.store(false, Ordering::Relaxed);
+                ready.queue.store(1, Ordering::Relaxed);
+                start.wait();
+                // Consume an already queued notification while another thread
+                // publishes data and wakes the same task. Either this poll
+                // observes the data, or another notification must remain.
+                let mut old = ready.queue.load(Ordering::Acquire);
+                loop {
+                    match ready.queue.compare_exchange_weak(
+                        old,
+                        old >> 4,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => break,
+                        Err(current) => old = current,
+                    }
+                }
+                let observed = data.load(Ordering::Acquire);
+                done.wait();
+                if !observed && ready.queue.load(Ordering::Acquire) == 0 {
+                    lost.get_or_insert(round);
+                }
+            }
+        });
+        assert_eq!(lost, None, "duplicate wake lost its data publication");
     }
 
     #[test]
