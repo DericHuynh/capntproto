@@ -2,7 +2,7 @@ use capntproto::storage::ObjectKey;
 use capntproto::storage::Revision;
 #[allow(dead_code)]
 mod support;
-use capnp::capability::Promise;
+use capnp::capability::ResponsePromise;
 use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     orm::{ObjectServer, ObjectState},
@@ -14,10 +14,7 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 use support::Hub;
 type Object = object::Client<document::Owned>;
 type History = history::Client<document::Owned>;
-type Read = Promise<
-    capnp::capability::Response<history::next_results::Owned<document::Owned>>,
-    capnp::Error,
->;
+type Read = ResponsePromise<history::next_results::Owned<document::Owned>>;
 
 async fn drain() {
     for _ in 0..64 {

@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 mod support;
 use capnp::{
-    capability::{FromClientHook, IntoTypelessPipeline, Promise, Response},
+    capability::{FromClientHook, IntoTypelessPipeline, Promise, ResponsePromise},
     Error,
 };
 use capnp_rpc::{PipelineBuilder, RpcSystem};
@@ -31,8 +31,8 @@ impl harness::Server for Echo {
         })
     }
 }
-type ParentPromise = Promise<Response<harness::pending_results::Owned>, Error>;
-type ChildPromise = Promise<Response<harness::value::Owned>, Error>;
+type ParentPromise = ResponsePromise<harness::pending_results::Owned>;
+type ChildPromise = ResponsePromise<harness::value::Owned>;
 struct State {
     results: RefCell<Option<harness::PendingResults>>,
     gate: RefCell<Option<oneshot::Receiver<bool>>>,

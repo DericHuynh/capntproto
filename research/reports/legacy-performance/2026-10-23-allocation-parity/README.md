@@ -2,12 +2,12 @@
 
 ## Status
 
-**Implementation pushed; allocation parity is not yet verified.**
+**Allocation campaign running; allocation parity is not yet verified.**
 
 Implementation: [9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f](https://github.com/DericHuynh/capntproto/commit/9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f).
 Frozen legacy control with the same diagnostic fixtures: [b00460e3f6452449296c3b56b34372c6e6c23831](https://github.com/DericHuynh/capntproto/commit/b00460e3f6452449296c3b56b34372c6e6c23831).
 
-The managed workspace became unavailable during final lint/build checks, after the implementation commit was pushed. The remote branch head was verified through the GitHub connector. No new droplet campaign was dispatched, and no local performance measurements were run.
+[Dedicated allocation run 40002634814](https://github.com/DericHuynh/capntproto/actions/runs/40002634814) is measuring source `42eccc56f3c3b2207bf9adef0c1ebd581855e7ec`, whose driver implementation is 9650ddb. Its build, benchmark fixture tests, encrypted topology smoke checks, and certificate rejection checks passed. No local performance measurements were run. This run predates the portable idle-publication correction below; it remains diagnostic evidence until its complete profiles and cleanup results are reviewed.
 
 The target is legacy allocation blocks per complete operation <= min(portable, C++) for each equivalent workload. C++ QUIC is unsupported; portable supplies that target. Shared-library changes also affect portable, so the new candidate must be compared against portable rebuilt from the same source.
 
@@ -59,26 +59,32 @@ Caches retain at most 64 empty entries per category per connection. The receive-
 
 Allocation reuse exchanges bounded retained memory for fewer allocator calls. Both cumulative allocation bytes and native latency must be checked; reducing allocation count alone does not establish faster execution.
 
-## Validation completed before the environment outage
+## Validation and an outstanding architecture gap
 
-- 81 core, 77 framing/futures, and 362 RPC unit tests passed after the completion-lifetime fixes.
-- 28 selected integration tests passed, including cancellation, static cancellation/model traces, admission, reply ownership, and ignored results.
-- 26 cloud orchestration tests passed, including allocation-only success/failure cleanup and evidence salvage.
-- 12 Python analysis/fixture tests passed, including allocation-only reports and all-peer marginal counts.
-- A subsequent dedicated protected-fork cross-thread wake regression test was added; its final run result could not be retrieved before the outage.
-- Final Clippy and the broader root test compilation were not confirmed complete. An earlier Clippy pass reported a test-only byte-literal style issue, which was corrected before the implementation commit.
+- 81 core and 77 framing/futures unit tests passed after the completion-lifetime fixes. The final protected-fork foreign-thread wake test also passed.
+- All 363 RPC unit tests pass with the portable idle-publication correction, including the strengthened publication-order regression.
+- All 28 selected cancellation, static cancellation/model-trace, admission, reply ownership, and ignored-result integration tests pass.
+- Expanded integration checks passed 79/80 tests: 33/34 answer-adoption, 6 disconnect-cleanup, 9 storage-history, 10 multiparty-join, 5 native pipeline-migration, 11 result-pipeline, and 5 revocable-server tests.
+- Core/futures/RPC Clippy passes with warnings denied. Root test compilation passes with default features; several root test targets unconditionally import native modules and cannot be compiled with all default features disabled.
+- All 26 cloud orchestration tests and 15 Python analysis/fixture tests pass. The comparison tests reject missing required comparators, unmatched trials, missing service peers, and inconsistent all-peer totals.
+
+Expanded testing reproduced an existing publication-order defect in frozen b00460e: portable bootstrap/control work could publish directly into the physical FIFO while the transport was still marked idle. The coordinator previously cleared idle at the later flush boundary. It now clears idle before producers execute and waits for control work and notifications to settle before announcing idle again. No new per-call allocation is introduced. This correction clears seven adoption failures.
+
+One pre-existing native integration failure remains: `third_party_tail_returns_over_authenticated_native` stalls in the portable branch while awaiting early pipeline resolution. Frozen b00460e with only the idle correction and test diagnostics reproduces the same failure; the legacy branch completes. During the stall, all three drivers remain active, the caller has one published provision and no rendezvous waiter, and the projected endpoint is bound but unsettled, with no forwarding hook or introduction. The ten-second timeout is unchanged.
+
+The portable pipeline architecture uses a coarse `PipelineState.used` marker: deriving a capability with `get_pipelined_cap()` marks the whole pipeline used, and `CallTasks::adopt_pipeline()` refuses to replace a used pipeline. This rule preserves earlier-call ordering but also constrains early route migration. It needs investigation of individual projection use and ordering fences; blindly clearing the marker or rebinding previously used references would violate existing route-ordering tests. The observed native timeout is recorded as an outstanding gap, not a qualified passing test or a regression attributed to the new legacy allocations. Speculative forwarding-queue and resolution-wait changes did not clear it and were removed.
 
 Two failed experiments were corrected, rather than weakening the relevant tests: executor-only protected execution broke caller ownership after executor shutdown, and retaining an already-completed response adapter delayed pipeline cancellation. The current implementation retains both execution interests and releases completed response adapters immediately.
 
-## Droplet campaign prepared
+## Droplet campaign and comparison contract
 
-The performance workflow now offers campaign=run-allocations. It uses the existing dedicated-droplet provisioning, artifact capture, and unconditional cleanup path. It runs DHAT across all 24 TLS/QUIC cases supported by each implementation, using 10 warmups and paired 5/50-iteration profiles, with every service peer included.
+The performance workflow now offers campaign=run-allocations. It uses the existing dedicated-droplet provisioning, artifact capture, and unconditional cleanup path. It runs DHAT across 24 workloads on each of TLS and QUIC (48 cases), wherever supported by each implementation, using 10 warmups and paired 5/50-iteration profiles, with every service peer included.
 
 The profiler sets CAPNTPROTO_BENCH_QUIC_IDLE_MS=120000 for all Rust diagnostic peers and records it in scope.json. Native runs keep the normal 10,000 ms timeout. The prior failures were consistent with already-connected service hops idling during instrumented setup, but that explanation is not yet confirmed by a successful new comparison. Downstream/service RPC errors are now retained in fixture stderr.
 
 Allocation-only reports explicitly contain no native latency or syscall-comparison claims. Complete allocation stacks are written incrementally to avoid holding every expanded stack report in memory.
 
-Resume command after workspace recovery:
+Campaign command (already dispatched for run 40002634814):
 
 ```sh
 gh workflow run performance.yml \
@@ -90,3 +96,5 @@ gh workflow run performance.yml \
 ```
 
 This compares candidate legacy, frozen legacy, current portable, and pinned C++ with matched diagnostic fixtures. Inspect all profile failures, paired counts, bytes, and full allocation stacks; continue optimizing any remaining gap. Once allocation parity is established, run the five-repetition native qualification campaign to check latency and spread.
+
+The saved-evidence analyzer now emits `allocation-comparison.json` and `allocation-comparison.md`. Each declared workload requires both complete DHAT trials and every client/service peer for legacy and its comparators. TLS requires portable and C++; QUIC requires portable. The target is their minimum unrounded block count, with only floating-point roundoff tolerance. Incomplete comparisons remain unmeasured. Cumulative bytes and the frozen legacy control are retained alongside the target. These reports contain no native latency or peak-memory claims.

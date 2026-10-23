@@ -1,6 +1,7 @@
 """Analyze saved CI droplet artifacts; never launches benchmark workloads."""
 import argparse, collections, json, math, os, re, statistics, subprocess, sys, time
 from pathlib import Path
+from allocation_comparison import compare as compare_allocations, markdown as allocation_markdown
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('run_id')
 parser.add_argument('directory', type=Path)
@@ -132,6 +133,11 @@ report['arena_counts']=[{k:v for k,v in r.items() if k!='sites'}|dict(blocks=sum
 report['profile_trials']=len(profiles['trials'])
 report['profile_failures']=profiles.get('failures', [])
 report['unpaired_profile_peers']=[{k:r[k] for k in ['mode','transport','case','variant','iterations','peer']} for r in raw if any((r['mode'],r['transport'],r['case'],r['variant'],n,r['peer']) not in index for n in r['points'])]
+if profiles.get('allocation_workloads'):
+    comparison = compare_allocations(report, profiles)
+    (directory/'allocation-comparison.json').write_text(json.dumps(comparison, indent=2)+'\n')
+    (directory/'allocation-comparison.md').write_text(allocation_markdown(comparison))
+    report['allocation_comparison'] = {k: v for k, v in comparison.items() if k != 'rows'}
 traces=[]
 for n in [10,100]:
     path=root/f'trace-{n}'

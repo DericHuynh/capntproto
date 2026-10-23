@@ -161,8 +161,7 @@ struct Fixture {
     used: harness::Client,
     gate: Option<oneshot::Sender<()>>,
     publish: Option<oneshot::Sender<()>>,
-    old_calls:
-        Vec<capnp::capability::Promise<capnp::capability::Response<harness::value::Owned>, Error>>,
+    old_calls: Vec<capnp::capability::ResponsePromise<harness::value::Owned>>,
     result: Option<capnp::capability::RemotePromise<harness::pending_results::Owned>>,
     log: Rc<RefCell<Vec<u32>>>,
     caller: Handle,

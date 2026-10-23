@@ -72,10 +72,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         // resource may resume its owner within the same turn.
         let mut remaining = self.options.budget.get();
         loop {
-            if !queue.is_empty() && self.idle {
-                self.idle = false;
-                controls.set_idle(false);
-            }
             // poll_work_budget registers the parent before consuming changed,
             // including on idle polls. A control callback can wake before that
             // registration: its changed flag is consumed later in this same
@@ -84,6 +80,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 != WorkSet::NONE
             {
                 self.control_idle = false;
+            }
+            // A hosted queue publishes into the transport during control or
+            // application work, before the output poll below. Revoke idle before
+            // either producer runs; a flush-time notification would be too late.
+            if self.idle
+                && (!queue.is_empty()
+                    || !self.control_idle
+                    || self.schedule.active != WorkSet::NONE
+                    || self.notifications.pending() != WorkSet::NONE)
+            {
+                self.idle = false;
+                controls.set_idle(false);
             }
             if !self.control_idle {
                 // Controls observe both protocol progress and independently woken
@@ -162,6 +170,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.schedule.active |= WorkSet::CALLS;
             }
             let idle = self.schedule.active == WorkSet::NONE
+                && self.control_idle
+                && self.notifications.pending() == WorkSet::NONE
                 && output_ready
                 && queue.is_empty()
                 && self.commands.is_empty()
