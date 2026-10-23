@@ -5,6 +5,13 @@ published as GitHub Actions artifacts. See [the quality guide](../../docs/wiki/Q
 for report generation, coverage gates, and the comparison charts in each report's
 README.
 
+The [CI droplet comparison and borrowed Return validation](portable-performance/2026-10-23-ci-droplets/README.md)
+records encrypted five-run measurements, syscall traces, instruction/allocation
+profiles, frozen portable controls and explicit remaining legacy gaps. All new
+performance evidence comes from the CI-provisioned DigitalOcean droplets.
+Earlier local campaigns below remain diagnostic history and do not qualify the
+current latency targets.
+
 The [portable path fusion and retained metadata](portable-performance/2026-10-23-fused-metadata/README.md)
 removes repeated capability ownership conversion and completion work, and retains
 validated cleanup facts. Five-run comparisons and profiles show fewer instructions

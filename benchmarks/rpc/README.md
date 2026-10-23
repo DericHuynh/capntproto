@@ -15,10 +15,15 @@ gh workflow run performance.yml --ref codex/portable-qualification -f campaign=r
 
 `run-secure` uses the existing CI provisioning, dedicated-vCPU plan selection,
 resource receipts and unconditional cleanup. Encrypted peers run on separate
-physical cores of the client droplet. Deep service chains share those cores as
+guest-reported cores of the client droplet. Deep service chains share those cores as
 recorded in each trial. This isolates driver costs; it does not measure VPC
 network latency. The other peer remains idle during this campaign. Select
 `run-remote` for the existing two-droplet VPC workloads and loopback controls.
+
+For a same-campaign portable control, pass `-f portable_base=FULL_40_CHARACTER_SHA`.
+CI builds that revision in an isolated source tree with the same compiler and
+release profile, then interleaves both portable binaries on the same droplet.
+The revision must include the encrypted fixture and portable-engine metadata.
 
 The encrypted campaign retains all 24 cases, TLS and QUIC, five repetitions with
 100 warmups and 1,000 measured operations, then separate 10/100-operation syscall
@@ -28,6 +33,16 @@ Each profile uses 50 and 500 operations with ten warmups, allowing setup costs
 to be subtracted. Simulated instruction counts and cumulative allocations are
 diagnostics, never native latency evidence. Artifacts include the droplet
 receipt, executable hashes, CPU topology, host state, raw samples and profiles.
+
+Analyze a completed campaign without launching workloads (requires authenticated
+`gh`, Python and `callgrind_annotate`):
+
+```sh
+GH_REPO=DericHuynh/capntproto python3 benchmarks/rpc/analyze-secure-ci.py RUN_ID target/saved-analysis
+```
+
+This downloads the saved artifact, verifies sample counts and statistics, and
+summarizes native latency, marginal profiles, socket counts and host counters.
 
 ## Encrypted comparison (current default)
 
