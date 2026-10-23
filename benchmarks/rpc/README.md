@@ -20,19 +20,28 @@ recorded in each trial. This isolates driver costs; it does not measure VPC
 network latency. The other peer remains idle during this campaign. Select
 `run-remote` for the existing two-droplet VPC workloads and loopback controls.
 
-For a same-campaign portable control, pass `-f portable_base=FULL_40_CHARACTER_SHA`.
-CI builds that revision in an isolated source tree with the same compiler and
-release profile, then interleaves both portable binaries on the same droplet.
-The revision must include the encrypted fixture and portable-engine metadata.
+For a same-campaign control, pass `-f portable_base=FULL_40_CHARACTER_SHA` or
+`-f legacy_base=FULL_40_CHARACTER_SHA`. CI builds each selected revision in an
+isolated source tree with the same compiler and release profile, then interleaves
+candidate and frozen binaries on the same droplet. The revision must include the
+encrypted fixture and the matching engine metadata.
 
 The encrypted campaign retains all 24 cases, TLS and QUIC, five repetitions with
 100 warmups and 1,000 measured operations, then separate 10/100-operation syscall
 traces. Post-timing Callgrind and DHAT profiles cover dependent/pipelined TLS
-reads and pipelined QUIC reads for portable, legacy and supported C++ paths.
-Each profile uses 50 and 500 operations with ten warmups, allowing setup costs
-to be subtracted. Simulated instruction counts and cumulative allocations are
-diagnostics, never native latency evidence. Artifacts include the droplet
-receipt, executable hashes, CPU topology, host state, raw samples and profiles.
+reads and pipelined QUIC reads for portable, legacy and supported C++ paths,
+using 50 and 500 operations. TLS and QUIC also profile 32-way concurrency,
+depth-32 concurrent access, and four services serving eight concurrent clients,
+using 5 and 50 batches. Every profile uses ten warmups; subtraction removes
+fixed setup work. Counts are per whole fixture operation or batch, summed over
+the client and **every service hop**. Simulated instruction counts and cumulative
+allocations are diagnostics, never native latency evidence. Artifacts include
+the droplet receipt, executable hashes, CPU topology, host state, raw samples,
+profiles and allocation stacks. CI analyzes the saved evidence after cleanup
+and publishes a separate `encrypted-benchmark-analysis` artifact. A failed
+profile retains its peer logs and lets the remaining controls finish, but still
+fails the campaign. Analysis records the measurement outcome and excludes
+unpaired short/long profiles instead of treating missing data as zero.
 
 Analyze a completed campaign without launching workloads (requires authenticated
 `gh`, Python and `callgrind_annotate`):
@@ -67,7 +76,9 @@ To measure a transport change against frozen controls, pass `--rust LEGACY`,
 `--portable CANDIDATE`, and `--portable-baseline PREVIOUS`. Each executable is
 used on both ends and every service hop of its cell. The baseline label still
 requires portable-engine metadata; binary hashes distinguish the two portable
-builds. Without these overrides, legacy and portable use `--rust`.
+builds. `--legacy-baseline PREVIOUS` adds a frozen legacy executable and requires
+legacy-engine metadata on every peer. Without these overrides, legacy and
+portable use `--rust`.
 
 `--transport tls|quic|both` defaults to both. `--comparators` adds gRPC/WSS and
 optional independent upstream Rust to their supported loopback/workflow cells.
