@@ -1,4 +1,7 @@
 import copy
+import contextlib
+import io
+import json
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -37,6 +40,38 @@ class SecurityEvidenceTests(unittest.TestCase):
                         self.assertEqual(env['CAPNTPROTO_BENCH_PORTABLE'], '0' if runner.engine(label) == 'legacy' else '1')
                         self.assertEqual(env['CAPNTPROTO_BENCH_TRANSPORT'], 'quic')
                         self.assertEqual(env['CAPNTPROTO_BENCH_CERTS'], str(campaign.certs))
+
+    def test_profile_failure_preserves_later_controls_and_fails_campaign(self):
+        profiler = module('secure_profile', 'secure-profile.py')
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+            root = Path(directory)
+            driver = root / 'driver'
+            driver.touch()
+            output = root / 'profiles'
+            stack.enter_context(patch.object(profiler.sys, 'argv', ['secure-profile.py',
+                '--rust', str(driver), '--cpp', str(driver), '--legacy-baseline', str(driver),
+                '--output', str(output)]))
+            stack.enter_context(patch.object(profiler.r, 'idle_host'))
+            stack.enter_context(patch.object(profiler.r, 'physical_cpus', return_value=([0, 1], 'fixture')))
+            stack.enter_context(patch.object(profiler.r.certificates, 'generate', return_value=root))
+            stack.enter_context(patch.object(profiler.r.topology, 'digest', return_value='fixture'))
+            campaign = stack.enter_context(patch.object(profiler, 'Diagnostic')).return_value
+            calls = []
+            def trial(*args):
+                calls.append(args)
+                if len(calls) == 1:
+                    raise AssertionError('fixture disconnect')
+                return dict(services=[dict(hop=0)])
+            campaign.trial.side_effect = trial
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            with self.assertRaisesRegex(SystemExit, '1 profile trials failed'):
+                profiler.main()
+            scope = json.loads((output / 'scope.json').read_text())
+            self.assertEqual(len(calls), 128)
+            self.assertEqual(len(scope['trials']), 127)
+            self.assertEqual(len(scope['failures']), 1)
+            self.assertIn('fixture disconnect', scope['failures'][0]['error'])
+            self.assertEqual(scope['trials'][-1]['implementation'], 'legacy-baseline')
 
     def test_plaintext_downgrade_wrong_transport_and_partial_samples_are_rejected(self):
         case = dict(family='loopback', name='loopback-64', payload_bytes=64)

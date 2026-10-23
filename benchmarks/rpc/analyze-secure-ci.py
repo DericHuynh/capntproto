@@ -5,6 +5,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('run_id')
 parser.add_argument('directory', type=Path)
 parser.add_argument('--saved-root', type=Path, help='Analyze already extracted evidence inside the measurement job.')
+parser.add_argument('--measurement-outcome', choices=['success', 'failure'], help='Explicit measurement step outcome when analyzing saved CI evidence.')
 args = parser.parse_args()
 run_id, directory = args.run_id, args.directory
 assert run_id.isdecimal()
@@ -15,7 +16,7 @@ if args.saved_root:
     root = args.saved_root
     run = dict(headSha=os.environ['GITHUB_SHA'], url=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run_id}",
                status='analysis-before-upload', conclusion=None)
-    provenance = dict(run=run, source='same-job extracted droplet archive; final job status must be checked separately')
+    provenance = dict(run=run, measurement_outcome=args.measurement_outcome, source='saved droplet archive; final job status must be checked separately')
     summaries = [root/'native/summary.json']
 else:
     deadline = time.monotonic() + 50 * 60
@@ -80,7 +81,7 @@ for transport in ['tls','quic']:
             aggregate[transport][reference]=dict(cases=len(pairs),lower_means=sum(a<b for a,b in pairs),
                 geometric_mean_latency_change_percent=100*(math.exp(statistics.mean(math.log(a/b) for a,b in pairs))-1))
 host=json.loads((root.parent/'host.json').read_text())
-report=dict(run=run,host=host,hardware=(root/'cpu.txt').read_text(),
+report=dict(run=run,measurement_outcome=args.measurement_outcome,host=host,hardware=(root/'cpu.txt').read_text(),
     binaries=scope['binaries'],native_trials=len(scope['trials']),aggregate=aggregate,latency=native['rows'])
 report['host_counters']=dict(quotas=sorted(quotas),trials=len(host_samples),maximum_all_cpu_steal_percent=max((s['steal_percent'].get('cpu',0) for s in host_samples),default=0),maximum_single_cpu_steal_percent=max((v for s in host_samples for k,v in s['steal_percent'].items() if k!='cpu'),default=0),trials_with_cpu_stat=sum(s['cpu_stat_available'] for s in host_samples),throttled_trials=sum((s['nr_throttled'] or 0)>0 for s in host_samples) if any(s['cpu_stat_available'] for s in host_samples) else None,total_throttled_usec=sum(s['throttled_usec'] or 0 for s in host_samples) if any(s['cpu_stat_available'] for s in host_samples) else None)
 (directory/'host-counters.json').write_text(json.dumps(host_samples,indent=2)+'\n')
@@ -112,7 +113,8 @@ totals=collections.defaultdict(collections.Counter)
 for r in raw:
     lo,hi=r['points']
     if r['iterations']!=hi:continue
-    short=index[r['mode'],r['transport'],r['case'],r['variant'],lo,r['peer']]
+    short=index.get((r['mode'],r['transport'],r['case'],r['variant'],lo,r['peer']))
+    if short is None: continue
     counts={k:(v-short['counts'].get(k,0))/(hi-lo) for k,v in r['counts'].items()}
     marginal.append({k:v for k,v in r.items() if k not in ['counts','iterations']}|dict(per_operation=counts))
     totals[r['mode'],r['transport'],r['case'],r['variant']].update(counts)
@@ -120,6 +122,8 @@ report['profiles']=[dict(mode=k[0],transport=k[1],case=k[2],variant=k[3],per_ope
 report['profile_peers']=marginal
 report['arena_counts']=[{k:v for k,v in r.items() if k!='sites'}|dict(blocks=sum(p['blocks'] for p in r['sites'])) for r in arena]
 report['profile_trials']=len(profiles['trials'])
+report['profile_failures']=profiles.get('failures', [])
+report['unpaired_profile_peers']=[{k:r[k] for k in ['mode','transport','case','variant','iterations','peer']} for r in raw if any((r['mode'],r['transport'],r['case'],r['variant'],n,r['peer']) not in index for n in r['points'])]
 traces=[]
 for n in [10,100]:
     path=root/f'trace-{n}'
@@ -190,7 +194,8 @@ costs=[]
 for key,long in indexed.items():
     lo,hi=long['points']
     if key[0]!=hi:continue
-    short=indexed[(lo,*key[1:])]
+    short=indexed.get((lo,*key[1:]))
+    if short is None: continue
     row={k:long[k] for k in ['transport','case','variant','peer']}
     for kind in ['files','functions','categories']:
         keys=set(long[kind])|set(short[kind])
@@ -218,7 +223,8 @@ allocation_costs=[]
 for key,long in allocation_index.items():
     lo,hi=long['points']
     if key[3]!=hi: continue
-    short=allocation_index[(*key[:3],lo,key[4])]
+    short=allocation_index.get((*key[:3],lo,key[4]))
+    if short is None: continue
     first,last=allocation_counts(short),allocation_counts(long)
     sites=[dict(frames=frames, **{m:(last[frames][m]-first[frames][m])/(hi-lo) for m in ['blocks','bytes']}) for frames in first.keys()|last.keys()]
     allocation_costs.append({k:long[k] for k in ['transport','case','variant','peer']} | dict(sites=sorted(sites,key=lambda s:s['blocks'],reverse=True)))

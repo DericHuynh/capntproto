@@ -48,7 +48,15 @@ class SavedAnalysisTests(unittest.TestCase):
                 for peer in ['client', 'service-0', 'service-1', 'service-2', 'service-3']:
                     save(root/'profiles'/path/(peer+'.dhat.json'), dict(ftbl=['site'],
                          pps=[dict(tbk=3+2*iterations, tb=48+32*iterations, fs=[0])]))
-            save(root/'profiles/scope.json', dict(trials=profiles))
+            # A failed short trial must not turn an unmatched long trial into
+            # a marginal count or discard the other completed controls.
+            unpaired = dict(profiles[-1], path='unpaired-long', case='failed-pair')
+            profiles.append(unpaired)
+            for peer in ['client', 'service-0', 'service-1', 'service-2', 'service-3']:
+                save(root/'profiles/unpaired-long'/(peer+'.dhat.json'),
+                     dict(ftbl=['site'], pps=[dict(tbk=103, tb=1648, fs=[0])]))
+            failures = [dict(path='failed-short', error='fixture disconnect')]
+            save(root/'profiles/scope.json', dict(trials=profiles, failures=failures))
             for iterations in [10, 100]:
                 traces, journals = [], {}
                 for rep in range(5):
@@ -58,13 +66,16 @@ class SavedAnalysisTests(unittest.TestCase):
                         journals[path+'/'+peer+'.strace'] = dict(counts=dict(read_positive=iterations))
                 save(root/f'trace-{iterations}/scope.json', dict(trials=traces))
                 save(root/f'trace-{iterations}/ciphertext-counts.json', dict(journals=journals))
-            subprocess.run([sys.executable, str(HERE/'analyze-secure-ci.py'), '1', str(output), '--saved-root', str(root)],
+            subprocess.run([sys.executable, str(HERE/'analyze-secure-ci.py'), '1', str(output), '--saved-root', str(root), '--measurement-outcome', 'failure'],
                            env=dict(os.environ, GITHUB_SHA='fixture', GITHUB_REPOSITORY='fixture/repo'),
                            stdout=subprocess.DEVNULL, check=True)
             report = json.loads((output/'summary.json').read_text())
             self.assertEqual(report['aggregate']['tls']['legacy-baseline']['lower_means'], 24)
             self.assertEqual(report['profiles'][0]['per_operation'], dict(blocks=10, bytes=160))
             self.assertEqual(len(report['profile_peers']), 5)
+            self.assertEqual(len(report['unpaired_profile_peers']), 5)
+            self.assertEqual(report['profile_failures'], failures)
+            self.assertEqual(report['measurement_outcome'], 'failure')
             self.assertEqual(report['traces'][0]['counts']['read_positive']['mean'], 50)
             allocations = json.loads((output/'allocation-sites.json').read_text())
             self.assertEqual(len(allocations), 5)

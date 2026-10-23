@@ -245,9 +245,11 @@ jobs:
         if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign == 'run-remote' }}
         run: cargo run --locked -p capntproto-quality -- report "$RUNNER_TEMP/benchmark-quality" benchmark
       - name: Analyze saved encrypted latency, allocation and concurrency evidence
-        if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign != 'run-remote' }}
+        if: ${{ !cancelled() && inputs.campaign != 'run-remote' }}
+        env:
+          MEASUREMENT_OUTCOME: ${{ steps.measure.outcome }}
         run: |
-          python3 benchmarks/rpc/analyze-secure-ci.py "$GITHUB_RUN_ID" "$RUNNER_TEMP/benchmark-quality/analysis" --saved-root "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure"
+          python3 benchmarks/rpc/analyze-secure-ci.py "$GITHUB_RUN_ID" "$RUNNER_TEMP/benchmark-quality/analysis" --saved-root "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure" --measurement-outcome "$MEASUREMENT_OUTCOME"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

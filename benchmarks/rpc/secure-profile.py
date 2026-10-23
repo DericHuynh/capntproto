@@ -62,7 +62,7 @@ def main():
                  binaries={k: dict(path=str(v), sha256=r.topology.digest(v)) for k, v in binaries.items()},
                  metric='All peers: (long profile minus short profile) / difference in iterations, with per-workload points. '
                         'Callgrind instructions/cache/branches are simulated. DHAT reports cumulative allocations.',
-                 trials=[])
+                 trials=[], failures=[])
     def save():
         (output / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
     save()
@@ -75,12 +75,24 @@ def main():
                     continue
                 for iterations in points:
                     prefix = f'{mode}-{transport}-{name}-{label}-{iterations}'
-                    result = campaign.trial(cases[name], label, transport, prefix, 10, iterations)
+                    try:
+                        result = campaign.trial(cases[name], label, transport, prefix, 10, iterations)
+                    except (AssertionError, subprocess.TimeoutExpired, ValueError) as error:
+                        # trial() always stops its peers and retains their logs.
+                        # Finish the other controls, but never certify this run.
+                        scope['failures'].append(dict(path=prefix, mode=mode, transport=transport,
+                            case=name, implementation=label, iterations=iterations, points=points,
+                            error=f'{type(error).__name__}: {error}'))
+                        save()
+                        print(f'FAILED {prefix}: {error}', flush=True)
+                        continue
                     scope['trials'].append(dict(path=prefix, mode=mode, transport=transport,
                                                case=name, implementation=label, iterations=iterations, points=points,
                                                services=result['services']))
                     save()
                     print(prefix, flush=True)
+    if scope['failures']:
+        raise SystemExit(f"{len(scope['failures'])} profile trials failed; see scope.json and peer logs")
 
 
 if __name__ == '__main__':
