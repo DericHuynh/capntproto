@@ -1,4 +1,4 @@
-//! Small task sets use a bounded readiness scan. Larger sets retain the
+//! Small task sets reuse wake nodes with a bounded atomic FIFO. Larger sets retain the
 //! wake-driven FuturesUnordered queue; every task keeps its original future.
 use futures::{stream::FuturesUnordered, task::AtomicWaker, Stream};
 use std::{
@@ -61,13 +61,15 @@ impl Wake for Notify {
         self.ready.enqueue(self.index);
     }
 }
-struct Task<F> {
-    future: F,
+struct Slot<F> {
+    // The notification belongs to the slot, not to one submitted future.
+    // A stale wake can only schedule a harmless extra poll of its replacement.
+    future: Option<F>,
     waker: Waker,
 }
 pub(super) struct ReadySet<F: Future + Unpin> {
     ready: Arc<Ready>,
-    tasks: Vec<Option<Task<F>>>,
+    tasks: Vec<Slot<F>>,
     queued: Option<FuturesUnordered<F>>,
     live: usize,
 }
@@ -95,8 +97,10 @@ impl<F: Future + Unpin> ReadySet<F> {
         }
         if self.live == INLINE_TASKS {
             let queued = FuturesUnordered::new();
-            for task in std::mem::take(&mut self.tasks).into_iter().flatten() {
-                queued.push(task.future);
+            for task in std::mem::take(&mut self.tasks) {
+                if let Some(future) = task.future {
+                    queued.push(future);
+                }
             }
             queued.push(future);
             self.queued = Some(queued);
@@ -110,20 +114,18 @@ impl<F: Future + Unpin> ReadySet<F> {
         let index = self
             .tasks
             .iter()
-            .position(Option::is_none)
+            .position(|slot| slot.future.is_none())
             .unwrap_or(self.tasks.len());
-        let notify = Arc::new(Notify {
-            index,
-            ready: self.ready.clone(),
-        });
-        let task = Some(Task {
-            future,
-            waker: Waker::from(notify),
-        });
         if index == self.tasks.len() {
-            self.tasks.push(task);
+            self.tasks.push(Slot {
+                future: Some(future),
+                waker: Waker::from(Arc::new(Notify {
+                    index,
+                    ready: self.ready.clone(),
+                })),
+            });
         } else {
-            self.tasks[index] = task;
+            self.tasks[index].future = Some(future);
         }
         self.live += 1;
         self.ready.enqueue(index);
@@ -164,12 +166,13 @@ impl<F: Future + Unpin> Stream for ReadySet<F> {
                 continue;
             }
             visited |= bit;
-            let Some(task) = self.tasks[index].as_mut() else {
+            let slot = &mut self.tasks[index];
+            let Some(future) = slot.future.as_mut() else {
                 continue;
             };
-            let mut task_cx = Context::from_waker(&task.waker);
-            if let Poll::Ready(result) = Pin::new(&mut task.future).poll(&mut task_cx) {
-                let finished = self.tasks[index].take();
+            let mut task_cx = Context::from_waker(&slot.waker);
+            if let Poll::Ready(result) = Pin::new(future).poll(&mut task_cx) {
+                let finished = slot.future.take();
                 self.live -= 1;
                 drop(finished);
                 return Poll::Ready(Some(result));
@@ -368,6 +371,41 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn completed_slots_reuse_notifications_and_drop_futures_promptly() {
+        let mut set = ReadySet::new();
+        let mut cx = Context::from_waker(Waker::noop());
+        let saved = Rc::new(RefCell::new(None));
+        let polls = Rc::new(Cell::new(0));
+        let mut previous: Option<Waker> = None;
+        for value in 0..64 {
+            let ready = Rc::new(Cell::new(true));
+            let weak = Rc::downgrade(&ready);
+            set.push(Wait {
+                value,
+                ready,
+                wake: saved.clone(),
+                polls: polls.clone(),
+            });
+            // Notification identity survives every replacement, even while an
+            // external observer retains the preceding task's waker.
+            if let Some(old) = &previous {
+                old.wake_by_ref();
+            }
+            assert_eq!(
+                Pin::new(&mut set).poll_next(&mut cx),
+                Poll::Ready(Some(value))
+            );
+            assert!(weak.upgrade().is_none());
+            let current = saved.borrow().as_ref().unwrap().clone();
+            if let Some(old) = previous {
+                assert!(old.will_wake(&current));
+            }
+            previous = Some(current);
+        }
+        assert_eq!(polls.get(), 64);
+    }
+
     #[test]
     fn stale_notification_cannot_complete_or_lose_the_reused_slot() {
         let mut set = ReadySet::new();

@@ -1490,3 +1490,74 @@ fn import_metadata_changes_signal_late_fd_and_disconnect_without_polling() {
     );
     drop((alias, duplicate, hook));
 }
+
+#[test]
+fn shared_cancellation_context_retains_abandoned_results_until_final_guard() {
+    struct HeldPipeline(Rc<()>);
+    impl PipelineHook for HeldPipeline {
+        fn add_ref(&self) -> Box<dyn PipelineHook> {
+            Box::new(Self(self.0.clone()))
+        }
+        fn get_pipelined_cap(&self, _: &[PipelineOp]) -> Box<dyn ClientHook> {
+            unreachable!()
+        }
+    }
+    for boxed in [false, true] {
+        let mut fixture = Fixture::new();
+        let answer_id = AnswerId::from_wire(33);
+        let answer = Answer::new();
+        let status = answer.status.clone();
+        fixture
+            .state
+            .answers
+            .borrow_mut()
+            .slots
+            .insert(answer_id, answer);
+        let (sender, receiver) = oneshot::channel();
+        let mut results = Results::new(
+            &fixture.state,
+            answer_id,
+            false,
+            sender,
+            status.clone(),
+            None,
+        );
+        let owner = Rc::new(());
+        let weak = Rc::downgrade(&owner);
+        results.inner.as_mut().unwrap().variant =
+            Some(ResultsVariant::Transferred(Box::new(HeldPipeline(owner))));
+        let first = results.cancellation_context().unwrap();
+        assert!(matches!(
+            &first,
+            capnp::private::capability::CancellationGuard::Shared(_)
+        ));
+        let last = if boxed {
+            capnp::private::capability::CancellationGuard::Owned(
+                results.cancellation_guard().unwrap(),
+            )
+        } else {
+            results.cancellation_context().unwrap()
+        };
+        drop(results);
+        drop(receiver); // Caller abandoned results before protected execution completed.
+        drop(first);
+        assert!(weak.upgrade().is_some());
+        assert!(!status.return_has_been_sent.get());
+        drop(last);
+        assert!(weak.upgrade().is_none());
+        assert!(status.return_has_been_sent.get());
+        let messages = fixture.drain();
+        let replies: Vec<_> = messages
+            .iter()
+            .filter_map(
+                |m| match m.get_root::<message::Reader>().unwrap().which().unwrap() {
+                    message::Return(ret) => Some(ret.unwrap()),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].get_answer_id(), 33);
+        assert!(matches!(replies[0].which().unwrap(), return_::Canceled(())));
+    }
+}

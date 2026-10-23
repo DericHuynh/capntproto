@@ -36,7 +36,7 @@ use capnp::Error;
 use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::{future, Future, FutureExt, TryFutureExt};
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::hash_map::{self, HashMap};
 use std::mem;
 use std::rc::{Rc, Weak};
@@ -2073,6 +2073,14 @@ impl<VatId> Drop for ReturnGuard<VatId> {
     }
 }
 
+// A protected application method retains both protocol cancellation and any
+// results abandoned before it finishes. Share this owner directly with dispatch;
+// boxing a pair of Rc handles on every call adds no ownership information.
+struct RetainedResults<VatId: 'static> {
+    _return_guard: Rc<ReturnGuard<VatId>>,
+    variant: RefCell<Option<ResultsVariant>>,
+}
+
 struct ResultsInner<VatId>
 where
     VatId: 'static,
@@ -2085,15 +2093,19 @@ where
     answer_id: AnswerId,
     pipeline_sender: Option<queued::PipelineInnerSender>,
     return_guard: Rc<ReturnGuard<VatId>>,
-    retained_results: Rc<RefCell<Option<ResultsVariant>>>,
+    retained_results: OnceCell<Rc<RetainedResults<VatId>>>,
 }
 
 impl<VatId> Drop for ResultsInner<VatId> {
     fn drop(&mut self) {
         // A detached application method still owns its result capabilities even
         // if it released Results early and its caller has since canceled.
-        if Rc::strong_count(&self.retained_results) > 1 {
-            *self.retained_results.borrow_mut() = self.variant.take();
+        if let Some(retained) = self
+            .retained_results
+            .get()
+            .filter(|r| Rc::strong_count(r) > 1)
+        {
+            *retained.variant.borrow_mut() = self.variant.take();
         }
     }
 }
@@ -2186,7 +2198,7 @@ where
                 allow_third_party: false,
                 answer_id,
                 pipeline_sender,
-                retained_results: Rc::new(RefCell::new(None)),
+                retained_results: OnceCell::new(),
                 return_guard: Rc::new(ReturnGuard {
                     state: Rc::downgrade(connection_state),
                     id: answer_id,
@@ -2227,11 +2239,20 @@ impl<VatId> ResultsHook for Results<VatId> {
     }
 
     fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
+        self.cancellation_context()
+            .map(|guard| Box::new(guard) as Box<dyn std::any::Any>)
+    }
+    fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
         let inner = self.inner.as_ref()?;
-        Some(Box::new((
-            inner.return_guard.clone(),
-            inner.retained_results.clone(),
-        )))
+        let retained = inner.retained_results.get_or_init(|| {
+            Rc::new(RetainedResults {
+                _return_guard: inner.return_guard.clone(),
+                variant: RefCell::new(None),
+            })
+        });
+        Some(capnp::private::capability::CancellationGuard::Shared(
+            retained.clone(),
+        ))
     }
     fn cancellation_executor(&self) -> Option<Rc<dyn capnp::capability::CallExecutor>> {
         Some(self.inner.as_ref()?.connection_state.call_executor.clone())
