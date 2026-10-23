@@ -301,33 +301,6 @@ impl Results {
     }
 }
 
-struct OwnedResponse {
-    payload: crate::scoped::wire::Payload,
-    _context: Option<Rc<dyn Any>>,
-}
-impl crate::scoped::response::ResultsSender {
-    pub(crate) fn send_payload(
-        self,
-        mut payload: crate::scoped::wire::Payload,
-        context: Option<Rc<dyn Any>>,
-    ) {
-        let context = context.and_then(|context| payload.retain_plain_context(context).err());
-        if context.is_none() {
-            self.send_response(payload.into_response());
-            return;
-        }
-        self.send_response(Box::new(OwnedResponse {
-            payload,
-            _context: context,
-        }));
-    }
-}
-impl ResponseHook for OwnedResponse {
-    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        ResponseHook::get(&self.payload)
-    }
-}
-
 impl Drop for Results {
     fn drop(&mut self) {
         let Some(fulfiller) = self.results_done_fulfiller.take() else {

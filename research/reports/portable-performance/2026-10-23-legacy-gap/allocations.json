@@ -1,0 +1,2264 @@
+{
+  "scope": "DHAT cumulative allocated bytes and blocks, including reallocations as reported by DHAT. Marginal estimate is (500-50)/450 operations, identical 10 warmups. Each fanout/deep-concurrent operation contains 32 RPCs. Not retained memory or peak live bytes.",
+  "raw": [
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "fanout-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 25513896,
+        "blocks": 48841
+      },
+      "peers": {
+        "client": {
+          "bytes": 12774382,
+          "blocks": 24497
+        },
+        "service-0": {
+          "bytes": 12739514,
+          "blocks": 24344
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "fanout-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 19398563,
+        "blocks": 23651
+      },
+      "peers": {
+        "client": {
+          "bytes": 10457123,
+          "blocks": 16649
+        },
+        "service-0": {
+          "bytes": 8941440,
+          "blocks": 7002
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 1521838,
+        "blocks": 8076
+      },
+      "peers": {
+        "client": {
+          "bytes": 654535,
+          "blocks": 2914
+        },
+        "service-0": {
+          "bytes": 867303,
+          "blocks": 5162
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 1240071,
+        "blocks": 4945
+      },
+      "peers": {
+        "client": {
+          "bytes": 580509,
+          "blocks": 2332
+        },
+        "service-0": {
+          "bytes": 659562,
+          "blocks": 2613
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 1617490,
+        "blocks": 9097
+      },
+      "peers": {
+        "client": {
+          "bytes": 693664,
+          "blocks": 3455
+        },
+        "service-0": {
+          "bytes": 923826,
+          "blocks": 5642
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 1305758,
+        "blocks": 5730
+      },
+      "peers": {
+        "client": {
+          "bytes": 639850,
+          "blocks": 2938
+        },
+        "service-0": {
+          "bytes": 665908,
+          "blocks": 2792
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 34393566,
+        "blocks": 48997
+      },
+      "peers": {
+        "client": {
+          "bytes": 17189582,
+          "blocks": 24584
+        },
+        "service-0": {
+          "bytes": 17203984,
+          "blocks": 24413
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 25345506,
+        "blocks": 23813
+      },
+      "peers": {
+        "client": {
+          "bytes": 13404578,
+          "blocks": 16721
+        },
+        "service-0": {
+          "bytes": 11940928,
+          "blocks": 7092
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "fanout-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 18698383,
+        "blocks": 58505
+      },
+      "peers": {
+        "client": {
+          "bytes": 9357031,
+          "blocks": 29222
+        },
+        "service-0": {
+          "bytes": 9341352,
+          "blocks": 29283
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "fanout-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 12700641,
+        "blocks": 29396
+      },
+      "peers": {
+        "client": {
+          "bytes": 7114392,
+          "blocks": 19455
+        },
+        "service-0": {
+          "bytes": 5586249,
+          "blocks": 9941
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "dependent-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 2021814,
+        "blocks": 10738
+      },
+      "peers": {
+        "client": {
+          "bytes": 913666,
+          "blocks": 4326
+        },
+        "service-0": {
+          "bytes": 1108148,
+          "blocks": 6412
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "dependent-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 1906452,
+        "blocks": 7428
+      },
+      "peers": {
+        "client": {
+          "bytes": 920000,
+          "blocks": 3509
+        },
+        "service-0": {
+          "bytes": 986452,
+          "blocks": 3919
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 2064422,
+        "blocks": 11159
+      },
+      "peers": {
+        "client": {
+          "bytes": 927234,
+          "blocks": 4627
+        },
+        "service-0": {
+          "bytes": 1137188,
+          "blocks": 6532
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 1915760,
+        "blocks": 7477
+      },
+      "peers": {
+        "client": {
+          "bytes": 953748,
+          "blocks": 3873
+        },
+        "service-0": {
+          "bytes": 962012,
+          "blocks": 3604
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 27597722,
+        "blocks": 59019
+      },
+      "peers": {
+        "client": {
+          "bytes": 13782956,
+          "blocks": 29487
+        },
+        "service-0": {
+          "bytes": 13814766,
+          "blocks": 29532
+        }
+      }
+    },
+    {
+      "iterations": 50,
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 18670196,
+        "blocks": 29963
+      },
+      "peers": {
+        "client": {
+          "bytes": 10072616,
+          "blocks": 19707
+        },
+        "service-0": {
+          "bytes": 8597580,
+          "blocks": 10256
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "fanout-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 211779713,
+        "blocks": 407941
+      },
+      "peers": {
+        "client": {
+          "bytes": 106044088,
+          "blocks": 204497
+        },
+        "service-0": {
+          "bytes": 105735625,
+          "blocks": 203444
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "fanout-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 158806780,
+        "blocks": 191951
+      },
+      "peers": {
+        "client": {
+          "bytes": 85438829,
+          "blocks": 136349
+        },
+        "service-0": {
+          "bytes": 73367951,
+          "blocks": 55602
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 9035505,
+        "blocks": 62076
+      },
+      "peers": {
+        "client": {
+          "bytes": 3658741,
+          "blocks": 21364
+        },
+        "service-0": {
+          "bytes": 5376764,
+          "blocks": 40712
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 6073076,
+        "blocks": 34645
+      },
+      "peers": {
+        "client": {
+          "bytes": 2727912,
+          "blocks": 15832
+        },
+        "service-0": {
+          "bytes": 3345164,
+          "blocks": 18813
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 9833157,
+        "blocks": 70747
+      },
+      "peers": {
+        "client": {
+          "bytes": 3975970,
+          "blocks": 25955
+        },
+        "service-0": {
+          "bytes": 5857187,
+          "blocks": 44792
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 6592375,
+        "blocks": 41280
+      },
+      "peers": {
+        "client": {
+          "bytes": 3202156,
+          "blocks": 20938
+        },
+        "service-0": {
+          "bytes": 3390219,
+          "blocks": 20342
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 287369183,
+        "blocks": 409897
+      },
+      "peers": {
+        "client": {
+          "bytes": 143635988,
+          "blocks": 205484
+        },
+        "service-0": {
+          "bytes": 143733195,
+          "blocks": 204413
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 209114719,
+        "blocks": 193913
+      },
+      "peers": {
+        "client": {
+          "bytes": 110388583,
+          "blocks": 137321
+        },
+        "service-0": {
+          "bytes": 98726136,
+          "blocks": 56592
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "fanout-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 150423020,
+        "blocks": 483365
+      },
+      "peers": {
+        "client": {
+          "bytes": 75338916,
+          "blocks": 241202
+        },
+        "service-0": {
+          "bytes": 75084104,
+          "blocks": 242163
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "fanout-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 97567681,
+        "blocks": 234657
+      },
+      "peers": {
+        "client": {
+          "bytes": 54808280,
+          "blocks": 156736
+        },
+        "service-0": {
+          "bytes": 42759401,
+          "blocks": 77921
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "dependent-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 10332240,
+        "blocks": 79143
+      },
+      "peers": {
+        "client": {
+          "bytes": 4301870,
+          "blocks": 29979
+        },
+        "service-0": {
+          "bytes": 6030370,
+          "blocks": 49164
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "dependent-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 7550566,
+        "blocks": 49731
+      },
+      "peers": {
+        "client": {
+          "bytes": 3451342,
+          "blocks": 22410
+        },
+        "service-0": {
+          "bytes": 4099224,
+          "blocks": 27321
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "total": {
+        "bytes": 10679040,
+        "blocks": 82714
+      },
+      "peers": {
+        "client": {
+          "bytes": 4401830,
+          "blocks": 32530
+        },
+        "service-0": {
+          "bytes": 6277210,
+          "blocks": 50184
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "total": {
+        "bytes": 7601309,
+        "blocks": 50231
+      },
+      "peers": {
+        "client": {
+          "bytes": 3708325,
+          "blocks": 25475
+        },
+        "service-0": {
+          "bytes": 3892984,
+          "blocks": 24756
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "variant": "legacy",
+      "total": {
+        "bytes": 226225586,
+        "blocks": 488897
+      },
+      "peers": {
+        "client": {
+          "bytes": 113024412,
+          "blocks": 243745
+        },
+        "service-0": {
+          "bytes": 113201174,
+          "blocks": 245152
+        }
+      }
+    },
+    {
+      "iterations": 500,
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "variant": "portable",
+      "total": {
+        "bytes": 148093396,
+        "blocks": 240266
+      },
+      "peers": {
+        "client": {
+          "bytes": 79868008,
+          "blocks": 159264
+        },
+        "service-0": {
+          "bytes": 68225388,
+          "blocks": 81002
+        }
+      }
+    }
+  ],
+  "marginal": [
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 413924.03777777776,
+        "blocks": 798.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 207266.01333333334,
+          "blocks": 400.0
+        },
+        "service-0": {
+          "bytes": 206658.02444444445,
+          "blocks": 398.0
+        }
+      },
+      "top_allocation_sites": {
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::workflows::capability::echo::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 8184.0,
+          "blocks": 33.0
+        },
+        "service-0 new<capnp_rpc::local::{impl#33}::call_with_hints::{async_block_env#0}<capntproto_rpc_bench::echo_capnp::workflows::ServerDispatch<capntproto_rpc_bench::workflows::capability::Service>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5888.0,
+          "blocks": 32.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 1536.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 256.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 36864.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5376.0,
+          "blocks": 32.0
+        },
+        "client new<capnp::capability::{impl#10}::into_typed_response::{async_block_env#0}<capnp::Error, capntproto_rpc_bench::echo_capnp::workflows::echo_results::Owned>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1792.0,
+          "blocks": 32.0
+        },
+        "client poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 35584.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp::capability::Promise<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp::Error>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 3072.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::rpc::ResponseVariant<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2304.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<core::cell::RefCell<capnp_rpc::rpc::QuestionRef<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2048.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Request<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<futures_util::future::try_future::MapOk<capnp_rpc::rpc::{impl#15}::send_internal::{async_block_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp_rpc::rpc::{impl#16}::send::{closure_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2560.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<(alloc::rc::Rc<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, alloc::alloc::Global>, alloc::rc::Rc<core::cell::RefCell<core::option::Option<capnp_rpc::rpc::ResultsVariant>>, alloc::alloc::Global>)> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 512.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5632.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5632.0,
+          "blocks": 32.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 309796.03777777776,
+        "blocks": 374.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 166626.01333333334,
+          "blocks": 266.0
+        },
+        "service-0": {
+          "bytes": 143170.02444444445,
+          "blocks": 108.0
+        }
+      },
+      "top_allocation_sites": {
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::workflows::capability::echo::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 8184.0,
+          "blocks": 33.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 4608.0,
+          "blocks": 32.0
+        },
+        "client new<capntproto_rpc_wire::owned::question::PlainResults> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<capnp_rpc::scoped::Call> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 10496.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<alloc::rc::RcInner<capnp_rpc::scoped::response::State>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 5520.0,
+          "blocks": 30.0
+        },
+        "client {closure#0}<capnp_rpc::scoped::response::Connection, capnp_rpc::scoped::response::{impl#12}::promise::{closure_env#0}> (library/core/src/cell/once.rs:167)": {
+          "bytes": 1200.0,
+          "blocks": 30.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 36162.0,
+          "blocks": 4.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 37442.0,
+          "blocks": 4.0
+        },
+        "service-0 capntproto_rpc_bench::benchmark_tls::accept::{closure#0} (tls.rs:80)": {
+          "bytes": 61440.00666666667,
+          "blocks": 4.0
+        },
+        "client poll<capntproto_rpc_bench::benchmark_tls::connect::{async_fn#0}::{async_block_env#0}> (timeout.rs:217)": {
+          "bytes": 61440.002222222225,
+          "blocks": 4.0
+        },
+        "client <capnp_rpc::twoparty::IncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingFrameStream>::poll_frame_size (src/twoparty.rs:96)": {
+          "bytes": 35584.0,
+          "blocks": 3.0
+        },
+        "service-0 <capnp_rpc::twoparty::IncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingFrameStream>::poll_frame_size (src/twoparty.rs:96)": {
+          "bytes": 36864.0,
+          "blocks": 3.0
+        },
+        "service-0 {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new_with_send_buffer::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure_env#0}>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        },
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::ready_to_run_queue::ReadyToRunQueue<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::workflows::capability::echo::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 1.0
+        },
+        "client {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new_with_send_buffer::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure_env#0}>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 16697.03777777778,
+        "blocks": 120.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 6676.013333333333,
+          "blocks": 41.0
+        },
+        "service-0": {
+          "bytes": 10021.024444444445,
+          "blocks": 79.0
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1324.0,
+          "blocks": 4.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 4.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 640.0,
+          "blocks": 4.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1508.0,
+          "blocks": 4.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 704.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::rpc::Export>::new (rpc.rs:298)": {
+          "bytes": 117.0,
+          "blocks": 3.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:664)": {
+          "bytes": 1336.0,
+          "blocks": 2.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 96.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 1256.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 336.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "client poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:664)": {
+          "bytes": 1216.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::local::Pipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "client poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 1216.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp::capability::Promise<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp::Error>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 192.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::queued::Pipeline>::drive::<futures_util::future::future::shared::Shared<futures_util::future::poll_fn::PollFn<<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message::{closure#1}>>> (src/queued.rs:234)": {
+          "bytes": 128.0,
+          "blocks": 2.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 10740.011111111111,
+        "blocks": 66.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 4772.006666666667,
+          "blocks": 30.0
+        },
+        "service-0": {
+          "bytes": 5968.004444444445,
+          "blocks": 36.0
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 616.0,
+          "blocks": 7.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1444.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1260.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 288.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::buffer::HeapBuffer<core::option::Option<capntproto_rpc_engine::clients::Client>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "client <capnp_rpc::twoparty::IncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingFrameStream>::poll_frame_size (src/twoparty.rs:96)": {
+          "bytes": 1216.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "client new_uninit<capnp_rpc::scoped::Call> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 656.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::twoparty::IncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingFrameStream>::poll_frame_size (src/twoparty.rs:96)": {
+          "bytes": 1336.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 176.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::wire::PayloadPipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 drop<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>> (src/local.rs:1064)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::Hook> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "service-0 with_capacity_in<core::option::Option<&capntproto_rpc_engine::clients::Client>, alloc::alloc::Global> (library/alloc/src/raw_vec/mod.rs:177)": {
+          "bytes": 8.0,
+          "blocks": 1.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::metadata::MetadataSource>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 104.0,
+          "blocks": 1.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 18257.03777777778,
+        "blocks": 137.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 7294.013333333333,
+          "blocks": 50.0
+        },
+        "service-0": {
+          "bytes": 10963.024444444445,
+          "blocks": 87.0
+        }
+      },
+      "top_allocation_sites": {
+        "client new<capnp_rpc::rpc::Client<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 160.0,
+          "blocks": 5.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 4.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 640.0,
+          "blocks": 4.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 704.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::rpc::Export>::new (rpc.rs:298)": {
+          "bytes": 117.0,
+          "blocks": 3.0
+        },
+        "client new<alloc::rc::RcInner<core::cell::RefCell<core::option::Option<alloc::boxed::Box<dyn capnp_rpc::FlowController, alloc::alloc::Global>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 120.0,
+          "blocks": 3.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 96.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1302.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 1288.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 336.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::queued::Pipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::local::Pipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "client poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 1216.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp::capability::Promise<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp::Error>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 192.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::queued::Pipeline>::drive::<futures_util::future::future::shared::Shared<futures_util::future::poll_fn::PollFn<<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message::{closure#1}>>> (src/queued.rs:234)": {
+          "bytes": 128.0,
+          "blocks": 2.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 11748.037777777778,
+        "blocks": 79.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 5694.013333333333,
+          "blocks": 40.0
+        },
+        "service-0": {
+          "bytes": 6054.024444444444,
+          "blocks": 39.0
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 616.0,
+          "blocks": 7.0
+        },
+        "client new<capnp_rpc::scoped::Hook> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 96.0,
+          "blocks": 6.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 4.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 264.0,
+          "blocks": 3.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1270.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 288.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::buffer::HeapBuffer<core::option::Option<capntproto_rpc_engine::clients::Client>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1454.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::scoped::wire::foreign::ForeignPromises>::import::<(), 1, capntproto_rpc_engine::clients::access::Access<capntproto_rpc_engine::clients::dispatch::Runtime<capntproto_rpc_wire::clients::outgoing::Route<(), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 1>, (), capntproto_rpc_wire::owned::connection::Task<capnp_rpc::scoped::wire::resources::Import, 0, 1>>>> (src/scoped/wire/foreign.rs:84)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "client <alloc::raw_vec::RawVec<alloc::boxed::Box<dyn capnp_rpc::OutgoingMessage>>>::grow_one (library/alloc/src/raw_vec/mod.rs:188)": {
+          "bytes": 128.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::wire::PayloadPipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 drop<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>> (src/local.rs:1064)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::wire::Projected> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "service-0 with_capacity_in<core::option::Option<&capntproto_rpc_engine::clients::Client>, alloc::alloc::Global> (library/alloc/src/raw_vec/mod.rs:177)": {
+          "bytes": 8.0,
+          "blocks": 1.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::metadata::MetadataSource>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 104.0,
+          "blocks": 1.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 562168.0377777778,
+        "blocks": 802.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 280992.0133333333,
+          "blocks": 402.0
+        },
+        "service-0": {
+          "bytes": 281176.02444444445,
+          "blocks": 400.0
+        }
+      },
+      "top_allocation_sites": {
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 7392.0,
+          "blocks": 33.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 1536.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 256.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::access_service::ServerDispatch<capntproto_rpc_bench::topology::Service>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 256.0,
+          "blocks": 32.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 61696.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5376.0,
+          "blocks": 32.0
+        },
+        "client poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>> (src/buffered_read.rs:736)": {
+          "bytes": 60416.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp::capability::Promise<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp::Error>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 3072.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::rpc::ResponseVariant<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2304.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<core::cell::RefCell<capnp_rpc::rpc::QuestionRef<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2048.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Request<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<futures_util::future::try_future::MapOk<capnp_rpc::rpc::{impl#15}::send_internal::{async_block_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp_rpc::rpc::{impl#16}::send::{closure_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2560.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<(alloc::rc::Rc<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, alloc::alloc::Global>, alloc::rc::Rc<core::cell::RefCell<core::option::Option<capnp_rpc::rpc::ResultsVariant>>, alloc::alloc::Global>)> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 512.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5632.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5632.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 408376.0288888889,
+        "blocks": 378.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 215520.01111111112,
+          "blocks": 268.0
+        },
+        "service-0": {
+          "bytes": 192856.01777777777,
+          "blocks": 110.0
+        }
+      },
+      "top_allocation_sites": {
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 7392.0,
+          "blocks": 33.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 4608.0,
+          "blocks": 32.0
+        },
+        "client new<capntproto_rpc_wire::owned::question::PlainResults> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<capnp_rpc::scoped::Call> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 10496.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<alloc::rc::RcInner<capnp_rpc::scoped::response::State>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 5520.0,
+          "blocks": 30.0
+        },
+        "client {closure#0}<capnp_rpc::scoped::response::Connection, capnp_rpc::scoped::response::{impl#12}::promise::{closure_env#0}> (library/core/src/cell/once.rs:167)": {
+          "bytes": 1200.0,
+          "blocks": 30.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 61016.0,
+          "blocks": 5.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 62296.0,
+          "blocks": 5.0
+        },
+        "client <capnp_rpc::twoparty::IncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingFrameStream>::poll_frame_size (src/twoparty.rs:96)": {
+          "bytes": 60416.0,
+          "blocks": 4.0
+        },
+        "service-0 capntproto_rpc_bench::benchmark_tls::accept::{closure#0} (tls.rs:80)": {
+          "bytes": 61440.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::twoparty::IncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingFrameStream>::poll_frame_size (src/twoparty.rs:96)": {
+          "bytes": 61696.0,
+          "blocks": 4.0
+        },
+        "client poll<capntproto_rpc_bench::benchmark_tls::connect::{async_fn#0}::{async_block_env#0}> (timeout.rs:217)": {
+          "bytes": 61440.0,
+          "blocks": 4.0
+        },
+        "service-0 {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new_with_send_buffer::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure_env#0}>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        },
+        "client {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new_with_send_buffer::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<tokio_rustls::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure_env#0}>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        },
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::ready_to_run_queue::ReadyToRunQueue<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 1.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 292721.41555555555,
+        "blocks": 944.1333333333333
+      },
+      "peers": {
+        "client": {
+          "bytes": 146626.4111111111,
+          "blocks": 471.06666666666666
+        },
+        "service-0": {
+          "bytes": 146095.00444444444,
+          "blocks": 473.06666666666666
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 36608.0,
+          "blocks": 64.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 37888.0,
+          "blocks": 64.0
+        },
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::workflows::capability::echo::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 8184.0,
+          "blocks": 33.0
+        },
+        "service-0 new<capnp_rpc::local::{impl#33}::call_with_hints::{async_block_env#0}<capntproto_rpc_bench::echo_capnp::workflows::ServerDispatch<capntproto_rpc_bench::workflows::capability::Service>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5888.0,
+          "blocks": 32.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 1536.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 256.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5376.0,
+          "blocks": 32.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>>> (src/buffered_read.rs:736)": {
+          "bytes": 36864.0,
+          "blocks": 32.0
+        },
+        "client new<capnp::capability::{impl#10}::into_typed_response::{async_block_env#0}<capnp::Error, capntproto_rpc_bench::echo_capnp::workflows::echo_results::Owned>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1792.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp::capability::Promise<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp::Error>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 3072.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::rpc::ResponseVariant<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2304.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<core::cell::RefCell<capnp_rpc::rpc::QuestionRef<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2048.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Request<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<futures_util::future::try_future::MapOk<capnp_rpc::rpc::{impl#15}::send_internal::{async_block_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp_rpc::rpc::{impl#16}::send::{closure_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2560.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<(alloc::rc::Rc<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, alloc::alloc::Global>, alloc::rc::Rc<core::cell::RefCell<core::option::Option<capnp_rpc::rpc::ResultsVariant>>, alloc::alloc::Global>)> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 512.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5632.0,
+          "blocks": 32.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 188593.42222222223,
+        "blocks": 456.1355555555556
+      },
+      "peers": {
+        "client": {
+          "bytes": 105986.41777777778,
+          "blocks": 305.06888888888886
+        },
+        "service-0": {
+          "bytes": 82607.00444444445,
+          "blocks": 151.06666666666666
+        }
+      },
+      "top_allocation_sites": {
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::workflows::capability::echo::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 8184.0,
+          "blocks": 33.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 4608.0,
+          "blocks": 32.0
+        },
+        "client new<capntproto_rpc_wire::owned::question::PlainResults> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 36096.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 37376.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<capnp_rpc::scoped::Call> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 10496.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<alloc::rc::RcInner<capnp_rpc::scoped::response::State>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 5520.0,
+          "blocks": 30.0
+        },
+        "client {closure#0}<capnp_rpc::scoped::response::Connection, capnp_rpc::scoped::response::{impl#12}::promise::{closure_env#0}> (library/core/src/cell/once.rs:167)": {
+          "bytes": 1200.0,
+          "blocks": 30.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 37806.986666666664,
+          "blocks": 22.066666666666666
+        },
+        "client {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 36450.40666666667,
+          "blocks": 18.06888888888889
+        },
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::ready_to_run_queue::ReadyToRunQueue<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::workflows::capability::echo::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 1.0
+        },
+        "service-0 {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        },
+        "client {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        },
+        "client new<capnp::capability::{impl#10}::into_typed_response::{async_block_env#0}<capnp::Error, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 0.0,
+          "blocks": 0.0
+        },
+        "client new<alloc::sync::ArcInner<capnp_rpc::portable::runtime::Lane>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 0.0,
+          "blocks": 0.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 18467.613333333335,
+        "blocks": 152.01111111111112
+      },
+      "peers": {
+        "client": {
+          "bytes": 7529.3422222222225,
+          "blocks": 57.00666666666667
+        },
+        "service-0": {
+          "bytes": 10938.271111111111,
+          "blocks": 95.00444444444445
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 2297.137777777778,
+          "blocks": 18.002222222222223
+        },
+        "client {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 2113.2155555555555,
+          "blocks": 14.004444444444445
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1464.0,
+          "blocks": 8.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 4.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 640.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1280.0,
+          "blocks": 4.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 704.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::rpc::Export>::new (rpc.rs:298)": {
+          "bytes": 117.0,
+          "blocks": 3.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 96.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 336.0,
+          "blocks": 2.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>>> (src/buffered_read.rs:736)": {
+          "bytes": 1256.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::local::Pipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp::capability::Promise<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp::Error>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 192.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::queued::Pipeline>::drive::<futures_util::future::future::shared::Shared<futures_util::future::poll_fn::PollFn<<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message::{closure#1}>>> (src/queued.rs:234)": {
+          "bytes": 128.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::rpc::ResponseVariant<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 144.0,
+          "blocks": 2.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 12542.475555555555,
+        "blocks": 94.00666666666666
+      },
+      "peers": {
+        "client": {
+          "bytes": 5625.204444444445,
+          "blocks": 42.00222222222222
+        },
+        "service-0": {
+          "bytes": 6917.271111111111,
+          "blocks": 52.004444444444445
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 2297.137777777778,
+          "blocks": 18.002222222222223
+        },
+        "client {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 2113.0777777777776,
+          "blocks": 14.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 616.0,
+          "blocks": 7.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1400.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 288.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::buffer::HeapBuffer<core::option::Option<capntproto_rpc_engine::clients::Client>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1248.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "client new_uninit<capnp_rpc::scoped::Call> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 656.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 176.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::wire::PayloadPipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 drop<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>> (src/local.rs:1064)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::Hook> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "service-0 with_capacity_in<core::option::Option<&capntproto_rpc_engine::clients::Client>, alloc::alloc::Global> (library/alloc/src/raw_vec/mod.rs:177)": {
+          "bytes": 8.0,
+          "blocks": 1.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::metadata::MetadataSource>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 104.0,
+          "blocks": 1.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 19143.595555555556,
+        "blocks": 159.01111111111112
+      },
+      "peers": {
+        "client": {
+          "bytes": 7721.324444444444,
+          "blocks": 62.00666666666667
+        },
+        "service-0": {
+          "bytes": 11422.271111111111,
+          "blocks": 97.00444444444445
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 1849.1377777777777,
+          "blocks": 9.002222222222223
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1496.0,
+          "blocks": 8.0
+        },
+        "client {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 1665.1977777777777,
+          "blocks": 7.004444444444444
+        },
+        "client new<capnp_rpc::rpc::Client<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 160.0,
+          "blocks": 5.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 4.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 640.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1280.0,
+          "blocks": 4.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 704.0,
+          "blocks": 4.0
+        },
+        "service-0 <capnp_rpc::rpc::Export>::new (rpc.rs:298)": {
+          "bytes": 117.0,
+          "blocks": 3.0
+        },
+        "client new<alloc::rc::RcInner<core::cell::RefCell<core::option::Option<alloc::boxed::Box<dyn capnp_rpc::FlowController, alloc::alloc::Global>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 120.0,
+          "blocks": 3.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 96.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 336.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::queued::Pipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>>> (src/buffered_read.rs:736)": {
+          "bytes": 1288.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capnp_rpc::local::Pipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 12634.553333333333,
+        "blocks": 95.00888888888889
+      },
+      "peers": {
+        "client": {
+          "bytes": 6121.282222222222,
+          "blocks": 48.004444444444445
+        },
+        "service-0": {
+          "bytes": 6513.271111111111,
+          "blocks": 47.004444444444445
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 1849.1377777777777,
+          "blocks": 9.002222222222223
+        },
+        "client {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 1665.1555555555556,
+          "blocks": 7.002222222222223
+        },
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 616.0,
+          "blocks": 7.0
+        },
+        "client new<capnp_rpc::scoped::Hook> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 96.0,
+          "blocks": 6.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 32.0,
+          "blocks": 4.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1432.0,
+          "blocks": 4.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 264.0,
+          "blocks": 3.0
+        },
+        "service-0 <capnp_rpc::revocable::Canceler>::cancel (revocable.rs:137)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 288.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::buffer::HeapBuffer<core::option::Option<capntproto_rpc_engine::clients::Client>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 1248.0,
+          "blocks": 2.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::echo_capnp::workflows::open_params::Owned, capntproto_rpc_bench::echo_capnp::workflows::open_results::Owned, capntproto_rpc_bench::workflows::capability::{impl#0}::open::{closure_env#0}> (src/capability/call.rs:116)": {
+          "bytes": 1088.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 80.0,
+          "blocks": 2.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "service-0 <capnp_rpc::scoped::wire::foreign::ForeignPromises>::import::<(), 1, capntproto_rpc_engine::clients::access::Access<capntproto_rpc_engine::clients::dispatch::Runtime<capntproto_rpc_wire::clients::outgoing::Route<(), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 1>, (), capntproto_rpc_wire::owned::connection::Task<capnp_rpc::scoped::wire::resources::Import, 0, 1>>>> (src/scoped/wire/foreign.rs:84)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        },
+        "client <alloc::raw_vec::RawVec<alloc::boxed::Box<dyn capnp_rpc::OutgoingMessage>>>::grow_one (library/alloc/src/raw_vec/mod.rs:188)": {
+          "bytes": 128.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::wire::PayloadPipeline> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 16.0,
+          "blocks": 2.0
+        },
+        "service-0 drop<capntproto_rpc_bench::echo_capnp::cell::ServerDispatch<capntproto_rpc_bench::workflows::capability::Cell>> (src/local.rs:1064)": {
+          "bytes": 92.0,
+          "blocks": 2.0
+        },
+        "client new<capnp_rpc::scoped::wire::Projected> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 2.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 48.0,
+          "blocks": 2.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 441395.25333333336,
+        "blocks": 955.2844444444445
+      },
+      "peers": {
+        "client": {
+          "bytes": 220536.5688888889,
+          "blocks": 476.12888888888887
+        },
+        "service-0": {
+          "bytes": 220858.68444444446,
+          "blocks": 479.15555555555557
+        }
+      },
+      "top_allocation_sites": {
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 61440.0,
+          "blocks": 64.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 62720.0,
+          "blocks": 64.0
+        },
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 7392.0,
+          "blocks": 33.0
+        },
+        "service-0 new_uninit<alloc::rc::RcInner<capnp_rpc::rpc::AnswerStatus>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 1536.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 256.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::rpc::Params> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::local::Client<capntproto_rpc_bench::echo_capnp::access_service::ServerDispatch<capntproto_rpc_bench::topology::Service>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 256.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp_rpc::rpc::ResultsInner<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5376.0,
+          "blocks": 32.0
+        },
+        "service-0 poll_read<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capnp_rpc::twoparty::{impl#1}::poll_receive::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>>> (src/buffered_read.rs:736)": {
+          "bytes": 61696.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::completion::Slot<capnp::capability::Promise<capnp_rpc::rpc::Response<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp::Error>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 3072.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::rpc::ResponseVariant<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2304.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<core::cell::RefCell<capnp_rpc::rpc::QuestionRef<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2048.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::rpc::Request<capntproto_rpc_wire::rpc_twoparty_capnp::Side>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<futures_util::future::try_future::MapOk<capnp_rpc::rpc::{impl#15}::send_internal::{async_block_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp_rpc::rpc::{impl#16}::send::{closure_env#0}<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2560.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::IncomingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5120.0,
+          "blocks": 32.0
+        },
+        "service-0 new<(alloc::rc::Rc<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, alloc::alloc::Global>, alloc::rc::Rc<core::cell::RefCell<core::option::Option<capnp_rpc::rpc::ResultsVariant>>, alloc::alloc::Global>)> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 512.0,
+          "blocks": 32.0
+        },
+        "client new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5632.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capnp_rpc::twoparty::OutgoingMessage> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 5632.0,
+          "blocks": 32.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 287607.1111111111,
+        "blocks": 467.34
+      },
+      "peers": {
+        "client": {
+          "bytes": 155100.8711111111,
+          "blocks": 310.12666666666667
+        },
+        "service-0": {
+          "bytes": 132506.24,
+          "blocks": 157.21333333333334
+        }
+      },
+      "top_allocation_sites": {
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::task::Task<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 7392.0,
+          "blocks": 33.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_wire::owned::connection::prepared_return::PreparedReturn<capnp::message::HeapAllocator>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 4608.0,
+          "blocks": 32.0
+        },
+        "client new<capntproto_rpc_wire::owned::question::PlainResults> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "service-0 <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 60928.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp_rpc::scoped::admission::Credit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 1280.0,
+          "blocks": 32.0
+        },
+        "client <capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>> as futures_io::if_std::AsyncWrite>::poll_write_vectored (src/twoparty.rs:1327)": {
+          "bytes": 62208.0,
+          "blocks": 32.0
+        },
+        "service-0 new<capntproto_rpc_wire::owned::PlainParams> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<capnp_rpc::scoped::Call> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 10496.0,
+          "blocks": 32.0
+        },
+        "service-0 new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capnp::private::arena::CachedReaderArena<capnp::private::arena::OwnedArena<capnp::serialize::no_alloc_buffer_segments::NoAllocBufferSegments<capntproto_rpc_engine::messages::backing::SharedBytes>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 2816.0,
+          "blocks": 32.0
+        },
+        "client new<alloc::rc::RcInner<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 768.0,
+          "blocks": 32.0
+        },
+        "client new_uninit<alloc::rc::RcInner<capnp_rpc::scoped::response::State>> (library/alloc/src/boxed.rs:317)": {
+          "bytes": 5520.0,
+          "blocks": 30.0
+        },
+        "client {closure#0}<capnp_rpc::scoped::response::Connection, capnp_rpc::scoped::response::{impl#12}::promise::{closure_env#0}> (library/core/src/cell/once.rs:167)": {
+          "bytes": 1200.0,
+          "blocks": 30.0
+        },
+        "service-0 {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 62874.22222222222,
+          "blocks": 28.213333333333335
+        },
+        "client {closure#0}<capntproto_rpc_bench::run::{async_block_env#2}> (local.rs:1077)": {
+          "bytes": 61524.86,
+          "blocks": 23.126666666666665
+        },
+        "service-0 {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        },
+        "client new<alloc::sync::ArcInner<futures_util::stream::futures_unordered::ready_to_run_queue::ReadyToRunQueue<futures_util::stream::futures_ordered::OrderWrapper<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{async_fn_env#0}>>>>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 64.0,
+          "blocks": 1.0
+        },
+        "client {async_fn#0}<&mut capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, core::iter::adapters::map::Map<alloc::collections::vec_deque::iter::Iter<(capnp_rpc::twoparty::QueuedMessage, core::option::Option<futures_channel::oneshot::Sender<capnp_rpc::twoparty::QueuedMessage>>)>, capnp_futures::write_queue::local::write_queue_with_clock::{async_block#0}::{closure_env#1}<capnp_rpc::twoparty::SharedOutput<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>, capnp_rpc::twoparty::QueuedMessage, capnp_rpc::twoparty::{impl#16}::new::{closure_env#0}<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::quic::Stream>>, capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::quic::Stream>>>>>> (src/serialize.rs:461)": {
+          "bytes": 512.0,
+          "blocks": 1.0
+        },
+        "service-0 new<alloc::rc::RcInner<capntproto_rpc_bench::topology::Service>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 0.0,
+          "blocks": 0.0
+        },
+        "client new<alloc::sync::ArcInner<capnp_rpc::portable::runtime::Lane>> (library/alloc/src/boxed.rs:286)": {
+          "bytes": 0.0,
+          "blocks": 0.0
+        }
+      }
+    }
+  ],
+  "report_selection": "All raw totals; top 20 allocating sites by marginal block count. Complete DHAT stacks and all site attribution are in the evidence archive."
+}

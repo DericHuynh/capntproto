@@ -1,6 +1,7 @@
 //! Keep the exact sent Return in its answer owner through Finish and retained
 //! pipelines. Callers cannot substitute another frame when applying releases.
 use super::*;
+use crate::publication::ResultExports;
 
 #[cfg(test)]
 mod tests;
@@ -8,15 +9,15 @@ mod tests;
 pub struct State<'pool, A> {
     pub owner: A,
     frame: Option<Frame<'pool>>,
-    // Set only by the private validated data-only publication path.
-    plain_return: bool,
+    // Installed only together with the exact validated, accepted Return.
+    result_exports: ResultExports,
 }
 impl<'pool, A> State<'pool, A> {
     pub fn new(owner: A) -> Self {
         Self {
             owner,
             frame: None,
-            plain_return: false,
+            result_exports: ResultExports::Serialized,
         }
     }
     pub fn with_result<R>(
@@ -92,7 +93,13 @@ pub fn try_send<'pool, 'a, A>(
     };
     let retired = pending.accept();
     queue.accept(messages, offer);
-    Ok(keep_frame(key, answers, retired, frame, false))
+    Ok(keep_frame(
+        key,
+        answers,
+        retired,
+        frame,
+        ResultExports::Empty,
+    ))
 }
 
 /// Convenience for callers which discard replies on rejection. Use `try_send`
@@ -139,7 +146,13 @@ pub(super) fn send_prepared<'pool, 'a, A>(
         Ok(retired)
     })();
     match result {
-        Ok(retired) => Ok(keep_frame(key, answers, retired, frame, true)),
+        Ok(retired) => Ok(keep_frame(
+            key,
+            answers,
+            retired,
+            frame,
+            ResultExports::Empty,
+        )),
         Err(error) => {
             frame.release(messages);
             Err(error)
@@ -171,22 +184,15 @@ pub fn try_send_granting<'pool, 'a, 'batch, 'e, 'table, A, E>(
         }
     };
     let prepared = (|| {
-        frame
-            .with(messages, |root| {
-                crate::admission::check_return(&mut pending, root, true)
-            })?
-            .map_err(Error::Output)?;
-        crate::publication::validate(
-            &batch,
-            &messages.read(&frame.lease),
-            scratch,
-            frame.options,
-            |_, _| Ok(false),
-        )
-        .map_err(|error| Error::Output(error.into()))?;
-        messages.offer(&frame.lease).map_err(Error::Storage)
+        let result_exports = frame.with(messages, |root| {
+            crate::admission::check_return(&mut pending, root, true).map_err(Error::Output)?;
+            crate::publication::validate_root(&batch, root, scratch, |_, _| Ok(false))
+                .map_err(|error| Error::Output(error.into()))
+        })??;
+        let offer = messages.offer(&frame.lease).map_err(Error::Storage)?;
+        Ok((offer, result_exports))
     })();
-    let offer = match prepared {
+    let (offer, result_exports) = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
             return Err(Rejected {
@@ -199,7 +205,7 @@ pub fn try_send_granting<'pool, 'a, 'batch, 'e, 'table, A, E>(
     batch.commit();
     let retired = pending.accept();
     queue.accept(messages, offer);
-    Ok(keep_frame(key, answers, retired, frame, false))
+    Ok(keep_frame(key, answers, retired, frame, result_exports))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -223,7 +229,7 @@ fn keep_frame<'pool, 'a, A>(
     answers: &mut answers::Answers<'a, '_, State<'pool, A>>,
     mut retired: Option<State<'pool, A>>,
     frame: Frame<'pool>,
-    plain_return: bool,
+    result_exports: ResultExports,
 ) -> Option<State<'pool, A>> {
     let state = if let Some(retired) = retired.as_mut() {
         retired
@@ -234,7 +240,7 @@ fn keep_frame<'pool, 'a, A>(
     };
     debug_assert!(state.frame.is_none());
     state.frame = Some(frame);
-    state.plain_return = plain_return;
+    state.result_exports = result_exports;
     retired
 }
 
@@ -267,18 +273,26 @@ pub(super) fn finished_parts<'pool, 'a, 'e, A, E>(
     exports: &mut exports::Exports<'e, '_, E>,
     scratch: &mut [u32],
 ) -> Result<Option<answers::Finished<State<'pool, A>>>, Error> {
-    // The private publication certificate proves this exact answer's retained
-    // immutable Return has no capability grants. Finish still commits through
-    // the same answer ledger (including cancellation and pipeline retention),
-    // but there is no export transaction or wire payload to decode again.
-    if answers
+    let result_exports = answers
         .lookup(id)
         .and_then(|key| answers.get(key).ok())
-        .is_some_and(|state| state.plain_return)
+        .map(|state| state.result_exports);
+    if let Some(result_exports @ (ResultExports::Empty | ResultExports::One { .. })) =
+        result_exports
     {
-        return Ok(answers
-            .prepare_finish(id, release_result_caps)
-            .map(|pending| pending.accept()));
+        let Some(pending) = answers.prepare_finish(id, release_result_caps) else {
+            return Ok(None);
+        };
+        if pending.release_results() {
+            if let ResultExports::One { id, count } = result_exports {
+                exports.release_deferred(id, count).map_err(|error| {
+                    Error::Admission(inbound::Error::Release(exports::ReleaseError::Export(
+                        error,
+                    )))
+                })?;
+            }
+        }
+        return Ok(Some(pending.accept()));
     }
     let original = match answers
         .lookup(id)
@@ -334,18 +348,10 @@ pub fn try_send_reflected<'pool, 'a, 'batch, 'e, 'table, A, E, I>(
         }
     };
     let prepared = (|| {
-        frame
-            .with(messages, |root| {
-                crate::admission::check_return(&mut pending, root, true)
-            })?
-            .map_err(Error::Output)?;
         let mut count = 0;
-        crate::publication::validate(
-            &batch,
-            &messages.read(&frame.lease),
-            scratch,
-            frame.options,
-            |descriptor, index| {
+        let result_exports = frame.with(messages, |root| {
+            crate::admission::check_return(&mut pending, root, true).map_err(Error::Output)?;
+            crate::publication::validate_root(&batch, root, scratch, |descriptor, index| {
                 count += 1;
                 let reference = references
                     .slots
@@ -357,17 +363,18 @@ pub fn try_send_reflected<'pool, 'a, 'batch, 'e, 'table, A, E, I>(
                     references.imports,
                     references.questions,
                 )
-            },
-        )
-        .map_err(|error| Error::Output(error.into()))?;
+            })
+            .map_err(|error| Error::Output(error.into()))
+        })??;
         if count != references.slots.len() {
             return Err(Error::Output(
                 crate::publication::Error::ReflectionMismatch.into(),
             ));
         }
-        messages.offer(&frame.lease).map_err(Error::Storage)
+        let offer = messages.offer(&frame.lease).map_err(Error::Storage)?;
+        Ok((offer, result_exports))
     })();
-    let offer = match prepared {
+    let (offer, result_exports) = match prepared {
         Ok(offer) => offer,
         Err(error) => {
             return Err(Rejected {
@@ -385,7 +392,7 @@ pub fn try_send_reflected<'pool, 'a, 'batch, 'e, 'table, A, E, I>(
         references.imports,
         references.questions,
     );
-    Ok(keep_frame(key, answers, retired, frame, false))
+    Ok(keep_frame(key, answers, retired, frame, result_exports))
 }
 
 mod tail;

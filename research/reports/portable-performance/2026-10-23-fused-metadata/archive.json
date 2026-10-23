@@ -1,0 +1,11 @@
+{
+  "path": "/tmp/portable-fusion-metadata-20261023.tar.zst",
+  "format": "tar.zst",
+  "bytes": 128846005,
+  "sha256": "dc01876fd105b33f011bf2ac7127d80c88626e09f0505b77fa547507f0818679",
+  "inventory_sha256": "7603fe93bd49b01e46d0deef2eee7ab8f83257931ca6a9c4806304747cfe7e0c",
+  "verified_payload_files": 13825,
+  "workspace_link": "/workspace/capntproto/target/portable-fusion-metadata-20261023.tar.zst",
+  "frozen_final_binary_sha256": "9913f7c4febb31d3a6a7238246c142f560755bcc5489e27e8ec9239a5502dee3",
+  "extraction": "tar --zstd -xf portable-fusion-metadata-20261023.tar.zst"
+}

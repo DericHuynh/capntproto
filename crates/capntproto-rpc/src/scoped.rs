@@ -343,6 +343,32 @@ impl<'id> ClientHooks<'id> {
         self.export_after_collect(graph, client)
     }
 
+    /// Transfer an owned graph client into a public client. The endpoint takes
+    /// over its graph reference; failures release it before returning the error.
+    pub fn import_client(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        self.collect(graph);
+        self.import_after_collect(graph, client)
+    }
+
+    fn import_after_collect(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        let pending = match graph.is_settled(&client) {
+            Ok(settled) => !settled,
+            Err(error) => {
+                graph.release(client);
+                return Err(Error::failed(error.to_string()));
+            }
+        };
+        self.bind_retained(graph, client, pending, false, None)
+    }
+
     /// Export and publish hosted diagnostics before any resolution waiter can
     /// observe the endpoint. Use the same projection on subsequent collections.
     pub fn export_client_with_metadata<G: Capabilities<'id>>(
@@ -480,32 +506,37 @@ impl<'id> ClientHooks<'id> {
                 return Err(Error::overloaded(error.to_string()));
             }
         };
+        // Inspect the route once while the graph is exclusively borrowed.
+        let destination = graph.inspect(&client);
+        let remote = matches!(
+            destination,
+            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                location: capntproto_rpc_engine::clients::Location::Remote(_),
+                ..
+            })
+        );
+        let broken = matches!(
+            destination,
+            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                location: capntproto_rpc_engine::clients::Location::Broken,
+                ..
+            })
+        );
         let endpoint = existing.unwrap_or_else(|| {
             Rc::new(Endpoint {
                 introduction: RefCell::default(),
                 introduced: RefCell::default(),
-                remote: Cell::new(matches!(
-                    graph.inspect(&client),
-                    Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                        location: capntproto_rpc_engine::clients::Location::Remote(_),
-                        ..
-                    })
-                )),
+                remote: Cell::new(remote),
                 inbox: Rc::downgrade(&self.inbox),
                 index: Cell::new(None),
                 binding_wakes: RefCell::default(),
                 settled: Cell::new(!pending),
                 metadata_generation: Cell::new(0),
                 metadata_changes: std::cell::OnceCell::new(),
-                failure: RefCell::new(match graph.inspect(&client) {
-                    Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                        location: capntproto_rpc_engine::clients::Location::Broken,
-                        ..
-                    }) => Some(Error::failed(
-                        "capability resolved to a broken endpoint".into(),
-                    )),
-                    _ => None,
-                }),
+                failure: RefCell::new(
+                    broken
+                        .then(|| Error::failed("capability resolved to a broken endpoint".into())),
+                ),
                 resolution: RefCell::default(),
                 #[cfg(unix)]
                 fd: RefCell::new(None),
@@ -515,13 +546,7 @@ impl<'id> ClientHooks<'id> {
             endpoint.index.replace(Some(index)).is_none(),
             "projection bound once"
         );
-        endpoint.remote.set(matches!(
-            graph.inspect(&client),
-            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                location: capntproto_rpc_engine::clients::Location::Remote(_),
-                ..
-            })
-        ));
+        endpoint.remote.set(remote);
         endpoint.settled.set(!pending);
         self.entries[index] = Some(Entry {
             endpoint: Rc::downgrade(&endpoint),

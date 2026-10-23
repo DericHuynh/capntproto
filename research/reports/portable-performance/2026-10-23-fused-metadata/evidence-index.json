@@ -1,0 +1,215 @@
+{
+  "base": "7993d5214ca133b8a4c524d7ec30030d41fe4622",
+  "binaries": {
+    "baseline": {
+      "path": "bundle/baseline",
+      "bytes": 87978192,
+      "sha256": "e0e71abc3da4713900359bf30d898dddc4b7372d39cb8b42a170d5df1725eb8b"
+    },
+    "cpp": {
+      "path": "bundle/cpp",
+      "bytes": 3112712,
+      "sha256": "5817fd52501b8a908e17ce9451336080776ccd3cb9629164dc19da37368c0da5"
+    },
+    "direct": {
+      "path": "bundle/direct",
+      "bytes": 87956872,
+      "sha256": "9913f7c4febb31d3a6a7238246c142f560755bcc5489e27e8ec9239a5502dee3"
+    },
+    "fusion": {
+      "path": "bundle/fusion",
+      "bytes": 87991960,
+      "sha256": "b8791cfd54eaa9addb06f7beb76973a3b3443d7c2f37e774fcfd0cf8b2d2e317"
+    },
+    "metadata": {
+      "path": "bundle/metadata",
+      "bytes": 87956416,
+      "sha256": "e1ab9b400417f00565303d07c81ceb27a04a04e48fd87bda8952eb032d51bbc9"
+    }
+  },
+  "campaigns": [
+    {
+      "path": "callgrind-direct-quic-50/scope.json",
+      "sha256": "d5026cf0708b841f5f47136c7035ed0050ed5bf03f48eb55d59d86fa71a15d08",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-direct-quic-500/scope.json",
+      "sha256": "cb1a3293031641d4bc32e7d6c107474aa21b0d6d52dc9b0a919425ad1c573db0",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-direct-tls-50/scope.json",
+      "sha256": "7d183e947db68e24b3426a05ae03f9d9f28c1546ef605af65451843eb99196f0",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-direct-tls-500/scope.json",
+      "sha256": "7f58b64cdd8852c87610db74fadabb313110fc55c0e03061792e733829ef7b03",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-fusion-quic-50/scope.json",
+      "sha256": "4dbeadc331b10715e64b392c0bb15462d481091fbaabebd44374cfadd1f47d65",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-fusion-quic-500/scope.json",
+      "sha256": "c8e7dae945dacf6b834a61fa697377e8801fd93c91bb0d022f91cbeca187d10a",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-fusion-tls-50/scope.json",
+      "sha256": "b360f6cc2abbf66aa4fd46df818cd22d8a62c3a71f9ff5352f64f6b43e8b82b3",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-fusion-tls-500/scope.json",
+      "sha256": "c999e3041fb9bb9b38f53e11405497dcf7374338c13c28bff2684da184453a21",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-metadata-quic-50/scope.json",
+      "sha256": "ac6627c21aa3d786bf33e5af3a084febd4cf154db3a5923b772db7a78b9ebd86",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-metadata-quic-500/scope.json",
+      "sha256": "ddd4fa125ebef908b778e67a388cdc40b1fa941732b8f848f559cfee0076bdcb",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-metadata-tls-50/scope.json",
+      "sha256": "6896049c30f7f80adc85470fea49f2f7dccfa0eb77a7e866a12d77cc8066b3d4",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "callgrind-metadata-tls-500/scope.json",
+      "sha256": "621b03cabc974591b59770697e51974f4c8e838149526897a01bbc42b09714bb",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "dhat-direct-quic-50/scope.json",
+      "sha256": "8f243fa98f8c8ba0e661941b653e96ab3b9a3ff70071eba32ba5cd971f47d5ff",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "dhat-direct-quic-500/scope.json",
+      "sha256": "979ff8d7caf53a0e434b5d302751b5d12f4f6ef1025d17501e1d9e5f08fe0658",
+      "diagnostic": true,
+      "trials": 1,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "dhat-direct-tls-50/scope.json",
+      "sha256": "a22fd69f5218d4ac703c011c18b81a223f979f9ee01a3423ca274fbfa71af1c3",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 50,
+      "repetitions": null
+    },
+    {
+      "path": "dhat-direct-tls-500/scope.json",
+      "sha256": "873c5cf254dca9b345f2c66a805f6b3cd2a0bea1fa77093badb964a46b470922",
+      "diagnostic": true,
+      "trials": 2,
+      "iterations": 500,
+      "repetitions": null
+    },
+    {
+      "path": "direct-focused/scope.json",
+      "sha256": "3291cea1fd16d6404eb25102756bb762c8130790ff2676a59f79f9f093e69e2c",
+      "diagnostic": false,
+      "trials": 140,
+      "iterations": 5000,
+      "repetitions": 5
+    },
+    {
+      "path": "final-full/scope.json",
+      "sha256": "5ba41d2c68c4b327ac507588ec438577e99fa4f89ebfa7b6ae875b09da8f9b88",
+      "diagnostic": false,
+      "trials": 840,
+      "iterations": 1000,
+      "repetitions": 5
+    },
+    {
+      "path": "fusion-focused/scope.json",
+      "sha256": "d52b5678da24155e4ece0f370eac859df7ed8df6a747a057a749439660ea4953",
+      "diagnostic": false,
+      "trials": 140,
+      "iterations": 5000,
+      "repetitions": 5
+    },
+    {
+      "path": "metadata-focused/scope.json",
+      "sha256": "cc3e0b257883ec9dd329dcc1202f75067457f360ca8b14ca21397162422b61ac",
+      "diagnostic": false,
+      "trials": 140,
+      "iterations": 5000,
+      "repetitions": 5
+    },
+    {
+      "path": "trace-10/scope.json",
+      "sha256": "b17d3b654b9556ef9e15169dd5c2b35834c81b01026727ccd6e50f993a915dbb",
+      "diagnostic": true,
+      "trials": 105,
+      "iterations": 10,
+      "repetitions": 5
+    },
+    {
+      "path": "trace-100/scope.json",
+      "sha256": "53b7288940db8db1caea097e65ee9ea89ee5d8ffdcf303b04fbe02670782b69c",
+      "diagnostic": true,
+      "trials": 105,
+      "iterations": 100,
+      "repetitions": 5
+    }
+  ],
+  "reference_profile_evidence": {
+    "archive": "/tmp/portable-legacy-gap-20261023.tar.zst",
+    "sha256": "ab1c36153a69279b3ff7e6e4ab067aa2b92b85548876db00bad961131bdf7f3c",
+    "commit": "7993d5214ca133b8a4c524d7ec30030d41fe4622",
+    "note": "Source profile data from sealed secure57. Full raw profiles are in that referenced archive; these exact analysis files retain raw totals and marginal estimates."
+  },
+  "note": "Intermediate and final measurement campaigns are retained. Compatibility output has its own checks.json record. The qualification launcher was paused after the metadata campaign to add direct deferred cleanup; the final launcher contains the actual completed broad run."
+}

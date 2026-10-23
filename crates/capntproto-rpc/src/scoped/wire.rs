@@ -149,7 +149,7 @@ impl capnp::private::capability::ResponseHook for Payload {
 }
 // A completed wire payload is immutable. Its pipeline can retain it directly;
 // there is no mutable local result state to synchronize with another owner.
-struct PayloadPipeline(Rc<Payload>);
+pub(super) struct PayloadPipeline(pub(super) Rc<Payload>);
 impl PipelineHook for PayloadPipeline {
     fn add_ref(&self) -> Box<dyn PipelineHook> {
         Box::new(Self(self.0.clone()))
@@ -675,8 +675,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     }
                 }
                 ProjectionTarget::Queued(client) => {
-                    let result = hooks.export_before_wire_refresh(&mut driver.capabilities(), &cap);
-                    driver.capabilities().release(cap);
+                    let result = hooks.import_client(&mut driver.capabilities(), cap);
                     refresh(hooks, driver);
                     let result = result.map(|client| client.hook);
                     if let Ok(hook) = &result {
@@ -1051,6 +1050,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
+                        hooks.collect(&mut driver.capabilities());
                         let mut caps = Vec::with_capacity(payload.capability_count());
                         for index in 0..payload.capability_count() {
                             let cap = payload.capability_at(index as u32).map_err(wire_error)?;
@@ -1060,8 +1060,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                     let cap = driver.bind_capability(cap)
                                         .map_err(wire_error)?
                                         .into_client();
-                                    let result = hooks.export_before_wire_refresh(&mut driver.capabilities(), &cap);
-                                    driver.capabilities().release(cap);
+                                    let result = hooks.import_after_collect(&mut driver.capabilities(), cap);
                                     Some(result?.hook)
                                 }
                             };
@@ -1084,6 +1083,23 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         driver.release_output(output, messages);
         match result {
             Ok(payload) => {
+                let call = self.call.as_mut().expect("wire completion once");
+                let payload = match call.results.complete_payload(
+                    &call.completion,
+                    payload,
+                    self.pipeline.as_ref(),
+                    || {
+                        self.local_results
+                            .as_ref()
+                            .and_then(server::Results::early_pipeline)
+                    },
+                ) {
+                    Ok(()) => {
+                        self.call.take();
+                        return Ok(());
+                    }
+                    Err(payload) => payload,
+                };
                 let payload = if self.pipeline.is_none() {
                     let results = &mut self.call.as_mut().expect("wire completion once").results;
                     match results.finish_admitted(payload) {
@@ -1101,18 +1117,6 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     .pipeline
                     .as_ref()
                     .map(|_| Box::new(PayloadPipeline(payload.clone())) as Box<dyn PipelineHook>);
-                if self.call.as_mut().unwrap().results.finish_shared(&payload) {
-                    if let Some(state) = &self.pipeline {
-                        state.finish(
-                            self.local_results
-                                .as_ref()
-                                .and_then(server::Results::early_pipeline)
-                                .unwrap_or_else(|| pipeline.expect("enabled pipeline")),
-                        );
-                    }
-                    self.call.take().unwrap().complete(Ok(()));
-                    return Ok(());
-                }
                 let results = &mut self
                     .call
                     .as_mut()
@@ -1339,7 +1343,7 @@ impl PipelineState {
     fn remember(&self, path: Vec<PipelineOp>, hook: &dyn ClientHook) -> capnp::Result<()> {
         self.cached.borrow_mut().remember(path, hook, self.maximum)
     }
-    fn finish(&self, pipeline: Box<dyn PipelineHook>) {
+    pub(super) fn finish(&self, pipeline: Box<dyn PipelineHook>) {
         let pipeline_ref = pipeline.add_ref();
         let old = self.finished.replace(Some(pipeline));
         drop(old);

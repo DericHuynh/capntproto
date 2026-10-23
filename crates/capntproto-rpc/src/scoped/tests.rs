@@ -2179,3 +2179,36 @@ fn sparse_graph_resolution_and_metadata_changes_visit_only_their_owner() {
     )
     .unwrap();
 }
+
+#[test]
+fn imported_client_transfers_ownership_and_releases_on_rejection() {
+    clients::with_growing_graph::<u32, u8, _>(
+        0,
+        4,
+        clients::NotificationGrowth::bounded(8, 32),
+        |graph| {
+            let mut hooks = ClientHooks::new(1, 1);
+            let first = graph.endpoint(11, Location::Local).unwrap();
+            let duplicate = graph.retain(&first).unwrap();
+            let a = hooks.import_client(graph, first).unwrap();
+            let b = hooks.import_client(graph, duplicate).unwrap();
+            assert_eq!(hooks.entries.iter().flatten().count(), 1);
+            let rejected = graph.endpoint(22, Location::Local).unwrap();
+            assert!(hooks.import_client(graph, rejected).is_err());
+            assert_eq!(graph.take_retired(), Some(22));
+            drop(a);
+            hooks.collect(graph);
+            assert!(graph.take_retired().is_none());
+            drop(b);
+            hooks.collect(graph);
+            assert_eq!(graph.take_retired(), Some(11));
+            assert!(graph.is_empty());
+            hooks.inbox.close(Error::disconnected("closed".into()));
+            let rejected = graph.endpoint(33, Location::Local).unwrap();
+            assert!(hooks.import_client(graph, rejected).is_err());
+            assert_eq!(graph.take_retired(), Some(33));
+            assert!(graph.is_empty());
+        },
+    )
+    .unwrap();
+}

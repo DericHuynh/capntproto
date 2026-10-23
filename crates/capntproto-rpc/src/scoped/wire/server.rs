@@ -132,6 +132,7 @@ impl<'id> ClientHooks<'id> {
                 params: message,
             });
         }
+        self.collect(&mut driver.capabilities());
         call.with(messages, |params| {
             let mut caps = Vec::with_capacity(params.capability_count());
             for index in 0..params.capability_count() {
@@ -142,8 +143,7 @@ impl<'id> ClientHooks<'id> {
                             .bind_capability(cap)
                             .map_err(wire_error)?
                             .into_client();
-                        let hook = self.export_client(&mut driver.capabilities(), &client);
-                        driver.capabilities().release(client);
+                        let hook = self.import_after_collect(&mut driver.capabilities(), client);
                         Some(hook?.hook)
                     }
                 };

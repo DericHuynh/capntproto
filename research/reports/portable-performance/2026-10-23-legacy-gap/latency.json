@@ -1,0 +1,884 @@
+{
+  "rows": [
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 188418.17444,
+        "stddev_ns": 138228.40569082755,
+        "min_ns": 142765,
+        "max_ns": 10649799,
+        "repetition_mean_ns": [
+          188631.0076,
+          206366.002,
+          165683.6978,
+          198727.9678,
+          182682.197
+        ],
+        "repetition_mean_stddev_ns": 15638.25051348685,
+        "repetition_mean_range_ns": [
+          165683.6978,
+          206366.002
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 163165.03064,
+        "stddev_ns": 155190.6799735264,
+        "min_ns": 114883,
+        "max_ns": 15326466,
+        "repetition_mean_ns": [
+          181919.4618,
+          140420.1674,
+          159205.1202,
+          174979.1882,
+          159301.2156
+        ],
+        "repetition_mean_stddev_ns": 16118.636481958842,
+        "repetition_mean_range_ns": [
+          140420.1674,
+          181919.4618
+        ]
+      },
+      "latency_overhead_percent": 15.47705638944008
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 86089.70444,
+        "stddev_ns": 44936.095510315456,
+        "min_ns": 55915,
+        "max_ns": 2122533,
+        "repetition_mean_ns": [
+          94697.769,
+          68426.8938,
+          92126.2504,
+          97873.444,
+          77324.165
+        ],
+        "repetition_mean_stddev_ns": 12631.357231043326,
+        "repetition_mean_range_ns": [
+          68426.8938,
+          97873.444
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 73073.5676,
+        "stddev_ns": 65675.06596916179,
+        "min_ns": 46019,
+        "max_ns": 5701495,
+        "repetition_mean_ns": [
+          69863.0466,
+          85746.6732,
+          62689.6046,
+          71721.9234,
+          75346.5902
+        ],
+        "repetition_mean_stddev_ns": 8451.853524657563,
+        "repetition_mean_range_ns": [
+          62689.6046,
+          85746.6732
+        ]
+      },
+      "latency_overhead_percent": 17.812373567484087
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 62922.5308,
+        "stddev_ns": 38212.417438247874,
+        "min_ns": 44317,
+        "max_ns": 3068837,
+        "repetition_mean_ns": [
+          82748.9284,
+          51091.0452,
+          71710.6806,
+          54044.971,
+          55017.0288
+        ],
+        "repetition_mean_stddev_ns": 13707.750545568313,
+        "repetition_mean_range_ns": [
+          51091.0452,
+          82748.9284
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 44615.1092,
+        "stddev_ns": 41200.39385169488,
+        "min_ns": 26350,
+        "max_ns": 3238592,
+        "repetition_mean_ns": [
+          52902.6832,
+          53388.1832,
+          40388.7402,
+          38808.2356,
+          37587.7038
+        ],
+        "repetition_mean_stddev_ns": 7852.023828310747,
+        "repetition_mean_range_ns": [
+          37587.7038,
+          53388.1832
+        ]
+      },
+      "latency_overhead_percent": 41.03412930792514
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 77244.48504,
+        "stddev_ns": 50329.751919290306,
+        "min_ns": 56955,
+        "max_ns": 3959307,
+        "repetition_mean_ns": [
+          68193.016,
+          88684.4466,
+          87636.785,
+          71758.0858,
+          69950.0918
+        ],
+        "repetition_mean_stddev_ns": 10051.249426009217,
+        "repetition_mean_range_ns": [
+          68193.016,
+          88684.4466
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 64451.3848,
+        "stddev_ns": 37467.12374247576,
+        "min_ns": 47141,
+        "max_ns": 3055377,
+        "repetition_mean_ns": [
+          57839.2202,
+          81460.8458,
+          63634.205,
+          63491.6514,
+          55831.0016
+        ],
+        "repetition_mean_stddev_ns": 10111.16167593343,
+        "repetition_mean_range_ns": [
+          55831.0016,
+          81460.8458
+        ]
+      },
+      "latency_overhead_percent": 19.849224775694818
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 143007.58296,
+        "stddev_ns": 61020.844511448326,
+        "min_ns": 113110,
+        "max_ns": 3615619,
+        "repetition_mean_ns": [
+          140685.0096,
+          134018.643,
+          147325.7172,
+          162189.9896,
+          130818.5554
+        ],
+        "repetition_mean_stddev_ns": 12463.735287750644,
+        "repetition_mean_range_ns": [
+          130818.5554,
+          162189.9896
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 114871.82444,
+        "stddev_ns": 99680.90475386809,
+        "min_ns": 87973,
+        "max_ns": 8219600,
+        "repetition_mean_ns": [
+          119511.6906,
+          112754.4164,
+          113030.297,
+          127357.8504,
+          101704.8678
+        ],
+        "repetition_mean_stddev_ns": 9469.326659486887,
+        "repetition_mean_range_ns": [
+          101704.8678,
+          127357.8504
+        ]
+      },
+      "latency_overhead_percent": 24.49317633559125
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 374212.198,
+        "stddev_ns": 149665.7337116928,
+        "min_ns": 284448,
+        "max_ns": 11327723,
+        "repetition_mean_ns": [
+          365577.6408,
+          392550.8714,
+          398524.1528,
+          354586.6608,
+          359821.6642
+        ],
+        "repetition_mean_stddev_ns": 19963.609641962972,
+        "repetition_mean_range_ns": [
+          354586.6608,
+          398524.1528
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 333158.57216,
+        "stddev_ns": 95245.25591669675,
+        "min_ns": 248314,
+        "max_ns": 3517272,
+        "repetition_mean_ns": [
+          361359.2212,
+          308793.583,
+          374132.0954,
+          305150.5408,
+          316357.4204
+        ],
+        "repetition_mean_stddev_ns": 32149.990011150414,
+        "repetition_mean_range_ns": [
+          305150.5408,
+          374132.0954
+        ]
+      },
+      "latency_overhead_percent": 12.322548260977628
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 225592.9,
+        "stddev_ns": 124340.25588260319,
+        "min_ns": 162634,
+        "max_ns": 8045023,
+        "repetition_mean_ns": [
+          232346.9092,
+          231071.772,
+          236608.3258,
+          213595.159,
+          214342.334
+        ],
+        "repetition_mean_stddev_ns": 10810.819911607197,
+        "repetition_mean_range_ns": [
+          213595.159,
+          236608.3258
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 181815.50024,
+        "stddev_ns": 186292.51913715297,
+        "min_ns": 140382,
+        "max_ns": 27876168,
+        "repetition_mean_ns": [
+          170433.9304,
+          212335.6702,
+          180252.9836,
+          163763.4898,
+          182291.4272
+        ],
+        "repetition_mean_stddev_ns": 18638.427723774636,
+        "repetition_mean_range_ns": [
+          163763.4898,
+          212335.6702
+        ]
+      },
+      "latency_overhead_percent": 24.07792498561068
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 131590.26664,
+        "stddev_ns": 99394.65638178942,
+        "min_ns": 80211,
+        "max_ns": 8936715,
+        "repetition_mean_ns": [
+          134476.4328,
+          122016.589,
+          170943.9028,
+          110124.8664,
+          120389.5422
+        ],
+        "repetition_mean_stddev_ns": 23637.43626705121,
+        "repetition_mean_range_ns": [
+          110124.8664,
+          170943.9028
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 88888.00816,
+        "stddev_ns": 65193.33403626144,
+        "min_ns": 59940,
+        "max_ns": 4738328,
+        "repetition_mean_ns": [
+          79554.94,
+          89044.2324,
+          99761.0708,
+          91743.8776,
+          84335.92
+        ],
+        "repetition_mean_stddev_ns": 7652.312646195124,
+        "repetition_mean_range_ns": [
+          79554.94,
+          99761.0708
+        ]
+      },
+      "latency_overhead_percent": 48.040516785048396
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 89012.72076,
+        "stddev_ns": 47560.052518730976,
+        "min_ns": 63665,
+        "max_ns": 2549155,
+        "repetition_mean_ns": [
+          95607.485,
+          97305.9792,
+          77817.861,
+          90201.3892,
+          84130.8894
+        ],
+        "repetition_mean_stddev_ns": 8106.157321252973,
+        "repetition_mean_range_ns": [
+          77817.861,
+          97305.9792
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 50656.92012,
+        "stddev_ns": 35322.66555353335,
+        "min_ns": 40541,
+        "max_ns": 2551649,
+        "repetition_mean_ns": [
+          56119.2684,
+          50109.7094,
+          47772.252,
+          47362.4216,
+          51920.9492
+        ],
+        "repetition_mean_stddev_ns": 3567.544270223358,
+        "repetition_mean_range_ns": [
+          47362.4216,
+          56119.2684
+        ]
+      },
+      "latency_overhead_percent": 75.71680344786029
+    },
+    {
+      "transport": "quic",
+      "case": "callback",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 123104.06584,
+        "stddev_ns": 69853.76146555674,
+        "min_ns": 76485,
+        "max_ns": 3974228,
+        "repetition_mean_ns": [
+          134727.9318,
+          118916.1224,
+          109669.8794,
+          125209.2874,
+          126997.1082
+        ],
+        "repetition_mean_stddev_ns": 9390.397116879676,
+        "repetition_mean_range_ns": [
+          109669.8794,
+          134727.9318
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 98472.10788,
+        "stddev_ns": 54486.99401263629,
+        "min_ns": 58798,
+        "max_ns": 4019886,
+        "repetition_mean_ns": [
+          99972.2318,
+          92669.35,
+          98930.795,
+          104450.5652,
+          96337.5974
+        ],
+        "repetition_mean_stddev_ns": 4371.236998253568,
+        "repetition_mean_range_ns": [
+          92669.35,
+          104450.5652
+        ]
+      },
+      "latency_overhead_percent": 25.014147143084386
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 165824.26184,
+        "stddev_ns": 93745.88566197378,
+        "min_ns": 127622,
+        "max_ns": 8276810,
+        "repetition_mean_ns": [
+          171241.193,
+          187272.1414,
+          174355.9266,
+          153000.1656,
+          143251.8826
+        ],
+        "repetition_mean_stddev_ns": 17579.204570433747,
+        "repetition_mean_range_ns": [
+          143251.8826,
+          187272.1414
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 130947.56384,
+        "stddev_ns": 55408.43235534035,
+        "min_ns": 105569,
+        "max_ns": 3168507,
+        "repetition_mean_ns": [
+          134558.2934,
+          130815.3026,
+          125899.1558,
+          141855.1488,
+          121609.9186
+        ],
+        "repetition_mean_stddev_ns": 7821.577734337131,
+        "repetition_mean_range_ns": [
+          121609.9186,
+          141855.1488
+        ]
+      },
+      "latency_overhead_percent": 26.634094577440592
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "portable": {
+        "statistics_version": 1,
+        "mean_ns": 439520.37156,
+        "stddev_ns": 323610.06715932064,
+        "min_ns": 305279,
+        "max_ns": 45923862,
+        "repetition_mean_ns": [
+          467965.8888,
+          444286.1248,
+          422874.9036,
+          423660.1984,
+          438814.7422
+        ],
+        "repetition_mean_stddev_ns": 18445.693698408126,
+        "repetition_mean_range_ns": [
+          422874.9036,
+          467965.8888
+        ]
+      },
+      "legacy": {
+        "statistics_version": 1,
+        "mean_ns": 389278.41232,
+        "stddev_ns": 103490.27126371021,
+        "min_ns": 275695,
+        "max_ns": 3821419,
+        "repetition_mean_ns": [
+          374864.7084,
+          394197.5648,
+          395544.4042,
+          374804.513,
+          406980.8712
+        ],
+        "repetition_mean_stddev_ns": 14089.769231420425,
+        "repetition_mean_range_ns": [
+          374804.513,
+          406980.8712
+        ]
+      },
+      "latency_overhead_percent": 12.906433454804422
+    }
+  ],
+  "mixed": [
+    {
+      "transport": "tls",
+      "case": {
+        "family": "workflow",
+        "name": "dependent-read",
+        "payload_bytes": 1024,
+        "width": 1,
+        "rpcs_per_iteration": 2
+      },
+      "variants": {
+        "legacy-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 72202.47804,
+          "stddev_ns": 50957.224435664124,
+          "min_ns": 46030,
+          "max_ns": 2861585,
+          "repetition_mean_ns": [
+            75987.1114,
+            71754.7194,
+            69983.5016,
+            66471.0808,
+            76815.977
+          ],
+          "repetition_mean_stddev_ns": 4288.970764857091,
+          "repetition_mean_range_ns": [
+            66471.0808,
+            76815.977
+          ]
+        },
+        "portable-portable": {
+          "statistics_version": 1,
+          "mean_ns": 90690.63044,
+          "stddev_ns": 55474.4412306015,
+          "min_ns": 57266,
+          "max_ns": 3574227,
+          "repetition_mean_ns": [
+            95611.2672,
+            87398.9306,
+            82666.3948,
+            84441.6544,
+            103334.9052
+          ],
+          "repetition_mean_stddev_ns": 8636.603749762297,
+          "repetition_mean_range_ns": [
+            82666.3948,
+            103334.9052
+          ]
+        },
+        "legacy-portable": {
+          "statistics_version": 1,
+          "mean_ns": 77505.87316,
+          "stddev_ns": 92900.33291899039,
+          "min_ns": 49875,
+          "max_ns": 10914759,
+          "repetition_mean_ns": [
+            82201.0436,
+            81491.123,
+            73625.0544,
+            69081.31,
+            81130.8348
+          ],
+          "repetition_mean_stddev_ns": 5854.511237587187,
+          "repetition_mean_range_ns": [
+            69081.31,
+            82201.0436
+          ]
+        },
+        "portable-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 78797.33912,
+          "stddev_ns": 58030.770409671895,
+          "min_ns": 53030,
+          "max_ns": 3187235,
+          "repetition_mean_ns": [
+            83576.2516,
+            82586.4486,
+            69804.9992,
+            72122.0492,
+            85896.947
+          ],
+          "repetition_mean_stddev_ns": 7297.62735321493,
+          "repetition_mean_range_ns": [
+            69804.9992,
+            85896.947
+          ]
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": {
+        "family": "workflow",
+        "name": "pipelined-read",
+        "payload_bytes": 1024,
+        "width": 1,
+        "rpcs_per_iteration": 2
+      },
+      "variants": {
+        "legacy-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 47376.02276,
+          "stddev_ns": 32344.350680022602,
+          "min_ns": 26891,
+          "max_ns": 1938516,
+          "repetition_mean_ns": [
+            47081.4332,
+            49991.544,
+            41134.0944,
+            51772.091,
+            46900.9512
+          ],
+          "repetition_mean_stddev_ns": 4044.7655363130116,
+          "repetition_mean_range_ns": [
+            41134.0944,
+            51772.091
+          ]
+        },
+        "portable-portable": {
+          "statistics_version": 1,
+          "mean_ns": 70309.45844,
+          "stddev_ns": 44190.677530855515,
+          "min_ns": 41563,
+          "max_ns": 2666551,
+          "repetition_mean_ns": [
+            79644.277,
+            60335.1048,
+            62535.9984,
+            80973.3236,
+            68058.5884
+          ],
+          "repetition_mean_stddev_ns": 9563.441916551412,
+          "repetition_mean_range_ns": [
+            60335.1048,
+            80973.3236
+          ]
+        },
+        "legacy-portable": {
+          "statistics_version": 1,
+          "mean_ns": 55893.53276,
+          "stddev_ns": 39677.13965547739,
+          "min_ns": 30897,
+          "max_ns": 2309454,
+          "repetition_mean_ns": [
+            66668.6036,
+            60541.4772,
+            48783.5056,
+            43478.765,
+            59995.3124
+          ],
+          "repetition_mean_stddev_ns": 9476.405965477326,
+          "repetition_mean_range_ns": [
+            43478.765,
+            66668.6036
+          ]
+        },
+        "portable-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 61963.0852,
+          "stddev_ns": 80929.15760011552,
+          "min_ns": 39690,
+          "max_ns": 8488910,
+          "repetition_mean_ns": [
+            59238.489,
+            66946.077,
+            58658.2372,
+            55930.7938,
+            69041.829
+          ],
+          "repetition_mean_stddev_ns": 5693.698388472515,
+          "repetition_mean_range_ns": [
+            55930.7938,
+            69041.829
+          ]
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": {
+        "family": "workflow",
+        "name": "dependent-read",
+        "payload_bytes": 1024,
+        "width": 1,
+        "rpcs_per_iteration": 2
+      },
+      "variants": {
+        "legacy-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 103075.05804,
+          "stddev_ns": 70356.34789278806,
+          "min_ns": 63215,
+          "max_ns": 3876231,
+          "repetition_mean_ns": [
+            106994.4686,
+            99457.3148,
+            92761.828,
+            87047.5936,
+            129114.0852
+          ],
+          "repetition_mean_stddev_ns": 16353.310910646245,
+          "repetition_mean_range_ns": [
+            87047.5936,
+            129114.0852
+          ]
+        },
+        "portable-portable": {
+          "statistics_version": 1,
+          "mean_ns": 133986.20244,
+          "stddev_ns": 163346.60267869144,
+          "min_ns": 74942,
+          "max_ns": 15275540,
+          "repetition_mean_ns": [
+            126971.4092,
+            116226.5118,
+            131265.8418,
+            148064.3008,
+            147402.9486
+          ],
+          "repetition_mean_stddev_ns": 13695.037685196638,
+          "repetition_mean_range_ns": [
+            116226.5118,
+            148064.3008
+          ]
+        },
+        "legacy-portable": {
+          "statistics_version": 1,
+          "mean_ns": 111879.79996,
+          "stddev_ns": 59446.2863843613,
+          "min_ns": 70156,
+          "max_ns": 2851250,
+          "repetition_mean_ns": [
+            100579.276,
+            107987.7652,
+            94740.7714,
+            128551.1896,
+            127539.9976
+          ],
+          "repetition_mean_stddev_ns": 15490.102476877284,
+          "repetition_mean_range_ns": [
+            94740.7714,
+            128551.1896
+          ]
+        },
+        "portable-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 117631.1074,
+          "stddev_ns": 65210.88101048867,
+          "min_ns": 72159,
+          "max_ns": 2531348,
+          "repetition_mean_ns": [
+            97013.8022,
+            105672.6448,
+            149604.4932,
+            119190.5094,
+            116674.0874
+          ],
+          "repetition_mean_stddev_ns": 19960.730966445037,
+          "repetition_mean_range_ns": [
+            97013.8022,
+            149604.4932
+          ]
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": {
+        "family": "workflow",
+        "name": "pipelined-read",
+        "payload_bytes": 1024,
+        "width": 1,
+        "rpcs_per_iteration": 2
+      },
+      "variants": {
+        "legacy-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 54029.3628,
+          "stddev_ns": 35194.630873912436,
+          "min_ns": 35193,
+          "max_ns": 1803453,
+          "repetition_mean_ns": [
+            61781.918,
+            51499.2168,
+            62456.0184,
+            47168.075,
+            47241.5858
+          ],
+          "repetition_mean_stddev_ns": 7593.80442182198,
+          "repetition_mean_range_ns": [
+            47168.075,
+            62456.0184
+          ]
+        },
+        "portable-portable": {
+          "statistics_version": 1,
+          "mean_ns": 96101.13264,
+          "stddev_ns": 55077.80955762632,
+          "min_ns": 62354,
+          "max_ns": 3591542,
+          "repetition_mean_ns": [
+            113405.0636,
+            84246.7292,
+            101312.518,
+            92999.2446,
+            88542.1078
+          ],
+          "repetition_mean_stddev_ns": 11552.835267820456,
+          "repetition_mean_range_ns": [
+            84246.7292,
+            113405.0636
+          ]
+        },
+        "legacy-portable": {
+          "statistics_version": 1,
+          "mean_ns": 75694.76308,
+          "stddev_ns": 68251.04612913342,
+          "min_ns": 40771,
+          "max_ns": 4584667,
+          "repetition_mean_ns": [
+            100998.646,
+            70121.3322,
+            71771.7158,
+            71346.7192,
+            64235.4022
+          ],
+          "repetition_mean_stddev_ns": 14465.150880001218,
+          "repetition_mean_range_ns": [
+            64235.4022,
+            100998.646
+          ]
+        },
+        "portable-legacy": {
+          "statistics_version": 1,
+          "mean_ns": 81641.74648,
+          "stddev_ns": 52746.5573284965,
+          "min_ns": 54452,
+          "max_ns": 3651263,
+          "repetition_mean_ns": [
+            92405.724,
+            72917.5924,
+            74912.696,
+            74632.3872,
+            93340.3328
+          ],
+          "repetition_mean_stddev_ns": 10286.425961280816,
+          "repetition_mean_range_ns": [
+            72917.5924,
+            93340.3328
+          ]
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "tls": {
+      "cases": 6,
+      "geometric_mean_overhead_percent": 21.490716355669615
+    },
+    "quic": {
+      "cases": 6,
+      "geometric_mean_overhead_percent": 33.922274993337865
+    }
+  }
+}

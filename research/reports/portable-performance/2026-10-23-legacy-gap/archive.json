@@ -1,0 +1,11 @@
+{
+  "filename": "portable-legacy-gap-20261023.tar.zst",
+  "workspace_path": "/workspace/capntproto/target/portable-legacy-gap-20261023.tar.zst",
+  "bytes": 71323563,
+  "sha256": "ab1c36153a69279b3ff7e6e4ab067aa2b92b85548876db00bad961131bdf7f3c",
+  "verified_files": 3635,
+  "payload_files": 3634,
+  "all_members_verified": true,
+  "inventory_sha256": "bcf59599cb3ae8765dcc0d5d6cbb4c90d436e48b9659a9ffcceffda042e3f0f2",
+  "scope": "Local evidence artifact, not uploaded to GitHub. Contains the measured executable, raw samples, traces, complete CPU/allocation profiles, scripts and curated report. The external archive.json is excluded to avoid circular hashing."
+}

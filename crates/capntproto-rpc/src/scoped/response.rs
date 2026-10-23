@@ -303,19 +303,55 @@ impl Results {
             Self::Unsent => None,
         }
     }
-    pub(super) fn finish_shared(&mut self, payload: &Rc<wire::Payload>) -> bool {
-        let Self::Direct(direct) = self else {
-            return false;
+    /// A wire reply owns both halves of a direct request. Finish projections
+    /// before making the response ready, then publish payload and status once.
+    #[allow(clippy::result_large_err)]
+    pub(super) fn complete_payload(
+        &mut self,
+        completion: &CallCompletion,
+        payload: wire::Payload,
+        pipeline: Option<&Rc<wire::PipelineState>>,
+        early_pipeline: impl FnOnce() -> Option<Box<dyn capnp::private::capability::PipelineHook>>,
+    ) -> Result<(), wire::Payload> {
+        let (Self::Direct(direct), CallCompletion::Response(completion)) = (self, completion)
+        else {
+            return Err(payload);
         };
-        direct
-            .sender
-            .take()
-            .expect("unconsumed direct results")
-            .send_response(Box::new(SharedPayloadResponse {
-                payload: payload.clone(),
+        let Some(sender) = direct.sender.as_ref() else {
+            return Err(payload);
+        };
+        if !Rc::ptr_eq(&sender.0, &completion.0) {
+            return Err(payload);
+        }
+        let sender = direct.sender.take().expect("checked direct sender");
+        let response = if let Some(pipeline) = pipeline {
+            let payload = Rc::new(payload);
+            let completed = early_pipeline()
+                .unwrap_or_else(|| Box::new(wire::PayloadPipeline(payload.clone())));
+            let response = Box::new(SharedPayloadResponse {
+                payload,
                 _context: direct.context.take(),
-            }));
-        true
+            });
+            pipeline.finish(completed);
+            response as Box<dyn capnp::private::capability::ResponseHook>
+        } else {
+            owned_response(payload, direct.context.take())
+        };
+        let state = &sender.0;
+        if state.observed.get() {
+            return Ok(());
+        }
+        debug_assert!(!has_value(&state.status) && !has_value(&state.results));
+        state.results.set(Some(ResultOwner::Response(response)));
+        state.status.set(Some(Ok(())));
+        state.ready.set(true);
+        // The wire producer above completed this exact request's projections.
+        drop(state.pipeline.take());
+        drop(state.canceled.take());
+        if let Some(wake) = state.receive.take() {
+            wake.wake();
+        }
+        Ok(())
     }
     pub(super) fn into_hook(self) -> Box<dyn ResultsHook> {
         match self {
@@ -709,6 +745,39 @@ pub(super) fn request_pipelined_prepared(
     }
 }
 
+struct OwnedResponse {
+    payload: wire::Payload,
+    _context: Option<Rc<dyn std::any::Any>>,
+}
+impl capnp::private::capability::ResponseHook for OwnedResponse {
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        capnp::private::capability::ResponseHook::get(&self.payload)
+    }
+}
+fn owned_response(
+    mut payload: wire::Payload,
+    context: Option<Rc<dyn std::any::Any>>,
+) -> Box<dyn capnp::private::capability::ResponseHook> {
+    let context = context.and_then(|context| payload.retain_plain_context(context).err());
+    if context.is_none() {
+        payload.into_response()
+    } else {
+        Box::new(OwnedResponse {
+            payload,
+            _context: context,
+        })
+    }
+}
+impl ResultsSender {
+    pub(crate) fn send_payload(
+        self,
+        payload: wire::Payload,
+        context: Option<Rc<dyn std::any::Any>>,
+    ) {
+        self.send_response(owned_response(payload, context));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -722,6 +791,71 @@ mod tests {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
+    #[test]
+    fn fused_reply_finishes_pipeline_and_retains_response_context() {
+        for early in [false, true] {
+            let hooks = ClientHooks::new(8, 8);
+            let state = Rc::new(State::default());
+            let pipeline = wire::PipelineState::prepared(Some(&hooks.inbox));
+            let interest = state.retain_pipeline(&pipeline);
+            let completion = CallCompletion::Response(Completion(state.clone()));
+            let context = Rc::new(());
+            let weak = Rc::downgrade(&context);
+            let mut results = Results::direct(ResultsSender(state.clone()), Some(context));
+            let mut promise = state.promise(hooks.inbox.clone());
+            let wake = Arc::new(WakeCount(AtomicUsize::new(0)));
+            let waker = Waker::from(wake.clone());
+            assert!(Pin::new(&mut promise)
+                .poll(&mut Context::from_waker(&waker))
+                .is_pending());
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .set_root::<capnp::text::Owned>("fused reply")
+                .unwrap();
+            let payload = wire::Payload::copy(message.get_root_as_reader().unwrap()).unwrap();
+            assert!(results
+                .complete_payload(&completion, payload, Some(&pipeline), || {
+                    early.then(|| {
+                        Box::new(crate::broken::Pipeline::new(Error::failed("early".into())))
+                            as Box<dyn capnp::private::capability::PipelineHook>
+                    })
+                })
+                .is_ok());
+            assert!(!pipeline.unresolved());
+            assert_eq!(wake.0.load(Ordering::SeqCst), 1);
+            if early {
+                assert_eq!(
+                    pipeline
+                        .owned(interest)
+                        .get_pipelined_cap(&[])
+                        .get_failure()
+                        .unwrap()
+                        .extra,
+                    "early"
+                );
+            } else {
+                drop(interest);
+            }
+            let Poll::Ready(Ok(response)) =
+                Pin::new(&mut promise).poll(&mut Context::from_waker(&waker))
+            else {
+                panic!("ready response")
+            };
+            drop((completion, results, promise));
+            assert_eq!(
+                response
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "fused reply"
+            );
+            assert!(weak.upgrade().is_some());
+            drop(response);
+            assert!(weak.upgrade().is_none());
+        }
+    }
+
     #[test]
     fn producer_completes_unpolled_pipeline_and_pipeline_only_interest() {
         for drop_response in [false, true] {

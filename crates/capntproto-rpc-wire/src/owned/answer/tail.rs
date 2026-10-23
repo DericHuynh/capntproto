@@ -48,5 +48,11 @@ pub fn try_send_tail<'pool, 'a, 'q, A>(
         }
     };
     let retired = prepared.accept(queue);
-    Ok(keep_frame(key, answers, retired, frame, false))
+    Ok(keep_frame(
+        key,
+        answers,
+        retired,
+        frame,
+        ResultExports::Empty,
+    ))
 }
