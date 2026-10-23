@@ -1712,3 +1712,52 @@ fn borrowed_capability_completion_publishes_pipeline_before_reentrant_projection
         assert_eq!(fixture.state.call_words.get(), 0);
     }
 }
+
+#[test]
+fn consumed_request_boxes_reuse_only_empty_bounded_storage() {
+    let mut fixture = Fixture::new();
+    fixture.drain();
+    let weak = Rc::downgrade(&fixture.state);
+    let make = |fixture: &Fixture| {
+        fixture._bootstrap.hook.new_call_with_hints(
+            0,
+            0,
+            None,
+            CallHints {
+                no_promise_pipelining: true,
+                only_promise_pipeline: false,
+            },
+        )
+    };
+    // Prepare a burst before consuming any box so this exercises the bound.
+    let requests: Vec<_> = (0..65).map(|_| make(&fixture)).collect();
+    let addresses: std::collections::HashSet<_> = requests
+        .iter()
+        .map(|request| &*request.hook as *const dyn RequestHook as *const () as usize)
+        .collect();
+    assert_eq!(addresses.len(), 65);
+    assert!(fixture.state.request_cache.borrow().is_empty());
+    for request in requests {
+        drop(request.send());
+    }
+    fixture.drain();
+    {
+        let cache = fixture.state.request_cache.borrow();
+        assert_eq!(cache.len(), 64);
+        assert!(cache.iter().all(|request| request.data.is_none()));
+    }
+    let reused: Vec<_> = (0..64).map(|_| make(&fixture)).collect();
+    assert!(fixture.state.request_cache.borrow().is_empty());
+    for request in &reused {
+        let address = &*request.hook as *const dyn RequestHook as *const () as usize;
+        assert!(addresses.contains(&address));
+    }
+    drop(reused); // Unsent requests release their messages and admission credits.
+    drop(make(&fixture).send());
+    assert_eq!(fixture.state.request_cache.borrow().len(), 1);
+    drop(fixture);
+    assert!(
+        weak.upgrade().is_none(),
+        "empty cached requests cannot retain a connection"
+    );
+}

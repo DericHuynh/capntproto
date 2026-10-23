@@ -711,6 +711,9 @@ where
     got_return_for_high_id: Cell<bool>,
     answers: RefCell<PeerTable<AnswerId, Answer<VatId>>>,
     answer_status_cache: AnswerStatusCache,
+    // RequestHook requires boxed ownership. Keep only consumed, empty boxes.
+    #[allow(clippy::vec_box)]
+    request_cache: RefCell<Vec<Box<Request<VatId>>>>,
     response_cache: RefCell<Vec<Rc<ResponseVariant<VatId>>>>,
     retained_results_cache: RefCell<Vec<Rc<RetainedResults<VatId>>>>,
     joins: RefCell<join::Table<VatId>>,
@@ -763,6 +766,7 @@ impl<VatId> ConnectionState<VatId> {
             got_return_for_high_id: Cell::new(false),
             answers: RefCell::new(PeerTable::new()),
             answer_status_cache: Rc::default(),
+            request_cache: RefCell::default(),
             response_cache: RefCell::default(),
             retained_results_cache: RefCell::default(),
             joins: RefCell::new(join::Table::default()),
@@ -1476,7 +1480,13 @@ impl<VatId> crate::OutgoingMessage for StreamingMessage<VatId> {
     }
 }
 
-struct Request<VatId>
+struct Request<VatId: 'static> {
+    data: Option<RequestData<VatId>>,
+}
+
+// Live request state moves directly into sending. Its box is reusable before
+// transport callbacks run, and the cache never retains any of these owners.
+struct RequestData<VatId>
 where
     VatId: 'static,
 {
@@ -1485,6 +1495,18 @@ where
     target: Client<VatId>,
     message: Box<dyn crate::OutgoingMessage>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
+}
+
+impl<VatId> std::ops::Deref for Request<VatId> {
+    type Target = RequestData<VatId>;
+    fn deref(&self) -> &Self::Target {
+        self.data.as_ref().expect("live request")
+    }
+}
+impl<VatId> std::ops::DerefMut for Request<VatId> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.data.as_mut().expect("live request")
+    }
 }
 
 fn get_call(message: &mut Box<dyn crate::OutgoingMessage>) -> ::capnp::Result<call::Builder<'_>> {
@@ -1502,7 +1524,7 @@ where
         interface_id: u64,
         method_id: u16,
         hints: CallHints,
-    ) -> ::capnp::Result<Self> {
+    ) -> ::capnp::Result<Box<Self>> {
         let permit = connection_state.admission.reserve()?;
         use capnp::traits::HasStructSize;
         let envelope = 1
@@ -1520,15 +1542,103 @@ where
             hints.no_promise_pipelining,
             answer_adoption::supported(&connection_state),
         )?;
-        Ok(Self {
+        let cached = connection_state.request_cache.borrow_mut().pop();
+        let mut request = cached.unwrap_or_else(|| Box::new(Self { data: None }));
+        request.data = Some(RequestData {
             connection_state,
             permit,
             target,
             message,
             cap_table: Vec::new(),
-        })
+        });
+        Ok(request)
     }
 
+    fn take(mut self: Box<Self>) -> RequestData<VatId> {
+        let data = self.data.take().expect("live request");
+        {
+            let mut cache = data.connection_state.request_cache.borrow_mut();
+            if cache.len() < 64 {
+                cache.push(self);
+            }
+        }
+        data
+    }
+
+    fn send_data(
+        tmp: RequestData<VatId>,
+    ) -> ::capnp::capability::RemotePromise<any_pointer::Owned> {
+        if let Err(error) = &*tmp.connection_state.connection.borrow() {
+            return capnp::capability::RemotePromise {
+                promise: capnp::capability::ResponsePromise::new(Promise::err(error.clone())),
+                pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(
+                    error.clone(),
+                ))),
+            };
+        }
+        let RequestData {
+            connection_state,
+            permit,
+            target,
+            mut message,
+            cap_table,
+        } = tmp;
+        let disabled = {
+            let mut call_builder = get_call(&mut message).unwrap();
+            if let Some(redirect) =
+                target.write_target(call_builder.reborrow().get_target().unwrap())
+            {
+                drop(permit);
+                // Whoops, this capability has been redirected while we were building the request!
+                // We'll have to make a new request and do a copy.  Ick.
+                let mut replacement = redirect.new_call_with_hints(
+                    call_builder.reborrow().get_interface_id(),
+                    call_builder.reborrow().get_method_id(),
+                    None,
+                    CallHints {
+                        no_promise_pipelining: call_builder.reborrow().get_no_promise_pipelining(),
+                        only_promise_pipeline: false,
+                    },
+                );
+
+                use capnp::traits::Imbue;
+                let mut params = call_builder
+                    .get_params()
+                    .unwrap()
+                    .get_content()
+                    .into_reader();
+                params.imbue(&cap_table);
+                replacement.set(params).unwrap();
+                return replacement.send();
+            }
+            call_builder.get_no_promise_pipelining()
+        };
+        let (_question_ref, promise, pipeline) = match Self::send_internal(
+            &connection_state,
+            message,
+            &cap_table,
+            false,
+            permit,
+            !disabled,
+        ) {
+            Ok(sent) => sent,
+            Err(error) => {
+                return capnp::capability::RemotePromise {
+                    promise: capnp::capability::ResponsePromise::new(Promise::err(error.clone())),
+                    pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error))),
+                }
+            }
+        };
+        ::capnp::capability::RemotePromise {
+            promise: capnp::capability::ResponsePromise::new(Promise::from_future(
+                promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
+            )),
+            pipeline: any_pointer::Pipeline::new(match pipeline {
+                Some(pipeline) => Box::new(pipeline),
+                None => Box::new(broken::DisabledPipeline),
+            }),
+        }
+    }
     fn send_internal(
         connection_state: &Rc<ConnectionState<VatId>>,
         mut message: Box<dyn crate::OutgoingMessage>,
@@ -1702,16 +1812,20 @@ impl<VatId> RequestHook for Request<VatId> {
         // Normal send() always requests its response; only send_for_pipeline()
         // enables onlyPromisePipeline on the wire.
     }
-    fn send_for_pipeline(mut self: Box<Self>) -> any_pointer::Pipeline {
+    fn send_for_pipeline(self: Box<Self>) -> any_pointer::Pipeline {
         if let Err(error) = &*self.connection_state.connection.borrow() {
             return any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error.clone())));
         }
-        let redirect = self
-            .target
-            .write_target(get_call(&mut self.message).unwrap().get_target().unwrap());
+        let mut request = self.take();
+        let redirect = request.target.write_target(
+            get_call(&mut request.message)
+                .unwrap()
+                .get_target()
+                .unwrap(),
+        );
         if let Some(redirect) = redirect {
-            drop(self.permit);
-            let mut call = get_call(&mut self.message).unwrap();
+            drop(request.permit);
+            let mut call = get_call(&mut request.message).unwrap();
             let mut replacement = redirect.new_call_with_hints(
                 call.reborrow().get_interface_id(),
                 call.reborrow().get_method_id(),
@@ -1723,23 +1837,26 @@ impl<VatId> RequestHook for Request<VatId> {
             );
             use capnp::traits::Imbue;
             let mut params = call.get_params().unwrap().get_content().into_reader();
-            params.imbue(&self.cap_table);
+            params.imbue(&request.cap_table);
             if let Err(error) = replacement.set(params) {
                 return any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error)));
             }
             return replacement.hook.send_for_pipeline();
         }
-        get_call(&mut self.message)
+        get_call(&mut request.message)
             .unwrap()
             .set_no_promise_pipelining(false);
-        if self.connection_state.got_return_for_high_id.get() {
-            return self.send().pipeline;
+        if request.connection_state.got_return_for_high_id.get() {
+            return Self::send_data(request).pipeline;
         }
         let mut fds = OutgoingFds::default();
         let exports = match ConnectionState::write_descriptors(
-            &self.connection_state,
-            &self.cap_table,
-            get_call(&mut self.message).unwrap().get_params().unwrap(),
+            &request.connection_state,
+            &request.cap_table,
+            get_call(&mut request.message)
+                .unwrap()
+                .get_params()
+                .unwrap(),
             &mut fds,
         ) {
             Ok(exports) => exports,
@@ -1747,48 +1864,52 @@ impl<VatId> RequestHook for Request<VatId> {
                 return any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error)))
             }
         };
-        fds.attach(&mut *self.message);
+        fds.attach(&mut *request.message);
         let mut question = Question::new();
-        question._permit = Some(self.permit.clone());
+        question._permit = Some(request.permit.clone());
         question.lifecycle = capntproto_rpc_engine::question::Question::no_return();
         question.param_exports = exports;
-        let id = self
+        let id = request
             .connection_state
             .questions
             .borrow_mut()
             .push_high(question);
         let reference = Rc::new(RefCell::new(QuestionRef {
-            connection_state: Some(self.connection_state.clone()),
+            connection_state: Some(request.connection_state.clone()),
             id,
             fulfiller: None,
             reply: DirectReply::default(),
             pipeline: None,
         }));
-        self.connection_state
+        request
+            .connection_state
             .questions
             .borrow_mut()
             .find(id)
             .unwrap()
             .self_ref = Some(Rc::downgrade(&reference));
-        let mut call = get_call(&mut self.message).unwrap();
+        let mut call = get_call(&mut request.message).unwrap();
         call.set_question_id(id.to_wire());
         call.set_no_promise_pipelining(false);
         call.set_only_promise_pipeline(true);
-        self.connection_state.send_call(self.message, self.permit);
+        request
+            .connection_state
+            .send_call(request.message, request.permit);
         any_pointer::Pipeline::new(Box::new(Pipeline::never_done(
-            self.connection_state.clone(),
+            request.connection_state.clone(),
             reference,
         )))
     }
 
     fn get(&mut self) -> any_pointer::Builder<'_> {
         use ::capnp::traits::ImbueMut;
-        let mut builder = get_call(&mut self.message)
+        let data = self.data.as_mut().expect("live request");
+        let mut builder = get_call(&mut data.message)
             .unwrap()
             .get_params()
             .unwrap()
             .get_content();
-        builder.imbue_mut(&mut self.cap_table);
+        builder.imbue_mut(&mut data.cap_table);
         builder
     }
     fn get_brand<'a>(&self) -> usize {
@@ -1803,84 +1924,14 @@ impl<VatId> RequestHook for Request<VatId> {
         }
     }
     fn send(self: Box<Self>) -> ::capnp::capability::RemotePromise<any_pointer::Owned> {
-        if let Err(error) = &*self.connection_state.connection.borrow() {
-            return capnp::capability::RemotePromise {
-                promise: capnp::capability::ResponsePromise::new(Promise::err(error.clone())),
-                pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(
-                    error.clone(),
-                ))),
-            };
-        }
-        let tmp = *self;
-        let Self {
-            connection_state,
-            permit,
-            target,
-            mut message,
-            cap_table,
-        } = tmp;
-        let disabled = {
-            let mut call_builder = get_call(&mut message).unwrap();
-            if let Some(redirect) =
-                target.write_target(call_builder.reborrow().get_target().unwrap())
-            {
-                drop(permit);
-                // Whoops, this capability has been redirected while we were building the request!
-                // We'll have to make a new request and do a copy.  Ick.
-                let mut replacement = redirect.new_call_with_hints(
-                    call_builder.reborrow().get_interface_id(),
-                    call_builder.reborrow().get_method_id(),
-                    None,
-                    CallHints {
-                        no_promise_pipelining: call_builder.reborrow().get_no_promise_pipelining(),
-                        only_promise_pipeline: false,
-                    },
-                );
-
-                use capnp::traits::Imbue;
-                let mut params = call_builder
-                    .get_params()
-                    .unwrap()
-                    .get_content()
-                    .into_reader();
-                params.imbue(&cap_table);
-                replacement.set(params).unwrap();
-                return replacement.send();
-            }
-            call_builder.get_no_promise_pipelining()
-        };
-        let (_question_ref, promise, pipeline) = match Self::send_internal(
-            &connection_state,
-            message,
-            &cap_table,
-            false,
-            permit,
-            !disabled,
-        ) {
-            Ok(sent) => sent,
-            Err(error) => {
-                return capnp::capability::RemotePromise {
-                    promise: capnp::capability::ResponsePromise::new(Promise::err(error.clone())),
-                    pipeline: any_pointer::Pipeline::new(Box::new(broken::Pipeline::new(error))),
-                }
-            }
-        };
-        ::capnp::capability::RemotePromise {
-            promise: capnp::capability::ResponsePromise::new(Promise::from_future(
-                promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
-            )),
-            pipeline: any_pointer::Pipeline::new(match pipeline {
-                Some(pipeline) => Box::new(pipeline),
-                None => Box::new(broken::DisabledPipeline),
-            }),
-        }
+        Self::send_data(self.take())
     }
     fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
         if let Err(error) = &*self.connection_state.connection.borrow() {
             return Promise::err(error.clone());
         }
-        let tmp = *self;
-        let Self {
+        let tmp = self.take();
+        let RequestData {
             connection_state,
             permit,
             target,
@@ -1925,8 +1976,8 @@ impl<VatId> RequestHook for Request<VatId> {
         )
     }
     fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
-        let tmp = *self;
-        let Self {
+        let tmp = self.take();
+        let RequestData {
             connection_state,
             permit,
             target,
@@ -3874,7 +3925,7 @@ impl<VatId> ClientHook for Client<VatId> {
             method_id,
             hints,
         ) {
-            Ok(request) => Box::new(request),
+            Ok(request) => request,
             Err(e) => Box::new(broken::Request::new(e, None)),
         };
 
