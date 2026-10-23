@@ -1,0 +1,37 @@
+name: Analyze saved droplet evidence
+on:
+  push:
+    branches: [codex/portable-droplet-analysis]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  summarize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        run_id: [39902949530, 39903830343]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install saved-profile reader (no workloads run here)
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y valgrind
+      - name: Validate and summarize saved droplet measurements
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: DericHuynh/capntproto
+          RUN_ID: ${{ matrix.run_id }}
+        run: python3 benchmarks/rpc/analyze-secure-ci.py "$RUN_ID" "$RUNNER_TEMP/evidence"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: analyzed-droplet-${{ matrix.run_id }}
+          path: |
+            ${{ runner.temp }}/evidence/summary.json
+            ${{ runner.temp }}/evidence/attribution.json
+            ${{ runner.temp }}/evidence/provenance.json
+          if-no-files-found: warn
+          retention-days: 30
