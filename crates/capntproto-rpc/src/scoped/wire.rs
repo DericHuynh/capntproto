@@ -440,20 +440,11 @@ impl<'id> ClientHooks<'id> {
         if call.hints.no_promise_pipelining {
             return Ok(None);
         }
-        if let Some(local) = call
-            .results
-            .hook()
-            .as_any_mut()
-            .and_then(|hook| hook.downcast_mut::<crate::local::Results>())
-        {
-            // Reuse projections queued before admission. A dropped public
-            // pipeline needs no replacement state.
-            if let Some(pipeline) = local.take_wire_pipeline() {
-                if let Some(pipeline) = &pipeline {
-                    pipeline._credit.set(call.credit.clone());
-                }
-                return Ok(pipeline);
+        if let Some(pipeline) = call.results.take_wire_pipeline() {
+            if let Some(pipeline) = &pipeline {
+                pipeline._credit.set(call.credit.clone());
             }
+            return Ok(pipeline);
         }
         let pipeline = (!call.hints.no_promise_pipelining).then(|| {
             Rc::new(PipelineState {
@@ -1110,6 +1101,18 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     .pipeline
                     .as_ref()
                     .map(|_| Box::new(PayloadPipeline(payload.clone())) as Box<dyn PipelineHook>);
+                if self.call.as_mut().unwrap().results.finish_shared(&payload) {
+                    if let Some(state) = &self.pipeline {
+                        state.finish(
+                            self.local_results
+                                .as_ref()
+                                .and_then(server::Results::early_pipeline)
+                                .unwrap_or_else(|| pipeline.expect("enabled pipeline")),
+                        );
+                    }
+                    self.call.take().unwrap().complete(Ok(()));
+                    return Ok(());
+                }
                 let results = &mut self
                     .call
                     .as_mut()
@@ -1297,11 +1300,14 @@ impl PipelineState {
             maximum: inbox.map_or(0, |inbox| inbox.maximum_clients),
         })
     }
-    pub(super) fn driven(
+    pub(super) fn owned(
         self: &Rc<Self>,
-        driver: futures::future::Shared<Promise<(), Error>>,
+        interest: response::PipelineInterest,
     ) -> Box<dyn PipelineHook> {
-        Box::new(WirePipeline(PipelineRef(Some(self.clone()), Some(driver))))
+        Box::new(WirePipeline(PipelineRef(
+            Some(self.clone()),
+            Some(interest),
+        )))
     }
     pub(crate) fn unresolved(&self) -> bool {
         self.adopted.borrow().is_none() && self.finished.borrow().is_none()
@@ -1351,9 +1357,9 @@ impl PipelineState {
 #[derive(Clone)]
 pub(crate) struct PipelineRef(
     Option<Rc<PipelineState>>,
-    // Only public interests retain the response driver. The wire owner holds
-    // a plain Rc<PipelineState>, so it cannot keep its own call alive.
-    Option<futures::future::Shared<Promise<(), Error>>>,
+    // Only public interests retain response interest. Completion is pushed by
+    // its producer; no shared future or recursive pipeline polling is needed.
+    Option<response::PipelineInterest>,
 );
 impl std::ops::Deref for PipelineRef {
     type Target = Rc<PipelineState>;
@@ -1386,6 +1392,7 @@ impl Drop for PipelineRef {
         // interest first so that poll cannot observe the soon-to-die owner and
         // sleep forever after the final pipeline has gone away.
         drop(self.0.take());
+        drop(self.1.take());
         if let Some(wake) = wake {
             wake.wake();
         }
@@ -1464,60 +1471,27 @@ struct Projected {
 }
 impl Projected {
     fn drive<T: 'static>(&self, mut promise: Promise<T, Error>) -> Promise<T, Error> {
-        let endpoint = self
-            .inner
-            .as_any()
-            .and_then(|inner| inner.downcast_ref::<Hook>())
-            .map(|hook| hook.0.clone());
-        let pipeline = self.pipeline.clone();
-        let mut driver = pipeline.1.clone();
         use crate::attach::Attach;
+        let endpoint = direct_response_hook(self).map(|hook| hook.0.clone());
         Promise::from_future(
             futures::future::poll_fn(move |cx| {
                 if let Poll::Ready(result) = Pin::new(&mut promise).poll(cx) {
                     return Poll::Ready(result);
                 }
-                if let Some(endpoint) = endpoint
-                    .as_ref()
-                    .filter(|endpoint| endpoint.index.get().is_none())
-                {
-                    if let Some(error) = Hook(endpoint.clone(), None).get_failure() {
-                        return Poll::Ready(Err(error));
-                    }
-                }
-                let needs_driver = endpoint.as_ref().is_some_and(|endpoint| {
-                    endpoint.index.get().is_none()
-                        && endpoint.introduced.borrow().is_none()
-                        && endpoint.failure.borrow().is_none()
-                });
-                if needs_driver {
-                    if let Some(driver) = driver.as_mut() {
-                        if let Poll::Ready(result) = Pin::new(driver).poll(cx) {
-                            if let Err(error) = result {
-                                let published = endpoint.as_ref().is_some_and(|endpoint| {
-                                    endpoint.index.get().is_some()
-                                        || endpoint.introduced.borrow().is_some()
-                                });
-                                if !published
-                                    || endpoint
-                                        .as_ref()
-                                        .and_then(|endpoint| {
-                                            Hook(endpoint.clone(), None).get_failure()
-                                        })
-                                        .is_some()
-                                {
-                                    return Poll::Ready(Err(error));
-                                }
-                            }
-                            cx.waker().wake_by_ref();
+                // Subscribe to the projection itself, not the parent's response
+                // future. Local forwarding and rejection can settle it before a
+                // protocol driver admits this child.
+                if let Some(endpoint) = &endpoint {
+                    endpoint.binding_pending(cx);
+                    if endpoint.index.get().is_none() {
+                        if let Some(error) = Hook(endpoint.clone(), None).get_failure() {
+                            return Poll::Ready(Err(error));
                         }
                     }
-                } else {
-                    driver = None;
                 }
                 Poll::Pending
             })
-            .attach(pipeline),
+            .attach(self.pipeline.clone()),
         )
     }
 }

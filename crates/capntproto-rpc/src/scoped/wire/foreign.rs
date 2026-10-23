@@ -140,7 +140,7 @@ impl<'id> ForeignPromises<'id> {
             }
         };
         let entry = Some(Entry {
-            wake: self.ready.insert(index),
+            wake: self.ready.insert(index, true),
             key: client.key(),
             subscription,
             state: State::Waiting {
@@ -202,9 +202,10 @@ impl<'id> ForeignPromises<'id> {
                 }
                 ready = self.ready.pop();
             }
-            let Some(index) = ready else {
+            let Some(ready) = ready else {
                 return Poll::Pending;
             };
+            let index = ready.index();
             if let Some(entry) = self.entries[index].as_mut() {
                 let source = match graph.retain_key(entry.key) {
                     Ok(source) => source,
@@ -213,9 +214,7 @@ impl<'id> ForeignPromises<'id> {
                         return Poll::Ready(Ok(Progress::Abandoned));
                     }
                     Err(error) => {
-                        if ready.is_some() {
-                            self.ready.push(index);
-                        }
+                        self.ready.push(index);
                         return Poll::Ready(Err(graph_error(error)));
                     }
                 };

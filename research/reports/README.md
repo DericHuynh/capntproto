@@ -5,6 +5,12 @@ published as GitHub Actions artifacts. See [the quality guide](../../docs/wiki/Q
 for report generation, coverage gates, and the comparison charts in each report's
 README.
 
+The [portable direct-path redesign](portable-performance/2026-10-23-direct-paths/README.md)
+replaces shared pipeline drivers, eager result hooks and mutex-owned readiness
+with producer completion, direct payload ownership and local readiness. Five-run
+TLS/QUIC comparisons, CPU profiles and complete ciphertext traces record the
+improvements and remaining legacy latency and I/O gaps.
+
 The [five-run portable comparison](portable-performance/2026-10-18-repetitions/README.md)
 adds means and spread across independent repetitions, profiles inline primitive
 validation, and preserves a rejected cache experiment. It compares all 24 cases

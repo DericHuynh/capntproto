@@ -216,7 +216,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         execute: bool,
         results: Results,
     ) {
-        let waker = self.ready.insert(index);
+        let waker = self.ready.insert(index, true);
         results.bind_protocol_waker(waker.clone());
         let entry = Entry {
             #[cfg(test)]
@@ -439,13 +439,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 }
             }
             self.protocol_turn = true;
-            let Some(index) = self.ready.pop() else {
+            let Some(ready) = self.ready.pop() else {
                 return if advanced {
                     Poll::Ready(Ok(Progress::Advanced))
                 } else {
                     Poll::Pending
                 };
             };
+            let index = ready.index();
             let Some(entry) = self.entries[index].as_mut() else {
                 // A stale notification cannot refer to a new generation.
                 remaining_budget -= 1;

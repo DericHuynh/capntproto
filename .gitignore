@@ -302,3 +302,17 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-22-architecture-replacements/evidence-index.json
 !/research/reports/portable-performance/2026-10-22-architecture-replacements/validation.json
 !/research/reports/portable-performance/2026-10-22-architecture-replacements/archive.json
+
+# Portable direct completion and local readiness qualification.
+!/research/reports/portable-performance/2026-10-23-direct-paths/
+/research/reports/portable-performance/2026-10-23-direct-paths/*
+!/research/reports/portable-performance/2026-10-23-direct-paths/README.md
+!/research/reports/portable-performance/2026-10-23-direct-paths/aggregate.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/archive.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/ciphertext-counts.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/comparisons.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/evidence-index.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/io-comparison.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/profile-attribution.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/profiles.json
+!/research/reports/portable-performance/2026-10-23-direct-paths/validation.json

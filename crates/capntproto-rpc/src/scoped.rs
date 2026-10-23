@@ -710,7 +710,8 @@ impl<'id> ClientHooks<'id> {
             }
         }
         if project_metadata && (!self.sources_bound || bind_sources) {
-            while let Some(index) = self.metadata_ready.pop() {
+            while let Some(ready) = self.metadata_ready.pop() {
+                let index = ready.index();
                 let Some(entry) = self.entries.get_mut(index).and_then(Option::as_mut) else {
                     continue;
                 };
@@ -779,7 +780,7 @@ impl<'id> ClientHooks<'id> {
                             self.metadata_ready.remove(index);
                         }
                         if let Some(source) = changed {
-                            let wake = self.metadata_ready.insert(index);
+                            let wake = self.metadata_ready.insert(index, true);
                             let mut watch = source.subscribe();
                             let _ = watch.poll_changed(&mut Context::from_waker(&wake));
                             entry.metadata_watch = Some((watch, wake));

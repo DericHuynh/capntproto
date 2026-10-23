@@ -1,0 +1,74 @@
+{
+  "final-full": {
+    "tls": {
+      "portable-baseline": {
+        "cases": 24,
+        "lower_mean_cases": 16,
+        "geomean_latency_change_percent": -5.15042015708478,
+        "within_5_percent_cases": 22
+      },
+      "legacy": {
+        "cases": 24,
+        "lower_mean_cases": 7,
+        "geomean_latency_change_percent": 6.8378450282492755,
+        "within_5_percent_cases": 14
+      },
+      "cpp": {
+        "cases": 24,
+        "lower_mean_cases": 24,
+        "geomean_latency_change_percent": -31.679037221536788,
+        "within_5_percent_cases": 24
+      }
+    },
+    "quic": {
+      "portable-baseline": {
+        "cases": 24,
+        "lower_mean_cases": 16,
+        "geomean_latency_change_percent": -1.787579879358582,
+        "within_5_percent_cases": 20
+      },
+      "legacy": {
+        "cases": 24,
+        "lower_mean_cases": 5,
+        "geomean_latency_change_percent": 8.392318723896226,
+        "within_5_percent_cases": 9
+      }
+    }
+  },
+  "final-long": {
+    "tls": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_mean_cases": 3,
+        "geomean_latency_change_percent": -3.31099844220501,
+        "within_5_percent_cases": 4
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_mean_cases": 0,
+        "geomean_latency_change_percent": 23.479700793429206,
+        "within_5_percent_cases": 0
+      },
+      "cpp": {
+        "cases": 4,
+        "lower_mean_cases": 4,
+        "geomean_latency_change_percent": -26.936198538399736,
+        "within_5_percent_cases": 4
+      }
+    },
+    "quic": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_mean_cases": 4,
+        "geomean_latency_change_percent": -6.152061108332296,
+        "within_5_percent_cases": 4
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_mean_cases": 0,
+        "geomean_latency_change_percent": 29.13093660664191,
+        "within_5_percent_cases": 0
+      }
+    }
+  }
+}

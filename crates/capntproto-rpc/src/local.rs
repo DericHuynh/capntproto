@@ -237,9 +237,10 @@ impl Results {
     }
     pub(crate) fn direct_pipelined(
         fulfiller: crate::scoped::response::ResultsSender,
+        context: Option<Rc<dyn Any>>,
         pipeline: crate::queued::PipelineInnerSender,
     ) -> Self {
-        let mut results = Self::direct(fulfiller, None);
+        let mut results = Self::direct(fulfiller, context);
         results.pipeline_sender = Some(pipeline);
         results
     }

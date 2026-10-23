@@ -1979,12 +1979,11 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
             let CallRoute::Remote(question) = entry.wire.route else {
                 panic!("published parent")
             };
-            assert_eq!(
-                calls
-                    .immediate_receiver(question, driver.completion_owner(question))
-                    .is_some(),
-                !project_early
-            );
+            // Both routes locate their owner directly. The wire engine, not
+            // the hosted lookup, decides whether pipeline observers have settled.
+            assert!(calls
+                .immediate_receiver(question, driver.completion_owner(question))
+                .is_some());
             drain(&mut queue, messages);
             let reply = Frame::build(messages, 256, Default::default(), |builder| {
                 calls::dynamic_results(

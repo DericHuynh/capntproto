@@ -168,7 +168,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.pending.is_none() && self.ready.is_empty()
     }
     /// Deliver an already-admitted reply directly to its registered owner.
-    /// Pipelined work waits for the same exact completion notification.
+    /// The wire owner fences unsettled pipeline observers; an incomplete fence
+    /// retains its exact completion notification rather than bypassing ordering.
     /// The caller yields after completion and resumes ordinary maintenance
     /// before reading another frame, preserving cooperative fairness.
     #[inline(always)]
@@ -248,11 +249,6 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 .is_some_and(|entry| {
                     entry.local.is_none()
                         && entry.wire.task().is_none()
-                        && entry
-                            .wire
-                            .pipeline
-                            .as_ref()
-                            .is_none_or(|state| !state.used.get())
                         && entry.wire.question() == Some(key)
                 })
         })
@@ -272,7 +268,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     /// hole without searching from zero for every admission.
     fn insert_entry(&mut self, index: usize, mut entry: Entry<'p, 'id, I, C, H>) {
         debug_assert_eq!(index, self.first_free);
-        entry.waker = self.ready.insert(index);
+        entry.waker = self.ready.insert(index, false);
         entry.completion = match entry.wire.route {
             CallRoute::Tracked { task, .. } => Some(task),
             _ => None,
@@ -285,18 +281,15 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 .poll_observed(&mut Context::from_waker(&entry.waker))
                 .is_ready()
         });
-        if entry.published
-            && !canceled
-            && entry
+        if !entry.published
+            || canceled
+            || entry
                 .wire
                 .pipeline
                 .as_ref()
-                .is_none_or(|pipeline| pipeline.waiting.borrow().is_empty())
+                .is_some_and(|pipeline| !pipeline.waiting.borrow().is_empty())
         {
-            // Publication has registered every source of future readiness:
-            // reply, cancellation and projection interest. No initial poll is
-            // needed merely to discover that the remote reply is still absent.
-            self.ready.park(index);
+            self.ready.push(index);
         }
         self.unpublished += usize::from(entry.unpublished);
         self.published += usize::from(entry.published);
@@ -760,9 +753,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         ) -> capnp::Result<Client<'id>>,
         refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
     ) -> capnp::Result<Option<Progress>> {
-        let Some(index) = self.ready.pop() else {
+        let Some(ready) = self.ready.pop() else {
             return Ok(None);
         };
+        let index = ready.index();
         let entry = self.entries[index].as_mut().expect("notified live call");
         #[cfg(test)]
         {

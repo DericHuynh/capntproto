@@ -1171,16 +1171,16 @@ fn tail_forwarding_preserves_child_results() {
 #[test]
 fn only_affine_protocol_retirement_notifies_running_worker() {
     let queue = super::super::super::ready::Queue::default();
-    let waker = queue.insert(0);
+    let waker = queue.insert(0, true);
     let results = Results::new();
     results.bind_protocol_waker(waker);
-    assert_eq!(queue.pop(), Some(0));
+    assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
     let producer = results.clone().into_producer();
     drop(results.clone());
-    assert_eq!(queue.pop(), None);
+    assert_eq!(queue.pop().map(|ready| ready.index()), None);
     drop(producer);
-    assert_eq!(queue.pop(), Some(0));
+    assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
     results.unbind_protocol_waker();
     drop(results.into_producer());
-    assert_eq!(queue.pop(), None);
+    assert_eq!(queue.pop().map(|ready| ready.index()), None);
 }

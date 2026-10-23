@@ -1,0 +1,124 @@
+{
+  "script": "validate-direct.sh",
+  "initial_script_exit_code": 101,
+  "retry_script": "validate-integration-retry.sh",
+  "retry_script_exit_code": 0,
+  "all_steps_passed": true,
+  "tests": {
+    "test-core-final.log": [
+      {
+        "passed": 356,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 218,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 159,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "test-fixed-final.log": [
+      {
+        "passed": 86,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "test-growing-final.log": [
+      {
+        "passed": 89,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "test-integrations-final.log": [
+      {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 22,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  "core_passed": 733,
+  "standalone_fixed_passed": 86,
+  "standalone_growing_passed": 89,
+  "targeted_integrations_passed": 36,
+  "compatibility": {
+    "checks": 206,
+    "passed": true
+  },
+  "strict_clippy": {
+    "passed": true,
+    "profile": "release",
+    "scope": "Six RPC/consumer crates, all targets, quic, -D warnings",
+    "log": "clippy-final.log"
+  },
+  "embedded": {
+    "passed": true,
+    "target": "thumbv7em-none-eabi",
+    "log": "check-embedded-final.log"
+  },
+  "format": {
+    "passed": true,
+    "log": "fmt-final.log"
+  },
+  "corrected_prototype_failures": [
+    {
+      "log": "test-completion.log",
+      "reason": "Two projection-lifecycle tests required direct binding subscriptions after removing parent-future polling.",
+      "resolution": "Direct projection subscription restored; test-completion-fixed.log passed 351 tests."
+    },
+    {
+      "log": "test-ready.log",
+      "reason": "Producer-queue test still used the removed internal readiness API.",
+      "resolution": "Migrated test to insert(index, runnable) and Ready guard."
+    },
+    {
+      "log": "test-ready-fixed.log",
+      "reason": "Owner lookup assertion encoded the old blanket exclusion of used pipelines.",
+      "resolution": "Updated lookup assertion; retained the subsequent observer-fence check."
+    },
+    {
+      "log": "test-integrations-missing-tool.log",
+      "reason": "Model replay could not locate the installed TLC jar.",
+      "resolution": "Set TLA2TOOLS_JAR=/workspace/scratch/tla2tools.jar and reran the full targeted integration set; no production source changes."
+    }
+  ],
+  "review_corrections": [
+    "Unified wake, queue-to-poll, poll-exit and removal transitions in one atomic state; added poll-entry/exit race tests.",
+    "Synchronize the mailbox before slot reuse, including notifications not yet published in its fast flag."
+  ],
+  "not_rerun": [
+    "Whole root/API suites",
+    "Coverage",
+    "Complete Verus/Kani execution",
+    "Whole-workspace Clippy",
+    "Hardware PMU profiling"
+  ],
+  "model_replay_tools": {
+    "TLA2TOOLS_JAR": "/workspace/scratch/tla2tools.jar",
+    "sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+    "bytes": 2274532,
+    "java_version": "openjdk version \"21.0.12.1\" 2026-08-18\nOpenJDK Runtime Environment (build 21.0.12.1+1-1-deb13u1-Debian)\nOpenJDK 64-Bit Server VM (build 21.0.12.1+1-1-deb13u1-Debian, mixed mode, sharing)\n"
+  }
+}

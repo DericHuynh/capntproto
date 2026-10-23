@@ -1,0 +1,87 @@
+{
+  "base": "acc0f74f9a6c19da3e45f0d7248dcdf55fe977d0",
+  "candidate": "direct",
+  "stages": [
+    {
+      "stage": "baseline",
+      "base": "acc0f74f9a6c19da3e45f0d7248dcdf55fe977d0",
+      "sha256": "6a54f9375947966e7d99b2bbbfc951a4b09b2ef397cfa235bfe1c755a180ec40",
+      "bytes": 87910728,
+      "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_files_verified": 763
+    },
+    {
+      "stage": "completion",
+      "base": "acc0f74f9a6c19da3e45f0d7248dcdf55fe977d0",
+      "sha256": "01abcd74e504d3c2fefaf671cb5a01c813ed41e73d04cf6455b78971a9e8f15f",
+      "bytes": 87903088,
+      "patch_sha256": "6a3f3b151d3a599991f15b96c9787045d9631c73f51716d40812d24f4d933e73",
+      "source_files_verified": 763
+    },
+    {
+      "stage": "payload",
+      "base": "acc0f74f9a6c19da3e45f0d7248dcdf55fe977d0",
+      "sha256": "12585d98af98cb3aebb0ff9bf6c8ea31469efc1b4f4f9f1037028dc48142db26",
+      "bytes": 87930296,
+      "patch_sha256": "b241212634a6bb40c1074ac987689ab6b3e4f0822e16acdd7e44f246ccf80411",
+      "source_files_verified": 763
+    },
+    {
+      "stage": "ready",
+      "base": "acc0f74f9a6c19da3e45f0d7248dcdf55fe977d0",
+      "sha256": "57a7563eddc7c0cd6fdf3d43173557750763bd372b00134baabc318053998e08",
+      "bytes": 87974712,
+      "patch_sha256": "e968d9553de63c849cda6f267e6d1d627a221dbb2b56dc97cc507e565179f723",
+      "source_files_verified": 763
+    },
+    {
+      "stage": "direct",
+      "base": "acc0f74f9a6c19da3e45f0d7248dcdf55fe977d0",
+      "sha256": "e0e71abc3da4713900359bf30d898dddc4b7372d39cb8b42a170d5df1725eb8b",
+      "bytes": 87978192,
+      "patch_sha256": "3d5e4832361ad83f4f7498eb06b2cfa302f6bf00da7fa22a32275bd26a3bb642",
+      "source_files_verified": 763
+    }
+  ],
+  "current_source_matches_frozen_candidate": true,
+  "build_context": {
+    "base": "acc0f74f9a6c19da3e45f0d7248dcdf55fe977d0",
+    "files": {
+      ".cargo/config.toml": "884b166fe4ef139aebbcbd3f4013dd7559456c145aef32f2c8473271525b06c1",
+      "Cargo.toml": "d954cb37914afe9b4a39a1b53822d5073507c5edb35568a440ec73b95daa6da3",
+      "Cargo.lock": "666fc00becca6fa9417739cf6d0ffc8675e5129374e7afe2a306fd0b2f803b9d",
+      "benchmarks/rpc/Cargo.toml": "969d9c6ccdc22b62135275e4ce1d039c8d6c105eff2a7448965c8cb1ba5c1a08",
+      "benchmarks/rpc/Cargo.lock": "d0d3329eeade86cf0a2f9efb0c2f318ca46202fe3389ad361faf876fb910cc6e"
+    },
+    "command": "cargo build --manifest-path benchmarks/rpc/Cargo.toml --release --bin capntproto-rpc-bench",
+    "environment": {
+      "CC": "clang-19",
+      "CXX": "clang++-19",
+      "CARGO_NET_OFFLINE": "true",
+      "CARGO_BUILD_JOBS": "1",
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench"
+    },
+    "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+    "clang": "Debian clang version 19.1.7 (3+b1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/lib/llvm-19/bin\n",
+    "valgrind": "valgrind-3.24.0",
+    "profile": {
+      "lto": "fat",
+      "codegen_units": 1,
+      "debug": 1,
+      "overflow_checks": true
+    },
+    "qualification": "Native timing is serialized with builds, tests, profiling, tracing and compression. Five process repetitions; fixture and transport controls in campaign scope/host-state records."
+  },
+  "controls": {
+    "historical_portable": {
+      "binary": "secure55/bundle/links",
+      "sha256": "6a54f9375947966e7d99b2bbbfc951a4b09b2ef397cfa235bfe1c755a180ec40"
+    },
+    "cpp": {
+      "binary": "secure49/cpp",
+      "sha256": "5817fd52501b8a908e17ce9451336080776ccd3cb9629164dc19da37368c0da5",
+      "revision": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "path": "target/portable-direct-paths-20261023.tar.zst",
+  "workspace_path": "/workspace/capntproto/target/portable-direct-paths-20261023.tar.zst",
+  "bytes": 230693327,
+  "sha256": "2dc594c9cb4f3bbb7e7a160d0b07357f4e38b64127829c8c9d3c1720f439b992",
+  "verified_files": 19725,
+  "payload_files_excluding_inventory": 19724,
+  "inventory_sha256": "3312881c02de33e6a53deb60aebf317b65394c6ca4adb602123132b7f1f03ee9",
+  "all_file_hashes_match": true,
+  "all_five_binaries_and_source_snapshots_verified_before_seal": true
+}

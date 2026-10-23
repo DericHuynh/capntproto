@@ -22,9 +22,25 @@ pub(super) struct State {
     ready: Cell<bool>,
     receive: Cell<Option<Waker>>,
     canceled: Cell<Option<Waker>>,
+    response_interest: Cell<bool>,
+    pipeline_interest: Cell<usize>,
+    pipeline: Cell<Option<Weak<wire::PipelineState>>>,
 }
 
 pub(super) fn notify_closed(state: &Rc<State>) {
+    if let Some(pipeline) = state
+        .pipeline
+        .take()
+        .and_then(|pipeline| pipeline.upgrade())
+    {
+        let error = state
+            .close_watch
+            .borrow()
+            .as_ref()
+            .and_then(Shutdown::reason)
+            .unwrap_or_else(|| Error::disconnected("scoped connection closed".into()));
+        pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new(error)));
+    }
     let wake = state.receive.take();
     if let Some(wake) = wake {
         wake.wake();
@@ -105,6 +121,83 @@ impl State {
 pub(crate) struct Completion(Rc<State>);
 pub(crate) struct ResultsSender(Rc<State>);
 
+/// A public pipeline keeps the operation alive without polling a second future.
+/// The wire owner only holds PipelineState, never this application interest.
+pub(super) struct PipelineInterest(Rc<State>);
+impl Clone for PipelineInterest {
+    fn clone(&self) -> Self {
+        self.0.pipeline_interest.set(
+            self.0
+                .pipeline_interest
+                .get()
+                .checked_add(1)
+                .expect("pipeline interest overflow"),
+        );
+        Self(self.0.clone())
+    }
+}
+impl Drop for PipelineInterest {
+    fn drop(&mut self) {
+        let remaining = self.0.pipeline_interest.get() - 1;
+        self.0.pipeline_interest.set(remaining);
+        if remaining == 0 && !self.0.response_interest.get() {
+            let inbox = self
+                .0
+                .connection
+                .get()
+                .map(|connection| connection.inbox.clone())
+                .unwrap_or_default();
+            self.0.cancel_response(&inbox);
+        }
+    }
+}
+impl State {
+    fn retain_pipeline(self: &Rc<Self>, pipeline: &Rc<wire::PipelineState>) -> PipelineInterest {
+        assert_eq!(self.pipeline_interest.replace(1), 0);
+        self.pipeline.set(Some(Rc::downgrade(pipeline)));
+        PipelineInterest(self.clone())
+    }
+
+    /// Complete projections at the producer, before waking the response consumer.
+    /// Remote wire completion normally already installed its admitted pipeline;
+    /// the fallback handles locally forwarded results and admission failures.
+    fn notify_ready(&self) {
+        if !self.ready.get() {
+            return;
+        }
+        if let Some(pipeline) = self.pipeline.take().and_then(|pipeline| pipeline.upgrade()) {
+            if pipeline.unresolved() {
+                let status = self.status.take().expect("ready operation status");
+                let error = status.as_ref().err().map(|error| (**error).clone());
+                self.status.set(Some(status));
+                match error {
+                    Some(error) => {
+                        pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new(error)))
+                    }
+                    None => {
+                        let response = match self.results.take().expect("ready operation results") {
+                            ResultOwner::Done(results) => {
+                                Box::new(crate::local::Response::new(results))
+                                    as Box<dyn capnp::private::capability::ResponseHook>
+                            }
+                            ResultOwner::Response(response) => response,
+                        };
+                        let (response, completed) = crate::local::Pipeline::share_response(
+                            capability::Response::new(response),
+                        );
+                        // Restore the response before resolving any user hooks.
+                        self.results.set(Some(ResultOwner::Response(response.hook)));
+                        pipeline.finish_pending(|| completed);
+                    }
+                }
+            }
+        }
+        if let Some(wake) = self.receive.take() {
+            wake.wake();
+        }
+    }
+}
+
 // Most remote no-pipeline calls only transfer an admitted payload. Build the
 // general ResultsHook lazily, if a local producer or public accessor needs it.
 pub(super) enum Results {
@@ -115,24 +208,44 @@ pub(super) enum Results {
 pub(super) struct DirectResults {
     sender: Option<ResultsSender>,
     context: Option<Rc<dyn std::any::Any>>,
+    pipeline: Option<Weak<wire::PipelineState>>,
 }
 impl DirectResults {
+    fn take_hook(&mut self) -> crate::local::Results {
+        let sender = self.sender.take().expect("unconsumed direct results");
+        let context = self.context.take();
+        match self.pipeline.take().and_then(|pipeline| pipeline.upgrade()) {
+            Some(pipeline) => crate::local::Results::direct_pipelined(
+                sender,
+                context,
+                crate::queued::PipelineInnerSender::wire(&pipeline),
+            ),
+            None => crate::local::Results::direct(sender, context),
+        }
+    }
     fn into_hook(mut self) -> Box<dyn ResultsHook> {
-        Box::new(crate::local::Results::direct(
-            self.sender.take().expect("unconsumed direct results"),
-            self.context.take(),
-        ))
+        Box::new(self.take_hook())
     }
 }
 impl Drop for DirectResults {
     fn drop(&mut self) {
-        if let Some(sender) = self.sender.take() {
-            // An untouched hook still completes with empty results. This also
-            // preserves completion-before-results and cancellation semantics.
-            drop(crate::local::Results::direct(sender, self.context.take()));
+        if self.sender.is_some() {
+            // An untouched local result still completes with empty content.
+            drop(self.take_hook());
         }
     }
 }
+
+struct SharedPayloadResponse {
+    payload: Rc<wire::Payload>,
+    _context: Option<Rc<dyn std::any::Any>>,
+}
+impl capnp::private::capability::ResponseHook for SharedPayloadResponse {
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        capnp::private::capability::ResponseHook::get(&*self.payload)
+    }
+}
+
 impl Results {
     /// The private direct request owns both halves of one completion. Transfer
     /// the already admitted reader and successful status under one borrow;
@@ -177,7 +290,32 @@ impl Results {
         Self::Direct(DirectResults {
             sender: Some(sender),
             context,
+            pipeline: None,
         })
+    }
+    pub(super) fn take_wire_pipeline(&mut self) -> Option<Option<Rc<wire::PipelineState>>> {
+        match self {
+            Self::Direct(direct) => direct.pipeline.take().map(|pipeline| pipeline.upgrade()),
+            Self::Hook(hook) => hook
+                .as_any_mut()
+                .and_then(|hook| hook.downcast_mut::<crate::local::Results>())
+                .and_then(crate::local::Results::take_wire_pipeline),
+            Self::Unsent => None,
+        }
+    }
+    pub(super) fn finish_shared(&mut self, payload: &Rc<wire::Payload>) -> bool {
+        let Self::Direct(direct) = self else {
+            return false;
+        };
+        direct
+            .sender
+            .take()
+            .expect("unconsumed direct results")
+            .send_response(Box::new(SharedPayloadResponse {
+                payload: payload.clone(),
+                _context: direct.context.take(),
+            }));
+        true
     }
     pub(super) fn into_hook(self) -> Box<dyn ResultsHook> {
         match self {
@@ -188,10 +326,7 @@ impl Results {
     }
     pub(super) fn hook(&mut self) -> &mut dyn ResultsHook {
         if let Self::Direct(direct) = self {
-            let hook = crate::local::Results::direct(
-                direct.sender.take().expect("unconsumed direct results"),
-                direct.context.take(),
-            );
+            let hook = direct.take_hook();
             *self = Self::Hook(Box::new(hook));
         }
         match self {
@@ -281,30 +416,17 @@ impl Completion {
         }
     }
     pub(super) fn complete(&self, result: capnp::Result<()>) {
-        let (wake, canceled) = {
-            let state = &self.0;
-            if has_value(&state.status) || state.observed.get() {
-                return;
-            }
-            state
-                .ready
-                .set(result.is_err() || has_value(&state.results));
-            state.status.set(Some(result.map_err(Box::new)));
-            (
-                if state.ready() {
-                    state.receive.take()
-                } else {
-                    None
-                },
-                state.canceled.take(),
-            )
-        };
-        // The operation owner is completing now. Observing its response later
-        // must not wake a canceled-operation poll that no longer exists.
-        drop(canceled);
-        if let Some(wake) = wake {
-            wake.wake();
+        let state = &self.0;
+        if has_value(&state.status) || state.observed.get() {
+            return;
         }
+        state
+            .ready
+            .set(result.is_err() || has_value(&state.results));
+        state.status.set(Some(result.map_err(Box::new)));
+        // This operation is complete; later observation needs no cancellation poll.
+        drop(state.canceled.take());
+        state.notify_ready();
     }
 }
 impl Drop for Completion {
@@ -322,23 +444,14 @@ impl ResultsSender {
         self.finish(ResultOwner::Response(result));
     }
     fn finish(self, result: ResultOwner) {
-        let wake = {
-            let state = &self.0;
-            if state.observed.get() {
-                return;
-            }
-            debug_assert!(!has_value(&state.results));
-            state.results.set(Some(result));
-            state.ready.set(has_value(&state.status));
-            if state.ready() {
-                state.receive.take()
-            } else {
-                None
-            }
-        };
-        if let Some(wake) = wake {
-            wake.wake();
+        let state = &self.0;
+        if state.observed.get() {
+            return;
         }
+        debug_assert!(!has_value(&state.results));
+        state.results.set(Some(result));
+        state.ready.set(has_value(&state.status));
+        state.notify_ready();
     }
 }
 #[cold]
@@ -362,6 +475,7 @@ impl State {
                 inbox: Rc::downgrade(&inbox),
             }
         });
+        self.response_interest.set(true);
         let receiver = connection.receiver.clone();
         Promise::from_shared_response(receiver, self, capability::Response::new)
     }
@@ -410,6 +524,14 @@ impl State {
         ))
     }
     fn cancel_response(self: &Rc<Self>, inbox: &Weak<Inbox>) {
+        self.response_interest.set(false);
+        if self.pipeline_interest.get() != 0 && !self.observed.get() {
+            // The response future is gone, but an owned projection still needs
+            // the operation. Completion publishes its pipeline without polling.
+            drop(self.receive.take());
+            return;
+        }
+        self.pipeline.take();
         let (status, results, receive, canceled, abandoned) = {
             let state = &self;
             let abandoned = !state.observed.get() && !has_value(&state.status);
@@ -562,61 +684,28 @@ pub(super) fn request_prepared(
 pub(super) fn request_pipelined_prepared(
     mut call: Box<Call>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
-    use futures::FutureExt;
     let inbox = call.endpoint.inbox.upgrade();
     let state = inbox
         .as_ref()
         .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
-    // Publish the eventual wire queue now, avoiding an intermediate queued
-    // pipeline and a second projection transfer when the call is admitted.
     let pipeline = wire::PipelineState::prepared(inbox.as_ref());
-    let sender = crate::queued::PipelineInnerSender::wire(&pipeline);
-    call.results = Results::Hook(Box::new(crate::local::Results::direct_pipelined(
-        ResultsSender(state.clone()),
-        sender,
-    )));
+    let interest = state.retain_pipeline(&pipeline);
+    call.results = Results::Direct(DirectResults {
+        sender: Some(ResultsSender(state.clone())),
+        context: None,
+        pipeline: Some(Rc::downgrade(&pipeline)),
+    });
     call.completion = CallCompletion::Response(Completion(state.clone()));
     let promise = match call.enqueue_owned(inbox) {
         Ok(inbox) => state.promise(inbox),
-        Err(error) => Promise::err(*error),
-    };
-    // The response and pipeline share one driver. Store the non-Clone response
-    // separately so completion can be observed by both interests without a
-    // second shared future around the pipeline's unit result.
-    let result = Rc::new(Cell::new(None));
-    let output = result.clone();
-    let pending = Rc::downgrade(&pipeline);
-    let driver = Promise::from_future(async move {
-        let response = match promise.await {
-            Ok(response) => response,
-            Err(error) => {
-                if let Some(pending) = pending.upgrade() {
-                    pending
-                        .finish_pending(|| Box::new(crate::broken::Pipeline::new(error.clone())));
-                }
-                return Err(error);
-            }
-        };
-        let mut response = Some(response);
-        if let Some(pending) = pending.upgrade() {
-            pending.finish_pending(|| {
-                let (shared, pipeline) =
-                    crate::local::Pipeline::share_response(response.take().unwrap());
-                response = Some(shared);
-                pipeline
-            });
+        Err(error) => {
+            pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new((*error).clone())));
+            Promise::err(*error)
         }
-        output.set(response);
-        Ok(())
-    })
-    .shared();
-    let pipeline = pipeline.driven(driver.clone());
+    };
     capability::RemotePromise {
-        promise: Promise::from_future(async move {
-            driver.await?;
-            Ok(result.take().expect("completed pipelined response"))
-        }),
-        pipeline: any_pointer::Pipeline::new(pipeline),
+        promise,
+        pipeline: any_pointer::Pipeline::new(pipeline.owned(interest)),
     }
 }
 
@@ -633,6 +722,88 @@ mod tests {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
+    #[test]
+    fn producer_completes_unpolled_pipeline_and_pipeline_only_interest() {
+        for drop_response in [false, true] {
+            let hooks = ClientHooks::new(8, 8);
+            let state = hooks.inbox.completion_cache.acquire();
+            let pipeline = wire::PipelineState::prepared(Some(&hooks.inbox));
+            let interest = state.retain_pipeline(&pipeline);
+            let completion = Completion(state.clone());
+            let sender = ResultsSender(state.clone());
+            let mut promise = Some(state.clone().promise(hooks.inbox.clone()));
+            if drop_response {
+                drop(promise.take());
+                assert!(!completion.is_observed(), "pipeline retains the operation");
+            }
+            completion.complete(Ok(()));
+            assert!(pipeline.unresolved(), "results ownership has not arrived");
+            sender.send(results("completed without polling"));
+            assert!(
+                !pipeline.unresolved(),
+                "producer must publish the pipeline directly"
+            );
+            if let Some(promise) = &mut promise {
+                let Poll::Ready(Ok(response)) =
+                    Pin::new(promise).poll(&mut Context::from_waker(Waker::noop()))
+                else {
+                    panic!("ready response")
+                };
+                assert_eq!(
+                    response
+                        .get()
+                        .unwrap()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "completed without polling"
+                );
+            }
+            drop(promise);
+            drop(interest);
+            assert!(completion.is_observed());
+        }
+    }
+
+    #[test]
+    fn final_pipeline_interest_cancels_without_a_response_future() {
+        let hooks = ClientHooks::new(8, 8);
+        let state = hooks.inbox.completion_cache.acquire();
+        let pipeline = wire::PipelineState::prepared(Some(&hooks.inbox));
+        let interest = state.retain_pipeline(&pipeline);
+        let completion = Completion(state.clone());
+        let promise = state.clone().promise(hooks.inbox.clone());
+        drop(promise);
+        assert!(!completion.is_observed());
+        let retained = interest.clone();
+        drop(interest);
+        assert!(!completion.is_observed());
+        drop(retained);
+        assert!(completion.is_observed());
+    }
+
+    #[test]
+    fn shutdown_breaks_unpolled_pipeline_and_preserves_an_early_pipeline() {
+        for early in [false, true] {
+            let hooks = ClientHooks::new(8, 8);
+            let state = hooks.inbox.completion_cache.acquire();
+            let pipeline = wire::PipelineState::prepared(Some(&hooks.inbox));
+            let interest = state.retain_pipeline(&pipeline);
+            let _promise = state.promise(hooks.inbox.clone());
+            if early {
+                pipeline.publish(Box::new(crate::broken::Pipeline::new(Error::failed(
+                    "early".into(),
+                ))));
+            }
+            hooks.inbox.close(Error::disconnected("terminal".into()));
+            assert!(!pipeline.unresolved());
+            let public = pipeline.owned(interest);
+            assert_eq!(
+                public.get_pipelined_cap(&[]).get_failure().unwrap().extra,
+                if early { "early" } else { "terminal" }
+            );
+        }
+    }
+
     #[test]
     fn shared_receiver_recycles_completion_and_shutdown_wakes_the_next_use() {
         let hooks = ClientHooks::new(8, 8);
