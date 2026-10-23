@@ -20,7 +20,8 @@ pub(crate) fn defer(cx: &mut Context<'_>) {
 // Encryption transports consume each plaintext slice themselves. Coalescing a
 // bounded batch avoids rustls's temporary slice vector and quiche's separate
 // stream-send allocation for each RPC segment table. Plain sockets keep their
-// scatter/gather path. The scratch buffer grows only to the largest small batch.
+// scatter/gather path. Writers without scatter/gather, including QUIC, can
+// consume a bounded prefix of large batches instead of a standalone header.
 const ENCRYPTED_BATCH_BYTES: usize = 128 * 1024;
 pub(crate) struct TokioIo<T> {
     inner: T,
@@ -75,12 +76,22 @@ impl<T: AsyncWrite + Unpin> futures::AsyncWrite for TokioIo<T> {
                     sum.checked_add(b.len())
                         .filter(|n| *n <= ENCRYPTED_BATCH_BYTES)
                 });
+                let length = length.or_else(|| {
+                    // A scalar-only writer would otherwise accept just the
+                    // frame header. Fill its first send with a bounded prefix;
+                    // subsequent contiguous payload slices pass through.
+                    (!this.inner.is_write_vectored()).then_some(ENCRYPTED_BATCH_BYTES)
+                });
                 if let Some(length) = length {
                     batch.clear();
                     // Exact reserve keeps retained capacity within the bound.
                     batch.reserve_exact(length);
                     for buffer in buffers {
-                        batch.extend_from_slice(buffer);
+                        let remaining = length - batch.len();
+                        if remaining == 0 {
+                            break;
+                        }
+                        batch.extend_from_slice(&buffer[..buffer.len().min(remaining)]);
                     }
                     // AsyncWrite cannot retain this borrow after returning.
                     // Pending/partial writes consume only the reported prefix;
@@ -209,6 +220,7 @@ mod tests {
         bytes: Vec<u8>,
         scalar: usize,
         vectored: usize,
+        vectored_supported: bool,
         pending: bool,
         limit: usize,
         failed: bool,
@@ -245,6 +257,12 @@ mod tests {
             buffers: &[io::IoSlice<'_>],
         ) -> Poll<io::Result<usize>> {
             self.vectored += 1;
+            if !self.vectored_supported {
+                return self.poll_write(
+                    cx,
+                    buffers.iter().find(|b| !b.is_empty()).map_or(&[], |b| &**b),
+                );
+            }
             std::task::ready!(self.ready(cx))?;
             let mut count = 0;
             for buffer in buffers {
@@ -253,6 +271,9 @@ mod tests {
                 count += length;
             }
             Poll::Ready(Ok(count))
+        }
+        fn is_write_vectored(&self) -> bool {
+            self.vectored_supported
         }
         fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
             Poll::Ready(Ok(()))
@@ -303,6 +324,7 @@ mod tests {
     fn encrypted_large_batches_keep_scatter_gather_without_growing_scratch() {
         let mut writer = TokioIo::encrypted(EncryptedWriter {
             limit: usize::MAX,
+            vectored_supported: true,
             ..Default::default()
         });
         let payload = vec![7; ENCRYPTED_BATCH_BYTES];
@@ -314,6 +336,35 @@ mod tests {
         assert_eq!(writer.encrypted_batch.as_ref().unwrap().capacity(), 0);
         assert_eq!(&writer.inner.bytes[..6], b"header");
         assert_eq!(&writer.inner.bytes[6..], payload);
+    }
+
+    #[test]
+    fn encrypted_scalar_writers_coalesce_a_bounded_large_frame_prefix() {
+        for limit in [8191, usize::MAX] {
+            let mut writer = TokioIo::encrypted(EncryptedWriter {
+                limit,
+                ..Default::default()
+            });
+            let payload = vec![9; 2 * ENCRYPTED_BATCH_BYTES];
+            let mut slices = [io::IoSlice::new(b"header"), io::IoSlice::new(&payload)];
+            let mut buffers = &mut slices[..];
+            futures::executor::block_on(async {
+                let first = writer.write_vectored(buffers).await.unwrap();
+                assert_eq!(first, limit.min(ENCRYPTED_BATCH_BYTES));
+                io::IoSlice::advance_slices(&mut buffers, first);
+                while !buffers.is_empty() {
+                    let written = writer.write_vectored(buffers).await.unwrap();
+                    assert!(written > 0);
+                    io::IoSlice::advance_slices(&mut buffers, written);
+                }
+            });
+            assert_eq!(&writer.inner.bytes[..6], b"header");
+            assert_eq!(&writer.inner.bytes[6..], payload);
+            assert_eq!(
+                writer.encrypted_batch.as_ref().unwrap().capacity(),
+                ENCRYPTED_BATCH_BYTES
+            );
+        }
     }
 
     #[tokio::test]
