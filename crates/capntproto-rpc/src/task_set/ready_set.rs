@@ -1,57 +1,61 @@
-//! Small task sets reuse wake nodes with a bounded atomic FIFO. Larger sets retain the
-//! wake-driven FuturesUnordered queue; every task keeps its original future.
+//! Task sets reuse wake nodes with a bounded multi-producer atomic FIFO.
+//! Exceptional concurrency retains the FuturesUnordered fallback.
 use futures::{stream::FuturesUnordered, task::AtomicWaker, Stream};
 use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
         Arc,
     },
     task::{Context, Poll, Wake, Waker},
 };
 
-const INLINE_TASKS: usize = 8;
+// Notification storage is bounded independently of task lifetimes. A larger
+// exceptional set uses FuturesUnordered rather than retaining an unbounded pool.
+const REUSABLE_TASKS: usize = 128;
 
 struct Ready {
-    // Eight four-bit slot IDs (index + 1), oldest in the low nibble. A single
-    // atomic update both coalesces notifications and preserves their FIFO order.
-    queue: AtomicU32,
+    next: AtomicUsize,
+    entries: [AtomicU8; REUSABLE_TASKS],
+    queued: [AtomicBool; REUSABLE_TASKS],
     parent: AtomicWaker,
 }
 impl Ready {
-    fn enqueue(&self, index: usize) {
-        let mut old = self.queue.load(Ordering::Acquire);
-        loop {
-            let mut remaining = old;
-            let mut shift = 0;
-            let new = loop {
-                if remaining == 0 {
-                    // A missing slot leaves at most seven distinct IDs queued.
-                    break old | ((index as u32 + 1) << shift);
-                }
-                if remaining & 15 == index as u32 + 1 {
-                    // Even a duplicate must publish the producer's data to
-                    // the poll that consumes this notification. A load-only
-                    // return can race with dequeue and lose that publication.
-                    break old;
-                }
-                remaining >>= 4;
-                shift += 4;
-            };
-            match self
-                .queue
-                .compare_exchange_weak(old, new, Ordering::AcqRel, Ordering::Acquire)
-            {
-                Ok(_) => {
-                    if old == 0 {
-                        self.parent.wake();
-                    }
-                    return;
-                }
-                Err(current) => old = current,
-            }
+    fn new() -> Self {
+        Self {
+            next: AtomicUsize::new(0),
+            entries: [const { AtomicU8::new(0) }; REUSABLE_TASKS],
+            queued: [const { AtomicBool::new(false) }; REUSABLE_TASKS],
+            parent: AtomicWaker::new(),
         }
+    }
+    fn enqueue(&self, index: usize) {
+        // Even a duplicate publishes producer data. The consumer clears this
+        // flag with acquire ordering before it polls the future.
+        if self.queued[index].swap(true, Ordering::AcqRel) {
+            return;
+        }
+        // Each slot owns at most one reservation, so at most REUSABLE_TASKS
+        // reservations can be outstanding. The consumer releases the entry
+        // before allowing another reservation for its slot. Thus wrapping this
+        // cursor cannot overwrite a live entry, even if a producer is suspended
+        // between reserving its position and publishing its notification.
+        let position = self.next.fetch_add(1, Ordering::Relaxed) % REUSABLE_TASKS;
+        let previous = self.entries[position].swap(index as u8 + 1, Ordering::AcqRel);
+        debug_assert_eq!(previous, 0);
+        self.parent.wake();
+    }
+    fn front(&self, position: usize) -> Option<usize> {
+        let entry = self.entries[position % REUSABLE_TASKS].load(Ordering::Acquire);
+        (entry != 0).then(|| entry as usize - 1)
+    }
+    fn consume(&self, position: usize, index: usize) {
+        self.entries[position % REUSABLE_TASKS].store(0, Ordering::Release);
+        // A wake before this RMW is observed by the following poll; a wake
+        // after it reserves a new position. Never replace this with a store.
+        let was_queued = self.queued[index].swap(false, Ordering::AcqRel);
+        debug_assert!(was_queued);
     }
 }
 struct Notify {
@@ -77,17 +81,18 @@ pub(super) struct ReadySet<F: Future + Unpin> {
     tasks: Vec<Slot<F>>,
     queued: Option<FuturesUnordered<F>>,
     live: usize,
+    next_ready: usize,
+    available: u128,
 }
 impl<F: Future + Unpin> ReadySet<F> {
     pub(super) fn new() -> Self {
         Self {
-            ready: Arc::new(Ready {
-                queue: AtomicU32::new(0),
-                parent: AtomicWaker::new(),
-            }),
+            ready: Arc::new(Ready::new()),
             tasks: Vec::new(),
             queued: None,
             live: 0,
+            next_ready: 0,
+            available: u128::MAX,
         }
     }
     pub(super) fn len(&self) -> usize {
@@ -100,7 +105,7 @@ impl<F: Future + Unpin> ReadySet<F> {
             queued.push(future);
             return;
         }
-        if self.live == INLINE_TASKS {
+        if self.live == REUSABLE_TASKS {
             let queued = FuturesUnordered::new();
             for task in std::mem::take(&mut self.tasks) {
                 if let Some(future) = task.future {
@@ -116,11 +121,9 @@ impl<F: Future + Unpin> ReadySet<F> {
             drop(self.ready.parent.take());
             return;
         }
-        let index = self
-            .tasks
-            .iter()
-            .position(|slot| slot.future.is_none())
-            .unwrap_or(self.tasks.len());
+        // Reuse a vacant slot without scanning every suspended future.
+        let index = self.available.trailing_zeros() as usize;
+        self.available &= !(1u128 << index);
         if index == self.tasks.len() {
             self.tasks.push(Slot {
                 future: Some(future),
@@ -149,27 +152,18 @@ impl<F: Future + Unpin> Stream for ReadySet<F> {
         // A single bounded rotation prevents self-waking or mutually waking
         // tasks from monopolizing the executor. Their notifications schedule
         // another rotation, including a wake during the final task's poll.
-        let mut visited = 0u8;
-        loop {
-            let ready = self.ready.queue.load(Ordering::Acquire);
-            if ready == 0 {
-                break;
-            }
-            let index = (ready & 15) as usize - 1;
-            let bit = 1 << index;
+        let mut visited = 0u128;
+        // An earlier producer can still be publishing the front position.
+        // It wakes the registered parent after publication; later notifications
+        // cannot pass it and change FIFO ordering.
+        while let Some(index) = self.ready.front(self.next_ready) {
+            let bit = 1u128 << index;
             if visited & bit != 0 {
-                // Preserve the queue order while bounding a self-waking task.
                 cx.waker().wake_by_ref();
                 break;
             }
-            if self
-                .ready
-                .queue
-                .compare_exchange_weak(ready, ready >> 4, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-            {
-                continue;
-            }
+            self.ready.consume(self.next_ready, index);
+            self.next_ready = self.next_ready.wrapping_add(1);
             visited |= bit;
             let slot = &mut self.tasks[index];
             let Some(future) = slot.future.as_mut() else {
@@ -179,6 +173,7 @@ impl<F: Future + Unpin> Stream for ReadySet<F> {
             if let Poll::Ready(result) = Pin::new(future).poll(&mut task_cx) {
                 let finished = slot.future.take();
                 self.live -= 1;
+                self.available |= bit;
                 drop(finished);
                 return Poll::Ready(Some(result));
             }
@@ -229,7 +224,7 @@ mod tests {
     }
     #[test]
     fn readiness_survives_parent_changes_promotion_and_dropped_set() {
-        for count in [1, INLINE_TASKS, INLINE_TASKS + 1, 32] {
+        for count in [1, 8, 32, REUSABLE_TASKS, REUSABLE_TASKS + 1, 256] {
             let mut set = ReadySet::new();
             let mut tasks = Vec::new();
             let parent = Arc::new(Counts::default());
@@ -289,7 +284,7 @@ mod tests {
         let mut set = ReadySet::new();
         let mut waits = Vec::new();
         let mut cx = Context::from_waker(Waker::noop());
-        for value in 0..INLINE_TASKS {
+        for value in 0..REUSABLE_TASKS {
             let ready = Rc::new(Cell::new(false));
             let wake = Rc::new(RefCell::new(None));
             set.push(Wait {
@@ -301,14 +296,16 @@ mod tests {
             waits.push((ready, wake));
         }
         assert!(Pin::new(&mut set).poll_next(&mut cx).is_pending());
-        let order = [6, 2, 7, 1, 5, 0, 4, 3];
-        for index in order {
+        let order: Vec<_> = (0..REUSABLE_TASKS)
+            .map(|i| (i * 37 + 6) % REUSABLE_TASKS)
+            .collect();
+        for &index in &order {
             waits[index].0.set(true);
             let wake = waits[index].1.borrow().as_ref().unwrap().clone();
             wake.wake_by_ref();
             wake.wake_by_ref(); // Duplicate notifications keep their original position.
         }
-        for index in order {
+        for &index in &order {
             assert_eq!(
                 Pin::new(&mut set).poll_next(&mut cx),
                 Poll::Ready(Some(index))
@@ -319,40 +316,95 @@ mod tests {
 
     #[test]
     fn concurrent_notifications_coalesce_without_losing_slots() {
-        let ready = Arc::new(Ready {
-            queue: AtomicU32::new(0),
-            parent: AtomicWaker::new(),
-        });
+        let ready = Arc::new(Ready::new());
         std::thread::scope(|scope| {
-            for index in 0..INLINE_TASKS {
+            for worker in 0..8 {
                 let ready = ready.clone();
                 scope.spawn(move || {
                     for _ in 0..100 {
-                        ready.enqueue(index);
+                        for index in (worker..REUSABLE_TASKS).step_by(8) {
+                            ready.enqueue(index);
+                        }
                     }
                 });
             }
         });
-        let mut packed = ready.queue.load(Ordering::Acquire);
-        let mut seen = 0u8;
-        for _ in 0..INLINE_TASKS {
-            let index = (packed & 15) - 1;
-            assert!(index < INLINE_TASKS as u32);
+        let mut seen = 0u128;
+        for position in 0..REUSABLE_TASKS {
+            let index = ready.front(position).unwrap();
             assert_eq!(seen & (1 << index), 0);
             seen |= 1 << index;
-            packed >>= 4;
+            ready.consume(position, index);
         }
-        assert_eq!(packed, 0);
-        assert_eq!(seen, u8::MAX);
+        assert_eq!(ready.front(REUSABLE_TASKS), None);
+        assert_eq!(seen, u128::MAX);
+    }
+
+    #[test]
+    fn unpublished_reservation_preserves_fifo_and_wrapping_cursors() {
+        let ready = Ready::new();
+        let start = usize::MAX - 1;
+        ready.next.store(start, Ordering::Relaxed);
+        // Suspend a producer after reservation but before publication.
+        assert!(!ready.queued[3].swap(true, Ordering::AcqRel));
+        assert_eq!(ready.next.fetch_add(1, Ordering::Relaxed), start);
+        ready.enqueue(7);
+        ready.enqueue(11);
+        assert_eq!(ready.front(start), None);
+        ready.entries[start % REUSABLE_TASKS].store(4, Ordering::Release);
+        for (offset, index) in [3, 7, 11].into_iter().enumerate() {
+            let position = start.wrapping_add(offset);
+            assert_eq!(ready.front(position), Some(index));
+            ready.consume(position, index);
+        }
+        assert_eq!(ready.front(start.wrapping_add(3)), None);
+    }
+
+    #[test]
+    fn concurrent_producers_and_consumer_reuse_every_slot() {
+        let ready = Ready::new();
+        let values: [AtomicUsize; REUSABLE_TASKS] = [const { AtomicUsize::new(0) }; REUSABLE_TASKS];
+        let finished = AtomicUsize::new(0);
+        let mut observed = [0; REUSABLE_TASKS];
+        let rounds = if cfg!(miri) { 2 } else { 256 };
+        std::thread::scope(|scope| {
+            for worker in 0..8 {
+                let (ready, values, finished) = (&ready, &values, &finished);
+                scope.spawn(move || {
+                    for value in 1..=rounds {
+                        for index in (worker..REUSABLE_TASKS).step_by(8) {
+                            values[index].store(value, Ordering::Release);
+                            ready.enqueue(index);
+                        }
+                    }
+                    finished.fetch_add(1, Ordering::Release);
+                });
+            }
+            let mut position = 0usize;
+            loop {
+                if let Some(index) = ready.front(position) {
+                    ready.consume(position, index);
+                    position = position.wrapping_add(1);
+                    observed[index] = values[index].load(Ordering::Acquire);
+                } else if finished.load(Ordering::Acquire) == 8 {
+                    // A producer could publish between the first front load
+                    // and the completion load. Recheck after acquiring it.
+                    if ready.front(position).is_none() {
+                        break;
+                    }
+                } else {
+                    std::thread::yield_now();
+                }
+            }
+        });
+        assert_eq!(observed, [rounds; REUSABLE_TASKS]);
+        assert!(ready.queued.iter().all(|q| !q.load(Ordering::Acquire)));
     }
 
     #[test]
     fn duplicate_notifications_publish_before_the_queued_poll() {
         use std::sync::{atomic::AtomicBool, Barrier};
-        let ready = Ready {
-            queue: AtomicU32::new(0),
-            parent: AtomicWaker::new(),
-        };
+        let ready = Ready::new();
         let data = AtomicBool::new(false);
         let start = Barrier::new(2);
         let done = Barrier::new(2);
@@ -367,28 +419,24 @@ mod tests {
                     done.wait();
                 }
             });
+            let mut position = 0usize;
             for round in 0..rounds {
+                if let Some(index) = ready.front(position) {
+                    ready.consume(position, index);
+                    position = position.wrapping_add(1);
+                }
                 data.store(false, Ordering::Relaxed);
-                ready.queue.store(1, Ordering::Relaxed);
+                ready.enqueue(0);
                 start.wait();
                 // Consume an already queued notification while another thread
                 // publishes data and wakes the same task. Either this poll
                 // observes the data, or another notification must remain.
-                let mut old = ready.queue.load(Ordering::Acquire);
-                loop {
-                    match ready.queue.compare_exchange_weak(
-                        old,
-                        old >> 4,
-                        Ordering::AcqRel,
-                        Ordering::Acquire,
-                    ) {
-                        Ok(_) => break,
-                        Err(current) => old = current,
-                    }
-                }
+                assert_eq!(ready.front(position), Some(0));
+                ready.consume(position, 0);
+                position = position.wrapping_add(1);
                 let observed = data.load(Ordering::Acquire);
                 done.wait();
-                if !observed && ready.queue.load(Ordering::Acquire) == 0 {
+                if !observed && ready.front(position).is_none() {
                     lost.get_or_insert(round);
                 }
             }

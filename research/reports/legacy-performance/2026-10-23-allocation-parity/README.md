@@ -98,3 +98,17 @@ gh workflow run performance.yml \
 This compares candidate legacy, frozen legacy, current portable, and pinned C++ with matched diagnostic fixtures. Inspect all profile failures, paired counts, bytes, and full allocation stacks; continue optimizing any remaining gap. Once allocation parity is established, run the five-repetition native qualification campaign to check latency and spread.
 
 The saved-evidence analyzer now emits `allocation-comparison.json` and `allocation-comparison.md`. Each declared workload requires both complete DHAT trials and every client/service peer for legacy and its comparators. TLS requires portable and C++; QUIC requires portable. The target is their minimum unrounded block count, with only floating-point roundoff tolerance. Incomplete comparisons remain unmeasured. Cumulative bytes and the frozen legacy control are retained alongside the target. These reports contain no native latency or peak-memory claims.
+
+## Follow-up: reusable scheduler notifications
+
+The next candidate removes the permanent per-task allocation transition at eight live scheduler tasks. `ReadySet` now reuses up to 128 notification slots, backed by a bounded multi-producer atomic FIFO. A free-slot bitmap avoids scanning suspended futures. Slots and their wake identities survive completed tasks; task payloads still drop immediately. More than 128 simultaneously live tasks retain the existing `FuturesUnordered` fallback.
+
+The earlier service-chain trace attributed 128 allocation blocks per batch to driver-owned `FuturesUnordered` nodes, separately from the unchanged fixture's 33 nodes. This establishes an allocating site to target; it does not establish the new candidate's savings. Pinned KJ `TaskSet::add()` in `c++/src/kj/async.c++` appends task bookkeeping to its promise arena. Reusing notification storage applies the same ownership principle without assuming Rust futures can use KJ's representation.
+
+The atomic queue preserves reservation order, publishes duplicate wakes before a consuming poll, and never polls user futures from producer threads. A delayed producer can leave the next reservation unpublished; the consumer returns pending until that producer publishes and wakes it. Notification storage stays bounded. This is not a claim of a formally lock-free consumer: progress past an unpublished reservation depends on its producer.
+
+The change trades a larger fixed notification array and additional atomic operations for reuse under concurrency. It must be checked against native latency as well as allocation counts. No local performance measurement has been run.
+
+Validation: all 365 RPC unit tests, 28 cancellation/ownership/admission integration tests, and warnings-denied RPC Clippy pass. The scheduler tests cover simultaneous producers and consumption, duplicate data publication, FIFO order, cursor wraparound, a suspended producer reservation, reused wake identities, foreign-thread wakes, fallback promotion, teardown, and bounded self-wakes. The preceding ownership candidate also passed 72 further streaming, flow-control, reconnect, join, authentication, and native multiparty tests.
+
+The next allocation campaign uses `931c91c` as its frozen legacy control to isolate this scheduler change, while comparing candidate legacy with current portable and pinned C++. Run 40002634814 remains the comparison of the earlier ownership changes against b00460e. Neither candidate has verified allocation parity yet.
