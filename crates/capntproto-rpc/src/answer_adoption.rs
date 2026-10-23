@@ -193,7 +193,11 @@ pub(super) fn receive<VatId>(
         .insert_adopted(id, Question::new())
         .map_err(|_| Error::failed("ThirdPartyAnswer ID became occupied".into()))?;
     let (sender, receiver) = oneshot::channel();
-    let reference = Rc::new(RefCell::new(QuestionRef::new(state.clone(), id, sender)));
+    let reference = Rc::new(QuestionCell::new(QuestionRef::new(
+        state.clone(),
+        id,
+        sender,
+    )));
     state.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
     // Install the sparse question synchronously: Return may precede the redirect
     // on the introducer connection, but is not exposed until authentication matches.

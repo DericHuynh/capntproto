@@ -499,7 +499,7 @@ impl State {
     fn promise(
         self: Rc<Self>,
         inbox: Rc<Inbox>,
-    ) -> Promise<capability::Response<any_pointer::Owned>, Error> {
+    ) -> capability::ResponsePromise<any_pointer::Owned> {
         let connection = self.connection.get_or_init(|| {
             // The weak subscription follows this allocation through cache reuse.
             // Its terminal connection never needs another registration.
@@ -513,7 +513,7 @@ impl State {
         });
         self.response_interest.set(true);
         let receiver = connection.receiver.clone();
-        Promise::from_shared_response(receiver, self, capability::Response::new)
+        capability::ResponsePromise::from_shared_response(receiver, self)
     }
     fn poll_response(
         &self,
@@ -685,10 +685,10 @@ pub(crate) fn request_scoped(
     );
     let promise = match admitted {
         Ok(inbox) => state.promise(inbox),
-        Err(error) => Promise::err(*error),
+        Err(error) => capability::ResponsePromise::new(Promise::err(*error)),
     };
     capability::RemotePromise {
-        promise: capnp::capability::ResponsePromise::new(promise),
+        promise,
         pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
     }
 }
@@ -706,10 +706,10 @@ pub(super) fn request_prepared(
     call.completion = CallCompletion::Response(Completion(state.clone()));
     let promise = match call.enqueue_owned(inbox) {
         Ok(inbox) => state.promise(inbox),
-        Err(error) => Promise::err(*error),
+        Err(error) => capability::ResponsePromise::new(Promise::err(*error)),
     };
     capability::RemotePromise {
-        promise: capnp::capability::ResponsePromise::new(promise),
+        promise,
         pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
     }
 }
@@ -736,11 +736,11 @@ pub(super) fn request_pipelined_prepared(
         Ok(inbox) => state.promise(inbox),
         Err(error) => {
             pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new((*error).clone())));
-            Promise::err(*error)
+            capability::ResponsePromise::new(Promise::err(*error))
         }
     };
     capability::RemotePromise {
-        promise: capnp::capability::ResponsePromise::new(promise),
+        promise,
         pipeline: any_pointer::Pipeline::new(pipeline.owned(interest)),
     }
 }

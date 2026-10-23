@@ -75,10 +75,6 @@ enum PromiseInner<T, E> {
     // stays inline; only a synchronously rejected promise allocates its error.
     Immediate(Result<T, alloc::boxed::Box<E>>),
     Deferred(Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>),
-    Response(
-        ResponsePromiseOwner<E>,
-        fn(alloc::boxed::Box<dyn ResponseHook>) -> T,
-    ),
     Empty,
 }
 
@@ -138,28 +134,6 @@ impl<T, E> Promise<T, E> {
         }
     }
 
-    /// Preserve the unique receiver while generated APIs select a result type.
-    #[doc(hidden)]
-    pub fn from_shared_response(
-        receiver: alloc::rc::Rc<ResponseReceiver<E>>,
-        state: alloc::rc::Rc<
-            dyn crate::private::capability::SharedPromise<
-                alloc::boxed::Box<dyn ResponseHook>,
-                alloc::boxed::Box<E>,
-            >,
-        >,
-        convert: fn(alloc::boxed::Box<dyn ResponseHook>) -> T,
-    ) -> Self {
-        {
-            let mut slot = receiver.state.borrow_mut();
-            assert!(slot.is_none(), "response receiver is already active");
-            *slot = Some(state);
-        }
-        Self {
-            inner: PromiseInner::Response(ResponsePromiseOwner(receiver), convert),
-        }
-    }
-
     pub fn from_future<F>(f: F) -> Self
     where
         F: Future<Output = core::result::Result<T, E>> + 'static,
@@ -185,14 +159,6 @@ impl<T, E> Future for Promise<T, E> {
                 }
             }
             PromiseInner::Deferred(ref mut f) => f.as_mut().poll(cx),
-            PromiseInner::Response(ref state, convert) => state
-                .0
-                .state
-                .borrow()
-                .as_ref()
-                .expect("live response receiver")
-                .poll(cx)
-                .map(|result| result.map(convert).map_err(|error| *error)),
         }
     }
 }
@@ -304,8 +270,34 @@ where
 #[cfg(feature = "alloc")]
 #[must_use = "a response future must be polled"]
 pub struct ResponsePromise<R, E = Error> {
-    inner: Promise<Response<any_pointer::Owned>, E>,
+    inner: ResponseFuture<E>,
     marker: PhantomData<R>,
+}
+// Keep response-only ownership out of the ubiquitous Promise<(), E>. This flat
+// representation also avoids a second discriminant around a general Promise.
+#[cfg(feature = "alloc")]
+enum ResponseFuture<E> {
+    Immediate(Result<Response<any_pointer::Owned>, alloc::boxed::Box<E>>),
+    Deferred(Pin<alloc::boxed::Box<dyn Future<Output = Result<Response<any_pointer::Owned>, E>>>>),
+    Cached(ResponsePromiseOwner<E>),
+    Direct(DirectResponseOwner<E>),
+    Empty,
+}
+#[cfg(feature = "alloc")]
+struct DirectResponseOwner<E>(
+    Option<
+        alloc::rc::Rc<
+            dyn crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, E>,
+        >,
+    >,
+);
+#[cfg(feature = "alloc")]
+impl<E> Drop for DirectResponseOwner<E> {
+    fn drop(&mut self) {
+        if let Some(state) = self.0.take() {
+            state.cancel();
+        }
+    }
 }
 #[cfg(feature = "alloc")]
 impl<R, E> Unpin for ResponsePromise<R, E> {}
@@ -313,33 +305,94 @@ impl<R, E> Unpin for ResponsePromise<R, E> {}
 impl<R: Pipelined + Owned, E> ResponsePromise<R, E> {
     #[doc(hidden)]
     pub fn new(inner: Promise<Response<any_pointer::Owned>, E>) -> Self {
+        let inner = match inner.inner {
+            PromiseInner::Immediate(result) => ResponseFuture::Immediate(result),
+            PromiseInner::Deferred(future) => ResponseFuture::Deferred(future),
+            PromiseInner::Empty => ResponseFuture::Empty,
+        };
         Self {
             inner,
             marker: PhantomData,
         }
     }
+    /// Preserve one receiver while its producer reuses empty response storage.
+    #[doc(hidden)]
+    pub fn from_shared_response(
+        receiver: alloc::rc::Rc<ResponseReceiver<E>>,
+        state: alloc::rc::Rc<
+            dyn crate::private::capability::SharedPromise<
+                alloc::boxed::Box<dyn ResponseHook>,
+                alloc::boxed::Box<E>,
+            >,
+        >,
+    ) -> Self {
+        {
+            let mut slot = receiver.state.borrow_mut();
+            assert!(slot.is_none(), "response receiver is already active");
+            *slot = Some(state);
+        }
+        Self {
+            inner: ResponseFuture::Cached(ResponsePromiseOwner(receiver)),
+            marker: PhantomData,
+        }
+    }
+    /// Own the single response interest in an existing producer allocation.
+    /// Completion or abandonment calls cancel once, as specified by SharedPromise.
+    #[doc(hidden)]
+    pub fn from_shared(
+        state: alloc::rc::Rc<
+            dyn crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, E>,
+        >,
+    ) -> Self {
+        Self {
+            inner: ResponseFuture::Direct(DirectResponseOwner(Some(state))),
+            marker: PhantomData,
+        }
+    }
     fn into_typed_response<T: Pipelined + Owned>(self) -> ResponsePromise<T, E> {
-        ResponsePromise::new(self.inner)
+        ResponsePromise {
+            inner: self.inner,
+            marker: PhantomData,
+        }
     }
 }
 #[cfg(feature = "alloc")]
 impl<R: Pipelined + Owned, E> Future for ResponsePromise<R, E> {
     type Output = Result<Response<R>, E>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
-        let result = match Pin::new(&mut self.inner).poll(cx) {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(result) => result,
+        let result = match &mut self.inner {
+            ResponseFuture::Empty => panic!("ResponsePromise polled after completion"),
+            immediate @ ResponseFuture::Immediate(_) => {
+                let ResponseFuture::Immediate(result) =
+                    core::mem::replace(immediate, ResponseFuture::Empty)
+                else {
+                    unreachable!()
+                };
+                Poll::Ready(result.map(|response| response.hook).map_err(|error| *error))
+            }
+            ResponseFuture::Deferred(future) => future
+                .as_mut()
+                .poll(cx)
+                .map(|result| result.map(|response| response.hook)),
+            ResponseFuture::Cached(owner) => owner
+                .0
+                .state
+                .borrow()
+                .as_ref()
+                .expect("live response receiver")
+                .poll(cx)
+                .map(|result| result.map_err(|error| *error)),
+            ResponseFuture::Direct(owner) => {
+                owner.0.as_ref().expect("live response interest").poll(cx)
+            }
         };
-        // Completed adapters must release their original request immediately,
-        // even if the caller retains this now-completed response future.
-        let completed = core::mem::replace(
-            &mut self.inner,
-            Promise {
-                inner: PromiseInner::Empty,
-            },
-        );
+        let Poll::Ready(result) = result else {
+            return Poll::Pending;
+        };
+        // Release completed request ownership even if this future is retained.
+        let completed = core::mem::replace(&mut self.inner, ResponseFuture::Empty);
         drop(completed);
-        Poll::Ready(result.map(|response| Response::new(response.hook)))
+        Poll::Ready(result.map(Response::new))
     }
 }
 
@@ -952,6 +1005,94 @@ mod promise_tests {
         }
     }
     #[test]
+    fn direct_response_preserves_unique_receiver_release_and_compact_storage() {
+        assert!(core::mem::size_of::<Promise<(), Error>>() <= 3 * core::mem::size_of::<usize>());
+        assert!(
+            core::mem::size_of::<ResponsePromise<any_pointer::Owned>>()
+                <= 4 * core::mem::size_of::<usize>()
+        );
+        struct Hook(Rc<Cell<usize>>);
+        impl ResponseHook for Hook {
+            fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+                Err(Error::failed(alloc::string::String::from("direct hook")))
+            }
+        }
+        impl Drop for Hook {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+        struct State {
+            ready: Cell<bool>,
+            observed: Cell<bool>,
+            cancels: Cell<usize>,
+            value: core::cell::RefCell<Option<Result<alloc::boxed::Box<dyn ResponseHook>, Error>>>,
+        }
+        impl crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, Error>
+            for State
+        {
+            fn poll(
+                &self,
+                _: &mut core::task::Context<'_>,
+            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, Error>> {
+                assert!(!self.observed.get());
+                if self.ready.get() {
+                    self.observed.set(true);
+                    Poll::Ready(self.value.borrow_mut().take().unwrap())
+                } else {
+                    Poll::Pending
+                }
+            }
+            fn cancel(self: Rc<Self>) {
+                self.cancels.set(self.cancels.get() + 1);
+                let value = self.value.borrow_mut().take();
+                drop(value);
+            }
+        }
+        for completion in 0..3 {
+            let drops = Rc::new(Cell::new(0));
+            let value: Result<alloc::boxed::Box<dyn ResponseHook>, Error> = if completion == 2 {
+                Err(Error::failed(alloc::string::String::from("direct error")))
+            } else {
+                Ok(alloc::boxed::Box::new(Hook(drops.clone())))
+            };
+            let state = Rc::new(State {
+                ready: Cell::new(false),
+                observed: Cell::new(false),
+                cancels: Cell::new(0),
+                value: core::cell::RefCell::new(Some(value)),
+            });
+            let mut response = ResponsePromise::<any_pointer::Owned>::from_shared(state.clone())
+                .into_typed_response::<any_pointer::Owned>();
+            assert_eq!(Rc::strong_count(&state), 2);
+            let mut cx = core::task::Context::from_waker(Waker::noop());
+            assert!(Pin::new(&mut response).poll(&mut cx).is_pending());
+            if completion != 0 {
+                state.ready.set(true);
+                let Poll::Ready(result) = Pin::new(&mut response).poll(&mut cx) else {
+                    panic!("ready response")
+                };
+                if completion == 1 {
+                    let result = result.unwrap();
+                    assert_eq!(result.hook.get().err().unwrap().extra, "direct hook");
+                    assert_eq!(drops.get(), 0);
+                    drop(result);
+                    assert_eq!(drops.get(), 1);
+                } else {
+                    assert_eq!(result.err().unwrap().extra, "direct error");
+                }
+                assert_eq!(state.cancels.get(), 1);
+                assert_eq!(Rc::strong_count(&state), 1);
+            }
+            drop(response);
+            assert_eq!(state.cancels.get(), 1);
+            assert_eq!(Rc::strong_count(&state), 1);
+            assert!(state.value.borrow().is_none());
+            assert_eq!(drops.get(), usize::from(completion != 2));
+        }
+    }
+
+    #[test]
     fn typed_response_releases_deferred_owner_at_completion() {
         struct F(Rc<Cell<usize>>);
         impl Future for F {
@@ -1002,14 +1143,11 @@ mod promise_tests {
         let receiver = Rc::new(ResponseReceiver::default());
         let canceled = Rc::new(Cell::new(0));
         for expected in 1..=2 {
-            let untyped: Promise<Response<any_pointer::Owned>, Error> =
-                Promise::from_shared_response(
-                    receiver.clone(),
-                    Rc::new(Failed(receiver.clone(), canceled.clone())),
-                    Response::new,
-                );
-            let mut typed = ResponsePromise::<any_pointer::Owned, _>::new(untyped)
-                .into_typed_response::<any_pointer::Owned>();
+            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared_response(
+                receiver.clone(),
+                Rc::new(Failed(receiver.clone(), canceled.clone())),
+            )
+            .into_typed_response::<any_pointer::Owned>();
             let Poll::Ready(Err(error)) =
                 Pin::new(&mut typed).poll(&mut core::task::Context::from_waker(Waker::noop()))
             else {
@@ -1067,11 +1205,12 @@ mod promise_tests {
                 cancels: Cell::new(0),
                 receiver: receiver.clone(),
             });
-            let untyped: Promise<Response<any_pointer::Owned>, Error> =
-                Promise::from_shared_response(receiver.clone(), state.clone(), Response::new);
-            let mut typed = ResponsePromise::<any_pointer::Owned, _>::new(untyped)
-                .into_typed_response::<any_pointer::Owned>();
-            assert!(matches!(&typed.inner.inner, PromiseInner::Response(_, _)));
+            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared_response(
+                receiver.clone(),
+                state.clone(),
+            )
+            .into_typed_response::<any_pointer::Owned>();
+            assert!(matches!(&typed.inner, ResponseFuture::Cached(_)));
             assert_eq!(Rc::strong_count(&state), 2);
             let mut cx = core::task::Context::from_waker(Waker::noop());
             assert!(Pin::new(&mut typed).poll(&mut cx).is_pending());

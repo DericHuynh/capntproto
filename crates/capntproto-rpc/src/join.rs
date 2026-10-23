@@ -269,7 +269,7 @@ pub(super) fn send<VatId>(
             let id = state.questions.borrow_mut().push(question);
             request.set_question_id(id.to_wire());
             let (tx, rx) = oneshot::channel();
-            let reference = Rc::new(RefCell::new(QuestionRef::new(state.clone(), id, tx)));
+            let reference = Rc::new(QuestionCell::new(QuestionRef::new(state.clone(), id, tx)));
             state.questions.borrow_mut().find(id).unwrap().self_ref =
                 Some(Rc::downgrade(&reference));
             let promise = rx

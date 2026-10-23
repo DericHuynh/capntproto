@@ -79,7 +79,7 @@ where
     is_tail_call: bool,
 
     /// The local QuestionRef, set to None when it is destroyed.
-    self_ref: Option<Weak<RefCell<QuestionRef<VatId>>>>,
+    self_ref: Option<Weak<QuestionCell<VatId>>>,
 
     join_id: Option<u32>,
     allow_third_party: bool,
@@ -114,6 +114,21 @@ where
     pipeline: Option<Weak<RefCell<PipelineState<VatId>>>>,
 }
 
+// A local type lets the existing shared question implement the core response
+// interface. The cell is inline; this wrapper adds no allocation or field.
+struct QuestionCell<VatId: 'static>(RefCell<QuestionRef<VatId>>);
+impl<VatId> QuestionCell<VatId> {
+    fn new(question: QuestionRef<VatId>) -> Self {
+        Self(RefCell::new(question))
+    }
+}
+impl<VatId> std::ops::Deref for QuestionCell<VatId> {
+    type Target = RefCell<QuestionRef<VatId>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 enum QuestionFulfiller<VatId: 'static> {
     External(oneshot::Sender<Promise<Response<VatId>, Error>>),
     Direct,
@@ -135,88 +150,56 @@ impl<VatId> Default for DirectReply<VatId> {
     }
 }
 struct QuestionReply<VatId: 'static> {
-    reference: Option<Rc<RefCell<QuestionRef<VatId>>>>,
+    reference: Option<Rc<QuestionCell<VatId>>>,
     done: bool,
 }
-impl<VatId> Future for QuestionReply<VatId> {
-    type Output = capnp::Result<Response<VatId>>;
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        assert!(!self.done, "question reply polled after completion");
-        let value = self
-            .reference
-            .as_ref()
-            .expect("live reply")
-            .borrow_mut()
-            .reply
-            .value
-            .take();
+impl<VatId> QuestionReply<VatId> {
+    fn into_shared(mut self) -> Rc<QuestionCell<VatId>> {
+        assert!(!self.done, "completed question reply");
+        self.reference.take().expect("live reply")
+    }
+    fn poll_reference(
+        reference: &QuestionCell<VatId>,
+        cx: &mut Context<'_>,
+    ) -> Poll<capnp::Result<Response<VatId>>> {
+        let value = {
+            let mut reference = reference.borrow_mut();
+            debug_assert!(
+                !reference.reply.observed,
+                "question reply polled after completion"
+            );
+            reference.reply.value.take()
+        };
         if let Some(mut value) = value {
-            // Redirected answers may suspend again. Never poll arbitrary code
-            // while borrowing the question, including custom waker callbacks.
+            // A redirected answer can suspend again. Poll outside the question
+            // borrow, including arbitrary custom waker operations.
             match Pin::new(&mut value).poll(cx) {
                 Poll::Ready(result) => {
-                    self.done = true;
-                    self.reference
-                        .as_ref()
-                        .expect("live reply")
-                        .borrow_mut()
-                        .reply
-                        .observed = true;
-                    drop(self.reference.take());
+                    reference.borrow_mut().reply.observed = true;
                     return Poll::Ready(result);
                 }
-                Poll::Pending => {
-                    self.reference
-                        .as_ref()
-                        .expect("live reply")
-                        .borrow_mut()
-                        .reply
-                        .value = Some(value)
-                }
+                Poll::Pending => reference.borrow_mut().reply.value = Some(value),
             }
         } else {
-            let registered = self
-                .reference
-                .as_ref()
-                .expect("live reply")
+            let registered = reference
                 .borrow()
                 .reply
                 .waker
                 .as_ref()
-                .is_some_and(|w| w.will_wake(cx.waker()));
+                .is_some_and(|wake| wake.will_wake(cx.waker()));
             if !registered {
                 let wake = cx.waker().clone();
-                let previous = self
-                    .reference
-                    .as_ref()
-                    .expect("live reply")
-                    .borrow_mut()
-                    .reply
-                    .waker
-                    .replace(wake);
+                let previous = reference.borrow_mut().reply.waker.replace(wake);
                 drop(previous);
-                // Cloning/dropping a custom waker can synchronously deliver.
-                if self
-                    .reference
-                    .as_ref()
-                    .expect("live reply")
-                    .borrow()
-                    .reply
-                    .value
-                    .is_some()
-                {
+                // A custom waker can synchronously deliver a response.
+                if reference.borrow().reply.value.is_some() {
                     cx.waker().wake_by_ref();
                 }
             }
         }
         Poll::Pending
     }
-}
-impl<VatId> Drop for QuestionReply<VatId> {
-    fn drop(&mut self) {
-        let Some(reference) = self.reference.take() else {
-            return;
-        };
+    fn release(reference: &QuestionCell<VatId>) {
         let (value, wake) = {
             let mut reference = reference.borrow_mut();
             reference.reply.observed = true;
@@ -224,6 +207,36 @@ impl<VatId> Drop for QuestionReply<VatId> {
         };
         drop(value);
         drop(wake);
+    }
+}
+impl<VatId> Future for QuestionReply<VatId> {
+    type Output = capnp::Result<Response<VatId>>;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        assert!(!self.done, "question reply polled after completion");
+        let result = Self::poll_reference(self.reference.as_ref().expect("live reply"), cx);
+        if result.is_ready() {
+            self.done = true;
+            drop(self.reference.take());
+        }
+        result
+    }
+}
+impl<VatId> Drop for QuestionReply<VatId> {
+    fn drop(&mut self) {
+        if let Some(reference) = self.reference.take() {
+            Self::release(&reference);
+        }
+    }
+}
+impl<VatId> capnp::private::capability::SharedPromise<Box<dyn ResponseHook>, Error>
+    for QuestionCell<VatId>
+{
+    fn poll(&self, cx: &mut Context<'_>) -> Poll<capnp::Result<Box<dyn ResponseHook>>> {
+        QuestionReply::poll_reference(self, cx)
+            .map(|result| result.map(|response| Box::new(response) as Box<dyn ResponseHook>))
+    }
+    fn cancel(self: Rc<Self>) {
+        QuestionReply::release(&self);
     }
 }
 
@@ -244,8 +257,8 @@ impl<VatId> QuestionRef<VatId> {
     fn direct(
         state: Rc<ConnectionState<VatId>>,
         id: QuestionId,
-    ) -> (Rc<RefCell<Self>>, QuestionReply<VatId>) {
-        let reference = Rc::new(RefCell::new(Self {
+    ) -> (Rc<QuestionCell<VatId>>, QuestionReply<VatId>) {
+        let reference = Rc::new(QuestionCell::new(Self {
             connection_state: Some(state),
             id,
             fulfiller: Some(QuestionFulfiller::Direct),
@@ -259,7 +272,7 @@ impl<VatId> QuestionRef<VatId> {
         (reference, reply)
     }
     fn deliver(
-        reference: &Rc<RefCell<Self>>,
+        reference: &Rc<QuestionCell<VatId>>,
         fulfiller: QuestionFulfiller<VatId>,
         response: Promise<Response<VatId>, Error>,
     ) {
@@ -282,7 +295,7 @@ impl<VatId> QuestionRef<VatId> {
             }
         }
     }
-    fn fulfill(reference: &Rc<RefCell<Self>>, mut response: Promise<Response<VatId>, Error>) {
+    fn fulfill(reference: &Rc<QuestionCell<VatId>>, mut response: Promise<Response<VatId>, Error>) {
         let (fulfiller, pipeline) = Self::take_completion(reference);
         let Some(fulfiller) = fulfiller else { return };
         if let Some(state) = pipeline {
@@ -297,7 +310,10 @@ impl<VatId> QuestionRef<VatId> {
         Self::deliver(reference, fulfiller, response);
     }
 
-    fn fulfill_result(reference: &Rc<RefCell<Self>>, response: capnp::Result<Response<VatId>>) {
+    fn fulfill_result(
+        reference: &Rc<QuestionCell<VatId>>,
+        response: capnp::Result<Response<VatId>>,
+    ) {
         let (fulfiller, pipeline) = Self::take_completion(reference);
         let Some(fulfiller) = fulfiller else { return };
         if let Some(pipeline) = pipeline {
@@ -317,7 +333,7 @@ impl<VatId> QuestionRef<VatId> {
 
     #[allow(clippy::type_complexity)]
     fn take_completion(
-        reference: &Rc<RefCell<Self>>,
+        reference: &Rc<QuestionCell<VatId>>,
     ) -> (
         Option<QuestionFulfiller<VatId>>,
         Option<Rc<RefCell<PipelineState<VatId>>>>,
@@ -332,7 +348,7 @@ impl<VatId> QuestionRef<VatId> {
         (fulfiller, pipeline)
     }
 
-    fn reject(reference: &Rc<RefCell<Self>>, err: Error) {
+    fn reject(reference: &Rc<QuestionCell<VatId>>, err: Error) {
         Self::fulfill_result(reference, Err(err));
     }
 }
@@ -1212,7 +1228,7 @@ impl<VatId> ConnectionState<VatId> {
         let question_id = state.questions.borrow_mut().push(Question::new());
 
         let (fulfiller, _response) = oneshot::channel();
-        let question_ref = Rc::new(RefCell::new(QuestionRef::new(
+        let question_ref = Rc::new(QuestionCell::new(QuestionRef::new(
             state.clone(),
             question_id,
             fulfiller,
@@ -1434,7 +1450,7 @@ where
     _connection_state: Rc<ConnectionState<VatId>>,
     message: Box<dyn crate::IncomingMessage>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
-    _question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+    _question_ref: Rc<QuestionCell<VatId>>,
 }
 
 impl<VatId> Drop for ResponseState<VatId> {
@@ -1464,7 +1480,7 @@ where
 impl<VatId> Response<VatId> {
     fn new(
         connection_state: Rc<ConnectionState<VatId>>,
-        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+        question_ref: Rc<QuestionCell<VatId>>,
         message: Box<dyn crate::IncomingMessage>,
         cap_table_array: Vec<Option<Box<dyn ClientHook>>>,
     ) -> Self {
@@ -1730,9 +1746,7 @@ where
             }
         };
         ::capnp::capability::RemotePromise {
-            promise: capnp::capability::ResponsePromise::new(Promise::from_future(
-                promise.map_ok(|response| capnp::capability::Response::new(Box::new(response))),
-            )),
+            promise: capnp::capability::ResponsePromise::from_shared(promise.into_shared()),
             pipeline: any_pointer::Pipeline::new(match pipeline {
                 Some(pipeline) => Box::new(pipeline),
                 None => Box::new(broken::DisabledPipeline),
@@ -1747,8 +1761,8 @@ where
         permit: Rc<crate::admission::Permit>,
         pipelined: bool,
     ) -> capnp::Result<(
-        Rc<RefCell<QuestionRef<VatId>>>,
-        impl Future<Output = capnp::Result<Response<VatId>>> + 'static,
+        Rc<QuestionCell<VatId>>,
+        QuestionReply<VatId>,
         Option<Pipeline<VatId>>,
     )> {
         // Build the cap table.
@@ -1846,7 +1860,7 @@ where
         // Make the result promise.
         let (fulfiller, promise) = oneshot::channel::<Promise<Response<VatId>, Error>>();
         let promise = promise.map_err(crate::canceled_to_error).and_then(|x| x);
-        let question_ref = Rc::new(RefCell::new(QuestionRef::new(
+        let question_ref = Rc::new(QuestionCell::new(QuestionRef::new(
             connection_state.clone(),
             question_id,
             fulfiller,
@@ -1974,7 +1988,7 @@ impl<VatId> RequestHook for Request<VatId> {
             .questions
             .borrow_mut()
             .push_high(question);
-        let reference = Rc::new(RefCell::new(QuestionRef {
+        let reference = Rc::new(QuestionCell::new(QuestionRef {
             connection_state: Some(request.connection_state.clone()),
             id,
             fulfiller: None,
@@ -2130,7 +2144,7 @@ enum PipelineVariant<VatId>
 where
     VatId: 'static,
 {
-    Waiting(Rc<RefCell<QuestionRef<VatId>>>),
+    Waiting(Rc<QuestionCell<VatId>>),
     Adopted(Box<dyn PipelineHook>),
     Resolved(Response<VatId>),
     Broken(Error),
@@ -2240,7 +2254,7 @@ where
 impl<VatId> Pipeline<VatId> {
     fn new(
         connection_state: &Rc<ConnectionState<VatId>>,
-        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+        question_ref: Rc<QuestionCell<VatId>>,
         redirect_later: Option<Promise<Response<VatId>, ::capnp::Error>>,
     ) -> Self {
         let reference = question_ref.clone();
@@ -2262,7 +2276,7 @@ impl<VatId> Pipeline<VatId> {
 
     fn direct(
         connection_state: &Rc<ConnectionState<VatId>>,
-        reference: Rc<RefCell<QuestionRef<VatId>>>,
+        reference: Rc<QuestionCell<VatId>>,
     ) -> Self {
         let pipeline = Self::new(connection_state, reference, None);
         pipeline.state.borrow_mut().resolves_on_return = true;
@@ -2298,7 +2312,7 @@ impl<VatId> Pipeline<VatId> {
 
     fn never_done(
         connection_state: Rc<ConnectionState<VatId>>,
-        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+        question_ref: Rc<QuestionCell<VatId>>,
     ) -> Self {
         let state = Rc::new(RefCell::new(PipelineState {
             variant: PipelineVariant::Waiting(question_ref),
@@ -3486,7 +3500,7 @@ where
     VatId: 'static,
 {
     connection_state: Rc<ConnectionState<VatId>>,
-    question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+    question_ref: Rc<QuestionCell<VatId>>,
     ops: Vec<PipelineOp>,
     streaming: StreamingFlow,
 }
@@ -3497,7 +3511,7 @@ where
 {
     fn new(
         connection_state: &Rc<ConnectionState<VatId>>,
-        question_ref: Rc<RefCell<QuestionRef<VatId>>>,
+        question_ref: Rc<QuestionCell<VatId>>,
         ops: Vec<PipelineOp>,
     ) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self {

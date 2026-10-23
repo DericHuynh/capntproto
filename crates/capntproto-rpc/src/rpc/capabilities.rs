@@ -327,7 +327,11 @@ impl<VatId: 'static> ConnectionState<VatId> {
         question.lifecycle = capntproto_rpc_engine::question::Question::no_return();
         let id = host.questions.borrow_mut().push(question);
         let (sender, _receiver) = oneshot::channel();
-        let reference = Rc::new(RefCell::new(QuestionRef::new(host.clone(), id, sender)));
+        let reference = Rc::new(QuestionCell::new(QuestionRef::new(
+            host.clone(),
+            id,
+            sender,
+        )));
         host.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
         if let message::Provide(provide) =
             message.get_body()?.get_as::<message::Builder>()?.which()?
@@ -446,7 +450,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         )?;
         let question_id = host.questions.borrow_mut().push(Question::new());
         let (sender, receiver) = oneshot::channel();
-        let reference = Rc::new(RefCell::new(QuestionRef::new(
+        let reference = Rc::new(QuestionCell::new(QuestionRef::new(
             host.clone(),
             question_id,
             sender,

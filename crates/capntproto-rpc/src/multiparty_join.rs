@@ -58,7 +58,7 @@ fn response_for<VatId>(
     message: Box<dyn crate::OutgoingMessage>,
 ) -> PartResponse {
     let (tx, rx) = oneshot::channel();
-    let reference = Rc::new(RefCell::new(QuestionRef::new(state.clone(), id, tx)));
+    let reference = Rc::new(QuestionCell::new(QuestionRef::new(state.clone(), id, tx)));
     state.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
     let _ = message.send_detached();
     Promise::from_future(
