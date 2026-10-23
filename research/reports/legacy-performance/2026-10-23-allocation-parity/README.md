@@ -199,3 +199,14 @@ All 368 existing RPC unit tests, the new cancellation/wake/cache regression, war
 Ordinary calls to an exported capability now retain its shared export hook directly. The previous target lookup called `add_ref()` to allocate another boxed local-client hook for every incoming call. Promised-answer projections retain their existing owned hook, and control operations retain their existing target interface. Export creation/resolution now pays for the shared owner once; steady calls reuse it. No export-table borrow spans application entry.
 
 All 370 RPC unit tests, 101 selected cancellation/adoption/Join/native/pipeline/encrypted integration tests, and warnings-denied RPC Clippy pass. The new regression verifies that dispatch performs no hook clone and that releasing the export from inside the handler does not destroy the capability until dispatch returns. This directly targets the boxed local-client site in the serial and concurrent traces. Its measured savings and the one-time export-owner tradeoff remain subject to the next droplet profile.
+
+
+## Follow-up: streaming state only for streaming calls
+
+The scheduler campaign's saved TLS pipelined-read trace contains three allocations for `Rc<RefCell<Option<Box<dyn FlowController>>>>` per operation, although the fixture sends no streaming calls. C++ `RpcClient::flowController` is absent until the first streaming call (`vendor/capnproto/c++/src/capnp/rpc.c++`, near line 1182).
+
+Legacy now keeps a lazy streaming cell in the capability's existing shared identity. Ordinary clients, re-imports, requests, and weak downcast entries need no separate flow-owner allocation. First streaming use initializes the shared owner; aliases created before and after that use obtain the same owner. Its reference is cloned before calling transport or flow-control code, so no capability-state borrow spans those callbacks. The flow controller itself and its acknowledgement/error policy are unchanged. This also removes redundant weak flow-state bookkeeping from the downcast map.
+
+All 371 RPC unit tests, 78 selected streaming, flow-control, import-alias, result-pipeline, adoption, native migration, and multiparty-join integration tests, and warnings-denied RPC Clippy pass. The regression covers lazy construction, request preparation before streaming, aliases/re-imports, weak lookup, and capability teardown with a retained flow owner. The previously documented native portable early-pipeline failure remains explicitly excluded. Before this follow-up, `cargo check --locked --workspace --all-targets` also passed for the full qualification source.
+
+This change follows the frozen `1a2d772` qualification candidate. That run's measurements must not be attributed to this later lazy-flow change. A subsequent droplet comparison is required before claiming its count or latency savings. No local performance measurements were run.

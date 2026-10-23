@@ -1810,7 +1810,7 @@ where
         connection_state: &Rc<ConnectionState<VatId>>,
         mut message: Box<dyn crate::OutgoingMessage>,
         cap_table: &[Option<Box<dyn ClientHook>>],
-        flow: Rc<RefCell<Option<Box<dyn crate::FlowController>>>>,
+        flow: FlowOwner,
         permit: Rc<crate::admission::Permit>,
     ) -> Promise<(), Error> {
         // Build the cap table.
@@ -2071,7 +2071,7 @@ impl<VatId> RequestHook for Request<VatId> {
             &connection_state,
             message,
             &cap_table,
-            target.flow_controller,
+            target.streaming_flow(),
             permit,
         )
     }
@@ -3181,6 +3181,7 @@ impl ResultsDoneHook for ResultsDone {
 // the introducing connection's brand avoids a second senderLoopback embargo.
 struct ThirdPartyClient<VatId: 'static> {
     state: Rc<ConnectionState<VatId>>,
+    streaming: StreamingFlow,
     cap: RefCell<ThirdPartyState>,
 }
 
@@ -3202,6 +3203,7 @@ impl<VatId> ThirdPartyClient<VatId> {
             state,
             ClientVariant::ThirdParty(Rc::new(Self {
                 state: state.clone(),
+                streaming: StreamingFlow::default(),
                 cap: RefCell::new(ThirdPartyState::Deferred { contact, vine }),
             })),
         ))
@@ -3324,6 +3326,19 @@ impl<VatId> Drop for ThirdPartyClient<VatId> {
     }
 }
 
+type FlowOwner = Rc<RefCell<Option<Box<dyn crate::FlowController>>>>;
+
+// Like C++ RpcClient::flowController, this is absent until the first streaming
+// send. The extra shared owner is then required to release the capability's
+// RefCell borrow before calling a custom FlowController or transport.
+#[derive(Default)]
+struct StreamingFlow(std::cell::OnceCell<FlowOwner>);
+impl StreamingFlow {
+    fn get(&self) -> FlowOwner {
+        self.0.get_or_init(|| Rc::new(RefCell::new(None))).clone()
+    }
+}
+
 enum ClientVariant<VatId>
 where
     VatId: 'static,
@@ -3340,7 +3355,6 @@ where
 {
     connection_state: Rc<ConnectionState<VatId>>,
     variant: ClientVariant<VatId>,
-    flow_controller: Rc<RefCell<Option<Box<dyn crate::FlowController>>>>,
 }
 
 enum WeakClientVariant<VatId>
@@ -3359,7 +3373,6 @@ where
 {
     connection_state: Weak<ConnectionState<VatId>>,
     variant: WeakClientVariant<VatId>,
-    flow_controller: Weak<RefCell<Option<Box<dyn crate::FlowController>>>>,
 }
 
 impl<VatId> WeakClient<VatId>
@@ -3374,11 +3387,9 @@ where
             WeakClientVariant::Promise(pc) => ClientVariant::Promise(pc.upgrade()?),
         };
         let connection_state = self.connection_state.upgrade()?;
-        let flow_controller = self.flow_controller.upgrade()?;
         Some(Client {
             connection_state,
             variant,
-            flow_controller,
         })
     }
 }
@@ -3389,6 +3400,7 @@ where
 {
     connection_state: Rc<ConnectionState<VatId>>,
     import_id: ImportId,
+    streaming: StreamingFlow,
 
     /// Number of times we've received this import from the peer.
     remote_references: ImportRefs,
@@ -3447,6 +3459,7 @@ where
         Rc::new(RefCell::new(Self {
             connection_state: connection_state.clone(),
             import_id,
+            streaming: StreamingFlow::default(),
             remote_references: ImportRefs::new(),
             metadata_changes: std::cell::OnceCell::new(),
             fd: None,
@@ -3475,6 +3488,7 @@ where
     connection_state: Rc<ConnectionState<VatId>>,
     question_ref: Rc<RefCell<QuestionRef<VatId>>>,
     ops: Vec<PipelineOp>,
+    streaming: StreamingFlow,
 }
 
 impl<VatId> PipelineClient<VatId>
@@ -3490,6 +3504,7 @@ where
             connection_state: connection_state.clone(),
             question_ref,
             ops,
+            streaming: StreamingFlow::default(),
         }))
     }
 }
@@ -3520,6 +3535,7 @@ where
 {
     connection_state: Rc<ConnectionState<VatId>>,
     is_resolved: bool,
+    streaming: StreamingFlow,
     cap: Rc<dyn ClientHook>,
     import_id: Option<ImportId>,
     received_call: bool,
@@ -3536,6 +3552,7 @@ impl<VatId> PromiseClient<VatId> {
         Rc::new(RefCell::new(Self {
             connection_state: connection_state.clone(),
             is_resolved: false,
+            streaming: StreamingFlow::default(),
             cap: Rc::from(initial),
             import_id,
             received_call: false,
@@ -3705,24 +3722,26 @@ impl<VatId> From<Rc<RefCell<PromiseClient<VatId>>>> for Client<VatId> {
 
 impl<VatId> Client<VatId> {
     fn new(connection_state: &Rc<ConnectionState<VatId>>, variant: ClientVariant<VatId>) -> Self {
-        let mut client = Self {
+        let client = Self {
             connection_state: connection_state.clone(),
             variant,
-            flow_controller: Rc::new(RefCell::new(None)),
         };
-        let ptr = client.get_ptr();
-        let mut clients = connection_state.client_downcast_map.borrow_mut();
-        // Re-imports share the variant identity. They must also share stream
-        // state, otherwise a temporary alias can overwrite the weak downcast
-        // entry and invalidate an older live client's lookup when it is dropped.
-        if let Some(flow) = clients
-            .get(&ptr)
-            .and_then(|old| old.flow_controller.upgrade())
-        {
-            client.flow_controller = flow;
-        }
-        clients.insert(ptr, client.downgrade());
+        connection_state
+            .client_downcast_map
+            .borrow_mut()
+            .insert(client.get_ptr(), client.downgrade());
         client
+    }
+    // The capability's shared identity owns streaming state. Re-imports and
+    // cloned handles use the same cell, without allocating for ordinary calls.
+    // Clone the flow owner before sending; no variant borrow spans callbacks.
+    fn streaming_flow(&self) -> FlowOwner {
+        match &self.variant {
+            ClientVariant::Import(client) => client.borrow().streaming.get(),
+            ClientVariant::Pipeline(client) => client.borrow().streaming.get(),
+            ClientVariant::Promise(client) => client.borrow().streaming.get(),
+            ClientVariant::ThirdParty(client) => client.streaming.get(),
+        }
     }
     fn downgrade(&self) -> WeakClient<VatId> {
         let variant = match &self.variant {
@@ -3740,7 +3759,6 @@ impl<VatId> Client<VatId> {
         WeakClient {
             connection_state: Rc::downgrade(&self.connection_state),
             variant,
-            flow_controller: Rc::downgrade(&self.flow_controller),
         }
     }
 
@@ -3864,7 +3882,6 @@ impl<VatId> Clone for Client<VatId> {
         Self {
             connection_state: self.connection_state.clone(),
             variant,
-            flow_controller: self.flow_controller.clone(),
         }
     }
 }
@@ -4223,6 +4240,50 @@ mod tests {
     }
 
     #[test]
+    fn reimported_clients_initialize_one_shared_streaming_owner_on_first_use() {
+        use crate::rpc_twoparty_capnp::Side;
+        let network = crate::twoparty::VatNetwork::new(
+            futures::io::Cursor::new(Vec::<u8>::new()),
+            futures::io::Cursor::new(Vec::<u8>::new()),
+            Side::Client,
+            Default::default(),
+        );
+        let mut system = crate::RpcSystem::new(Box::new(network), None);
+        let _bootstrap: capnp::capability::Client = system.bootstrap(Side::Server);
+        let state = system
+            .connections
+            .borrow()
+            .states()
+            .into_iter()
+            .next()
+            .unwrap()
+            .clone();
+        let import = ImportClient::new(&state, ImportId::from_wire(77));
+        let original = Client::from(import.clone());
+        let cloned = original.clone();
+        let alias = Client::from(import.clone());
+        let ptr = original.get_ptr();
+        assert!(import.borrow().streaming.0.get().is_none());
+        // Even a request prepared before streaming starts must use the same
+        // flow as aliases created later. Ordinary request creation stays lazy.
+        let request = original.new_call(1, 0, None);
+        assert!(import.borrow().streaming.0.get().is_none());
+        drop(request);
+        let flow = alias.streaming_flow();
+        drop(alias);
+        assert!(Rc::ptr_eq(&flow, &original.streaming_flow()));
+        assert!(Rc::ptr_eq(&flow, &cloned.streaming_flow()));
+        let recovered = Client::from_ptr(ptr, &state).unwrap();
+        assert!(Rc::ptr_eq(&flow, &recovered.streaming_flow()));
+        let later = Client::from(import.clone());
+        assert!(Rc::ptr_eq(&flow, &later.streaming_flow()));
+        drop((original, cloned, recovered, later, import));
+        // Retained flow state must not keep a capability or its route alive.
+        assert!(!state.client_downcast_map.borrow().contains_key(&ptr));
+        assert_eq!(Rc::strong_count(&flow), 1);
+    }
+
+    #[test]
     fn dropped_promise_cannot_be_upgraded_on_live_connection() {
         use crate::rpc_twoparty_capnp::Side;
         let network = crate::twoparty::VatNetwork::new(
@@ -4252,7 +4313,7 @@ mod tests {
 
         // Keep both surrounding owners alive so only the capability expires.
         // This exercises the cleanup ordering without relying on network timing.
-        let flow = client.flow_controller.clone();
+        let flow = client.streaming_flow();
         drop(client);
         assert!(state.connection.borrow().is_ok());
         assert_eq!(Rc::strong_count(&flow), 1);
