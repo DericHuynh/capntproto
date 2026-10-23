@@ -1000,7 +1000,7 @@ where
     live: Rc<Cell<bool>>,
     resolved: Option<Box<dyn ClientHook>>,
     resolve_task: Option<futures::future::Shared<Promise<(), Error>>>,
-    resolve_canceler: Rc<crate::revocable::Canceler>,
+    resolve_canceler: Option<Rc<crate::revocable::Canceler>>,
     revocation: Option<Rc<crate::revocable::Canceler>>,
     executor: Option<Rc<dyn capability::CallExecutor>>,
     #[cfg(unix)]
@@ -1035,8 +1035,9 @@ impl<S: capability::Server + Clone> Drop for ClientState<S> {
                 }
             });
         }
-        self.resolve_canceler
-            .cancel(Error::failed("local client dropped".into()));
+        if let Some(canceler) = &self.resolve_canceler {
+            canceler.cancel(Error::failed("local client dropped".into()));
+        }
     }
 }
 
@@ -1161,7 +1162,9 @@ where
         if let Some(revocation) = revocation {
             revocation.cancel(error.clone());
         }
-        resolution.cancel(error.clone());
+        if let Some(resolution) = resolution {
+            resolution.cancel(error.clone());
+        }
         for call in queued {
             match call {
                 BlockedCall::Call { fulfiller, .. } => {
@@ -1481,8 +1484,14 @@ where
             Ok(())
         });
         let (canceler, executor) = {
-            let state = self.state.borrow();
-            (state.resolve_canceler.clone(), state.executor.clone())
+            let mut state = self.state.borrow_mut();
+            // A settled server has no resolution task to cancel. Allocate this
+            // owner only when shorten_path() actually supplies one.
+            let canceler = state
+                .resolve_canceler
+                .get_or_insert_with(Rc::default)
+                .clone();
+            (canceler, state.executor.clone())
         };
         let task = canceler.wrap(task).shared();
         self.state.borrow_mut().resolve_task = Some(task.clone());
@@ -1538,7 +1547,7 @@ where
                 live: Rc::new(Cell::new(true)),
                 resolved: None,
                 resolve_task: None,
-                resolve_canceler: Rc::new(crate::revocable::Canceler::default()),
+                resolve_canceler: None,
                 inner: Some(server),
                 revocation: None,
                 executor: None,
