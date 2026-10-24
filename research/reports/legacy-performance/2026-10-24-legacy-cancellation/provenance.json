@@ -7,7 +7,7 @@
   "qualification_branch": "codex/legacy-cancellation-qualification-20261024",
   "run_id": 40134974277,
   "verify_job_id": 120994453821,
-  "status": "Focused verification and diagnostics passed; dedicated latency campaign in progress.",
+  "status": "Focused verification, diagnostics and dedicated latency campaign completed successfully. Individual latency parity remains unresolved.",
   "runtime_with_tests": "a5677a63bb13273dff614205367f944a00145acf",
   "previous_run": {
     "id": 40134847987,
@@ -42,7 +42,7 @@
   },
   "latency_bundle_job": {
     "id": 120998457413,
-    "status": "in_progress"
+    "conclusion": "success"
   },
   "binaries": {
     "legacy": {
@@ -55,5 +55,9 @@
       "sha256": "6de2a70a2055b363155a5ad8b323ac62526aae3896ff34cddfd12fabbdc935e8",
       "sections": "/home/runner/work/_temp/legacy-baseline  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370824       8672\n.rela.plt                1296     379496\n.rodata                828005     380928\n.gcc_except_table      457168    1208936\n.debug_gdb_scripts         34    1666104\n.eh_frame_hdr          103988    1666140\n.eh_frame              842932    1770128\n.text                 9872167    2617216\n.init                      27   12489384\n.fini                      13   12489412\n.plt                      880   12489440\n.tdata                    112   12494416\n.tbss                     456   12494528\n.fini_array                 8   12494528\n.init_array                16   12494536\n.data.rel.ro           263168   12494560\n.dynamic                  464   12757728\n.got                     2648   12758192\n.got.plt                  456   12760840\n.relro_padding           1840   12761296\n.tm_clone_table             0   12765392\n.data                    3272   12765392\n.bss                     4684   12768672\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703512          0\n.debug_aranges         167264          0\n.debug_ranges         6701728          0\n.debug_str           33728087          0\n.debug_line           6899839          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85360973\n\n\n"
     }
+  },
+  "latency_droplet_job": {
+    "id": 121001758543,
+    "conclusion": "success"
   }
 }
