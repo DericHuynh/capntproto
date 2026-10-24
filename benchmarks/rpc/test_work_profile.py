@@ -1,8 +1,59 @@
 import unittest
+import importlib.util
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from work_profile import callgrind, comparisons, slope
 
 
 class WorkProfile(unittest.TestCase):
+    def test_full_summary_keeps_all_repetitions_peers_and_identical_control(self):
+        spec = importlib.util.spec_from_file_location('legacy_work_profile', Path(__file__).with_name('legacy-work-profile.py'))
+        profile = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(profile)
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            labels = ['frozen', 'factored', 'repeat', 'candidate']
+            scope = dict(repetitions=5, points=[10, 50], binaries=dict.fromkeys(labels), trials=[], failures=[])
+            for mode in ['callgrind', 'dhat']:
+                for transport in (['tls'] if mode == 'callgrind' else ['tls', 'quic']):
+                    for case in (profile.CASES if mode == 'callgrind' else profile.CASES[:3]):
+                        for repetition in range(5):
+                            for variant in labels:
+                                for iterations in [10, 50]:
+                                    path = f'{mode}-{transport}-{case}-{repetition}-{variant}-{iterations}'
+                                    (root / path).mkdir()
+                                    scope['trials'].append(dict(path=path, mode=mode, transport=transport,
+                                                               case=case, repetition=repetition, variant=variant,
+                                                               iterations=iterations, services=[dict(hop=0)]))
+                                    for peer in ['client', 'service-0']:
+                                        if mode == 'callgrind':
+                                            rate = 10 + repetition - int(variant == 'candidate')
+                                            # Unequal peers ensure the summary cannot silently keep only the client.
+                                            multiplier = 1 if peer == 'client' else 2
+                                            counts = ' '.join(str(100 + multiplier * value * iterations)
+                                                              for value in [rate, 2, 1, 1, 1])
+                                            (root / path / (peer + '.callgrind')).write_text(
+                                                'positions: line\nevents: Ir Bc Bcm Bi Bim\nsummary: ' + counts
+                                                + '\nfn=(1) work\n1 ' + counts + '\ntotals: ' + counts + '\n')
+                                        else:
+                                            (root / path / (peer + '.dhat.json')).write_text(json.dumps(
+                                                dict(pps=[dict(tbk=17 + iterations * 3, tb=1000 + iterations * 64)])))
+            (root / 'scope.json').write_text(json.dumps(scope))
+            profile.summarize(root)
+            result = json.loads((root / 'comparison.json').read_text())
+            self.assertEqual(len(result['rows']), 240)
+            self.assertEqual(len(result['comparisons']), 36)
+            for row in result['comparisons']:
+                self.assertEqual(row['repetitions'], 5)
+                metric = row['metrics']['Ir' if row['mode'] == 'callgrind' else 'blocks']
+                expected = -3 if row['mode'] == 'callgrind' and row['candidate'] == 'candidate' else 0
+                self.assertEqual(metric['paired_delta']['samples'], [expected] * 5)
+                if row['mode'] == 'callgrind':
+                    self.assertEqual(metric['baseline']['samples'], [30, 33, 36, 39, 42])
+                    self.assertEqual(metric['baseline']['mean'], 36)
+            self.assertEqual(len(json.loads((root / 'functions.json').read_text())), 90)
+
     def test_callgrind_excludes_call_arcs_and_fills_missing_zero_events(self):
         text = '''positions: line
 events: Ir Bc Bcm Bi Bim
