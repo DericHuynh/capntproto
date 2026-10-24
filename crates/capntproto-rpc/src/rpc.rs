@@ -32,7 +32,7 @@ use capnp::private::capability::{
 };
 use capnp::Error;
 
-use capntproto_rpc_engine::completion::shared as oneshot;
+use capntproto_rpc_engine::completion::{direct, shared as oneshot};
 use futures::{future, Future, FutureExt, TryFutureExt};
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -135,18 +135,15 @@ enum QuestionFulfiller<VatId: 'static> {
 }
 // Ordinary replies live in the already-owned question. External channels remain
 // available for Join/adoption, whose receiver has a separate protocol lifetime.
-struct DirectReply<VatId: 'static> {
-    value: Option<Promise<Response<VatId>, Error>>,
-    waker: Option<std::task::Waker>,
-    observed: bool,
-}
-impl<VatId> Default for DirectReply<VatId> {
-    fn default() -> Self {
-        Self {
-            value: None,
-            waker: None,
-            observed: false,
-        }
+type DirectReply<VatId> = direct::Reply<Promise<Response<VatId>, Error>>;
+impl<VatId> direct::Owner<Promise<Response<VatId>, Error>> for QuestionCell<VatId> {
+    #[inline]
+    fn reply(&self) -> core::cell::Ref<'_, DirectReply<VatId>> {
+        core::cell::Ref::map(self.borrow(), |question| &question.reply)
+    }
+    #[inline]
+    fn reply_mut(&self) -> core::cell::RefMut<'_, DirectReply<VatId>> {
+        core::cell::RefMut::map(self.borrow_mut(), |question| &mut question.reply)
     }
 }
 struct QuestionReply<VatId: 'static> {
@@ -162,51 +159,10 @@ impl<VatId> QuestionReply<VatId> {
         reference: &QuestionCell<VatId>,
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<Response<VatId>>> {
-        let value = {
-            let mut reference = reference.borrow_mut();
-            debug_assert!(
-                !reference.reply.observed,
-                "question reply polled after completion"
-            );
-            reference.reply.value.take()
-        };
-        if let Some(mut value) = value {
-            // A redirected answer can suspend again. Poll outside the question
-            // borrow, including arbitrary custom waker operations.
-            match Pin::new(&mut value).poll(cx) {
-                Poll::Ready(result) => {
-                    reference.borrow_mut().reply.observed = true;
-                    return Poll::Ready(result);
-                }
-                Poll::Pending => reference.borrow_mut().reply.value = Some(value),
-            }
-        } else {
-            let registered = reference
-                .borrow()
-                .reply
-                .waker
-                .as_ref()
-                .is_some_and(|wake| wake.will_wake(cx.waker()));
-            if !registered {
-                let wake = cx.waker().clone();
-                let previous = reference.borrow_mut().reply.waker.replace(wake);
-                drop(previous);
-                // A custom waker can synchronously deliver a response.
-                if reference.borrow().reply.value.is_some() {
-                    cx.waker().wake_by_ref();
-                }
-            }
-        }
-        Poll::Pending
+        direct::poll(reference, cx)
     }
     fn release(reference: &QuestionCell<VatId>) {
-        let (value, wake) = {
-            let mut reference = reference.borrow_mut();
-            reference.reply.observed = true;
-            (reference.reply.value.take(), reference.reply.waker.take())
-        };
-        drop(value);
-        drop(wake);
+        direct::release(reference);
     }
 }
 impl<VatId> Future for QuestionReply<VatId> {
@@ -281,17 +237,7 @@ impl<VatId> QuestionRef<VatId> {
                 let _ = sender.send(response);
             }
             QuestionFulfiller::Direct => {
-                let wake = {
-                    let mut reference = reference.borrow_mut();
-                    if reference.reply.observed {
-                        return;
-                    }
-                    reference.reply.value = Some(response);
-                    reference.reply.waker.take()
-                };
-                if let Some(wake) = wake {
-                    wake.wake();
-                }
+                drop(direct::deliver(&**reference, response));
             }
         }
     }
