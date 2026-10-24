@@ -1,0 +1,26 @@
+[
+  {
+    "name": "rpc",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-rpc",
+      "--lib"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "wire",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-rpc-wire",
+      "--features",
+      "std",
+      "--lib"
+    ],
+    "exit_code": 101
+  }
+]
