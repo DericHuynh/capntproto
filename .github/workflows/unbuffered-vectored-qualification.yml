@@ -1,0 +1,68 @@
+name: Performance / Unbuffered vectored TLS qualification
+on:
+  push:
+    branches: [codex/unbuffered-vectored-qualification-20261024]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  wait-for-previous:
+    name: Preserve the preceding dedicated qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Wait until the preceding measurement owns the dedicated slot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          base = 'https://api.github.com/repos/' + os.environ['GH_REPOSITORY']
+          prior = 40046022437
+          headers = {
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+
+          def read(path):
+              request = urllib.request.Request(base + path, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          deadline = time.monotonic() + 10000
+          while time.monotonic() < deadline:
+              run = read(f'/actions/runs/{prior}')
+              if run['status'] == 'completed':
+                  if run['conclusion'] != 'success':
+                      raise SystemExit('Preceding qualification did not succeed: ' + str(run['conclusion']))
+                  print('Preceding qualification completed successfully.')
+                  break
+              jobs = read(f'/actions/runs/{prior}/jobs')['jobs']
+              if any(
+                  job['name'].endswith('Measure on dedicated droplets, validate, and clean up')
+                  and job['status'] in ('in_progress', 'completed')
+                  for job in jobs
+              ):
+                  print('Preceding qualification acquired the dedicated slot; this run may build and queue.')
+                  break
+              print('Waiting without entering the single pending benchmark slot.', flush=True)
+              time.sleep(45)
+          else:
+              raise SystemExit('Timed out waiting for the preceding dedicated qualification.')
+          PY
+  qualify:
+    needs: wait-for-previous
+    uses: ./.github/workflows/performance.yml
+    with:
+      campaign: run-secure
+      legacy_base: 34b5cdabf2201d0b50f03ec6dc18b35e8a9f1807
+      portable_base: 34b5cdabf2201d0b50f03ec6dc18b35e8a9f1807
+      region: auto
+      size: auto
+    secrets: inherit
