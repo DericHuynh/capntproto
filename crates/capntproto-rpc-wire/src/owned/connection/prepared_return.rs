@@ -227,7 +227,7 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
 
 struct FramedReturnParts {
     header: [u8; 16],
-    first: alloc::vec::Vec<capnp::Word>,
+    first: crate::owned::connection::retained::Envelope,
     source: alloc::rc::Rc<PreparedReturn<capnp::message::HeapAllocator>>,
     capacity: usize,
 }
@@ -239,7 +239,7 @@ impl messages::Parts for FramedReturnParts {
         use capnp::message::ReaderSegments;
         match index {
             0 => &self.header,
-            1 => capnp::Word::words_to_bytes(&self.first),
+            1 => self.first.bytes(),
             2 => self
                 .source
                 .message
@@ -282,23 +282,21 @@ impl PreparedReturn<capnp::message::HeapAllocator> {
         header[..4].copy_from_slice(&1u32.to_le_bytes());
         header[4..8].copy_from_slice(&((first.len() / 8) as u32).to_le_bytes());
         header[8..12].copy_from_slice(&((second.len() / 8) as u32).to_le_bytes());
-        let mut copied = capnp::Word::allocate_zeroed_vec(first.len() / 8);
-        let bytes = capnp::Word::words_to_bytes_mut(&mut copied);
-        bytes.copy_from_slice(first);
+        let mut copied = super::retained::Envelope::copy_from(first);
+        let bytes = copied.bytes_mut();
         bytes[self.returned..self.returned + 4].copy_from_slice(&answer.to_wire().to_le_bytes());
         bytes[self.returned + 4] = (bytes[self.returned + 4] & !2) | (u8::from(no_finish) << 1);
         let capacity = copied
-            .capacity()
-            .checked_mul(8)
-            .and_then(|n| n.checked_add(16))
+            .capacity_bytes()
+            .checked_add(16)
             .and_then(|n| n.checked_add(source_capacity))
             .ok_or(super::super::Error::Capacity)?;
-        let source = alloc::rc::Rc::new(FramedReturnParts {
+        let source = FramedReturnParts {
             header,
             first: copied,
             source: self.clone(),
             capacity,
-        });
+        };
         match messages.retain_parts(source) {
             Ok(parts) => Ok(parts),
             // Compact reusable storage may still fit when retained capacities

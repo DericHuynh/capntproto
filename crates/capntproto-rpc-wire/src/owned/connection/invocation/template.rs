@@ -247,7 +247,7 @@ impl PreparedCall<capnp::message::HeapAllocator> {
 #[cfg(feature = "alloc")]
 struct FramedCallParts {
     header: [u8; 16],
-    first: alloc::vec::Vec<capnp::Word>,
+    first: crate::owned::connection::retained::Envelope,
     source: alloc::rc::Rc<PreparedCall<capnp::message::HeapAllocator>>,
     capacity: usize,
 }
@@ -260,7 +260,7 @@ impl messages::Parts for FramedCallParts {
         use capnp::message::ReaderSegments;
         match index {
             0 => &self.header,
-            1 => capnp::Word::words_to_bytes(&self.first),
+            1 => self.first.bytes(),
             2 => self
                 .source
                 .message()
@@ -307,18 +307,16 @@ impl<'a> EncodedCall<'a> {
         let Some(source_capacity) = source.message().retained_segment_bytes() else {
             return Ok(None);
         };
-        let mut first = capnp::Word::allocate_zeroed_vec(self.segment.len() / 8);
-        let body = capnp::Word::words_to_bytes_mut(&mut first);
-        body.copy_from_slice(self.segment);
+        let mut first = crate::owned::connection::retained::Envelope::copy_from(self.segment);
+        let body = first.bytes_mut();
         body[template.call..template.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
         body[template.target..template.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
         body[template.call + 16] = (body[template.call + 16] & !0b111)
             | u8::from(allow_handoff)
             | (u8::from(template.no_promise_pipelining) << 1);
         let capacity = first
-            .capacity()
-            .checked_mul(8)
-            .and_then(|n| n.checked_add(16))
+            .capacity_bytes()
+            .checked_add(16)
             .and_then(|n| n.checked_add(source_capacity))
             .ok_or(super::super::super::Error::Capacity)?;
         let mut header = [0; 16];
@@ -333,12 +331,12 @@ impl<'a> EncodedCall<'a> {
                 .map_err(|_| super::super::super::Error::Capacity)?
                 .to_le_bytes(),
         );
-        let source = alloc::rc::Rc::new(FramedCallParts {
+        let source = FramedCallParts {
             header,
             first,
             source: source.clone(),
             capacity,
-        });
+        };
         match messages.retain_parts(source) {
             Ok(parts) => Ok(parts),
             // Existing reusable contiguous storage may still fit. Its ordinary

@@ -12,18 +12,41 @@ pub trait Parts {
     fn retained_capacity(&self) -> usize;
 }
 
+// Shared sources remain useful when independently adopted by multiple queues.
+impl<P: Parts + ?Sized> Parts for Rc<P> {
+    fn count(&self) -> usize {
+        (**self).count()
+    }
+    fn part(&self, index: usize) -> &[u8] {
+        (**self).part(index)
+    }
+    fn retained_capacity(&self) -> usize {
+        (**self).retained_capacity()
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Charges {
     pub(super) bytes: Cell<usize>,
     pub(super) slots: Cell<usize>,
 }
-struct Allocation {
-    source: Rc<dyn Parts>,
+struct Allocation<P> {
+    source: P,
     charges: Rc<Charges>,
     capacity: usize,
-    length: usize,
 }
-impl Drop for Allocation {
+impl<P: Parts> Parts for Allocation<P> {
+    fn count(&self) -> usize {
+        self.source.count()
+    }
+    fn part(&self, index: usize) -> &[u8] {
+        self.source.part(index)
+    }
+    fn retained_capacity(&self) -> usize {
+        self.capacity
+    }
+}
+impl<P> Drop for Allocation<P> {
     fn drop(&mut self) {
         self.charges
             .bytes
@@ -36,12 +59,13 @@ impl Drop for Allocation {
 /// after queue completion, scope termination or destruction of the provider.
 #[derive(Clone)]
 pub struct SharedParts {
-    allocation: Rc<Allocation>,
+    allocation: Rc<dyn Parts>,
+    length: usize,
     position: usize,
 }
 impl SharedParts {
     pub fn len(&self) -> usize {
-        self.allocation.length - self.position
+        self.length - self.position
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -50,11 +74,11 @@ impl SharedParts {
         self.position
     }
     pub fn count(&self) -> usize {
-        self.allocation.source.count()
+        self.allocation.count()
     }
     /// The original complete parts; position() describes consumed stream bytes.
     pub fn part(&self, index: usize) -> &[u8] {
-        self.allocation.source.part(index)
+        self.allocation.part(index)
     }
     pub fn first_remaining(&self) -> &[u8] {
         let mut offset = self.position;
@@ -81,7 +105,7 @@ impl GrowingBuffers<'_> {
     pub(super) fn parts_bytes(&self) -> usize {
         self.parts_charges.get().map_or(0, |c| c.bytes.get())
     }
-    pub(super) fn retain_parts(&self, source: Rc<dyn Parts>) -> Result<SharedParts, Error> {
+    pub(super) fn retain_parts<P: Parts + 'static>(&self, source: P) -> Result<SharedParts, Error> {
         let length = (0..source.count()).try_fold(0usize, |n, i| {
             n.checked_add(source.part(i).len())
                 .ok_or(Error::InvalidLength)
@@ -106,8 +130,8 @@ impl GrowingBuffers<'_> {
                 source,
                 charges: charges.clone(),
                 capacity,
-                length,
             }),
+            length,
             position: 0,
         })
     }
@@ -116,7 +140,10 @@ impl Messages<'_, '_, '_> {
     /// Charge immutable output segments to a growing provider. Fixed providers
     /// return None and keep the ordinary copy path. Failure leaves every existing
     /// owner and charge intact. Aliased independent adoptions are charged again.
-    pub fn retain_parts(&mut self, source: Rc<dyn Parts>) -> Result<Option<SharedParts>, Error> {
+    pub fn retain_parts<P: Parts + 'static>(
+        &mut self,
+        source: P,
+    ) -> Result<Option<SharedParts>, Error> {
         match &self.buffers {
             Buffers::Borrowed(_) => Ok(None),
             Buffers::Growing(buffers) => buffers.retain_parts(source).map(Some),
@@ -150,6 +177,41 @@ mod tests {
         parts[0].extend_from_slice(b"abc");
         parts[2].extend_from_slice(b"def");
         Rc::new(Source(parts))
+    }
+    #[cfg(not(miri))]
+    #[test]
+    fn owned_parts_and_accounting_share_one_allocation() {
+        struct Inline([u8; 8]);
+        impl Parts for Inline {
+            fn count(&self) -> usize {
+                1
+            }
+            fn part(&self, _: usize) -> &[u8] {
+                &self.0
+            }
+            fn retained_capacity(&self) -> usize {
+                8
+            }
+        }
+        let mut pool = GrowingBuffers::new(2, 8, 16);
+        with_growing_messages(
+            &mut pool,
+            Growth {
+                initial: 0,
+                maximum: 0,
+            },
+            |messages| {
+                drop(messages.retain_parts(Inline([1; 8])).unwrap());
+                let mut retained = None;
+                let usage = allocation_counter::measure(|| {
+                    retained = messages.retain_parts(Inline([2; 8])).unwrap();
+                });
+                assert_eq!(usage.count_total, 1);
+                assert_eq!(retained.unwrap().part(0), &[2; 8]);
+            },
+        )
+        .unwrap();
+        assert_eq!(pool.retained_bytes(), 0);
     }
     #[test]
     fn charges_survive_aliases_scopes_and_provider_drop() {

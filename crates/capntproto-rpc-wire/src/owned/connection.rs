@@ -75,6 +75,8 @@ pub enum PlainReceived<'pool, T> {
 
 #[cfg(feature = "alloc")]
 mod plain_return;
+#[cfg(feature = "alloc")]
+mod retained;
 
 enum Exchange<'pool, 'id, I, const CAPS: usize> {
     Pending(Question<'pool, 'id>),

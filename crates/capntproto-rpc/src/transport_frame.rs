@@ -130,6 +130,11 @@ impl OutgoingFrame {
         let segments = self.body.segments();
         if segments.len() == 1 {
             capnp::OutputSegments::SingleSegment([segments.get_segment(0).unwrap()])
+        } else if segments.len() == 2 {
+            capnp::OutputSegments::TwoSegments([
+                segments.get_segment(0).unwrap(),
+                segments.get_segment(1).unwrap(),
+            ])
         } else {
             capnp::OutputSegments::MultiSegment(
                 (0..segments.len())
