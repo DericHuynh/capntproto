@@ -589,10 +589,17 @@ mod tests {
                     core::hint::black_box(source.framed_len()),
                     Some(original.len())
                 );
+                source
+                    .validate(
+                        0,
+                        source.message.message().size_in_words(),
+                        capnp::message::ReaderOptions::new(),
+                    )
+                    .unwrap();
             })
             .count_total,
             0,
-            "sizing a segmented result does not allocate reference storage"
+            "sizing and validating a segmented result do not allocate reference storage"
         );
         let mut pool = messages::GrowingBuffers::new(4, 16384, 65536);
         messages::with_growing_messages(

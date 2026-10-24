@@ -174,12 +174,14 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         let Some((call, target)) = self.offsets else {
             return Ok(None);
         };
-        let segments = self.message().get_segments_for_output();
-        let (segment, second) = match &*segments {
-            [segment] => (*segment, None),
-            [segment, second] => (*segment, Some(*second)),
+        use capnp::message::ReaderSegments;
+        let message = self.message();
+        let second = match message.len() {
+            1 => None,
+            2 => message.get_segment(1),
             _ => return Ok(None),
         };
+        let segment = message.get_segment(0).expect("prepared Call root segment");
         let words = segment.len() / 8 + second.map_or(0, |segment| segment.len() / 8);
         if options
             .traversal_limit_in_words
@@ -1357,6 +1359,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(all(feature = "alloc", not(miri)))]
+    #[test]
+    fn segmented_call_certification_borrows_segments_without_allocating() {
+        use capnp::message::{HeapAllocator, ReaderOptions, ReaderSegments};
+        let mut call = PreparedCall::from_template(
+            &PreparedCallTemplate::default(),
+            HeapAllocator::new().first_segment_words(32),
+            0,
+            0,
+        )
+        .unwrap();
+        call.params()
+            .set_as::<capnp::data::Owned>(&[7; 8192][..])
+            .unwrap();
+        assert_eq!(call.message().len(), 2);
+        let measured = allocation_counter::measure(|| {
+            let encoded = call
+                .encoded(call.method, ReaderOptions::new())
+                .unwrap()
+                .unwrap();
+            assert!(encoded.second.is_some());
+            core::hint::black_box(encoded);
+        });
+        assert_eq!(measured.count_total, 0);
     }
 
     #[cfg(feature = "alloc")]

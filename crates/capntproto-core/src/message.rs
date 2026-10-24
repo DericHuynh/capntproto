@@ -931,7 +931,10 @@ impl<A: Allocator> SelectedBuilder<A> {
     /// list checks use the ordinary reader arena, including on owned builders.
     #[inline(always)]
     pub fn validate_capability_indices(&self, count: u32, options: ReaderOptions) -> Result<()> {
-        let arena = ReaderArenaImpl::new(self.message.get_segments_for_output(), options);
+        // Borrow the builder directly: materializing its segment-reference list
+        // would allocate for every multi-segment validation. The reader arena
+        // still enforces the independent traversal and nesting policy.
+        let arena = ReaderArenaImpl::new(&self.message, options);
         let arena = arena.cached()?;
         let (start, _) = arena.get_segment(self.segment)?;
         // SAFETY: select validated this word's location in the owning arena.
