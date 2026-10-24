@@ -406,7 +406,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             &mut Peer<'p, 'id, '_, I, P, C, H>,
             &mut messages::Messages<'p, '_, '_>,
             &connection::Request<'p, 'id, I, C, H>,
-            &Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>,
+            &PlainPayload<'_>,
         ) -> capnp::Result<bool>,
     ) -> Poll<capnp::Result<Progress>> {
         self.completed_plain = false;
@@ -586,7 +586,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             &mut Peer<'p, 'id, '_, I, P, C, H>,
             &mut messages::Messages<'p, '_, '_>,
             &connection::Request<'p, 'id, I, C, H>,
-            &Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>,
+            &PlainPayload<'_>,
         ) -> capnp::Result<bool>,
         remaining_budget: &mut usize,
         completed_plain: &mut bool,

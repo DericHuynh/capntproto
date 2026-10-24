@@ -42,6 +42,7 @@ pub(crate) struct Payload {
 enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
     Return(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    Produced(server::Results),
     Admitted(Box<owned::PlainResults>),
     Shared { message: SharedPayload },
 }
@@ -56,6 +57,15 @@ impl capnp::private::capability::ResponseHook for SharedPayload {
     }
 }
 impl Payload {
+    fn prepared_return(
+        &self,
+    ) -> Option<&connection::PreparedReturn<capnp::message::HeapAllocator>> {
+        match &self.body {
+            PayloadBody::Return(message) => Some(message),
+            PayloadBody::Produced(results) => results.prepared_return(),
+            _ => None,
+        }
+    }
     pub(crate) fn retain_plain_context(
         &mut self,
         context: Rc<dyn std::any::Any>,
@@ -128,6 +138,7 @@ impl Payload {
         let mut root: any_pointer::Reader<'_> = match &self.body {
             PayloadBody::Owned(message) => message.get_root_as_reader()?,
             PayloadBody::Return(message) => message.reader()?,
+            PayloadBody::Produced(results) => results.payload_reader()?,
             PayloadBody::Admitted(message) => {
                 capnp::private::capability::ResponseHook::get(&**message)?
             }

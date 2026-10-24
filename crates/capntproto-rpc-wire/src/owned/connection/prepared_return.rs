@@ -66,7 +66,20 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
     /// Exact framed length when the private envelope's segment count fits the
     /// wire reader. This is a storage hint, not a validation certificate.
     pub fn framed_len(&self) -> Option<usize> {
-        frame_layout(&self.message.message().get_segments_for_output()).map(|(_, length)| length)
+        use capnp::message::ReaderSegments;
+        let message = self.message.message();
+        frame_layout_lengths((0..message.len()).map(|index| {
+            message
+                .get_segment(index as u32)
+                .expect("builder segment")
+                .len()
+        }))
+        .map(|(_, length)| length)
+    }
+    /// Number of immutable segments in this result envelope.
+    pub fn segment_count(&self) -> usize {
+        use capnp::message::ReaderSegments;
+        self.message.message().len()
     }
     pub fn reader(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
         // Like RpcServerResponseImpl::getResultsBuilder().asReader(), use the
@@ -308,13 +321,18 @@ impl PreparedReturn<capnp::message::HeapAllocator> {
 }
 
 fn frame_layout(segments: &[&[u8]]) -> Option<(usize, usize)> {
-    if segments.is_empty() || segments.len() >= capnp::serialize::SEGMENTS_COUNT_LIMIT {
+    frame_layout_lengths(segments.iter().map(|segment| segment.len()))
+}
+fn frame_layout_lengths(
+    mut lengths: impl ExactSizeIterator<Item = usize>,
+) -> Option<(usize, usize)> {
+    if lengths.len() == 0 || lengths.len() >= capnp::serialize::SEGMENTS_COUNT_LIMIT {
         return None;
     }
-    let header = (segments.len() / 2 + 1) * 8;
-    let length = segments.iter().try_fold(header, |length, segment| {
-        u32::try_from(segment.len() / 8).ok()?;
-        length.checked_add(segment.len())
+    let header = (lengths.len() / 2 + 1) * 8;
+    let length = lengths.try_fold(header, |length, segment| {
+        u32::try_from(segment / 8).ok()?;
+        length.checked_add(segment)
     })?;
     Some((header, length))
 }
@@ -483,17 +501,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Every index is validated before retaining any supplied client, and an
     /// error returns all temporary frame and graph ownership.
     #[allow(clippy::too_many_arguments)]
-    pub fn local_answer_prepared_with_capabilities<B: capnp::message::Allocator>(
+    pub fn local_answer_prepared_with_capabilities<'c, B: capnp::message::Allocator>(
         &mut self,
         answer: answers::Key<'id>,
         interface: u64,
         method: u16,
         source: &PreparedReturn<B>,
-        capabilities: &[Option<&clients::Client<'id>>],
+        capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
-    ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error> {
-        if capabilities.is_empty() {
+    ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error>
+    where
+        'id: 'c,
+    {
+        if capabilities.len() == 0 {
             return self
                 .local_answer_prepared(answer, interface, method, source, messages, options);
         }
@@ -528,7 +549,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             method,
             prepared_return: None,
         };
-        for (index, client) in capabilities.iter().enumerate() {
+        for (index, client) in capabilities.enumerate() {
             let Some(client) = client else { continue };
             match self.runtime.retain(client) {
                 Ok(client) => result.capabilities[index] = Some(client),
@@ -561,6 +582,18 @@ mod tests {
             .unwrap();
         let source = alloc::rc::Rc::new(source);
         let original = capnp::serialize::write_message_to_words(source.message.message());
+        #[cfg(not(miri))]
+        assert_eq!(
+            allocation_counter::measure(|| {
+                assert_eq!(
+                    core::hint::black_box(source.framed_len()),
+                    Some(original.len())
+                );
+            })
+            .count_total,
+            0,
+            "sizing a segmented result does not allocate reference storage"
+        );
         let mut pool = messages::GrowingBuffers::new(4, 16384, 65536);
         messages::with_growing_messages(
             &mut pool,

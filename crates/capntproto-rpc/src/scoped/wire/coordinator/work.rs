@@ -750,17 +750,26 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             },
             |results| results.prepare_trace(&self.policy),
             |driver, messages, request, source| {
-                driver
-                    .try_send_answer_prepared_shared(
+                match source {
+                    server::PlainPayload::Inline(source) => driver.try_send_answer_prepared(
                         request,
                         source,
                         messages,
                         &mut queue.borrow_mut(),
                         options.reader,
                         output.bundle(),
-                    )
-                    .map(|retired| retired.is_some())
-                    .map_err(wire_error)
+                    ),
+                    server::PlainPayload::Shared(source) => driver.try_send_answer_prepared_shared(
+                        request,
+                        source,
+                        messages,
+                        &mut queue.borrow_mut(),
+                        options.reader,
+                        output.bundle(),
+                    ),
+                }
+                .map(|retired| retired.is_some())
+                .map_err(wire_error)
             },
         )
     }

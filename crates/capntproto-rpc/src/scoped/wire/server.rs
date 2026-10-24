@@ -3,7 +3,7 @@
 //! reply publication finish. These owned parameters do not borrow the driver.
 use super::*;
 mod results;
-pub use results::{Execution, Producer, Results};
+pub use results::{Execution, PlainPayload, Producer, Results};
 pub(crate) use results::{Transfer, Work};
 mod worker;
 pub use worker::{Progress, Worker};

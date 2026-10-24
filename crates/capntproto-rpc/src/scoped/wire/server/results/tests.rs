@@ -344,13 +344,13 @@ fn returned_results_skip_ready_waiters_but_pending_work_and_early_pipelines_stil
             )
         });
         let mut execution = prepared().execute(&*service.hook, &results, None).unwrap();
-        assert!(results.0.payload.borrow().is_none());
+        assert!(results.0.payload.get().is_none());
         wake.0.store(0, Ordering::SeqCst);
         assert_eq!(
             results.poll_work(&mut execution, &mut cx).is_pending(),
             pending
         );
-        assert!(results.0.payload.borrow().is_some());
+        assert!(results.0.payload.get().is_some());
         assert_eq!(wake.0.load(Ordering::SeqCst), 0);
         if pending {
             results.fail(Error::failed("external completion".into()));
@@ -461,7 +461,7 @@ fn transferred_pipeline_waits_for_results_retained_after_execution_completes() {
     }
     assert_eq!(wake.0.load(Ordering::SeqCst), 0);
     assert!(results.0.completion.borrow().is_some());
-    assert!(results.0.payload.borrow().is_none());
+    assert!(results.0.payload.get().is_none());
     wake.0.store(0, Ordering::SeqCst);
     drop(hook);
     assert!(wake.0.load(Ordering::SeqCst) > 0);
@@ -487,7 +487,7 @@ fn pooled_results_keep_retained_payloads_and_clear_reused_segments() {
             assert!(data.iter().all(|byte| *byte == 0));
             data.fill(value);
             drop(hook);
-            let payload = results.0.payload.borrow().as_ref().unwrap().clone();
+            let payload = results.0.payload.get().unwrap().share(&results);
             payload
         };
         let retained = build(0xa5);
@@ -575,7 +575,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                         7,
                         9,
                         &source,
-                        references,
+                        references.iter().copied(),
                         messages,
                         Default::default(),
                     )
@@ -588,7 +588,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                     7,
                     9,
                     &source,
-                    &references,
+                    references.iter().copied(),
                     messages,
                     capnp::message::ReaderOptions {
                         nesting_limit: 0,
@@ -602,7 +602,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                     7,
                     9,
                     &source,
-                    &references,
+                    references.iter().copied(),
                     messages,
                     capnp::message::ReaderOptions {
                         traversal_limit_in_words: Some(1),
@@ -621,7 +621,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                     7,
                     9,
                     &source,
-                    &references,
+                    references.iter().copied(),
                     messages,
                     Default::default(),
                 )
@@ -636,7 +636,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                         7,
                         9,
                         &source,
-                        &references,
+                        references.iter().copied(),
                         messages,
                         Default::default(),
                     )
@@ -1127,7 +1127,7 @@ fn cancellation_keeps_non_cancellable_execution_and_result_context_alive() {
         if cancellable {
             assert!(executor.0.borrow().is_empty());
         } else {
-            assert!(weak.upgrade().unwrap().payload.borrow().is_some());
+            assert!(weak.upgrade().unwrap().payload.get().is_some());
             assert!(sender.send(()).is_ok());
             let mut task = executor.0.borrow_mut().pop().unwrap();
             assert!(matches!(poll(&mut task), Poll::Ready(Ok(()))));
@@ -1161,8 +1161,7 @@ fn tail_forwarding_preserves_child_results() {
         results
             .0
             .payload
-            .borrow()
-            .as_ref()
+            .get()
             .unwrap()
             .reader()
             .unwrap()
@@ -1187,4 +1186,43 @@ fn only_affine_protocol_retirement_notifies_running_worker() {
     results.unbind_protocol_waker();
     drop(results.into_producer());
     assert_eq!(queue.pop().map(|ready| ready.index()), None);
+}
+
+#[test]
+fn retained_results_preserve_payloads_without_blocking_segmented_worker_reuse() {
+    for segmented in [false, true] {
+        let cache = Cache::default();
+        let results = cache.acquire(None, None);
+        let address = Rc::as_ptr(&results.0);
+        let mut message = connection::PreparedReturn::from_template(
+            &connection::PreparedReturnTemplate::default(),
+            capnp::message::HeapAllocator::new().first_segment_words(16),
+        );
+        let bytes = vec![0xa5; if segmented { 8192 } else { 8 }];
+        message
+            .results()
+            .set_as::<capnp::data::Owned>(bytes.as_slice())
+            .unwrap();
+        drop(Hook {
+            results: results.clone(),
+            message: Some(message),
+            caps: vec![],
+            executor: None,
+        });
+        results.0.complete(Ok(()));
+        let retained = results.0.payload.get().unwrap().share(&results);
+        cache.recycle(results);
+        let next = cache.acquire(None, None);
+        assert_eq!(Rc::as_ptr(&next.0) == address, segmented,
+            "segmented output retains its message, while inline output retains its producing context");
+        assert_eq!(
+            retained
+                .reader()
+                .unwrap()
+                .get_as::<capnp::data::Reader>()
+                .unwrap(),
+            bytes
+        );
+        assert!(next.0.payload.get().is_none());
+    }
 }
