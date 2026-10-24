@@ -11,7 +11,7 @@ use crate::crypto::tls13::{Hkdf, HkdfExpander, OkmBlock, OutputLengthError};
 use crate::enums::{CipherSuite, ContentType, ProtocolVersion};
 use crate::error::Error;
 use crate::msgs::message::{
-    InboundPlainMessage, OutboundOpaqueMessage, OutboundPlainMessage, PrefixedPayload,
+    EncodedMessage, EncryptBuffer, InboundPlainMessage, OutboundPlainMessage,
 };
 use crate::suites::{CipherSuiteCommon, ConnectionTrafficSecrets, SupportedCipherSuite};
 use crate::tls13::Tls13CipherSuite;
@@ -201,59 +201,35 @@ struct Tls13MessageDecrypter {
 }
 
 impl MessageEncrypter for Tls13MessageEncrypter {
-    fn encrypt(
+    fn encrypt<'a>(
         &mut self,
         msg: OutboundPlainMessage<'_>,
         seq: u64,
-    ) -> Result<OutboundOpaqueMessage, Error> {
+        out: &'a mut [u8],
+    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
         let total_len = self.encrypted_payload_len(msg.payload.len());
-        let mut payload = PrefixedPayload::with_capacity(total_len);
+        let mut payload = EncryptBuffer::new(out, total_len)?;
 
         let nonce = aead::Nonce::assume_unique_for_key(Nonce::new(&self.iv, seq).0);
         let aad = aead::Aad::from(make_tls13_aad(total_len));
         payload.extend_from_chunks(&msg.payload);
         payload.extend_from_slice(&msg.typ.to_array());
 
-        self.enc_key
-            .seal_in_place_append_tag(nonce, aad, &mut payload)
-            .map_err(|_| Error::EncryptError)?;
+        match self
+            .enc_key
+            .seal_in_place_separate_tag(nonce, aad, payload.as_mut())
+        {
+            Ok(tag) => payload.extend_from_slice(tag.as_ref()),
+            Err(_) => return Err(Error::EncryptError),
+        }
 
-        Ok(OutboundOpaqueMessage::new(
-            ContentType::ApplicationData,
+        Ok(EncodedMessage {
+            typ: ContentType::ApplicationData,
             // Note: all TLS 1.3 application data records use TLSv1_2 (0x0303) as the legacy record
             // protocol version, see https://www.rfc-editor.org/rfc/rfc8446#section-5.1
-            ProtocolVersion::TLSv1_2,
-            payload,
-        ))
-    }
-
-    fn encrypt_into(
-        &mut self,
-        msg: OutboundPlainMessage<'_>,
-        seq: u64,
-        output: &mut [u8],
-    ) -> Result<usize, Error> {
-        let plaintext_len = msg.payload.len();
-        let total_len = self.encrypted_payload_len(plaintext_len);
-        // Select the exact record before writing anything; extra caller capacity
-        // must remain untouched, and a short destination must be retryable.
-        let record = output
-            .get_mut(..5 + total_len)
-            .ok_or(Error::EncryptError)?;
-        let header = make_tls13_aad(total_len);
-        record[..5].copy_from_slice(&header);
-        let (payload, tag_output) = record[5..].split_at_mut(plaintext_len + 1);
-        msg.payload
-            .copy_to_slice(&mut payload[..plaintext_len]);
-        payload[plaintext_len] = msg.typ.into();
-
-        let nonce = aead::Nonce::assume_unique_for_key(Nonce::new(&self.iv, seq).0);
-        let tag = self
-            .enc_key
-            .seal_in_place_separate_tag(nonce, aead::Aad::from(header), payload)
-            .map_err(|_| Error::EncryptError)?;
-        tag_output.copy_from_slice(tag.as_ref());
-        Ok(record.len())
+            version: ProtocolVersion::TLSv1_2,
+            payload: payload.into_written(),
+        })
     }
 
     fn encrypted_payload_len(&self, payload_len: usize) -> usize {

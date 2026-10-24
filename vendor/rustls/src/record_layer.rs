@@ -1,10 +1,13 @@
 use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::cmp::min;
 
 use crate::crypto::cipher::{InboundOpaqueMessage, MessageDecrypter, MessageEncrypter};
 use crate::error::Error;
 use crate::log::trace;
-use crate::msgs::message::{InboundPlainMessage, OutboundOpaqueMessage, OutboundPlainMessage};
+use crate::msgs::message::HEADER_SIZE;
+use crate::msgs::message::{InboundPlainMessage, OutboundPlainMessage, encode_record_header};
 
 #[derive(PartialEq)]
 enum DirectionState {
@@ -104,37 +107,49 @@ impl RecordLayer {
     ///
     /// `plain` is a TLS message we'd like to send.  This function
     /// panics if the requisite keying material hasn't been established yet.
-    pub(crate) fn encrypt_outgoing(
-        &mut self,
-        plain: OutboundPlainMessage<'_>,
-    ) -> OutboundOpaqueMessage {
-        let seq = self.next_write_seq();
-        self.message_encrypter
-            .encrypt(plain, seq)
-            .unwrap()
+    pub(crate) fn encrypt_outgoing(&mut self, plain: OutboundPlainMessage<'_>) -> Vec<u8> {
+        let mut record = vec![0u8; plain.encoded_len(self)];
+        let written = self.encrypt_outgoing_into(plain, &mut record);
+        record.truncate(written);
+        record
     }
 
-    /// Encrypt into caller-owned record storage after the complete write has
-    /// passed CommonState's size preflight. Consume sequence numbers exactly as
-    /// the owned-record path does, including on provider failure.
     pub(crate) fn encrypt_outgoing_into(
         &mut self,
         plain: OutboundPlainMessage<'_>,
-        output: &mut [u8],
+        out: &mut [u8],
     ) -> usize {
-        assert!(output.len() >= plain.encoded_len(self));
-        let seq = self.next_write_seq();
-        self.message_encrypter
-            .encrypt_into(plain, seq, output)
-            .unwrap()
-    }
-
-    fn next_write_seq(&mut self) -> u64 {
         debug_assert!(self.encrypt_state == DirectionState::Active);
         assert!(self.next_pre_encrypt_action() != PreEncryptAction::Refuse);
+        assert!(out.len() >= plain.encoded_len(self));
+        let encrypter = &mut self.message_encrypter;
+
         let seq = self.write_seq;
         self.write_seq += 1;
-        seq
+
+        #[cfg(debug_assertions)]
+        let (out_ptr, out_len) = (out.as_ptr(), out.len());
+        let encrypted = encrypter
+            .encrypt(plain, seq, &mut out[HEADER_SIZE..])
+            .unwrap();
+
+        #[cfg(debug_assertions)]
+        {
+            // `MessageEncrypter::encrypt()` requires the returned payload to be
+            // the written prefix of the passed-in buffer. Try to catch misbehaving
+            // implementations in debug mode. In release builds a violation would corrupt
+            // the sent stream.
+            debug_assert_eq!(
+                encrypted.payload.as_ptr(),
+                out_ptr.wrapping_add(HEADER_SIZE)
+            );
+            debug_assert!(encrypted.payload.len() <= out_len - HEADER_SIZE);
+        }
+
+        let (typ, version, len) = (encrypted.typ, encrypted.version, encrypted.payload.len());
+        debug_assert!(len <= usize::from(u16::MAX));
+        out[..HEADER_SIZE].copy_from_slice(&encode_record_header(typ, version, len as u16));
+        HEADER_SIZE + len
     }
 
     /// Prepare to use the given `MessageEncrypter` for future message encryption.

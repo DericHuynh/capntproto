@@ -1,9 +1,9 @@
-//! Differential record tests use the unchanged owned encrypter as the oracle.
+//! Differential records use the original owned ring sealing operation as the oracle.
 use super::common::{Pki, TIMEOUT};
 use capntproto::rpc::tls::{rustls, TlsStream};
 use rustls::{
     crypto::cipher::{
-        MessageEncrypter, OutboundChunks, OutboundOpaqueMessage, OutboundPlainMessage,
+        make_tls13_aad, Iv, MessageEncrypter, Nonce, OutboundChunks, OutboundPlainMessage,
     },
     ClientConfig, ConnectionTrafficSecrets, ContentType, ProtocolVersion, ServerConfig,
     SupportedCipherSuite,
@@ -35,9 +35,7 @@ fn configurations(suite: SupportedCipherSuite) -> (ClientConfig, ServerConfig) {
     (client, server)
 }
 
-fn matching_encrypters(
-    suite: SupportedCipherSuite,
-) -> (Box<dyn MessageEncrypter>, Box<dyn MessageEncrypter>) {
+fn matching_encrypters(suite: SupportedCipherSuite) -> (Box<dyn MessageEncrypter>, OwnedReference) {
     fn transfer(from: &mut rustls::Connection, to: &mut rustls::Connection) {
         let mut wire = Vec::new();
         while from.wants_write() {
@@ -76,21 +74,42 @@ fn matching_encrypters(
     };
     (
         make(client.dangerous_extract_secrets().unwrap().tx.1),
-        make(server.dangerous_extract_secrets().unwrap().rx.1),
+        OwnedReference::new(server.dangerous_extract_secrets().unwrap().rx.1),
     )
 }
 
-struct OwnedOnly<'a>(&'a mut dyn MessageEncrypter);
-impl MessageEncrypter for OwnedOnly<'_> {
-    fn encrypt(
-        &mut self,
-        msg: OutboundPlainMessage<'_>,
-        seq: u64,
-    ) -> Result<OutboundOpaqueMessage, rustls::Error> {
-        self.0.encrypt(msg, seq)
+// The pre-backport path gathered into an owned vector before sealing it. Keep
+// that independent path in the test instead of comparing the new API to itself.
+struct OwnedReference {
+    key: ring::aead::LessSafeKey,
+    iv: Iv,
+}
+impl OwnedReference {
+    fn new(secret: ConnectionTrafficSecrets) -> Self {
+        let (algorithm, key, iv) = match secret {
+            ConnectionTrafficSecrets::Aes128Gcm { key, iv } => (&ring::aead::AES_128_GCM, key, iv),
+            ConnectionTrafficSecrets::Aes256Gcm { key, iv } => (&ring::aead::AES_256_GCM, key, iv),
+            ConnectionTrafficSecrets::Chacha20Poly1305 { key, iv } => {
+                (&ring::aead::CHACHA20_POLY1305, key, iv)
+            }
+            _ => panic!("unexpected test cipher"),
+        };
+        Self {
+            key: ring::aead::LessSafeKey::new(
+                ring::aead::UnboundKey::new(algorithm, key.as_ref()).unwrap(),
+            ),
+            iv,
+        }
     }
-    fn encrypted_payload_len(&self, size: usize) -> usize {
-        self.0.encrypted_payload_len(size)
+    fn encrypt(&self, msg: OutboundPlainMessage<'_>, seq: u64) -> Vec<u8> {
+        let mut payload = msg.payload.to_vec();
+        payload.push(msg.typ.into());
+        let aad = ring::aead::Aad::from(make_tls13_aad(payload.len() + 16));
+        let nonce = ring::aead::Nonce::assume_unique_for_key(Nonce::new(&self.iv, seq).0);
+        self.key
+            .seal_in_place_append_tag(nonce, aad, &mut payload)
+            .unwrap();
+        payload
     }
 }
 
@@ -101,7 +120,7 @@ fn direct_records_match_owned_records_without_allocating() {
         .copied()
         .filter(|s| s.tls13().is_some())
     {
-        let (mut direct, mut owned) = matching_encrypters(suite);
+        let (mut direct, owned) = matching_encrypters(suite);
         let mut seq = 0u64;
         for size in [0, 1, 15, 16, 17, 255, 1024, 16_383, 16_384] {
             let data: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
@@ -129,41 +148,20 @@ fn direct_records_match_owned_records_without_allocating() {
                         version: ProtocolVersion::TLSv1_2,
                         payload: payload.clone(),
                     };
-                    let expected = owned.encrypt(message(), sequence).unwrap().encode();
+                    let expected = owned.encrypt(message(), sequence);
                     let mut output = vec![0xa5; expected.len() + 19];
                     // A rejected size must neither write a prefix nor consume crypto state.
                     assert!(direct
-                        .encrypt_into(message(), sequence, &mut output[..expected.len() - 1])
+                        .encrypt(message(), sequence, &mut output[..expected.len() - 1])
                         .is_err());
                     assert!(output.iter().all(|b| *b == 0xa5));
                     let counts = allocation_counter::measure(|| {
-                        assert_eq!(
-                            direct
-                                .encrypt_into(message(), sequence, &mut output)
-                                .unwrap(),
-                            expected.len()
-                        );
+                        let record = direct.encrypt(message(), sequence, &mut output).unwrap();
+                        assert_eq!(record.typ, ContentType::ApplicationData);
+                        assert_eq!(record.version, ProtocolVersion::TLSv1_2);
+                        assert_eq!(record.payload, expected);
                     });
                     assert_eq!(counts.count_total, 0, "{suite:?}, {size}: {counts:?}");
-                    assert_eq!(&output[..expected.len()], expected);
-                    assert!(output[expected.len()..].iter().all(|b| *b == 0xa5));
-                    // Providers without an override retain the exact original behavior.
-                    output.fill(0xa5);
-                    let mut fallback = OwnedOnly(&mut *owned);
-                    assert!(fallback
-                        .encrypt_into(message(), sequence, &mut output[..expected.len() - 1])
-                        .is_err());
-                    assert!(output.iter().all(|b| *b == 0xa5));
-                    let counts = allocation_counter::measure(|| {
-                        assert_eq!(
-                            fallback
-                                .encrypt_into(message(), sequence, &mut output)
-                                .unwrap(),
-                            expected.len()
-                        );
-                    });
-                    assert!(counts.count_total > 0);
-                    assert_eq!(&output[..expected.len()], expected);
                     assert!(output[expected.len()..].iter().all(|b| *b == 0xa5));
                 }
             }

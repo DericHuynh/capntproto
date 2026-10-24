@@ -8,8 +8,8 @@ use crate::enums::{ContentType, ProtocolVersion};
 use crate::error::Error;
 use crate::msgs::codec;
 pub use crate::msgs::message::{
-    BorrowedPayload, InboundOpaqueMessage, InboundPlainMessage, OutboundChunks,
-    OutboundOpaqueMessage, OutboundPlainMessage, PlainMessage, PrefixedPayload,
+    BorrowedPayload, EncodedMessage, EncryptBuffer, InboundOpaqueMessage, InboundPlainMessage,
+    OutboundChunks, OutboundPlainMessage, PlainMessage, PrefixedPayload,
 };
 use crate::suites::ConnectionTrafficSecrets;
 
@@ -146,44 +146,25 @@ pub trait MessageDecrypter: Send + Sync {
 
 /// Objects with this trait can encrypt TLS messages.
 pub trait MessageEncrypter: Send + Sync {
-    /// Encrypt the given TLS message `msg`, using the sequence number
+    /// Encrypt the given TLS message `msg` into `out`, using the sequence number
     /// `seq` which can be used to derive a unique [`Nonce`].
-    fn encrypt(
+    ///
+    /// The encrypted payload including all framing the ciphersuite requires, such
+    /// as any explicit nonce, padding and/or authentication tag, is written to the
+    /// front of `out`. `out` must be at least [`Self::encrypted_payload_len()`] bytes
+    /// long. See [`EncryptBuffer`] for a convenient wrapper.
+    ///
+    /// The returned message describes the resulting record: its payload borrows the
+    /// written prefix of `out`, and its `typ` and `version` are what the record
+    /// header should carry on the wire. Encoding the record header is the caller's
+    /// responsibility and implementations of the `MessageEncrypter` trait must not
+    /// write it to `out` themselves.
+    fn encrypt<'a>(
         &mut self,
         msg: OutboundPlainMessage<'_>,
         seq: u64,
-    ) -> Result<OutboundOpaqueMessage, Error>;
-
-    /// Encrypt and encode a complete TLS record directly into `output`.
-    ///
-    /// `output` must have room for the five-byte record header plus
-    /// `encrypted_payload_len(msg.payload.len())` bytes. A short buffer returns
-    /// `Error::EncryptError` without modifying it or calling the encrypter.
-    /// Only the returned prefix may be modified on success.
-    ///
-    /// The caller must not reuse `seq` with the same key, including after a
-    /// provider encryption failure. The default retains the owned-record path;
-    /// providers can override this to avoid its allocation and ciphertext copy.
-    fn encrypt_into(
-        &mut self,
-        msg: OutboundPlainMessage<'_>,
-        seq: u64,
-        output: &mut [u8],
-    ) -> Result<usize, Error> {
-        let required = self
-            .encrypted_payload_len(msg.payload.len())
-            .checked_add(5)
-            .ok_or(Error::EncryptError)?;
-        if output.len() < required {
-            return Err(Error::EncryptError);
-        }
-        let encoded = self.encrypt(msg, seq)?.encode();
-        let target = output
-            .get_mut(..encoded.len())
-            .ok_or(Error::EncryptError)?;
-        target.copy_from_slice(&encoded);
-        Ok(encoded.len())
-    }
+        out: &'a mut [u8],
+    ) -> Result<EncodedMessage<&'a [u8]>, Error>;
 
     /// Return the length of the ciphertext that results from encrypting plaintext of
     /// length `payload_len`
@@ -368,11 +349,12 @@ impl From<[u8; Self::MAX_LEN]> for AeadKey {
 struct InvalidMessageEncrypter {}
 
 impl MessageEncrypter for InvalidMessageEncrypter {
-    fn encrypt(
+    fn encrypt<'a>(
         &mut self,
         _m: OutboundPlainMessage<'_>,
         _seq: u64,
-    ) -> Result<OutboundOpaqueMessage, Error> {
+        _out: &'a mut [u8],
+    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
         Err(Error::EncryptError)
     }
 

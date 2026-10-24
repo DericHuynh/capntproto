@@ -42,12 +42,12 @@ bounded `BytesMut` destinations. Quiche 0.30 still copies from stream reassembly
 into `BufMut`; this is not ownership transfer of received packet storage.
 The [local rustls delta](../../vendor/rustls/README.capntproto.md) writes new
 Unbuffered application records directly into the retained transmit buffer with
-the ring TLS 1.3 provider. It removes the temporary ciphertext allocation and
+the ring TLS 1.3 provider. It backports upstream PR #3127 and removes the temporary ciphertext allocation and
 copy by using the same AEAD operation in caller-owned storage. Plaintext still
 enters that storage once; received plaintext and queued handshake/control
-records retain upstream allocation and copy behavior. Other cipher providers
-use the original owned-record fallback. Neither transport provides end-to-end
-zero-copy IO.
+records retain upstream allocation and copy behavior. Ring and AWS-LC now use the same caller-buffer encryption contract for TLS 1.2
+and TLS 1.3. Custom crypto providers must adapt to its changed `encrypt` signature.
+Neither transport provides end-to-end zero-copy IO.
 
 `TlsStream::connect(io, config, name)` and `TlsStream::accept(io, config)` expose
 the generic transport adapter for callers with their own deadline and ALPN

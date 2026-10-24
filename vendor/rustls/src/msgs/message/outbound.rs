@@ -1,10 +1,35 @@
 use alloc::vec::Vec;
+use core::slice;
+
+use crate::error::Error;
 
 use super::{HEADER_SIZE, MAX_PAYLOAD, MessageError, PlainMessage};
 use crate::enums::{ContentType, ProtocolVersion};
 use crate::msgs::base::Payload;
 use crate::msgs::codec::{Codec, Reader};
 use crate::record_layer::RecordLayer;
+
+/// A TLS message with encoded (but not necessarily encrypted) payload.
+#[derive(Clone, Debug)]
+pub struct EncodedMessage<P> {
+    /// The content type of this message.
+    pub typ: ContentType,
+    /// The protocol version of this message.
+    pub version: ProtocolVersion,
+    /// The payload of this message.
+    pub payload: P,
+}
+
+impl<P> EncodedMessage<P> {
+    /// Create a new `EncodedMessage` with the given fields.
+    pub fn new(typ: ContentType, version: ProtocolVersion, payload: P) -> Self {
+        Self {
+            typ,
+            version,
+            payload,
+        }
+    }
+}
 
 /// A TLS frame, named `TLSPlaintext` in the standard.
 ///
@@ -102,30 +127,15 @@ impl<'a> OutboundChunks<'a> {
         }
     }
 
-    /// Copy the selected plaintext range into an equally sized destination.
-    #[cfg(feature = "ring")]
-    pub(crate) fn copy_to_slice(&self, mut output: &mut [u8]) {
-        assert_eq!(output.len(), self.len());
-        match *self {
-            Self::Single(chunk) => output.copy_from_slice(chunk),
-            Self::Multiple { chunks, start, end } => {
-                let mut offset = 0;
-                for chunk in chunks {
-                    if offset >= end {
-                        break;
-                    }
-                    let next = offset + chunk.len();
-                    if next > start {
-                        let selected =
-                            &chunk[start.saturating_sub(offset)..(end - offset).min(chunk.len())];
-                        let (head, tail) = output.split_at_mut(selected.len());
-                        head.copy_from_slice(selected);
-                        output = tail;
-                    }
-                    offset = next;
-                }
-                assert!(output.is_empty());
-            }
+    /// Iterate over the selected non-empty plaintext slices.
+    pub fn chunks(&self) -> impl Iterator<Item = &[u8]> + '_ {
+        match self {
+            Self::Single(chunk) => Chunks::Single((!chunk.is_empty()).then_some(*chunk)),
+            Self::Multiple { chunks, start, end } => Chunks::Multiple {
+                chunks: chunks.iter(),
+                skip: *start,
+                remaining: end - start,
+            },
         }
     }
 
@@ -445,5 +455,193 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+/// Iterator over an [`OutboundChunks`]'s chunks, returned by [`OutboundChunks::chunks()`].
+enum Chunks<'a> {
+    Single(Option<&'a [u8]>),
+    Multiple {
+        /// Chunks not yet visited, including any leading ones `skip` covers.
+        chunks: slice::Iter<'a, &'a [u8]>,
+        /// How many leading bytes remain to be skipped.
+        skip: usize,
+        /// How many bytes remain to be yielded.
+        remaining: usize,
+    },
+}
+
+impl<'a> Iterator for Chunks<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (chunks, skip, remaining) = match self {
+            Self::Single(chunk) => return chunk.take(),
+            Self::Multiple {
+                chunks,
+                skip,
+                remaining,
+            } => (chunks, skip, remaining),
+        };
+
+        loop {
+            if *remaining == 0 {
+                return None;
+            }
+
+            let chunk = chunks.next()?;
+            if *skip > chunk.len() {
+                *skip -= chunk.len();
+                continue;
+            }
+            let chunk = &chunk[*skip..];
+
+            *skip = 0;
+            if chunk.is_empty() {
+                continue;
+            }
+
+            let take = Ord::min(chunk.len(), *remaining);
+            *remaining -= take;
+            return Some(&chunk[..take]);
+        }
+    }
+}
+
+/// A fixed-size buffer into which a [`MessageEncrypter`][] writes an encrypted message payload.
+///
+/// This wraps the output buffer passed to [`MessageEncrypter::encrypt()`][], tracking how
+/// much of it has been written as the append methods fill it front-to-back. It writes
+/// into caller-owned memory and cannot grow. [`Self::new()`] checks that the caller's
+/// buffer can hold the `len` bytes the encrypter declared, and the append methods then
+/// panic if the writes exceed that length.
+///
+/// Such a panic always indicates a bug in the `MessageEncrypter` implementation, not a
+/// runtime condition the caller can handle. The same implementation declares the total
+/// length up front (via [`MessageEncrypter::encrypted_payload_len()`]) and performs the
+/// writes, so overflowing the buffer means the two disagree. The record layer also
+/// relies on that declared length for framing, so there is no way to recover from the
+/// mismatch after the fact.
+///
+/// [`MessageEncrypter`]: crate::crypto::cipher::MessageEncrypter
+/// [`MessageEncrypter::encrypt()`]: crate::crypto::cipher::MessageEncrypter::encrypt()
+/// [`MessageEncrypter::encrypted_payload_len()`]: crate::crypto::cipher::MessageEncrypter::encrypted_payload_len()
+pub struct EncryptBuffer<'a> {
+    buf: &'a mut [u8],
+    used: usize,
+}
+
+impl<'a> EncryptBuffer<'a> {
+    /// Wrap the first `len` bytes of `out`, all of which are as yet unwritten.
+    ///
+    /// Returns [`Error::EncryptError`] if `out` is shorter than `len` bytes.
+    pub fn new(out: &'a mut [u8], len: usize) -> Result<Self, Error> {
+        match out.get_mut(..len) {
+            Some(buf) => Ok(Self { buf, used: 0 }),
+            None => Err(Error::EncryptError),
+        }
+    }
+
+    /// Append bytes from an `OutboundChunks`'s chunks.
+    ///
+    /// Panics if the write would extend beyond the `len` given to [`Self::new()`],
+    /// which indicates a bug in the calling `MessageEncrypter` implementation (see
+    /// the type-level documentation).
+    pub fn extend_from_chunks(&mut self, chunks: &OutboundChunks<'_>) {
+        match chunks {
+            // for the common case with a single chunk we want to avoid iteration overhead.
+            OutboundChunks::Single(chunk) => self.extend_from_slice(chunk),
+            chunks => {
+                for chunk in chunks.chunks() {
+                    self.extend_from_slice(chunk);
+                }
+            }
+        }
+    }
+
+    /// Append bytes from a slice.
+    ///
+    /// Panics if the write would extend beyond the `len` given to [`Self::new()`],
+    /// which indicates a bug in the calling `MessageEncrypter` implementation (see
+    /// the type-level documentation).
+    pub fn extend_from_slice(&mut self, slice: &[u8]) {
+        self.buf[self.used..self.used + slice.len()].copy_from_slice(slice);
+        self.used += slice.len();
+    }
+
+    /// Consume this value, returning the written prefix of the wrapped buffer.
+    pub fn into_written(self) -> &'a [u8] {
+        &self.buf[..self.used]
+    }
+}
+
+impl AsMut<[u8]> for EncryptBuffer<'_> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.buf[..self.used]
+    }
+}
+
+pub(crate) fn encode_record_header(
+    typ: ContentType,
+    version: ProtocolVersion,
+    len: u16,
+) -> [u8; HEADER_SIZE] {
+    let [version_hi, version_lo] = version.to_array();
+    let [len_hi, len_lo] = len.to_be_bytes();
+    [typ.into(), version_hi, version_lo, len_hi, len_lo]
+}
+
+#[cfg(test)]
+mod upstream_encrypt_buffer_tests {
+    use alloc::vec;
+
+    use super::*;
+
+    #[test]
+    fn encrypt_buffer_appends() {
+        let mut space = [0u8; 8];
+        let mut buf = EncryptBuffer::new(&mut space[..], 6).unwrap();
+        buf.extend_from_slice(&[1, 2]);
+        buf.extend_from_chunks(&OutboundChunks::new(&[&[3u8, 4][..], &[5][..]]));
+        buf.extend_from_slice(&[6]);
+        assert_eq!(buf.as_mut(), &mut [1, 2, 3, 4, 5, 6]);
+        assert_eq!(buf.into_written(), &[1, 2, 3, 4, 5, 6]);
+        assert_eq!(space, [1, 2, 3, 4, 5, 6, 0, 0]);
+    }
+
+    #[test]
+    fn encrypt_buffer_rejects_short_buffer() {
+        let mut space = [0u8; 4];
+        assert!(matches!(
+            EncryptBuffer::new(&mut space[..], 5),
+            Err(Error::EncryptError)
+        ));
+    }
+
+    #[test]
+    fn chunks_iteration() {
+        // `Single` yields its chunk, unless empty
+        assert_eq!(
+            OutboundChunks::Single(&[1, 2, 3])
+                .chunks()
+                .collect::<Vec<_>>(),
+            [&[1u8, 2, 3][..]],
+        );
+        assert_eq!(
+            OutboundChunks::new_empty()
+                .chunks()
+                .count(),
+            0
+        );
+
+        // `Multiple` yields the in-window part of each chunk, skipping
+        // empty chunks
+        let owner: Vec<&[u8]> = vec![&[], &[1, 2, 3], &[], &[4, 5], &[], &[6, 7], &[]];
+        let (_, tail) = OutboundChunks::new(&owner).split_at(1);
+        let (window, _) = tail.split_at(5);
+        assert_eq!(
+            window.chunks().collect::<Vec<_>>(),
+            [&[2u8, 3][..], &[4, 5][..], &[6][..]],
+        );
     }
 }

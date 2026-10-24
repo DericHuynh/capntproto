@@ -439,10 +439,18 @@ mod tests {
         };
 
         let mut encrypter = fake_server_crypto.server_handshake_encrypter();
-        let enc_ee = encrypter
-            .encrypt(PlainMessage::from(ee).borrow_outbound(), 0)
+        let plain = PlainMessage::from(ee);
+        let mut record = vec![0; 5 + encrypter.encrypted_payload_len(plain.payload.bytes().len())];
+        let encrypted = encrypter
+            .encrypt(plain.borrow_outbound(), 0, &mut record[5..])
             .unwrap();
-        conn.read_tls(&mut enc_ee.encode().as_slice())
+        let header = crate::msgs::message::encode_record_header(
+            encrypted.typ,
+            encrypted.version,
+            encrypted.payload.len() as u16,
+        );
+        record[..5].copy_from_slice(&header);
+        conn.read_tls(&mut record.as_slice())
             .unwrap();
         conn.process_new_packets().map(|_| ())
     }
@@ -493,10 +501,18 @@ mod tests {
         };
 
         let mut encrypter = fake_server_crypto.server_handshake_encrypter();
-        let enc_ccs = encrypter
-            .encrypt(PlainMessage::from(ccs).borrow_outbound(), 0)
+        let plain = PlainMessage::from(ccs);
+        let mut record = vec![0; 5 + encrypter.encrypted_payload_len(plain.payload.bytes().len())];
+        let encrypted = encrypter
+            .encrypt(plain.borrow_outbound(), 0, &mut record[5..])
             .unwrap();
-        conn.read_tls(&mut enc_ccs.encode().as_slice())
+        let header = crate::msgs::message::encode_record_header(
+            encrypted.typ,
+            encrypted.version,
+            encrypted.payload.len() as u16,
+        );
+        record[..5].copy_from_slice(&header);
+        conn.read_tls(&mut record.as_slice())
             .unwrap();
         assert_eq!(
             conn.process_new_packets().unwrap_err(),

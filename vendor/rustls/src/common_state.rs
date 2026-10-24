@@ -16,8 +16,7 @@ use crate::msgs::enums::{AlertLevel, KeyUpdateRequest};
 use crate::msgs::fragmenter::MessageFragmenter;
 use crate::msgs::handshake::{CertificateChain, HandshakeMessagePayload, ProtocolName};
 use crate::msgs::message::{
-    Message, MessagePayload, OutboundChunks, OutboundOpaqueMessage, OutboundPlainMessage,
-    PlainMessage,
+    Message, MessagePayload, OutboundChunks, OutboundPlainMessage, PlainMessage,
 };
 use crate::record_layer::PreEncryptAction;
 use crate::suites::{PartiallyExtractedSecrets, SupportedCipherSuite};
@@ -504,9 +503,9 @@ impl CommonState {
     }
 
     // Put m into sendable_tls for writing.
-    fn queue_tls_message(&mut self, m: OutboundOpaqueMessage) {
+    fn queue_tls_message(&mut self, m: Vec<u8>) {
         self.perhaps_write_key_update();
-        self.sendable_tls.append(m.encode());
+        self.sendable_tls.append(m);
     }
 
     pub(crate) fn perhaps_write_key_update(&mut self) {
@@ -544,7 +543,7 @@ impl CommonState {
                 .message_fragmenter
                 .fragment_message(msg);
             for m in iter {
-                self.queue_tls_message(m.to_unencrypted_opaque());
+                self.queue_tls_message(m.to_unencrypted_opaque().encode());
             }
         } else {
             self.send_msg_encrypt(m.into());
@@ -782,8 +781,7 @@ impl CommonState {
         let message = PlainMessage::from(Message::build_key_update_notify());
         self.queued_key_update_message = Some(
             self.record_layer
-                .encrypt_outgoing(message.borrow_outbound())
-                .encode(),
+                .encrypt_outgoing(message.borrow_outbound()),
         );
     }
 

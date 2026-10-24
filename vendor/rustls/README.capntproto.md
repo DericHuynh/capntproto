@@ -1,53 +1,50 @@
-# Local rustls 0.23.46 delta
+# Local rustls 0.23.46: upstream caller-provided encryption output
 
-This directory contains the checksum-verified crates.io package, with all upstream
-licenses retained. `UPSTREAM.json` records the original package checksum, upstream
-commit and hashes of every original file; `LOCAL.patch` contains the five-file delta. The upstream formatting configuration
-is copied from that same commit. The original README is unchanged.
+This directory is the checksum-verified published 0.23.46 package plus a targeted
+backport of [rustls PR #3127](https://github.com/rustls/rustls/pull/3127), merged at
+`73a793c90f2e8c8b651cd3f1131f4be27f41259b`. Original notices and licenses remain.
+`UPSTREAM.json` records the package provenance and original file hashes;
+`UPSTREAM-3127.json` records the upstream implementation and the 0.23 adaptations.
+`LOCAL.patch` is the complete delta against the published crate.
 
-The local change removes an owned ciphertext allocation and its copy from the
-Unbuffered application-data write path:
+## Provider contract and data path
 
-- `MessageEncrypter::encrypt_into` writes an encoded record into caller storage.
-  Its default implementation uses the original owned-record path, preserving other
-  providers and TLS 1.2. The existing buffered encrypter remains unchanged.
-- The ring TLS 1.3 override copies plaintext into the caller's record payload,
-  authenticates the original five-byte TLS 1.3 header, encrypts in place using
-  ring's existing AEAD, and stores its separate tag directly into the record.
-- The record layer shares sequence advancement and exhaustion checks between both
-  output paths. `CommonState` keeps its complete size preflight, fragmentation,
-  queued-control ordering and key-refresh logic, then writes new application
-  records directly into the caller buffer.
-- `OutboundChunks::copy_to_slice` handles selected ranges of scatter/gather input
-  without allocating. The direct override is ring-only; the default is available
-  to every provider.
+The previous local `MessageEncrypter::encrypt_into` extension is removed.
+Following upstream, `MessageEncrypter::encrypt` now takes caller-owned ciphertext
+storage and returns an `EncodedMessage` borrowing the written payload prefix.
+The provider does not write the five-byte TLS header: the record layer encodes
+it after encryption. `EncryptBuffer` gathers plaintext directly into the output
+and appends suite-specific framing and the authentication tag. Ring and AWS-LC,
+TLS 1.2 and TLS 1.3 use the upstream implementations of this contract.
 
-Short output buffers leave output unchanged. The existing Unbuffered API's size
-preflight handles retries before encrypting application fragments; any queued key-update control record retains its original ordering and state.
-Provider encryption failures retain the record layer's existing terminal/panic
-behavior; a consumed sequence number is never reused.
+**This breaks the crypto-provider trait API.** Custom `MessageEncrypter`
+implementations must accept the output buffer and return borrowed ciphertext;
+there is no owned-record fallback method. Application-level capntproto TLS APIs
+retain their signatures. Vendored and registry rustls still have distinct crate
+identities in downstream workspaces unless their dependency roots unify them.
 
-This removes the application-record ciphertext copy, not every TLS copy. Plaintext
-still enters the output buffer once. Buffered handshake/key-update/alert records
-still use their existing queue and copy, and decrypted records still allocate.
-The root crate uses a direct path dependency; root and maintained RPC benchmark
-patches unify transitive rustls users. The independent upstream benchmark keeps
-registry rustls. No algorithm, authentication rule or protocol version changed.
+The 0.23 Unbuffered state machine, whole-write size preflight, queued-control
+ordering, key-refresh logic and record-sequence exhaustion checks remain intact.
+`OutboundPlainMessage` is the 0.23 input representation. `EncodedMessage` and
+`EncryptBuffer` are adapted from upstream; a short buffer uses the existing
+`Error::EncryptError`, and the chunk iterator preserves 0.23's compiler support.
+Buffered encryption also calls the same provider operation, with an owned output
+vector. This is not an upgrade to the complete 0.24 split-connection API or its
+buffer-recycling architecture.
 
-Validation lives in `tests/secure_rpc/rustls_direct.rs`: byte-for-byte comparison
-with the unchanged owned encrypter and zero-allocation assertions for AES-128-GCM,
-AES-256-GCM and ChaCha20-Poly1305; empty/max-size/fragmented/ranged payloads; multiple
-content types and high sequence bits; short-buffer retries and untouched tails;
-default-provider fallback; and real buffered/unbuffered interoperability with
-forced automatic key updates in both directions for all three ciphers.
-Existing secure RPC tests cover fragmentation, tiny fragments, cancellation,
-backpressure, key updates, corruption, truncation, shutdown, identities and ALPN.
+Application ciphertext does not pass through a temporary allocation or copy.
+Plaintext still enters output once. Received plaintext and queued handshake/control
+records retain their 0.23 storage behavior. The root path dependency and maintained
+RPC benchmark patch resolve to this vendor; the independent upstream fixture uses
+registry rustls.
 
-The published crate excludes upstream test-data fixtures; this is a package
-vendor, not the complete upstream test workspace. Upstream-suite validation must
-restore the exact workspace commit from `UPSTREAM.json`, apply `LOCAL.patch` in
-its `rustls/` subdirectory, and verify the patched files match this directory.
-From that upstream workspace root, run:
+## Validation
+
+Restore the complete workspace at the commit in `UPSTREAM.json`; the published
+crate omits the upstream test fixtures. Apply `LOCAL.patch` in its `rustls/`
+subdirectory and `UPSTREAM-TESTS.patch` at the workspace root. The latter updates
+test-provider and direct-encryption plumbing for the new API without changing
+protocol assertions. Verify the production files match this directory, then run:
 
 ```sh
 cargo test --locked -p rustls --no-default-features --features ring,std,tls12,logging
@@ -55,9 +52,9 @@ cargo test --locked -p rustls
 cargo test --locked -p rustls $(python3 admin/all-features-except fips rustls)
 ```
 
-[Recorded upstream results](../../research/reports/legacy-performance/2026-10-24-rustls-direct-output/upstream-tests/README.md)
-include unit/integration/doctests: 540 ring, 546 default AWS-LC, and 947 all-non-FIPS
-passes, zero failures, with eight upstream-ignored cases per run. BoGo, FIPS and
-the full upstream platform/toolchain CI matrix were not run. The repository's
-allocation/differential and buffered/unbuffered key-update tests remain additional
-validation for the new provider entry point.
+The backport passes 543 ring, 549 default AWS-LC and 950 all-non-FIPS test executions,
+including upstream's buffer-cursor/range tests. Each run retains eight upstream-
+ignored cases. BoGo, FIPS and the full platform/toolchain matrix are outside those
+runs. Repository tests additionally check byte-for-byte equivalence against the
+original owned ring sealing operation, zero allocations, short-buffer retries,
+untouched tails, and actual buffered/unbuffered key updates for all three ciphers.
