@@ -2035,6 +2035,7 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
                     let wake = coordinator.notifications.waker();
                     for method in [0, 1] {
                         let before = polls.get();
+                        let mut observed_reply = false;
                         if busy && method == 1 {
                             coordinator.schedule.active |= WorkSet::MAINTENANCE;
                         }
@@ -2072,6 +2073,16 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
                             ) {
                                 result.unwrap();
                             }
+                            if method == 1 && budget == 1 && coordinator.worker.completed_ordinary()
+                            {
+                                observed_reply = true;
+                                assert_eq!(
+                                    coordinator.schedule.active
+                                        & (WorkSet::CALLS | WorkSet::FOREIGN),
+                                    WorkSet::NONE,
+                                    "an ordinary reply must not restart idle application lanes"
+                                );
+                            }
                             if pending.is_none()
                                 && coordinator.schedule.active == WorkSet::NONE
                                 && coordinator.notifications.pending() == WorkSet::NONE
@@ -2080,6 +2091,12 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
                             {
                                 break;
                             }
+                        }
+                        if method == 1 && budget == 1 {
+                            assert!(
+                                observed_reply,
+                                "exercise the completion boundary with a parked sibling"
+                            );
                         }
                         assert!(pending.is_none() && coordinator.schedule.active == WorkSet::NONE);
                         assert!(!coordinator.worker.is_empty());
