@@ -25,7 +25,8 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
     }
     /// A complete next frame is buffered after finishing the previous one.
     /// Inspect only; do not read bytes or consume ancillary resources here.
-    fn has_buffered_next_frame(&self) -> bool {
+    /// Validated framing metadata may be retained for the next receive.
+    fn has_buffered_next_frame(&mut self) -> bool {
         false
     }
     /// Borrow an untouched complete frame after poll_frame_size, without IO.

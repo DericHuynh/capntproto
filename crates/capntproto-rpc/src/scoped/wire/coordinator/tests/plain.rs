@@ -885,7 +885,7 @@ impl ImportReceiver<()> for Replies {
     fn make_import(&mut self, _: ImportId) {}
 }
 impl transport::Input<()> for Replies {
-    fn has_buffered_next_frame(&self) -> bool {
+    fn has_buffered_next_frame(&mut self) -> bool {
         !self.frames.is_empty()
     }
     fn take_buffered_frame<'p>(

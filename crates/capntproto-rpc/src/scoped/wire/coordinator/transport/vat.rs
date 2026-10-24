@@ -264,7 +264,7 @@ impl ImportReceiver<resources::Import> for Reader {
     }
 }
 impl Input<resources::Import> for Reader {
-    fn has_buffered_next_frame(&self) -> bool {
+    fn has_buffered_next_frame(&mut self) -> bool {
         !self.active && !self.ended && self.input.has_buffered_next_frame()
     }
     fn buffered_frame(&self) -> Option<&[u8]> {

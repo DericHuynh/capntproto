@@ -93,8 +93,8 @@ impl Input {
     }
 }
 impl capnp_rpc::IncomingFrameStream for Input {
-    fn has_buffered_next_frame(&self) -> bool {
-        self.reader().reader.has_buffered_next_frame()
+    fn has_buffered_next_frame(&mut self) -> bool {
+        self.reader_mut().reader.has_buffered_next_frame()
     }
     fn poll_frame(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>> {
         self.reader_mut().reader.poll_borrowed_frame(cx)

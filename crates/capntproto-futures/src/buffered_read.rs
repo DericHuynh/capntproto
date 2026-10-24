@@ -565,13 +565,23 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     }
 
     /// Whether the next complete frame is already buffered, without reading or
-    /// transferring its ownership. Errors remain for the ordinary receive path.
-    pub fn has_buffered_next_frame(&self) -> bool {
+    /// transferring its ownership. Validated header metadata is retained for
+    /// the receive path. Errors remain for the ordinary receive path.
+    pub fn has_buffered_next_frame(&mut self) -> bool {
         if self.terminal.is_some() || self.has_outstanding_short_lived_message() {
             return false;
         }
-        let bytes = &self.buffer.bytes()[self.begin..self.end];
-        matches!(Frame::parse(bytes, self.options), Ok(Some(frame)) if frame.bytes <= bytes.len())
+        if self.frame.is_none() && self.end - self.begin >= 8 {
+            // Keep validated segment offsets in the existing framing state.
+            // The receive path consumes this same header; lookahead neither
+            // reads the transport nor advances bytes or ancillary ownership.
+            self.frame = Frame::parse(&self.buffer.bytes()[self.begin..self.end], self.options)
+                .ok()
+                .flatten();
+        }
+        self.frame
+            .as_ref()
+            .is_some_and(|frame| frame.bytes <= self.end - self.begin)
     }
 
     fn advance(&mut self, bytes: usize) -> Result<()> {
@@ -1068,7 +1078,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 (self.read_hint)(&mut self.input, 1)?;
                 return Poll::Ready(Ok(true));
             }
-            if self.frame.is_none() {
+            if self.frame.is_none() && self.end - self.begin >= 8 {
                 self.frame =
                     Frame::parse(&self.buffer.bytes()[self.begin..self.end], self.options)?;
             }
@@ -2060,6 +2070,53 @@ mod tests {
             input.poll_stream_frame_size(&mut cx),
             Poll::Ready(Err(_))
         ));
+        assert!(!input.has_buffered_next_frame());
+    }
+
+    #[test]
+    fn lookahead_reuses_segment_metadata_without_consuming_the_successor() {
+        let mut bytes = vec![0; 8]; // Empty first frame, to prefetch successors.
+        for word in [2u32, 1, 1, 1] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0; 24]); // Three one-word segments.
+        bytes.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0]);
+        bytes.extend_from_slice(&[0; 8]); // A differently sized successor.
+        let mut input = BufferedRead::new(futures::io::Cursor::new(bytes), Default::default());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(8))
+        );
+        input.finish_borrowed_frame();
+        assert!(input.has_buffered_next_frame());
+        let position = input.get_ref().position();
+        let allocations = allocation_counter::measure(|| {
+            for _ in 0..8 {
+                assert!(input.has_buffered_next_frame());
+            }
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(40))
+            );
+        });
+        assert_eq!(
+            allocations.count_total, 0,
+            "reuse the already checked segment table"
+        );
+        assert_eq!(input.get_ref().position(), position);
+        assert_eq!(input.consumed_bytes(), 48);
+        assert!(
+            !input.has_buffered_next_frame(),
+            "current frame is still borrowed"
+        );
+        input.finish_borrowed_frame();
+        assert!(input.has_buffered_next_frame());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(16))
+        );
+        input.finish_borrowed_frame();
         assert!(!input.has_buffered_next_frame());
     }
 

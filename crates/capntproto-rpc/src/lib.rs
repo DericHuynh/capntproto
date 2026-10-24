@@ -429,7 +429,8 @@ pub trait IncomingMessageStream {
 pub trait IncomingFrameStream {
     /// A complete next frame is available without IO or transferring ownership.
     /// This hint permits bounded reply batching; false always remains valid.
-    fn has_buffered_next_frame(&self) -> bool {
+    /// Validated framing metadata may be retained for the next receive.
+    fn has_buffered_next_frame(&mut self) -> bool {
         false
     }
     fn poll_frame(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>>;

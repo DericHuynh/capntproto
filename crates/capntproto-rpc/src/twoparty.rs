@@ -87,7 +87,7 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for OwnedIncomingStream<
     }
 }
 impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
-    fn has_buffered_next_frame(&self) -> bool {
+    fn has_buffered_next_frame(&mut self) -> bool {
         self.input.has_buffered_next_frame()
     }
     fn poll_frame_size(
