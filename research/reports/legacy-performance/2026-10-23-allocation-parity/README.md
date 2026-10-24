@@ -275,3 +275,25 @@ blocks per record for all three ring TLS 1.3 AEADs. Simulated instructions fall
 about 10.7%, while five-repeat local latency remains mixed. Qualification
 [40062326199](https://github.com/DericHuynh/capntproto/actions/runs/40062326199) is
 pending; the full dedicated-host allocation gap remains open.
+
+## Follow-up: upstream encryption contract and remaining reader ownership
+
+The [upstream-aligned rustls and direct-frame pass](../2026-10-24-upstream-encryption/README.md)
+replaces the bespoke provider extension with upstream PR #3127's encryption
+contract, covering ring/AWS-LC TLS 1.2/1.3, then removes the scalar frame's
+intermediate TLS gather copy. The upstream test matrix and 142 selected project
+tests pass. Both steps have separate five-repeat TLS comparisons and profiles;
+local latency is mixed, so this does not close the performance gap.
+
+Portable pipeline still allocates **67 blocks versus legacy's 58**. Eight blocks
+create shared reader arenas, including one during validation of an encoded
+promised call. Temporary inspection currently promotes frames to shared ownership;
+a future change must distinguish inspection from escaping payload ownership while
+preserving traversal budgets and pointer identity. Both Rust drivers retain
+**130 receive-record allocations** in bulk-1m. The outgoing encryption change
+preserves the prior 145/156 total-block counts; the scalar protocol pass leaves
+allocation counts unchanged.
+
+[Qualification 40070062202](https://github.com/DericHuynh/capntproto/actions/runs/40070062202)
+tests runtime `36318e3` against both frozen `5b8fef2` controls, after the preceding
+campaign acquires the dedicated slot. Results remain pending.
