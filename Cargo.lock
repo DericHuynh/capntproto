@@ -484,6 +484,7 @@ dependencies = [
 name = "capntproto-rpc"
 version = "0.25.1"
 dependencies = [
+ "allocation-counter",
  "capntproto-codegen",
  "capntproto-core",
  "capntproto-futures",

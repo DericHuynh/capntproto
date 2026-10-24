@@ -18,10 +18,33 @@ struct State {
     payload: std::cell::OnceCell<CompletedPayload>,
     pipeline: RefCell<Option<Rc<dyn PipelineHook>>>,
     completion: RefCell<Option<capnp::Result<()>>>,
-    wake: RefCell<Vec<Waker>>,
+    wake: RefCell<Waiters>,
     charge: RefCell<Option<coordinator::policy::Charge>>,
     trace_prepared: Cell<bool>,
     trace: RefCell<Option<String>>,
+}
+// A suspended invocation normally has one collector. Extra public observers
+// keep their own notifications without allocating a vector for that first one.
+#[derive(Default)]
+struct Waiters {
+    first: Option<Waker>,
+    overflow: Vec<Waker>,
+}
+impl Waiters {
+    fn contains(&self, wake: &Waker) -> bool {
+        self.first
+            .iter()
+            .chain(&self.overflow)
+            .any(|old| old.will_wake(wake))
+    }
+    fn clear(&mut self) {
+        self.first = None;
+        self.overflow.clear();
+    }
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.first.is_none() && self.overflow.is_empty()
+    }
 }
 // A contiguous result stays in the existing producer context. Segmented
 // output retains a separate message owner so an in-flight write does not keep
@@ -106,7 +129,7 @@ impl State {
                 .expect("results revision exhausted"),
         );
         let wakes = std::mem::take(&mut *self.wake.borrow_mut());
-        for wake in wakes {
+        for wake in wakes.first.into_iter().chain(wakes.overflow) {
             wake.wake();
         }
     }
@@ -348,7 +371,7 @@ impl Results {
             payload: std::cell::OnceCell::new(),
             pipeline: RefCell::new(None),
             completion: RefCell::new(None),
-            wake: RefCell::new(Vec::new()),
+            wake: RefCell::new(Waiters::default()),
             trace_prepared: Cell::new(false),
             trace: RefCell::new(None),
         }))
@@ -377,11 +400,22 @@ impl Results {
             Some(Ok(())) if self.0.payload.get().is_some() => return Poll::Ready(Ok(())),
             _ => (),
         }
-        let mut wakes = self.0.wake.borrow_mut();
-        if !wakes.iter().any(|wake| wake.will_wake(cx.waker())) {
-            wakes.push(cx.waker().clone());
+        if !self.0.wake.borrow().contains(cx.waker()) {
+            // Custom clone/drop callbacks can reenter completion. Hold no state
+            // borrow while invoking them, then recheck before publishing.
+            let mut wake = Some(cx.waker().clone());
+            {
+                let mut wakes = self.0.wake.borrow_mut();
+                if !wakes.contains(wake.as_ref().unwrap()) {
+                    if wakes.first.is_none() {
+                        wakes.first = wake.take();
+                    } else {
+                        wakes.overflow.push(wake.take().unwrap());
+                    }
+                }
+            }
+            drop(wake);
         }
-        drop(wakes);
         match self.0.completion.borrow().as_ref() {
             Some(Err(error)) => Poll::Ready(Err(error.clone())),
             Some(Ok(())) if self.0.payload.get().is_some() => Poll::Ready(Ok(())),

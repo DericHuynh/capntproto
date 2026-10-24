@@ -357,7 +357,7 @@ fn returned_results_skip_ready_waiters_but_pending_work_and_early_pipelines_stil
             assert_eq!(wake.0.load(Ordering::SeqCst), 1);
         } else {
             assert!(results.0.wake.borrow().is_empty());
-            assert_eq!(results.0.wake.borrow().capacity(), 0);
+            assert_eq!(results.0.wake.borrow().overflow.capacity(), 0);
         }
     }
 
@@ -1225,4 +1225,38 @@ fn retained_results_preserve_payloads_without_blocking_segmented_worker_reuse() 
         );
         assert!(next.0.payload.get().is_none());
     }
+}
+
+#[test]
+fn suspended_results_keep_one_waiter_inline_and_notify_distinct_observers() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let results = Results::new();
+    let counts = [Arc::new(Count::default()), Arc::new(Count::default())];
+    let wakes = counts.each_ref().map(|count| Waker::from(count.clone()));
+    let first = allocation_counter::measure(|| {
+        for _ in 0..3 {
+            assert!(results
+                .poll_completed(&mut Context::from_waker(&wakes[0]))
+                .is_pending());
+        }
+    });
+    assert_eq!(first.count_total, 0);
+    assert!(results
+        .poll_completed(&mut Context::from_waker(&wakes[1]))
+        .is_pending());
+    results.0.complete(Err(Error::failed("complete".into())));
+    for count in counts {
+        assert_eq!(count.0.load(Ordering::SeqCst), 1);
+    }
+    assert!(results.0.wake.borrow().is_empty());
 }

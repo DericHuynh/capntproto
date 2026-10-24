@@ -273,7 +273,7 @@ impl<'id> ClientHooks<'id> {
     pub fn new(maximum_clients: usize, maximum_calls: usize) -> Self {
         Self {
             inbox: Rc::new(Inbox {
-                completion_cache: response::Cache::default(),
+                completion_cache: response::Cache::new(maximum_calls),
                 call_templates: std::array::from_fn(|_| std::cell::OnceCell::new()),
                 message_pool: None,
                 admission: None,

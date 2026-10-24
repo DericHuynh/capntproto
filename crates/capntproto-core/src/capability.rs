@@ -78,44 +78,6 @@ enum PromiseInner<T, E> {
     Empty,
 }
 
-/// Reusable storage for one response receiver. The owner detaches producer state
-/// before cancellation, so producer caches may safely retain this empty slot.
-#[cfg(feature = "alloc")]
-#[doc(hidden)]
-pub struct ResponseReceiver<E> {
-    state: core::cell::RefCell<
-        Option<
-            alloc::rc::Rc<
-                dyn crate::private::capability::SharedPromise<
-                    alloc::boxed::Box<dyn ResponseHook>,
-                    alloc::boxed::Box<E>,
-                >,
-            >,
-        >,
-    >,
-}
-#[cfg(feature = "alloc")]
-impl<E> Default for ResponseReceiver<E> {
-    fn default() -> Self {
-        Self {
-            state: core::cell::RefCell::new(None),
-        }
-    }
-}
-#[cfg(feature = "alloc")]
-struct ResponsePromiseOwner<E>(alloc::rc::Rc<ResponseReceiver<E>>);
-#[cfg(feature = "alloc")]
-impl<E> Drop for ResponsePromiseOwner<E> {
-    fn drop(&mut self) {
-        // End the borrow before arbitrary cancellation code runs. In particular,
-        // a completion may recycle itself together with this now-empty receiver.
-        let state = self.0.state.borrow_mut().take();
-        if let Some(state) = state {
-            state.cancel();
-        }
-    }
-}
-
 // Allow Promise<T,E> to be Unpin, regardless of whether T and E are.
 #[cfg(feature = "alloc")]
 impl<T, E> Unpin for PromiseInner<T, E> {}
@@ -279,7 +241,6 @@ pub struct ResponsePromise<R, E = Error> {
 enum ResponseFuture<E> {
     Immediate(Result<Response<any_pointer::Owned>, alloc::boxed::Box<E>>),
     Deferred(Pin<alloc::boxed::Box<dyn Future<Output = Result<Response<any_pointer::Owned>, E>>>>),
-    Cached(ResponsePromiseOwner<E>),
     Direct(DirectResponseOwner<E>),
     Empty,
 }
@@ -312,27 +273,6 @@ impl<R: Pipelined + Owned, E> ResponsePromise<R, E> {
         };
         Self {
             inner,
-            marker: PhantomData,
-        }
-    }
-    /// Preserve one receiver while its producer reuses empty response storage.
-    #[doc(hidden)]
-    pub fn from_shared_response(
-        receiver: alloc::rc::Rc<ResponseReceiver<E>>,
-        state: alloc::rc::Rc<
-            dyn crate::private::capability::SharedPromise<
-                alloc::boxed::Box<dyn ResponseHook>,
-                alloc::boxed::Box<E>,
-            >,
-        >,
-    ) -> Self {
-        {
-            let mut slot = receiver.state.borrow_mut();
-            assert!(slot.is_none(), "response receiver is already active");
-            *slot = Some(state);
-        }
-        Self {
-            inner: ResponseFuture::Cached(ResponsePromiseOwner(receiver)),
             marker: PhantomData,
         }
     }
@@ -374,14 +314,6 @@ impl<R: Pipelined + Owned, E> Future for ResponsePromise<R, E> {
                 .as_mut()
                 .poll(cx)
                 .map(|result| result.map(|response| response.hook)),
-            ResponseFuture::Cached(owner) => owner
-                .0
-                .state
-                .borrow()
-                .as_ref()
-                .expect("live response receiver")
-                .poll(cx)
-                .map(|result| result.map_err(|error| *error)),
             ResponseFuture::Direct(owner) => {
                 owner.0.as_ref().expect("live response interest").poll(cx)
             }
@@ -1118,35 +1050,28 @@ mod promise_tests {
     }
 
     #[test]
-    fn typed_shared_response_errors_release_the_receiver_and_allow_reuse() {
-        struct Failed(Rc<ResponseReceiver<Error>>, Rc<Cell<usize>>);
-        impl
-            crate::private::capability::SharedPromise<
-                alloc::boxed::Box<dyn ResponseHook>,
-                alloc::boxed::Box<Error>,
-            > for Failed
+    fn typed_shared_response_errors_release_the_owner_once() {
+        struct Failed(Rc<Cell<usize>>);
+        impl crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, Error>
+            for Failed
         {
             fn poll(
                 &self,
                 _: &mut core::task::Context<'_>,
-            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, alloc::boxed::Box<Error>>>
-            {
-                Poll::Ready(Err(alloc::boxed::Box::new(Error::failed(
-                    alloc::string::String::from("injected completion failure"),
+            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, Error>> {
+                Poll::Ready(Err(Error::failed(alloc::string::String::from(
+                    "injected completion failure",
                 ))))
             }
             fn cancel(self: Rc<Self>) {
-                assert!(self.0.state.borrow().is_none());
-                self.1.set(self.1.get() + 1);
+                self.0.set(self.0.get() + 1);
             }
         }
-        let receiver = Rc::new(ResponseReceiver::default());
         let canceled = Rc::new(Cell::new(0));
         for expected in 1..=2 {
-            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared_response(
-                receiver.clone(),
-                Rc::new(Failed(receiver.clone(), canceled.clone())),
-            )
+            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared(Rc::new(Failed(
+                canceled.clone(),
+            )))
             .into_typed_response::<any_pointer::Owned>();
             let Poll::Ready(Err(error)) =
                 Pin::new(&mut typed).poll(&mut core::task::Context::from_waker(Waker::noop()))
@@ -1156,7 +1081,6 @@ mod promise_tests {
             assert_eq!(error.extra, "injected completion failure");
             drop(typed);
             assert_eq!(canceled.get(), expected);
-            assert!(receiver.state.borrow().is_none());
         }
     }
     #[test]
@@ -1172,19 +1096,14 @@ mod promise_tests {
         struct State {
             ready: Cell<bool>,
             cancels: Cell<usize>,
-            receiver: Rc<ResponseReceiver<Error>>,
         }
-        impl
-            crate::private::capability::SharedPromise<
-                alloc::boxed::Box<dyn ResponseHook>,
-                alloc::boxed::Box<Error>,
-            > for State
+        impl crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, Error>
+            for State
         {
             fn poll(
                 &self,
                 _: &mut core::task::Context<'_>,
-            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, alloc::boxed::Box<Error>>>
-            {
+            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, Error>> {
                 if self.ready.get() {
                     Poll::Ready(Ok(alloc::boxed::Box::new(Hook)))
                 } else {
@@ -1192,25 +1111,17 @@ mod promise_tests {
                 }
             }
             fn cancel(self: Rc<Self>) {
-                // Cancellation may reenter the slot; it must already be empty
-                // with no outstanding borrow or retained producer cycle.
-                assert!(self.receiver.state.borrow_mut().is_none());
                 self.cancels.set(self.cancels.get() + 1);
             }
         }
-        let receiver = Rc::new(ResponseReceiver::default());
         for completed in [false, true] {
             let state = Rc::new(State {
                 ready: Cell::new(false),
                 cancels: Cell::new(0),
-                receiver: receiver.clone(),
             });
-            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared_response(
-                receiver.clone(),
-                state.clone(),
-            )
-            .into_typed_response::<any_pointer::Owned>();
-            assert!(matches!(&typed.inner, ResponseFuture::Cached(_)));
+            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared(state.clone())
+                .into_typed_response::<any_pointer::Owned>();
+            assert!(matches!(&typed.inner, ResponseFuture::Direct(_)));
             assert_eq!(Rc::strong_count(&state), 2);
             let mut cx = core::task::Context::from_waker(Waker::noop());
             assert!(Pin::new(&mut typed).poll(&mut cx).is_pending());
@@ -1224,7 +1135,6 @@ mod promise_tests {
             drop(typed);
             assert_eq!(state.cancels.get(), 1);
             assert_eq!(Rc::strong_count(&state), 1);
-            assert!(receiver.state.borrow().is_none());
             let weak = Rc::downgrade(&state);
             drop(state);
             assert!(weak.upgrade().is_none());

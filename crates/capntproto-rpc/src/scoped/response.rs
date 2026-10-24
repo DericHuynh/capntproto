@@ -5,7 +5,6 @@ use super::*;
 use crate::local::ResultsDoneHook;
 
 struct Connection {
-    receiver: Rc<capability::ResponseReceiver<Error>>,
     shutdown: Shutdown,
     inbox: Weak<Inbox>,
 }
@@ -47,41 +46,64 @@ pub(super) fn notify_closed(state: &Rc<State>) {
     }
 }
 
-/// Retain two empty completions for overlapping parent/child requests. Only the
-/// last owner may recycle a state, so retained operations cannot observe reuse.
-#[derive(Default)]
-pub(super) struct Cache([Cell<Option<Rc<State>>>; 2]);
+/// Reuse empty completions up to the inbox's existing call limit. The common
+/// serial/parent-child slots stay inline; a concurrent high-water mark grows
+/// the overflow lazily. Only the final owner may recycle a completed state.
+pub(super) struct Cache {
+    inline: [Cell<Option<Rc<State>>>; 2],
+    overflow: RefCell<Vec<Rc<State>>>,
+    maximum: usize,
+}
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new(2)
+    }
+}
 impl Cache {
+    pub(super) fn new(maximum: usize) -> Self {
+        Self {
+            inline: Default::default(),
+            overflow: RefCell::new(Vec::new()),
+            maximum,
+        }
+    }
     fn acquire(&self) -> Rc<State> {
-        let cached = self.0[0].take().or_else(|| self.0[1].take());
+        let cached = self.inline[0]
+            .take()
+            .or_else(|| self.inline[1].take())
+            .or_else(|| self.overflow.borrow_mut().pop());
         match cached {
             Some(state) => {
                 debug_assert_eq!(Rc::strong_count(&state), 1, "exclusive cached completion");
-                let state_mut = &state;
                 debug_assert!(
-                    !has_value(&state_mut.status)
-                        && !has_value(&state_mut.results)
-                        && !has_value(&state_mut.receive)
-                        && !has_value(&state_mut.canceled)
+                    !has_value(&state.status)
+                        && !has_value(&state.results)
+                        && !has_value(&state.receive)
+                        && !has_value(&state.canceled)
                 );
-                state_mut.observed.set(false);
-                state_mut.ready.set(false);
+                state.observed.set(false);
+                state.ready.set(false);
                 state
             }
             None => Rc::default(),
         }
     }
     fn recycle(&self, state: &Rc<State>) {
-        if Rc::strong_count(state) == 1 {
-            // No callbacks occur while the existing cache is temporarily out.
-            for slot in &self.0 {
-                let cached = slot.take();
-                let occupied = cached.is_some();
-                slot.set(Some(cached.unwrap_or_else(|| state.clone())));
-                if !occupied {
-                    break;
-                }
+        if Rc::strong_count(state) != 1 {
+            return;
+        }
+        // No callbacks occur while cached ownership is temporarily removed.
+        for slot in self.inline.iter().take(self.maximum) {
+            let cached = slot.take();
+            let occupied = cached.is_some();
+            slot.set(Some(cached.unwrap_or_else(|| state.clone())));
+            if !occupied {
+                return;
             }
+        }
+        let mut overflow = self.overflow.borrow_mut();
+        if overflow.len() < self.maximum.saturating_sub(self.inline.len()) {
+            overflow.push(state.clone());
         }
     }
 }
@@ -500,20 +522,18 @@ impl State {
         self: Rc<Self>,
         inbox: Rc<Inbox>,
     ) -> capability::ResponsePromise<any_pointer::Owned> {
-        let connection = self.connection.get_or_init(|| {
+        self.connection.get_or_init(|| {
             // The weak subscription follows this allocation through cache reuse.
             // Its terminal connection never needs another registration.
             let shutdown = inbox.shutdown.clone();
             self.watch_close(&shutdown);
             Connection {
-                receiver: Rc::default(),
                 shutdown,
                 inbox: Rc::downgrade(&inbox),
             }
         });
         self.response_interest.set(true);
-        let receiver = connection.receiver.clone();
-        capability::ResponsePromise::from_shared_response(receiver, self)
+        capability::ResponsePromise::from_shared(self)
     }
     fn poll_response(
         &self,
@@ -598,17 +618,18 @@ impl State {
 impl
     capnp::private::capability::SharedPromise<
         Box<dyn capnp::private::capability::ResponseHook>,
-        Box<Error>,
+        Error,
     > for State
 {
     fn poll(
         &self,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<Box<dyn capnp::private::capability::ResponseHook>, Box<Error>>> {
+    ) -> Poll<Result<Box<dyn capnp::private::capability::ResponseHook>, Error>> {
         self.poll_response(
             &self.connection.get().expect("admitted completion").shutdown,
             cx,
         )
+        .map(|result| result.map_err(|error| *error))
     }
     fn cancel(self: Rc<Self>) {
         self.cancel_response(&self.connection.get().expect("admitted completion").inbox);
@@ -939,7 +960,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_receiver_recycles_completion_and_shutdown_wakes_the_next_use() {
+    fn direct_response_recycles_completion_and_shutdown_wakes_the_next_use() {
         let hooks = ClientHooks::new(8, 8);
         let mut address = None;
         for value in ["first", "second"] {
@@ -989,7 +1010,7 @@ mod tests {
         assert!(hooks
             .inbox
             .completion_cache
-            .0
+            .inline
             .iter()
             .all(|slot| !has_value(slot)));
     }
@@ -1001,7 +1022,7 @@ mod tests {
         state.observed.set(true);
         let pending_owner = state.clone();
         cache.recycle(&state);
-        assert!(cache.0.iter().all(|slot| !has_value(slot)));
+        assert!(cache.inline.iter().all(|slot| !has_value(slot)));
         drop(pending_owner);
         cache.recycle(&state);
         drop(state);
@@ -1042,9 +1063,38 @@ mod tests {
             let retained = second.clone();
             cache.recycle(&first);
             cache.recycle(&second);
-            assert!(!has_value(&cache.0[1]));
+            assert!(!has_value(&cache.inline[1]));
             drop(retained);
             cache.recycle(&second);
+        }
+    }
+
+    #[test]
+    fn concurrent_completion_cache_is_bounded_and_reuses_its_high_water_mark() {
+        for maximum in [0, 1, 2, 9, 37] {
+            let cache = Cache::new(maximum);
+            let mut states = (0..maximum + 1)
+                .map(|_| cache.acquire())
+                .collect::<Vec<_>>();
+            let overflow = Rc::downgrade(states.last().unwrap());
+            for state in &states {
+                cache.recycle(state);
+            }
+            states.clear();
+            assert!(
+                overflow.upgrade().is_none(),
+                "cache exceeded its call limit"
+            );
+            for _ in 0..3 {
+                let measured = allocation_counter::measure(|| {
+                    states.extend((0..maximum).map(|_| cache.acquire()));
+                    for state in &states {
+                        cache.recycle(state);
+                    }
+                    states.clear();
+                });
+                assert_eq!(measured.count_total, 0);
+            }
         }
     }
 

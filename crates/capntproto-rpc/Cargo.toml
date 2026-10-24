@@ -63,4 +63,5 @@ unreachable_pub = "deny"
 capnpc = { package = "capntproto-codegen", version = "0.25", path = "../capntproto-codegen" }
 
 [dev-dependencies]
+allocation-counter = "=0.8.1"
 futures = { version = "0.3.0", features = ["executor"] }
