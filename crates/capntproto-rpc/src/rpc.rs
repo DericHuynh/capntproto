@@ -32,7 +32,7 @@ use capnp::private::capability::{
 };
 use capnp::Error;
 
-use capntproto_rpc_engine::completion::{direct, shared as oneshot};
+use capntproto_rpc_engine::completion::{cancellation::Cancellation, direct, shared as oneshot};
 use futures::{future, Future, FutureExt, TryFutureExt};
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -351,6 +351,13 @@ struct AnswerStatus {
     task_waker: RefCell<Option<std::task::Waker>>,
 }
 
+impl AnswerStatus {
+    #[inline]
+    fn cancellation(&self) -> Cancellation<'_> {
+        Cancellation::new(&self.task_canceled, &self.task_waker)
+    }
+}
+
 type AnswerStatusCache = Rc<RefCell<Vec<Rc<AnswerStatus>>>>;
 
 // The answer table is not necessarily the final owner: no-Finish replies retire
@@ -389,8 +396,7 @@ impl Drop for AnswerStatusRef {
         self.return_has_been_sent.set(false);
         self.received_finish.set(false);
         self.task_canceled.set(false);
-        let wake = self.task_waker.borrow_mut().take();
-        drop(wake);
+        self.cancellation().clear();
         debug_assert_eq!(self.return_guards.get(), 0);
         let mut cache = cache.borrow_mut();
         if cache.len() < 64 {
@@ -414,11 +420,7 @@ impl From<Promise<(), Error>> for AnswerTask {
 struct CancelAnswerTask(AnswerStatusRef);
 impl Drop for CancelAnswerTask {
     fn drop(&mut self) {
-        self.0.task_canceled.set(true);
-        let wake = self.0.task_waker.borrow_mut().take();
-        if let Some(wake) = wake {
-            wake.wake();
-        }
+        self.0.cancellation().cancel();
     }
 }
 struct AnswerTaskDriver<F> {
@@ -429,40 +431,16 @@ impl<F: Future<Output = Result<(), Error>> + Unpin> Future for AnswerTaskDriver<
     type Output = Result<(), Error>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        if this.status.task_canceled.get() {
-            return Poll::Ready(Ok(()));
-        }
-        let registered = this
-            .status
-            .task_waker
-            .borrow()
-            .as_ref()
-            .is_some_and(|wake| wake.will_wake(cx.waker()));
-        if !registered {
-            let wake = cx.waker().clone();
-            let previous = this.status.task_waker.borrow_mut().replace(wake);
-            // Custom waker operations may reenter Finish. Hold no cell borrow.
-            drop(previous);
-        }
-        if this.status.task_canceled.get() {
-            return Poll::Ready(Ok(()));
-        }
-        if Pin::new(&mut this.future).poll(cx).is_ready() {
-            let wake = this.status.task_waker.borrow_mut().take();
-            drop(wake);
-            // The answer completion itself handles Return/Exception. As with
-            // the former unobserved receiver, no result goes to the task reaper.
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Pending
-        }
+        this.status
+            .cancellation()
+            .poll_task(Pin::new(&mut this.future), cx)
+            .map(Ok)
     }
 }
 impl<F> Drop for AnswerTaskDriver<F> {
     fn drop(&mut self) {
         // Driver shutdown can drop suspended work without another poll.
-        let wake = self.status.task_waker.borrow_mut().take();
-        drop(wake);
+        self.status.cancellation().clear();
     }
 }
 

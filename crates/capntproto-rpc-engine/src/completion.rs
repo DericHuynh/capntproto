@@ -9,6 +9,7 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+pub mod cancellation;
 pub mod direct;
 mod state;
 use state::{observed, Phase};
