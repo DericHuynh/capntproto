@@ -7,7 +7,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 pub type Network = Box<dyn capnp_rpc::VatNetwork<Side>>;
 pub enum Stream {
-    Tls(Box<tokio_rustls::TlsStream<TcpStream>>),
+    Tls(Box<capntproto::rpc::tls::TlsStream<TcpStream>>),
     Quic(quic::Stream),
 }
 impl Stream {
@@ -68,8 +68,11 @@ impl Listener {
             _ => {
                 let mut config = quic::server_config(identity()?, None)?;
                 config.max_idle_timeout(profile_idle_timeout()?);
-                Ok(Self::Quic(quic::Endpoint::server(config, address.parse()?)?))
-            },
+                Ok(Self::Quic(quic::Endpoint::server(
+                    config,
+                    address.parse()?,
+                )?))
+            }
         }
     }
     pub fn local_addr(&self) -> Result<std::net::SocketAddr> {

@@ -402,7 +402,7 @@ mod tests {
                         loop {
                             let mut start = [0; 1];
                             if conn.borrow_mut().is_established()
-                                && conn.borrow_mut().stream_recv(0, &mut start).is_ok()
+                                && conn.borrow_mut().stream_recv_buf(0, &mut start[..]).is_ok()
                             {
                                 assert_eq!(
                                     conn.borrow_mut().stream_send(0, &payload, true).unwrap(),
@@ -470,7 +470,7 @@ mod tests {
                     loop {
                         if conn.borrow_mut().is_established() && !stopped {
                             let mut buf = [0; 64];
-                            if conn.borrow_mut().stream_recv(0, &mut buf).is_ok() {
+                            if conn.borrow_mut().stream_recv_buf(0, &mut buf[..]).is_ok() {
                                 conn.borrow_mut().stream_shutdown(0, quiche::Shutdown::Read, 42).unwrap();
                                 conn.borrow_mut().stream_send(0, b"s", false).unwrap(); stopped = true;
                             }

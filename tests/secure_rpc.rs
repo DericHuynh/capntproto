@@ -7,3 +7,6 @@ mod common;
 mod quic_tests;
 #[path = "secure_rpc/tls.rs"]
 mod tls_tests;
+
+#[path = "secure_rpc/unbuffered.rs"]
+mod unbuffered;
