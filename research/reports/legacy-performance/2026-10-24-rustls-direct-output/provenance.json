@@ -1,0 +1,75 @@
+{
+  "compiler": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+  "release_profile": {
+    "opt_level": 3,
+    "lto": "fat",
+    "codegen_units": 1,
+    "debug": 1,
+    "overflow_checks": true
+  },
+  "build_environment": {
+    "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_BUILD_JOBS": "1",
+    "TMPDIR": "/tmp/capntproto-build-cache",
+    "CC": "clang",
+    "CXX": "clang++"
+  },
+  "build_command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--release",
+    "--manifest-path",
+    "benchmarks/rpc/Cargo.toml",
+    "--bin",
+    "capntproto-rpc-bench"
+  ],
+  "implementation_commit": "58205ddc5b3f0841848e836327b6c249d5200777",
+  "qualification_commit": "9ebdaf5ada63d399dca89cbdd53ec2bf3adf6dff",
+  "qualification_run": "https://github.com/DericHuynh/capntproto/actions/runs/40062326199",
+  "control_source": "71f54ae42e6092a386bf0cb82ca202501d782e7d",
+  "control_runtime": "e4b71e700f198f8da7ef7f02c99e2174b5e41013",
+  "cpp_source": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+  "cpp_profile": "clang++ -std=c++23 -O3 -DNDEBUG; pinned CMake Release libraries with OpenSSL enabled",
+  "openssl": "OpenSSL 3.5.7 9 Jun 2026 (Library: OpenSSL 3.5.7 9 Jun 2026)",
+  "rustls_upstream": "f04804fa13341a9b1dc02b5d1dd8a746f2c4b7fb",
+  "scope": "Exploratory local loopback TLS; not dedicated-droplet qualification",
+  "measurement": {
+    "repetitions": 5,
+    "warmup": 50,
+    "iterations": 500,
+    "metric": "Whole-operation latency, established connection, validation and cleanup included, handshake excluded; whole batches for concurrency",
+    "spread": "Sample standard deviation of five repetition means; no trimming"
+  },
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "client_cpu": 0,
+  "service_cpus": [
+    1,
+    2,
+    3
+  ],
+  "placement_note": "Four-service case shares one service core equally across variants; outer quota four CPU equivalents",
+  "binaries": {
+    "candidate": {
+      "path": "/tmp/capntproto-build-cache/rustls-direct-output-20261024/bin/candidate",
+      "bytes": 87783144,
+      "sha256": "d45d241a73797488cd9e96ee21bf67cd84cf04f42279f2d25ccd541ba0cebd81"
+    },
+    "control": {
+      "path": "/tmp/capntproto-build-cache/api-switch-optimization/bin/final",
+      "bytes": 87793176,
+      "sha256": "fdf6635f3bbc51dc192e087b48bce42f7facafed12eabb3f326150427cc5ad1d"
+    },
+    "cpp": {
+      "path": "/tmp/capntproto-build-cache/local-unbuffered-20261024/bin/cpp",
+      "bytes": 3112728,
+      "sha256": "76fe3d435f15a60b6ab5820b480add1a46dd4a885016157a5a62d7a0fe3e82fc"
+    }
+  }
+}

@@ -143,3 +143,11 @@ recomputed from those samples. Full profiles, per-peer syscall traces, commands,
 scopes and validation logs are identified by [raw-artifact.json](raw-artifact.json).
 
 [Dedicated qualification 40059426498](https://github.com/DericHuynh/capntproto/actions/runs/40059426498) uses workflow source `878282b95eb7561856805a23ab31d85a0eb39db9` with frozen legacy and portable controls. Its guard waits for qualification 40046022437 to acquire the dedicated measurement slot before building and queuing, preserving GitHub's single pending measurement job. Results are pending.
+
+## Follow-up: direct ciphertext output
+
+The [vendored rustls follow-up](../2026-10-24-rustls-direct-output/README.md) removes
+the remaining application-record ciphertext allocation and copy described above.
+Bulk-1m allocations fall from 275 to 145 for legacy and 286 to 156 for portable;
+simulated instructions fall about 10.7%. Receive-record allocations remain. Local
+latency is mixed and dedicated qualification 40062326199 is pending.

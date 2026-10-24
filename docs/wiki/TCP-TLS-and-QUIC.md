@@ -8,7 +8,7 @@ The public two-party RPC adapters support three ordinary network transports:
 | `capntproto::rpc::tls` | Cap'n Proto RPC on TLS 1.3/TCP | Server certificates, optional required client certificates |
 | `capntproto::rpc::quic` | Cap'n Proto RPC on standard QUIC v1 | TLS 1.3 server certificates, optional required client certificates |
 
-TLS/TCP uses Cargo-managed rustls's Unbuffered API through the shared
+TLS/TCP uses vendored rustls 0.23.46's Unbuffered API through the shared
 `tls::TlsStream<S>` Tokio adapter, including native multiparty TCP/TLS. Both
 maintained benchmark drivers use this same adapter. The independent published
 upstream RPC and framework-managed gRPC comparators retain tokio-rustls.
@@ -40,9 +40,14 @@ ordinary RPC stream passes Tokio's `ReadBuf` directly as `BufMut`, so the unused
 destination is not zeroed before reception. Native stream bridges already use
 bounded `BytesMut` destinations. Quiche 0.30 still copies from stream reassembly
 into `BufMut`; this is not ownership transfer of received packet storage.
-Similarly, rustls 0.23.46 still allocates both plaintext and encrypted records
-internally in its Unbuffered implementation. Neither API provides end-to-end
-zero-copy IO in these pinned releases.
+The [local rustls delta](../../vendor/rustls/README.capntproto.md) writes new
+Unbuffered application records directly into the retained transmit buffer with
+the ring TLS 1.3 provider. It removes the temporary ciphertext allocation and
+copy by using the same AEAD operation in caller-owned storage. Plaintext still
+enters that storage once; received plaintext and queued handshake/control
+records retain upstream allocation and copy behavior. Other cipher providers
+use the original owned-record fallback. Neither transport provides end-to-end
+zero-copy IO.
 
 `TlsStream::connect(io, config, name)` and `TlsStream::accept(io, config)` expose
 the generic transport adapter for callers with their own deadline and ALPN

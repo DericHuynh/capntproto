@@ -263,3 +263,15 @@ full 48-case dedicated-host allocation gap or establish a uniform latency gain.
 tests implementation `e4b71e700f198f8da7ef7f02c99e2174b5e41013` against frozen
 post-switch legacy and portable `34b5cdabf2201d0b50f03ec6dc18b35e8a9f1807` after the
 preceding Unbuffered qualification acquires the dedicated measurement slot.
+
+## Follow-up: remove the rustls output record allocation
+
+The [vendored direct-output rustls patch](../2026-10-24-rustls-direct-output/README.md)
+removes 130 outgoing-record allocations per selected local TLS bulk-1m round trip.
+New paired DHAT slopes are **145 legacy, 156 portable and 2356 C++ blocks**, summed
+over both peers. Both Rust drivers retain 130 receive-record allocations. The
+new provider path matches original ciphertext byte for byte and allocates zero
+blocks per record for all three ring TLS 1.3 AEADs. Simulated instructions fall
+about 10.7%, while five-repeat local latency remains mixed. Qualification
+[40062326199](https://github.com/DericHuynh/capntproto/actions/runs/40062326199) is
+pending; the full dedicated-host allocation gap remains open.
