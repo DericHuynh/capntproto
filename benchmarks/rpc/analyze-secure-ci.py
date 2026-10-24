@@ -3,6 +3,7 @@ import argparse, collections, json, math, os, re, statistics, subprocess, sys, t
 from pathlib import Path
 from allocation_comparison import compare as compare_allocations, markdown as allocation_markdown
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--native-only', action='store_true', help='Validate a latency-only campaign; do not require or claim profiling evidence.')
 parser.add_argument('run_id')
 parser.add_argument('directory', type=Path)
 parser.add_argument('--saved-root', type=Path, help='Analyze already extracted evidence inside the measurement job.')
@@ -36,7 +37,9 @@ else:
     assert len(summaries)==1 or (not summaries and len(profiles_only)==1), 'ambiguous campaign root'
     root = (summaries or profiles_only)[0].parent.parent
 (directory/'provenance.json').write_text(json.dumps(provenance, indent=2)+'\n')
-profiles=json.loads((root/'profiles/scope.json').read_text())
+# A missing diagnostic scope must not prevent salvaging completed native data.
+profile_scope=root/'profiles/scope.json'
+profiles=json.loads(profile_scope.read_text()) if not (root/'native/summary.json').exists() and profile_scope.exists() and not args.native_only else {}
 if profiles.get('allocation_only'):
     assert profiles['diagnostic']
     report=dict(run=run, measurement_outcome=args.measurement_outcome, allocation_only=True,
@@ -98,6 +101,12 @@ else:
     # is truncated. This checkpoint does not certify the diagnostic campaign.
     (directory/'native-summary.json').write_text(json.dumps(dict(report, diagnostics_complete=False),indent=2)+'\n')
     print('NATIVE_AGGREGATE',json.dumps(aggregate),flush=True)
+if args.native_only:
+    report.update(native_only=True, diagnostics_requested=False, diagnostics_complete=False,
+                  profile_trials=0, profiles=[], traces=[])
+    (directory/'summary.json').write_text(json.dumps(report,indent=2)+'\n')
+    print('SUMMARY_SAVED',directory/'summary.json','native only; diagnostics not requested',flush=True)
+    raise SystemExit(0)
 profiles=json.loads((root/'profiles/scope.json').read_text())
 raw=[];arena=[];allocation_sites=[]
 for trial in profiles['trials']:

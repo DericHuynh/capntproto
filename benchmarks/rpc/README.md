@@ -10,10 +10,15 @@ Use the dedicated workflow for timing, tracing and profiling; this development
 workspace is suitable for builds and correctness checks only:
 
 ```sh
-gh workflow run performance.yml --ref codex/portable-qualification -f campaign=run-secure
+gh workflow run performance.yml --ref codex/portable-qualification -f campaign=run-latency
 ```
 
-`run-secure` uses the existing CI provisioning, dedicated-vCPU plan selection,
+The default `run-latency` campaign measures all 48 TLS/QUIC case combinations,
+with five fresh-process repetitions, means and spread. It skips instrumented
+workloads so timing results are available without waiting for profiling.
+`run-secure` explicitly requests the full timing, tracing and profiling campaign;
+`run-allocations` requests DHAT only. Both latency and full campaigns use the
+existing CI provisioning, dedicated-vCPU plan selection,
 resource receipts and unconditional cleanup. Encrypted peers run on separate
 guest-reported cores of the client droplet. Deep service chains share those cores as
 recorded in each trial. This isolates driver costs; it does not measure VPC
@@ -26,7 +31,7 @@ isolated source tree with the same compiler and release profile, then interleave
 candidate and frozen binaries on the same droplet. The revision must include the
 encrypted fixture and the matching engine metadata.
 
-The encrypted campaign retains all 24 cases, TLS and QUIC, five repetitions with
+The full `run-secure` campaign retains all 24 cases, TLS and QUIC, five repetitions with
 100 warmups and 1,000 measured operations, then separate 10/100-operation syscall
 traces. Post-timing Callgrind and DHAT profiles cover dependent/pipelined TLS
 reads and pipelined QUIC reads for portable, legacy and supported C++ paths,
@@ -49,6 +54,10 @@ Analyze a completed campaign without launching workloads (requires authenticated
 ```sh
 GH_REPO=DericHuynh/capntproto python3 benchmarks/rpc/analyze-secure-ci.py RUN_ID target/saved-analysis
 ```
+
+For a `run-latency` artifact, add `--native-only`; profiling is neither required
+nor claimed. A full campaign with missing profiles still fails analysis, while
+retaining independently validated latency in `native-summary.json`.
 
 This downloads the saved artifact, verifies sample counts and statistics, and
 summarizes native latency, marginal profiles, socket counts and host counters.

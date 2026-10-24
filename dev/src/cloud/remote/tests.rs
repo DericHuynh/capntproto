@@ -644,3 +644,51 @@ fn allocation_campaign_runs_only_profiles_and_always_cleans_up() {
         }
     }
 }
+
+#[test]
+fn latency_campaign_preserves_sampling_and_salvages_failures_without_profiling() {
+    for fail_at in ["", "python3 secure-runner.py"] {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        let commands = CompletedCommands {
+            commands: PairCommands::default(),
+            manifest: fixture_bundle(&bundle),
+            fail_at,
+        };
+        let api = PairApi::default();
+        let output = dir.path().join("output");
+        let state = dir.path().join("state");
+        let result = run(
+            &api,
+            &bundle,
+            &output,
+            &state,
+            &tag("test/latency-pair"),
+            &Cancellation::default(),
+            &commands,
+            Campaign::Latency,
+        );
+        assert_eq!(result.is_ok(), fail_at.is_empty());
+        assert!(api.hosts.borrow().is_empty());
+        assert!(api.keys.borrow().is_empty());
+        assert!(!state.join("client/host").exists());
+        assert!(output.join("secure/secure.tar.gz").is_file());
+        assert!(output.join("secure/host.json").is_file());
+        if fail_at.is_empty() {
+            let calls = commands.commands.0.borrow();
+            let script = calls
+                .iter()
+                .find(|s| s.contains("python3 secure-runner.py"))
+                .unwrap();
+            assert!(script.contains("--repetitions 5 --warmup 100 --iterations 1000"));
+            assert!(script.contains("--portable-baseline"));
+            assert!(script.contains("--legacy-baseline"));
+            assert!(!script.contains("--cases") || script.contains("--cases all"));
+            assert!(!script.contains("--trace"));
+            assert!(!script.contains("secure-profile.py"));
+            assert!(!calls
+                .iter()
+                .any(|s| s.contains("workflow-client") || s.contains("compare-portable")));
+        }
+    }
+}

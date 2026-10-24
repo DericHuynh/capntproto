@@ -82,6 +82,62 @@ class SavedAnalysisTests(unittest.TestCase):
             self.assertTrue(all(row['sites'][0]['blocks'] == 2 for row in allocations))
 
 
+    def test_native_only_and_missing_diagnostics_preserve_validated_latency(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)/'secure'
+            output = Path(directory)/'analysis'
+            rows, trials = [], []
+            for transport in ['tls', 'quic']:
+                for case in range(24):
+                    name = f'case-{case}'
+                    variants = {}
+                    for label, latency in [('portable', 100), ('legacy', 200)]:
+                        samples = [[latency + rep]*1000 for rep in range(5)]
+                        variants[label] = summarize(samples)
+                        for rep, values in enumerate(samples):
+                            path = f'{transport}-{name}-{label}-{rep}'
+                            trials.append(dict(transport=transport, case=name, client=label, path=path, mixed=False))
+                            save(root/'native'/path/'trial.json', dict(iterations=1000, latency_ns=values,
+                                 security=dict(tls='1.3', authentication='server-certificate')))
+                            save(root/'native'/path/'host.json', dict(before={}, after={}))
+                    rows.append(dict(transport=transport, case=dict(name=name), variants=variants))
+            save(root/'native/summary.json', dict(diagnostic=False, rows=rows))
+            save(root/'native/scope.json', dict(diagnostic=False, repetitions=5, iterations=1000,
+                 trials=trials, binaries={'portable': {}, 'legacy': {}}))
+            save(root.parent/'host.json', {})
+            (root/'cpu.txt').write_text('synthetic analysis fixture')
+            def analyze(destination, *flags):
+                return subprocess.run([sys.executable, str(HERE/'analyze-secure-ci.py'), '1', str(destination),
+                                       '--saved-root', str(root), '--measurement-outcome', 'success', *flags],
+                                      env=dict(os.environ, GITHUB_SHA='fixture', GITHUB_REPOSITORY='fixture/repo'),
+                                      capture_output=True, text=True)
+            result = analyze(output, '--native-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((output/'summary.json').read_text())
+            self.assertTrue(report['native_only'])
+            self.assertFalse(report['diagnostics_requested'])
+            self.assertFalse(report['diagnostics_complete'])
+            self.assertEqual(report['native_trials'], 480)
+            self.assertEqual(report['aggregate']['tls']['legacy']['lower_means'], 24)
+            self.assertEqual(report['profile_trials'], 0)
+            self.assertEqual(report['profiles'], [])
+            self.assertEqual(report['traces'], [])
+            self.assertNotIn('allocation_comparison', report)
+            # Missing profiles still fail a full campaign, after salvaging latency.
+            incomplete = Path(directory)/'incomplete'
+            self.assertNotEqual(analyze(incomplete).returncode, 0)
+            self.assertTrue((incomplete/'native-summary.json').is_file())
+            self.assertFalse((incomplete/'summary.json').exists())
+            # The fast path must validate raw samples, not trust the summary.
+            first = root/'native'/trials[0]['path']/'trial.json'
+            corrupted = json.loads(first.read_text())
+            corrupted['latency_ns'][0] = 0
+            save(first, corrupted)
+            invalid = Path(directory)/'invalid'
+            self.assertNotEqual(analyze(invalid, '--native-only').returncode, 0)
+            self.assertFalse((invalid/'summary.json').exists())
+            self.assertFalse((invalid/'native-summary.json').exists())
+
     def test_allocation_only_has_no_native_or_io_claims(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)/'secure'

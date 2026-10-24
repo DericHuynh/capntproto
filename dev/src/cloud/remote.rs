@@ -7,6 +7,7 @@ mod secure;
 pub(super) enum Campaign {
     Workflows { trace_io: bool },
     Secure,
+    Latency,
     Allocations,
 }
 mod timing;
@@ -398,13 +399,20 @@ pub(super) fn run(
         for host in &hosts {
             upload(commands, host, &archive, cancel)?;
         }
-        if matches!(campaign, Campaign::Secure | Campaign::Allocations) {
+        if matches!(
+            campaign,
+            Campaign::Secure | Campaign::Latency | Campaign::Allocations
+        ) {
             return secure::run(
                 commands,
                 client,
                 &output.join("secure"),
                 cancel,
-                matches!(campaign, Campaign::Allocations),
+                match campaign {
+                    Campaign::Latency => secure::Phase::Latency,
+                    Campaign::Allocations => secure::Phase::Allocations,
+                    _ => secure::Phase::All,
+                },
             );
         }
         // Bind only the VPC address; admit benchmark TCP only from this run's

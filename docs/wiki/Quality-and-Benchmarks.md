@@ -421,7 +421,7 @@ records their rationale.
 | [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Called by CI; Monday 03:19 UTC; manual | One LLVM-instrumented Cargo partition, un-instrumented C++ reference suites, advisory checks, coverage regression report. `cargo-test-report` |
 | [Verification / Formal checks](../../.github/workflows/verification-models.yml) | Called by CI; Monday 03:29 UTC; manual | Verus source/temporal proofs (`verus-report`) including portable ownership/count contracts and mutation controls, then distributed TLC checks and Rust replays (`models-report`). Separate proof-duration and model-state graphs. |
 | [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Called by CI; Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
-| [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Called by CI; manual | Build and smoke-test release artifacts on every PR; trusted runs measure application workflows across two dedicated VPC peers, followed by separate loopback controls. `benchmark-bundle`, `benchmark-build-provenance`, `dedicated-benchmark-report` |
+| [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Called by CI; manual | Build and smoke-test release artifacts on every PR; trusted routine runs measure all 48 encrypted loopback cases on a dedicated droplet, with five fresh-process repetitions. Full tracing/profiling (`run-secure`), allocations (`run-allocations`) and two-peer VPC workflows (`run-remote`) are manual options. `benchmark-bundle`, `benchmark-build-provenance`, `dedicated-benchmark-report` |
 | [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | After CI benchmarks, even on failure; every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours; requires trusted credentials |
 | [Reports / Publish](../../.github/workflows/reports.yml) | CI or standalone Cargo, formal-check, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
 
@@ -433,7 +433,12 @@ validation succeeds. Allocation-free core/engine checks and a bare-metal link
 fixture run alongside platform builds; Cargo/coverage also waits for this lane.
 Cargo/coverage, models, fuzzing and extended verification
 then run in parallel after platform and documentation checks. Release benchmarks
-follow all four verification lanes. Branch work runs through `pull_request`; only `main` has an
+start after workflow validation, alongside the other lanes. The default `run-latency`
+campaign retains all 48 TLS/QUIC cases, five repetitions, 100 warmups and 1,000
+measured operations per repetition, with means and spread. Callgrind, DHAT and
+syscall tracing remain available through the manual `run-secure` campaign; they
+do not delay routine latency reports. All verification lanes remain required by
+the final CI result. Branch work runs through `pull_request`; only `main` has an
 automatic `push` trigger. Feature branches without a PR can dispatch CI manually.
 The unconditional final CI job checks every required dependency, including failed
 or skipped jobs, so workflow validation and documentation failures cannot produce
@@ -502,7 +507,7 @@ flowchart TD
   platforms --> fuzz[libFuzzer + AFL++ IJON]
   platforms --> extended[Extended verification]
   docs --> cargo & verus & fuzz & extended
-  cargo & models & fuzz & extended --> benchmark[Release benchmark build; trusted cloud measurement]
+  checks --> benchmark[Release benchmark build; trusted cloud latency]
   benchmark --> cleanup[Trusted cleanup, even after failure]
   checks & docs & platforms & portable & cargo & models & fuzz & extended & benchmark & cleanup --> result[Required CI result]
   result --> publish[CI completion: validate evidence and publish on main]

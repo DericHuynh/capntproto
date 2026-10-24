@@ -19,7 +19,7 @@ on:
         default: ''
         type: string
       campaign:
-        default: run-remote
+        default: run-latency
         type: string
       region:
         default: auto
@@ -38,10 +38,10 @@ on:
         default: ''
         type: string
       campaign:
-        description: Encrypted dedicated-loopback profiles or two-peer VPC workflows
-        default: run-secure
+        description: Latency only (fast), full encrypted diagnostics, allocations, or VPC workflows
+        default: run-latency
         type: choice
-        options: [run-secure, run-allocations, run-remote]
+        options: [run-latency, run-secure, run-allocations, run-remote]
       region:
         description: DigitalOcean region, or auto to select an available region
         default: auto
@@ -223,7 +223,7 @@ jobs:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_REGION: ${{ inputs.region || 'auto' }}
           DO_SIZE: ${{ inputs.size || 'auto' }}
-          BENCHMARK_CAMPAIGN: ${{ inputs.campaign || 'run-secure' }}
+          BENCHMARK_CAMPAIGN: ${{ inputs.campaign || 'run-latency' }}
         run: cargo run --locked -p capntproto-dev -- digitalocean-bench "$BENCHMARK_CAMPAIGN" --trace-io --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
       - name: Extract dedicated encrypted evidence
         if: always()
@@ -244,12 +244,15 @@ jobs:
       - name: Generate validated README and comparison bar charts
         if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign == 'run-remote' }}
         run: cargo run --locked -p capntproto-quality -- report "$RUNNER_TEMP/benchmark-quality" benchmark
-      - name: Analyze saved encrypted latency, allocation and concurrency evidence
+      - name: Analyze saved encrypted evidence for the selected campaign
         if: ${{ !cancelled() && inputs.campaign != 'run-remote' }}
         env:
           MEASUREMENT_OUTCOME: ${{ steps.measure.outcome }}
+          BENCHMARK_CAMPAIGN: ${{ inputs.campaign || 'run-latency' }}
         run: |
-          python3 benchmarks/rpc/analyze-secure-ci.py "$GITHUB_RUN_ID" "$RUNNER_TEMP/benchmark-quality/analysis" --saved-root "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure" --measurement-outcome "$MEASUREMENT_OUTCOME"
+          analysis=()
+          if test "$BENCHMARK_CAMPAIGN" = run-latency; then analysis+=(--native-only); fi
+          python3 benchmarks/rpc/analyze-secure-ci.py "${analysis[@]}" "$GITHUB_RUN_ID" "$RUNNER_TEMP/benchmark-quality/analysis" --saved-root "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure" --measurement-outcome "$MEASUREMENT_OUTCOME"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
