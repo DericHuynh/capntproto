@@ -1,0 +1,376 @@
+{
+  "scope": "Upstream rustls crate unit, integration and doctests at the exact vendored revision; stock test bodies and fixtures",
+  "runs": [
+    {
+      "name": "ring",
+      "command": [
+        "/root/.cargo/bin/cargo",
+        "test",
+        "--locked",
+        "-p",
+        "rustls",
+        "--no-default-features",
+        "--features",
+        "ring,std,tls12,logging"
+      ],
+      "exit_code": 0,
+      "totals": {
+        "passed": 540,
+        "failed": 0,
+        "ignored": 8,
+        "measured": 0,
+        "filtered": 0
+      },
+      "sections": [
+        {
+          "target": "Running unittests src/lib.rs",
+          "passed": 246,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/api.rs",
+          "passed": 232,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/api_ffdhe.rs",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/bogo.rs",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 3,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/client_cert_verifier.rs",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/ech.rs",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/key_log_file_env.rs",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/server_cert_verifier.rs",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/server_cert_verifier.rs",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/unbuffered.rs",
+          "passed": 27,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Doc-tests rustls",
+          "passed": 15,
+          "failed": 0,
+          "ignored": 5,
+          "measured": 0,
+          "filtered": 0
+        }
+      ],
+      "ignored": [
+        "test run_bogo_tests_aws_lc_rs ... ignored",
+        "test run_bogo_tests_aws_lc_rs_fips ... ignored",
+        "test run_bogo_tests_ring ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_01_impl_vulnerabilities (line 65) ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_06_fips (line 51) ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_06_fips (line 68) ... ignored",
+        "test rustls/src/msgs/handshake.rs - msgs::handshake::DistinguishedName (line 2222) ... ignored",
+        "test rustls/src/msgs/handshake.rs - msgs::handshake::DistinguishedName::in_sequence (line 2240) ... ignored"
+      ],
+      "log_sha256": "fd35476162c5ae261f5c84649bdf8c39107312e04fb0825d2edabe28aef6760c"
+    },
+    {
+      "name": "aws-lc-default",
+      "command": [
+        "/root/.cargo/bin/cargo",
+        "test",
+        "--locked",
+        "-p",
+        "rustls"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 76.92253086200799,
+      "totals": {
+        "passed": 546,
+        "failed": 0,
+        "ignored": 8,
+        "measured": 0,
+        "filtered": 0
+      },
+      "sections": [
+        {
+          "target": "Running unittests src/lib.rs",
+          "passed": 249,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/api.rs",
+          "passed": 235,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/api_ffdhe.rs",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/bogo.rs",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 3,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/client_cert_verifier.rs",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/ech.rs",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/key_log_file_env.rs",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/process_provider.rs",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/server_cert_verifier.rs",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/unbuffered.rs",
+          "passed": 27,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Doc-tests rustls",
+          "passed": 15,
+          "failed": 0,
+          "ignored": 5,
+          "measured": 0,
+          "filtered": 0
+        }
+      ],
+      "ignored": [
+        "test run_bogo_tests_aws_lc_rs ... ignored",
+        "test run_bogo_tests_aws_lc_rs_fips ... ignored",
+        "test run_bogo_tests_ring ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_01_impl_vulnerabilities (line 65) ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_06_fips (line 51) ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_06_fips (line 68) ... ignored",
+        "test rustls/src/msgs/handshake.rs - msgs::handshake::DistinguishedName (line 2222) ... ignored",
+        "test rustls/src/msgs/handshake.rs - msgs::handshake::DistinguishedName::in_sequence (line 2240) ... ignored"
+      ],
+      "log_sha256": "947a3ab9ce4f2fd24ba3a3da363162aa6ae9b7148224a343ed14e231fda2735d"
+    },
+    {
+      "name": "all-non-fips",
+      "command": [
+        "/root/.cargo/bin/cargo",
+        "test",
+        "--locked",
+        "-p",
+        "rustls",
+        "--no-default-features",
+        "--features",
+        "aws-lc-rs,aws_lc_rs,brotli,custom-provider,logging,prefer-post-quantum,read_buf,ring,std,tls12,zlib"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 37.10509694699431,
+      "totals": {
+        "passed": 947,
+        "failed": 0,
+        "ignored": 8,
+        "measured": 0,
+        "filtered": 0
+      },
+      "sections": [
+        {
+          "target": "Running unittests src/lib.rs",
+          "passed": 363,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/api.rs",
+          "passed": 478,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/api_ffdhe.rs",
+          "passed": 10,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/bogo.rs",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 3,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/client_cert_verifier.rs",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/ech.rs",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/key_log_file_env.rs",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/process_provider.rs",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/server_cert_verifier.rs",
+          "passed": 12,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Running tests/runners/unbuffered.rs",
+          "passed": 54,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered": 0
+        },
+        {
+          "target": "Doc-tests rustls",
+          "passed": 15,
+          "failed": 0,
+          "ignored": 5,
+          "measured": 0,
+          "filtered": 0
+        }
+      ],
+      "ignored": [
+        "test run_bogo_tests_aws_lc_rs ... ignored",
+        "test run_bogo_tests_aws_lc_rs_fips ... ignored",
+        "test run_bogo_tests_ring ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_01_impl_vulnerabilities (line 65) ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_06_fips (line 51) ... ignored",
+        "test rustls/src/manual/mod.rs - manual::_06_fips (line 68) ... ignored",
+        "test rustls/src/msgs/handshake.rs - msgs::handshake::DistinguishedName (line 2222) ... ignored",
+        "test rustls/src/msgs/handshake.rs - msgs::handshake::DistinguishedName::in_sequence (line 2240) ... ignored"
+      ],
+      "log_sha256": "4bcd45b6edd27b50d093df9578fecc03813d9c4bacc61f9dd80fcf2a4329f703"
+    }
+  ],
+  "not_run": [
+    "BoGo protocol suite (three upstream-ignored tests per run)",
+    "Five upstream-ignored documentation examples per run",
+    "FIPS feature and FIPS build",
+    "Full upstream workspace packages, fuzzing, MSRV, platform/toolchain CI matrix"
+  ]
+}

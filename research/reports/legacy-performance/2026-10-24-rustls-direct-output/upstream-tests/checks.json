@@ -1,0 +1,43 @@
+[
+  {
+    "name": "ring",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "--locked",
+      "-p",
+      "rustls",
+      "--no-default-features",
+      "--features",
+      "ring,std,tls12,logging"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "aws-lc-default",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "--locked",
+      "-p",
+      "rustls"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 76.92253086200799
+  },
+  {
+    "name": "all-non-fips",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "--locked",
+      "-p",
+      "rustls",
+      "--no-default-features",
+      "--features",
+      "aws-lc-rs,aws_lc_rs,brotli,custom-provider,logging,prefer-post-quantum,read_buf,ring,std,tls12,zlib"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 37.10509694699431
+  }
+]

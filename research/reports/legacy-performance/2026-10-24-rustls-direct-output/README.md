@@ -111,10 +111,15 @@ directions for every cipher through small fragmented/backpressured transports.
 Existing tests cover corruption, truncation, shutdown, certificate rejection,
 ALPN and QUIC. [Commands/results](validation.json) identify the checks.
 
-This is not a fresh full-project or full-upstream-rustls suite run. The published
-rustls package omits upstream test-data fixtures; the repository differential and
-integration tests validate this delta. Downstream/fuzz locked metadata and
-maintained/independent fixture dependency trees were checked and preserved.
+The initial validation above did not run rustls's own suite because the published
+package omits its test fixtures. The [upstream-suite follow-up](upstream-tests/README.md)
+restored the exact upstream workspace and ran the unchanged tests against the
+patch: **540 ring, 546 default AWS-LC, and 947 all-non-FIPS test executions pass**,
+with zero failures. Each run retains eight upstream-ignored cases. BoGo, FIPS,
+other workspace packages and the full platform/toolchain CI matrix remain unrun.
+This is also not a fresh full-project capntproto test run. Downstream/fuzz locked
+metadata and maintained/independent fixture dependency trees were checked and
+preserved.
 
 Implementation: `58205ddc5b3f0841848e836327b6c249d5200777`. Both controls are runtime
 `e4b71e700f198f8da7ef7f02c99e2174b5e41013`, documented by `71f54ae`, with no vendor

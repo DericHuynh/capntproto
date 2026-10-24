@@ -44,5 +44,20 @@ Existing secure RPC tests cover fragmentation, tiny fragments, cancellation,
 backpressure, key updates, corruption, truncation, shutdown, identities and ALPN.
 
 The published crate excludes upstream test-data fixtures; this is a package
-vendor, not the complete upstream test workspace. The repository's integration
-and differential tests are the validation entry points for this local delta.
+vendor, not the complete upstream test workspace. Upstream-suite validation must
+restore the exact workspace commit from `UPSTREAM.json`, apply `LOCAL.patch` in
+its `rustls/` subdirectory, and verify the patched files match this directory.
+From that upstream workspace root, run:
+
+```sh
+cargo test --locked -p rustls --no-default-features --features ring,std,tls12,logging
+cargo test --locked -p rustls
+cargo test --locked -p rustls $(python3 admin/all-features-except fips rustls)
+```
+
+[Recorded upstream results](../../research/reports/legacy-performance/2026-10-24-rustls-direct-output/upstream-tests/README.md)
+include unit/integration/doctests: 540 ring, 546 default AWS-LC, and 947 all-non-FIPS
+passes, zero failures, with eight upstream-ignored cases per run. BoGo, FIPS and
+the full upstream platform/toolchain CI matrix were not run. The repository's
+allocation/differential and buffered/unbuffered key-update tests remain additional
+validation for the new provider entry point.

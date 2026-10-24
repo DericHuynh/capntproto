@@ -1,0 +1,36 @@
+{
+  "upstream_commit": "f04804fa13341a9b1dc02b5d1dd8a746f2c4b7fb",
+  "crate_version": "0.23.46",
+  "patched_files": [
+    "src/common_state.rs",
+    "src/crypto/cipher.rs",
+    "src/crypto/ring/tls13.rs",
+    "src/msgs/message/outbound.rs",
+    "src/record_layer.rs"
+  ],
+  "patched_files_byte_identical_to_vendor": true,
+  "lockfile_sha256": "c08f01282a475065c65949dcf5b697efc56e05dfff7ce411688f0bf7495fdae8",
+  "patch_sha256": "35c3dd0203ade24dc8b577b15d5394b4716b065b9b9629e77cbfe201c5c98835",
+  "archive_url": "https://codeload.github.com/rustls/rustls/tar.gz/f04804fa13341a9b1dc02b5d1dd8a746f2c4b7fb",
+  "archive_sha256": "4cfdec250d939cd129036024cd62cc47143939a2ec596f9d6de1f69dd9cf9ae8",
+  "compiler": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6\n",
+  "implementation_commit": "58205ddc5b3f0841848e836327b6c249d5200777",
+  "host": "Linux x86_64",
+  "environment": {
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_BUILD_JOBS": "1",
+    "CC": "clang",
+    "CXX": "clang++"
+  },
+  "lockfile_unchanged": true,
+  "upstream_files_verified": 1033,
+  "stock_test_and_fixture_files_verified": 71,
+  "only_upstream_modifications": [
+    "rustls/src/common_state.rs",
+    "rustls/src/crypto/cipher.rs",
+    "rustls/src/crypto/ring/tls13.rs",
+    "rustls/src/msgs/message/outbound.rs",
+    "rustls/src/record_layer.rs"
+  ]
+}
