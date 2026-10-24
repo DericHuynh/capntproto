@@ -1,0 +1,17 @@
+name: Performance / Portable architecture qualification
+on:
+  push:
+    branches: [codex/portable-architecture-qualification-20261024]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  qualify:
+    uses: ./.github/workflows/performance.yml
+    with:
+      campaign: run-latency
+      portable_base: 87be38e069b86b442cc36500f44e0e4907ce813e
+      legacy_base: 87be38e069b86b442cc36500f44e0e4907ce813e
+      region: auto
+      size: auto
+    secrets: inherit
