@@ -1,0 +1,785 @@
+{
+  "trials": [
+    {
+      "path": "tls-unary-small-callgrind-legacy-10",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35695"
+        }
+      ]
+    },
+    {
+      "path": "tls-unary-small-callgrind-legacy-50",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42193"
+        }
+      ]
+    },
+    {
+      "path": "tls-unary-small-callgrind-legacy-baseline-10",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42575"
+        }
+      ]
+    },
+    {
+      "path": "tls-unary-small-callgrind-legacy-baseline-50",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33583"
+        }
+      ]
+    },
+    {
+      "path": "tls-dependent-read-callgrind-legacy-10",
+      "transport": "tls",
+      "case": "dependent-read",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40371"
+        }
+      ]
+    },
+    {
+      "path": "tls-dependent-read-callgrind-legacy-50",
+      "transport": "tls",
+      "case": "dependent-read",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40725"
+        }
+      ]
+    },
+    {
+      "path": "tls-dependent-read-callgrind-legacy-baseline-10",
+      "transport": "tls",
+      "case": "dependent-read",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43405"
+        }
+      ]
+    },
+    {
+      "path": "tls-dependent-read-callgrind-legacy-baseline-50",
+      "transport": "tls",
+      "case": "dependent-read",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41799"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-callgrind-legacy-10",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45219"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-callgrind-legacy-50",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33283"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-callgrind-legacy-baseline-10",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34229"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-callgrind-legacy-baseline-50",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39195"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-callgrind-legacy-10",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45141"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-callgrind-legacy-50",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33101"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-callgrind-legacy-baseline-10",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39805"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-callgrind-legacy-baseline-50",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38201"
+        }
+      ]
+    },
+    {
+      "path": "tls-callback-callgrind-legacy-10",
+      "transport": "tls",
+      "case": "callback",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37323"
+        }
+      ]
+    },
+    {
+      "path": "tls-callback-callgrind-legacy-50",
+      "transport": "tls",
+      "case": "callback",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37545"
+        }
+      ]
+    },
+    {
+      "path": "tls-callback-callgrind-legacy-baseline-10",
+      "transport": "tls",
+      "case": "callback",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33453"
+        }
+      ]
+    },
+    {
+      "path": "tls-callback-callgrind-legacy-baseline-50",
+      "transport": "tls",
+      "case": "callback",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44921"
+        }
+      ]
+    },
+    {
+      "path": "tls-deep-32-concurrent-32-callgrind-legacy-10",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36799"
+        }
+      ]
+    },
+    {
+      "path": "tls-deep-32-concurrent-32-callgrind-legacy-50",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34147"
+        }
+      ]
+    },
+    {
+      "path": "tls-deep-32-concurrent-32-callgrind-legacy-baseline-10",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33303"
+        }
+      ]
+    },
+    {
+      "path": "tls-deep-32-concurrent-32-callgrind-legacy-baseline-50",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "mode": "callgrind",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46051"
+        }
+      ]
+    },
+    {
+      "path": "tls-unary-small-dhat-legacy-10",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39493"
+        }
+      ]
+    },
+    {
+      "path": "tls-unary-small-dhat-legacy-50",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41927"
+        }
+      ]
+    },
+    {
+      "path": "tls-unary-small-dhat-legacy-baseline-10",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41859"
+        }
+      ]
+    },
+    {
+      "path": "tls-unary-small-dhat-legacy-baseline-50",
+      "transport": "tls",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36397"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-dhat-legacy-10",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44079"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-dhat-legacy-50",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38615"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-dhat-legacy-baseline-10",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45749"
+        }
+      ]
+    },
+    {
+      "path": "tls-pipelined-read-dhat-legacy-baseline-50",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45461"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-dhat-legacy-10",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40805"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-dhat-legacy-50",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35961"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-dhat-legacy-baseline-10",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36909"
+        }
+      ]
+    },
+    {
+      "path": "tls-concurrent-32-dhat-legacy-baseline-50",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33597"
+        }
+      ]
+    },
+    {
+      "path": "quic-unary-small-dhat-legacy-10",
+      "transport": "quic",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41963"
+        }
+      ]
+    },
+    {
+      "path": "quic-unary-small-dhat-legacy-50",
+      "transport": "quic",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34394"
+        }
+      ]
+    },
+    {
+      "path": "quic-unary-small-dhat-legacy-baseline-10",
+      "transport": "quic",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:60158"
+        }
+      ]
+    },
+    {
+      "path": "quic-unary-small-dhat-legacy-baseline-50",
+      "transport": "quic",
+      "case": "unary-small",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47072"
+        }
+      ]
+    },
+    {
+      "path": "quic-pipelined-read-dhat-legacy-10",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:60298"
+        }
+      ]
+    },
+    {
+      "path": "quic-pipelined-read-dhat-legacy-50",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:47582"
+        }
+      ]
+    },
+    {
+      "path": "quic-pipelined-read-dhat-legacy-baseline-10",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:52212"
+        }
+      ]
+    },
+    {
+      "path": "quic-pipelined-read-dhat-legacy-baseline-50",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49578"
+        }
+      ]
+    },
+    {
+      "path": "quic-concurrent-32-dhat-legacy-10",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:53038"
+        }
+      ]
+    },
+    {
+      "path": "quic-concurrent-32-dhat-legacy-50",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39357"
+        }
+      ]
+    },
+    {
+      "path": "quic-concurrent-32-dhat-legacy-baseline-10",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39791"
+        }
+      ]
+    },
+    {
+      "path": "quic-concurrent-32-dhat-legacy-baseline-50",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "mode": "dhat",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:52473"
+        }
+      ]
+    }
+  ],
+  "failures": [],
+  "binaries": {
+    "legacy": {
+      "path": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench",
+      "sha256": "6ef7c98d7531c66aec94f1d7efb7a7b3a1ff44cfecadce8bfa5a9b84fc44212c",
+      "sections": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370824       8672\n.rela.plt                1296     379496\n.rodata                819813     380928\n.gcc_except_table      457116    1200744\n.debug_gdb_scripts         34    1657860\n.eh_frame_hdr          103980    1657896\n.eh_frame              842852    1761880\n.text                 9871399    2608832\n.init                      27   12480232\n.fini                      13   12480260\n.plt                      880   12480288\n.tdata                    112   12485264\n.tbss                     456   12485376\n.fini_array                 8   12485376\n.init_array                16   12485384\n.data.rel.ro           263168   12485408\n.dynamic                  464   12748576\n.got                     2648   12749040\n.got.plt                  456   12751688\n.relro_padding           2800   12752144\n.tm_clone_table             0   12756240\n.data                    3272   12756240\n.bss                     4684   12759520\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21701401          0\n.debug_aranges         167280          0\n.debug_ranges         6700720          0\n.debug_str           33735198          0\n.debug_line           6890795          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85347797\n\n\n"
+    },
+    "legacy-baseline": {
+      "path": "/home/runner/work/_temp/legacy-baseline",
+      "sha256": "155dfb4e1f942c323f88f2465239a94af1519bc8c5983047106322b1b328d42f",
+      "sections": "/home/runner/work/_temp/legacy-baseline  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370944       8672\n.rela.plt                1296     379616\n.rodata                828005     380928\n.gcc_except_table      457176    1208936\n.debug_gdb_scripts         34    1666112\n.eh_frame_hdr          103988    1666148\n.eh_frame              842988    1770136\n.text                 9872167    2617280\n.init                      27   12489448\n.fini                      13   12489476\n.plt                      880   12489504\n.tdata                    112   12494480\n.tbss                     456   12494592\n.fini_array                 8   12494592\n.init_array                16   12494600\n.data.rel.ro           263280   12494624\n.dynamic                  464   12757904\n.got                     2648   12758368\n.got.plt                  456   12761016\n.relro_padding           1664   12761472\n.tm_clone_table             0   12765568\n.data                    3272   12765568\n.bss                     4684   12768848\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703220          0\n.debug_aranges         167264          0\n.debug_ranges         6701536          0\n.debug_str           33720632          0\n.debug_line           6899945          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85353260\n\n\n"
+    }
+  }
+}
