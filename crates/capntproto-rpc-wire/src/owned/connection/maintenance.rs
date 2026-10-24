@@ -16,62 +16,55 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &messages::Messages<'pool, '_, '_>,
         queue: &messages::Queue<'pool, '_, impl Sized>,
     ) -> bool {
-        self.disconnected.is_none() && self.next_ready_work(messages, queue).is_none()
+        self.disconnected.is_none() && self.ready_work(messages, queue) == 0
     }
-    fn next_ready_work(
+    fn ready_work(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
         queue: &messages::Queue<'pool, '_, impl Sized>,
-    ) -> Option<u32> {
-        // Read only as far as the next runnable class. Computing a complete
-        // readiness mask revisits unrelated pipeline and capacity queues even
-        // when the next owner is already ready. Each probe is observational;
-        // progress still rotates the cursor and is charged by the caller.
-        (0..16)
-            .map(|offset| (self.work_cursor + offset) % 16)
-            .find(|&work| self.work_is_ready(work, messages, queue))
-    }
-    fn work_is_ready(
-        &self,
-        work: u32,
-        messages: &messages::Messages<'pool, '_, '_>,
-        queue: &messages::Queue<'pool, '_, impl Sized>,
-    ) -> bool {
-        let ready = match work {
-            0 => self.call.is_some() || self.runtime.dispatch_is_pending(),
-            1 => self.resolution.is_some(),
-            2 => self
-                .pipelines
-                .has_ready(&self.ledgers.answers, &self.runtime),
-            3 => !self.outgoing_maintenance_is_idle(),
-            4 => !self.ledgers.exports.retirement_is_idle(),
-            5 => self.runtime.has_retired(),
-            6 => !self.ledgers.answers.reclamation_is_idle(),
-            7 => !self.canceled_ready.is_empty(),
-            8 => self
-                .exported
-                .has_ready(&self.runtime, &self.ledgers.exports, messages, queue),
-            9 => self.ledgers.questions.has_pending_finish(),
-            10 => self.ledgers.imports.has_pending_release(),
-            11 => self.ledgers.answers.has_queued_cancellations(),
-            12 => match self.runtime.ready_owner() {
-                Some(Task::Loopback(_) | Task::Echo(_)) => true,
-                Some(Task::ProvisionBarrier(_) | Task::VineBarrier(_)) => self.network.is_none(),
-                _ => false,
-            },
-            13 => self.barrier.is_some(),
-            14 => self.echo.is_some(),
-            15 => !self.invocation_work_is_idle(),
-            _ => unreachable!("maintenance class"),
+    ) -> u32 {
+        let control = match self.runtime.ready_owner() {
+            Some(Task::Loopback(_) | Task::Echo(_)) => true,
+            Some(Task::ProvisionBarrier(_) | Task::VineBarrier(_)) => self.network.is_none(),
+            _ => false,
         };
-        ready && self.filter_control_waits(1 << work, messages, queue) != 0
+        let ready = u32::from(self.call.is_some() || self.runtime.dispatch_is_pending())
+            | (u32::from(self.resolution.is_some()) << 1)
+            | (u32::from(
+                self.pipelines
+                    .has_ready(&self.ledgers.answers, &self.runtime),
+            ) << 2)
+            | (u32::from(!self.outgoing_maintenance_is_idle()) << 3)
+            | (u32::from(!self.ledgers.exports.retirement_is_idle()) << 4)
+            | (u32::from(self.runtime.has_retired()) << 5)
+            | (u32::from(!self.ledgers.answers.reclamation_is_idle()) << 6)
+            | (u32::from(!self.canceled_ready.is_empty()) << 7)
+            | (u32::from(self.exported.has_ready(
+                &self.runtime,
+                &self.ledgers.exports,
+                messages,
+                queue,
+            )) << 8)
+            | (u32::from(self.ledgers.questions.has_pending_finish()) << 9)
+            | (u32::from(self.ledgers.imports.has_pending_release()) << 10)
+            | (u32::from(self.ledgers.answers.has_queued_cancellations()) << 11)
+            | (u32::from(control) << 12)
+            | (u32::from(self.barrier.is_some()) << 13)
+            | (u32::from(self.echo.is_some()) << 14)
+            | (u32::from(!self.invocation_work_is_idle()) << 15);
+        self.filter_control_waits(ready, messages, queue)
     }
     fn select_work(
         &mut self,
         messages: &messages::Messages<'pool, '_, '_>,
         queue: &messages::Queue<'pool, '_, impl Sized>,
     ) -> Option<u32> {
-        let selected = self.next_ready_work(messages, queue)?;
+        let ready = self.ready_work(messages, queue);
+        if ready == 0 {
+            return None;
+        }
+        let following = ready & (u32::MAX << self.work_cursor);
+        let selected = if following != 0 { following } else { ready }.trailing_zeros();
         self.work_cursor = (selected + 1) % 16;
         Some(selected)
     }
