@@ -2,7 +2,7 @@
 
 ## Status
 
-**Latest measured encrypted-batching comparison: 27/48 allocation targets met, 21 gaps, zero unmeasured cases. See the [batching report](../2026-10-23-encrypted-batching/README.md). Later candidates are being qualified; full parity remains unmet.**
+**Latest measured dispatch qualification: 44/48 allocation targets met, four bulk-transfer gaps, zero unmeasured cases. See the [qualification report](../2026-10-24-dispatch-qualification/README.md) for allocation attribution, five-run latency means/spread, and remaining read-count gaps. Later candidates are being qualified; full allocation parity remains unmet.**
 
 The ownership comparison preserved below met 10/48 targets. It predates the scheduler and subsequent candidates.
 

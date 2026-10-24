@@ -1,0 +1,822 @@
+{
+  "source": "Verified allocation-sites.json from encrypted-benchmark-analysis artifact 12539573623. All 448 peer totals match summary.json.",
+  "note": "Named categories use non-overlapping frame predicates. Other includes unmatched sites and sites below 0.5 blocks per operation; full totals remain exact. This is stack attribution, not an estimate of achievable savings.",
+  "rows": [
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "variant": "legacy",
+      "peer": "client",
+      "blocks": 166.51111111111112,
+      "bytes": 3539992.688888889,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 65.0,
+          "bytes": 1050150.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 65.0,
+          "bytes": 1048680.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 25.511111111111113,
+          "bytes": 391850.6666666667
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 10.0,
+          "bytes": 1049264.0222222223
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "variant": "legacy",
+      "peer": "service-0",
+      "blocks": 181.88888888888889,
+      "bytes": 3837435.3333333335,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 65.0,
+          "bytes": 1050110.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 65.0,
+          "bytes": 1048720.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 44.888888888888886,
+          "bytes": 689493.3333333334
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 6.0,
+          "bytes": 1049064.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "variant": "portable",
+      "peer": "client",
+      "blocks": 167.6888888888889,
+      "bytes": 3481915.3333333335,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 65.0,
+          "bytes": 1050150.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 64.91111111111111,
+          "bytes": 1047223.6444444444
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 21.68888888888889,
+          "bytes": 333141.3333333333
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 15.088888888888903,
+          "bytes": 1051352.3555555558
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "variant": "portable",
+      "peer": "service-0",
+      "blocks": 153.9111111111111,
+      "bytes": 3331168.6,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 65.0,
+          "bytes": 1050110.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 65.0,
+          "bytes": 1048720.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 11.911111111111111,
+          "bytes": 182954.66666666666
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 11.0,
+          "bytes": 1049335.9333333336
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "variant": "legacy-baseline",
+      "peer": "client",
+      "blocks": 165.46666666666667,
+      "bytes": 3508678.0222222223,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 65.0,
+          "bytes": 1050150.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 65.0,
+          "bytes": 1048680.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 23.466666666666665,
+          "bytes": 360448.0
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 11.0,
+          "bytes": 1049352.0222222223
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "variant": "legacy-baseline",
+      "peer": "service-0",
+      "blocks": 155.15555555555557,
+      "bytes": 3411459.3333333335,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 65.0,
+          "bytes": 1050110.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 65.0,
+          "bytes": 1048720.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 17.155555555555555,
+          "bytes": 263509.3333333333
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 7.0,
+          "bytes": 1049072.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "variant": "legacy",
+      "peer": "client",
+      "blocks": 602.9555555555555,
+      "bytes": 13786947.333333334,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 257.0,
+          "bytes": 4200102.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 257.0,
+          "bytes": 4194408.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 77.95555555555555,
+          "bytes": 1197397.3333333333
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 10.0,
+          "bytes": 4194992.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "variant": "legacy",
+      "peer": "service-0",
+      "blocks": 541.0888888888888,
+      "bytes": 12897915.266666668,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 257.0,
+          "bytes": 4200062.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 257.0,
+          "bytes": 4194448.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 20.08888888888889,
+          "bytes": 308565.3333333333
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 6.0,
+          "bytes": 4194791.933333334
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "variant": "portable",
+      "peer": "client",
+      "blocks": 549.6444444444445,
+      "bytes": 12891920.733333334,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 257.0,
+          "bytes": 4200102.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 257.0,
+          "bytes": 4194408.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 19.644444444444446,
+          "bytes": 301738.6666666667
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 15.000000000000114,
+          "bytes": 4195624.066666668
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "variant": "portable",
+      "peer": "service-0",
+      "blocks": 545.1111111111111,
+      "bytes": 12883168.8,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 257.0,
+          "bytes": 4200062.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 257.0,
+          "bytes": 4194448.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 19.11111111111111,
+          "bytes": 293546.6666666667
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 11.0,
+          "bytes": 4195064.133333335
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "variant": "legacy-baseline",
+      "peer": "client",
+      "blocks": 619.6888888888889,
+      "bytes": 14028699.355555555,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 257.0,
+          "bytes": 4200102.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 257.0,
+          "bytes": 4194408.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 93.68888888888888,
+          "bytes": 1439061.3333333333
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 11.0,
+          "bytes": 4195080.022222221
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "variant": "legacy-baseline",
+      "peer": "service-0",
+      "blocks": 544.5777777777778,
+      "bytes": 12936152.666666666,
+      "categories": {
+        "rustls_encrypted_record": {
+          "blocks": 257.0,
+          "bytes": 4200062.0
+        },
+        "rustls_received_plaintext": {
+          "blocks": 257.0,
+          "bytes": 4194448.0
+        },
+        "rustls_deframer_buffer": {
+          "blocks": 22.57777777777778,
+          "bytes": 346794.6666666667
+        },
+        "rustls_slice_vector": {
+          "blocks": 1.0,
+          "bytes": 48.0
+        },
+        "other": {
+          "blocks": 7.0,
+          "bytes": 4194800.0
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "variant": "legacy",
+      "peer": "client",
+      "blocks": 658.0888888888888,
+      "bytes": 3166969.088888889,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 258.31111111111113,
+          "bytes": 1052870.0444444446
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 85.8,
+          "bytes": 1372.8
+        },
+        "endpoint_header_cid": {
+          "blocks": 73.66666666666667,
+          "bytes": 1178.6666666666667
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 73.66666666666667,
+          "bytes": 1178.6666666666667
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 65.04444444444445,
+          "bytes": 7284.977777777778
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 65.04444444444445,
+          "bytes": 1049915.7333333334
+        },
+        "other": {
+          "blocks": 36.55555555555543,
+          "bytes": 1053168.2000000002
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "variant": "legacy",
+      "peer": "service-0",
+      "blocks": 734.8444444444444,
+      "bytes": 3166470.222222222,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 257.0,
+          "bytes": 1052803.7333333334
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 172.44444444444446,
+          "bytes": 2759.1111111111113
+        },
+        "endpoint_header_cid": {
+          "blocks": 72.77777777777777,
+          "bytes": 1164.4444444444443
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 72.77777777777777,
+          "bytes": 1164.4444444444443
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 65.17777777777778,
+          "bytes": 7299.9111111111115
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 65.17777777777778,
+          "bytes": 1049957.1555555556
+        },
+        "other": {
+          "blocks": 29.488888888888823,
+          "bytes": 1051321.4222222217
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "variant": "portable",
+      "peer": "client",
+      "blocks": 654.1777777777778,
+      "bytes": 3168747.577777778,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 257.02222222222224,
+          "bytes": 1052843.2
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 82.37777777777778,
+          "bytes": 1318.0444444444445
+        },
+        "endpoint_header_cid": {
+          "blocks": 71.53333333333333,
+          "bytes": 1144.5333333333333
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 71.53333333333333,
+          "bytes": 1144.5333333333333
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 64.84444444444445,
+          "bytes": 7262.577777777778
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 64.84444444444445,
+          "bytes": 1049910.7555555555
+        },
+        "other": {
+          "blocks": 42.02222222222224,
+          "bytes": 1055123.9333333336
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "variant": "portable",
+      "peer": "service-0",
+      "blocks": 728.3555555555555,
+      "bytes": 3168200.8,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 256.93333333333334,
+          "bytes": 1052787.911111111
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 161.37777777777777,
+          "bytes": 2582.0444444444443
+        },
+        "endpoint_header_cid": {
+          "blocks": 72.06666666666666,
+          "bytes": 1153.0666666666666
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 72.06666666666666,
+          "bytes": 1153.0666666666666
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 65.44444444444444,
+          "bytes": 7329.777777777777
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 65.44444444444444,
+          "bytes": 1049961.6
+        },
+        "other": {
+          "blocks": 35.02222222222224,
+          "bytes": 1053233.333333333
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "variant": "legacy-baseline",
+      "peer": "client",
+      "blocks": 650.3777777777777,
+      "bytes": 3167263.7333333334,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 259.46666666666664,
+          "bytes": 1052874.8444444444
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 82.17777777777778,
+          "bytes": 1314.8444444444444
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 70.37777777777778,
+          "bytes": 1126.0444444444445
+        },
+        "endpoint_header_cid": {
+          "blocks": 70.37777777777778,
+          "bytes": 1126.0444444444445
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 64.95555555555555,
+          "bytes": 7275.022222222222
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 64.95555555555555,
+          "bytes": 1049912.888888889
+        },
+        "other": {
+          "blocks": 38.066666666666606,
+          "bytes": 1053634.0444444446
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "variant": "legacy-baseline",
+      "peer": "service-0",
+      "blocks": 726.2222222222222,
+      "bytes": 3168939.7333333334,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 259.0,
+          "bytes": 1052821.5111111111
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 157.2888888888889,
+          "bytes": 2516.6222222222223
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 72.17777777777778,
+          "bytes": 1154.8444444444444
+        },
+        "endpoint_header_cid": {
+          "blocks": 72.17777777777778,
+          "bytes": 1154.8444444444444
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 65.8,
+          "bytes": 7369.6
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 65.8,
+          "bytes": 1049971.2
+        },
+        "other": {
+          "blocks": 33.97777777777776,
+          "bytes": 1053951.111111111
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy",
+      "peer": "client",
+      "blocks": 2584.5333333333333,
+      "bytes": 12661039.48888889,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 1029.0,
+          "bytes": 4210937.6
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 339.97777777777776,
+          "bytes": 5439.644444444444
+        },
+        "endpoint_header_cid": {
+          "blocks": 290.1777777777778,
+          "bytes": 4642.844444444445
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 290.1777777777778,
+          "bytes": 4642.844444444445
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 262.44444444444446,
+          "bytes": 29393.777777777777
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 262.44444444444446,
+          "bytes": 4199387.2
+        },
+        "other": {
+          "blocks": 110.31111111111113,
+          "bytes": 4206595.577777779
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy",
+      "peer": "service-0",
+      "blocks": 2937.3333333333335,
+      "bytes": 12675202.311111111,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 1030.2,
+          "bytes": 4210929.422222222
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 671.6444444444444,
+          "bytes": 10746.31111111111
+        },
+        "endpoint_header_cid": {
+          "blocks": 293.8,
+          "bytes": 4700.8
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 293.8,
+          "bytes": 4700.8
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 259.2,
+          "bytes": 29030.4
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 259.15555555555557,
+          "bytes": 4199009.6
+        },
+        "other": {
+          "blocks": 129.5333333333333,
+          "bytes": 4216084.977777779
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "portable",
+      "peer": "client",
+      "blocks": 2546.777777777778,
+      "bytes": 12660067.4,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 1026.5333333333333,
+          "bytes": 4210893.688888889
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 328.8666666666667,
+          "bytes": 5261.866666666667
+        },
+        "endpoint_header_cid": {
+          "blocks": 284.0,
+          "bytes": 4544.0
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 284.0,
+          "bytes": 4544.0
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 256.9555555555556,
+          "bytes": 28779.022222222222
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 256.9555555555556,
+          "bytes": 4199281.244444445
+        },
+        "other": {
+          "blocks": 109.4666666666667,
+          "bytes": 4206763.577777779
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "portable",
+      "peer": "service-0",
+      "blocks": 2881.6444444444446,
+      "bytes": 12671439.111111112,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 1029.177777777778,
+          "bytes": 4210903.288888888
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 637.4222222222222,
+          "bytes": 10198.755555555555
+        },
+        "endpoint_header_cid": {
+          "blocks": 289.53333333333336,
+          "bytes": 4632.533333333334
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 289.53333333333336,
+          "bytes": 4632.533333333334
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 256.9555555555556,
+          "bytes": 28779.022222222222
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 256.9111111111111,
+          "bytes": 4198962.311111111
+        },
+        "other": {
+          "blocks": 122.11111111111086,
+          "bytes": 4213330.666666668
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy-baseline",
+      "peer": "client",
+      "blocks": 2565.9555555555557,
+      "bytes": 12659980.822222222,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 1032.7111111111112,
+          "bytes": 4211001.955555555
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 335.5111111111111,
+          "bytes": 5368.177777777778
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 283.5111111111111,
+          "bytes": 4536.177777777778
+        },
+        "endpoint_header_cid": {
+          "blocks": 283.5111111111111,
+          "bytes": 4536.177777777778
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 260.0888888888889,
+          "bytes": 4199709.688888889
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 260.0444444444444,
+          "bytes": 29124.977777777778
+        },
+        "other": {
+          "blocks": 110.57777777777801,
+          "bytes": 4205703.666666666
+        }
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy-baseline",
+      "peer": "service-0",
+      "blocks": 2905.2444444444445,
+      "bytes": 12675659.377777778,
+      "categories": {
+        "quiche_stream_send_buffer": {
+          "blocks": 1030.5111111111112,
+          "bytes": 4210921.244444445
+        },
+        "quiche_transport_parameter_cids": {
+          "blocks": 640.4888888888889,
+          "bytes": 10247.822222222223
+        },
+        "quiche_receive_header_cid": {
+          "blocks": 292.68888888888887,
+          "bytes": 4683.022222222222
+        },
+        "endpoint_header_cid": {
+          "blocks": 292.68888888888887,
+          "bytes": 4683.022222222222
+        },
+        "quiche_received_stream_buffer": {
+          "blocks": 257.8666666666667,
+          "bytes": 4199709.333333333
+        },
+        "quiche_receive_range_queue": {
+          "blocks": 257.8222222222222,
+          "bytes": 28876.088888888888
+        },
+        "other": {
+          "blocks": 133.17777777777792,
+          "bytes": 4216538.844444444
+        }
+      }
+    }
+  ]
+}
