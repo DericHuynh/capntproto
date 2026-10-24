@@ -199,22 +199,23 @@ impl<'storage, 'bytes> Buffers<'storage, 'bytes> {
         (0..len).map(|index| self.at(index))
     }
     #[inline(always)]
-    pub fn reuse_indices(&self) -> impl Iterator<Item = usize> {
+    pub fn reuse_indices(&self, minimum: usize) -> impl Iterator<Item = usize> {
+        let _ = minimum;
         let (start, len) = match self {
             Self::Borrowed(buffers) => (0, buffers.len()),
             #[cfg(feature = "alloc")]
-            Self::Growing(buffers) => (buffers.reuse_after.get().min(buffers.len()), buffers.len()),
+            Self::Growing(buffers) => (buffers.reuse_start(minimum), buffers.len()),
         };
         (start..len).chain(0..start)
     }
     #[inline(always)]
-    pub fn reused(&self, index: usize) {
+    pub fn reused(&self, index: usize, minimum: usize) {
         match self {
             Self::Borrowed(_) => {
-                let _ = index;
+                let _ = (index, minimum);
             }
             #[cfg(feature = "alloc")]
-            Self::Growing(buffers) => buffers.reused(index),
+            Self::Growing(buffers) => buffers.reused(index, minimum),
         }
     }
     pub fn append(&self, minimum: usize) -> Option<usize> {
