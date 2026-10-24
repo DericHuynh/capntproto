@@ -2743,12 +2743,30 @@ fn direct_plain_return_is_transactional_and_pins_the_original_result() {
             .unwrap()
         }
         let frame = reply(messages, key.id().to_wire(), false, true);
+        let budget_before = frame.budget.remaining_words().unwrap();
+        assert!(frame.reader.get().is_none());
         let PlainReceived::Deferred(frame) = driver
             .try_receive_plain_owned::<()>(frame, messages, |_, _| None)
             .unwrap_or_else(|(e, _)| panic!("{e:?}"))
         else {
             panic!("unclaimed result")
         };
+        assert!(
+            frame.reader.get().is_none(),
+            "declining does not allocate a shared arena"
+        );
+        let budget_after = frame.budget.remaining_words().unwrap();
+        assert!(budget_after < budget_before);
+        let PlainReceived::Deferred(frame) = driver
+            .try_receive_plain_owned::<()>(frame, messages, |_, _| None)
+            .unwrap_or_else(|(e, _)| panic!("{e:?}"))
+        else {
+            panic!("unclaimed retry")
+        };
+        assert!(
+            frame.budget.remaining_words().unwrap() < budget_after,
+            "retry cannot replenish the original traversal allowance"
+        );
         assert!(driver.ledgers.questions.contains(key));
         frame.release(messages);
         let frame = reply(messages, key.id().to_wire(), true, true);

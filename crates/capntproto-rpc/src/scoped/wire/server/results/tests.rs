@@ -105,7 +105,9 @@ fn call_context_preserves_borrowed_and_suspended_results() {
                 method,
                 ..Default::default()
             },
-            params: Payload::owned(Default::default(), vec![]).into_params(),
+            params: Payload::owned(Default::default(), vec![])
+                .into_params()
+                .into(),
         };
         let work = prepared
             .execute_using(&client, &results, None, immediate)
@@ -305,7 +307,9 @@ fn prepared() -> Prepared {
             method: 9,
             ..Default::default()
         },
-        params: Payload::owned(Default::default(), vec![]).into_params(),
+        params: Payload::owned(Default::default(), vec![])
+            .into_params()
+            .into(),
     }
 }
 

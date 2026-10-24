@@ -494,17 +494,43 @@ where
         )
             -> core::result::Result<Option<(any_pointer::Reader<'a>, T)>, E>,
     ) -> core::result::Result<Option<(CheckedPointerReader<S>, T)>, E> {
-        let (root, value) = {
+        self.try_select_pointer_or_else(select, drop)
+    }
+
+    /// Like `try_select_pointer`, but returns the original owner to `recover`
+    /// whenever selection declines or fails. Recovery preserves consumed read
+    /// limits, including failures while checking the selected pointer's arena.
+    #[inline(always)]
+    pub fn try_select_pointer_or_else<T, E: From<Error>>(
+        self,
+        select: impl for<'a> FnOnce(
+            any_pointer::Reader<'a>,
+        )
+            -> core::result::Result<Option<(any_pointer::Reader<'a>, T)>, E>,
+        recover: impl FnOnce(Self),
+    ) -> core::result::Result<Option<(CheckedPointerReader<S>, T)>, E> {
+        let selected = (|| {
             let arena = self.arena.cached()?;
             let pointer = layout::PointerReader::get_root_from_arena(&arena)?;
             let Some((selected, value)) = select(any_pointer::Reader::new(pointer))? else {
                 return Ok(None);
             };
             let root = layout::CachedPointerRoot::select(selected.reader, &arena)?;
-            (root, value)
-        };
-        let reader = self;
-        Ok(Some((CheckedPointerReader { root, reader }, value)))
+            Ok(Some((root, value)))
+        })();
+        match selected {
+            Ok(Some((root, value))) => {
+                Ok(Some((CheckedPointerReader { root, reader: self }, value)))
+            }
+            Ok(None) => {
+                recover(self);
+                Ok(None)
+            }
+            Err(error) => {
+                recover(self);
+                Err(error)
+            }
+        }
     }
 
     pub fn into_typed<T: Owned>(self) -> TypedReader<S, T> {
@@ -553,6 +579,11 @@ impl<S: ReaderSegments, B: core::borrow::Borrow<ReadBudget>> Reader<S, B> {
         let arena = self.arena.cached()?;
         let pointer = layout::PointerReader::get_root_from_arena(&arena)?;
         Ok(read(any_pointer::Reader::new(pointer)))
+    }
+
+    /// The authoritative traversal allowance shared by all views of this reader.
+    pub fn read_budget(&self) -> &ReadBudget {
+        self.arena.read_budget()
     }
 
     pub fn into_segments(self) -> S {

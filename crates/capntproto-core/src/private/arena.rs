@@ -166,6 +166,10 @@ impl<S: ReaderSegments, B: Borrow<ReadBudget>> ReaderArenaImpl<S, B> {
         }
     }
 
+    pub(crate) fn read_budget(&self) -> &ReadBudget {
+        self.read_limiter.borrow()
+    }
+
     pub fn into_segments(self) -> S {
         self.segments
     }

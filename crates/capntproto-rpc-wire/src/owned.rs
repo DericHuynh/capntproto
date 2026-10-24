@@ -244,10 +244,10 @@ impl<'pool> Frame<'pool> {
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
         payload: rpc_capnp::payload::Reader<'_>,
-    ) -> Result<Option<alloc::boxed::Box<PlainParams>>, Error> {
+    ) -> Result<Option<PlainParams>, Error> {
         Ok(self
             .retain_pointer(messages, payload.get_content())?
-            .map(|message| alloc::boxed::Box::new(PlainParams { message })))
+            .map(|message| PlainParams { message }))
     }
     /// Full serialized segment words, including unreachable data but excluding
     /// the segment table. Admission policies must not use root target_size(),
@@ -595,7 +595,7 @@ pub struct EnqueueRejected<C> {
 pub struct Call<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> {
     frame: Frame<'pool>,
     #[cfg(feature = "alloc")]
-    plain_params: core::cell::Cell<Option<alloc::boxed::Box<PlainParams>>>,
+    plain_params: core::cell::Cell<Option<PlainParams>>,
     receipts: Receipts<'i, 'e, 'a, I, N>,
     answer: answers::Key<'a>,
     target: Target<'e, 'a>,
@@ -608,7 +608,7 @@ pub struct Call<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> {
 // allows the connection classifier and Call admission to share one reader.
 struct AdmittedCall<'i, 'e, 'a, I, const N: usize, const P: usize> {
     #[cfg(feature = "alloc")]
-    plain_params: core::cell::Cell<Option<alloc::boxed::Box<PlainParams>>>,
+    plain_params: core::cell::Cell<Option<PlainParams>>,
     receipts: Receipts<'i, 'e, 'a, I, N>,
     answer: answers::Key<'a>,
     target: Target<'e, 'a>,
@@ -1008,7 +1008,7 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
     pub fn share_plain_params(
         &self,
         messages: &messages::Messages<'pool, '_, '_>,
-    ) -> Result<Option<alloc::boxed::Box<PlainParams>>, Error> {
+    ) -> Result<Option<PlainParams>, Error> {
         if let Some(params) = self.plain_params.take() {
             return Ok(Some(params));
         }

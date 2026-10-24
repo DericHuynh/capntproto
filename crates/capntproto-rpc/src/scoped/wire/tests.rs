@@ -343,7 +343,7 @@ fn shared_payload_still_enforces_the_original_traversal_budget() {
                     .unwrap_or_else(|rejected| panic!("{}", rejected.error));
                 let params = call.share_plain_params(messages).unwrap().unwrap();
                 driver.release_call(call, messages);
-                let error = capnp::private::capability::ParamsHook::get(&*params)
+                let error = capnp::private::capability::ParamsHook::get(&params)
                     .unwrap()
                     .get_as::<capnp::primitive_list::Reader<'_, ()>>()
                     .err()

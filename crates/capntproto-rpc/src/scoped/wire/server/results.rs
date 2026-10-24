@@ -846,7 +846,7 @@ impl PipelineHook for TransferPipeline {
 // Result storage stays on the dispatch stack until a service suspends. Taking
 // ownership boxes exactly this producer; synchronous handlers never box it.
 struct InboundCall {
-    params: Option<Box<dyn ParamsHook>>,
+    params: Option<Parameters>,
     results: Option<Hook>,
 }
 impl capnp::private::capability::CallContextHook for InboundCall {
@@ -861,7 +861,7 @@ impl capnp::private::capability::CallContextHook for InboundCall {
     }
     fn take(&mut self) -> (Box<dyn ParamsHook>, Box<dyn ResultsHook>) {
         (
-            self.params.take().expect("consumed call"),
+            self.params.take().expect("consumed call").into_hook(),
             Box::new(self.results.take().expect("consumed call")),
         )
     }

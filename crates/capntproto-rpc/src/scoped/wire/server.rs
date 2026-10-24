@@ -14,7 +14,36 @@ pub use worker::{Progress, Worker};
 #[must_use = "dispatch the prepared invocation or drop its owned parameters"]
 pub struct Prepared {
     method: DynamicCall,
-    params: Box<dyn ParamsHook>,
+    params: Parameters,
+}
+// Immediate dispatch borrows its parameters. Only a handler that takes
+// ownership needs the public boxed hook; retaining the admitted reader does
+// not require an allocation of its own.
+enum Parameters {
+    Plain(owned::PlainParams),
+    Hook(Box<dyn ParamsHook>),
+}
+impl std::ops::Deref for Parameters {
+    type Target = dyn ParamsHook;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Plain(params) => params,
+            Self::Hook(params) => &**params,
+        }
+    }
+}
+impl Parameters {
+    fn into_hook(self) -> Box<dyn ParamsHook> {
+        match self {
+            Self::Plain(params) => Box::new(params),
+            Self::Hook(params) => params,
+        }
+    }
+}
+impl From<Box<dyn ParamsHook>> for Parameters {
+    fn from(params: Box<dyn ParamsHook>) -> Self {
+        Self::Hook(params)
+    }
 }
 impl ParamsHook for Payload {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
@@ -59,7 +88,7 @@ impl Prepared {
         destination.call_with_hints(
             self.method.interface,
             self.method.method,
-            self.params,
+            self.params.into_hook(),
             results,
             CallHints {
                 no_promise_pipelining: self.method.no_promise_pipelining,
@@ -103,7 +132,7 @@ impl<'id> ClientHooks<'id> {
             content.imbue(&caps);
             Ok(Prepared {
                 method: params.hints(),
-                params: Payload::copy(content)?.into_params(),
+                params: Payload::copy(content)?.into_params().into(),
             })
         })
         .map_err(wire_error)?
@@ -129,7 +158,7 @@ impl<'id> ClientHooks<'id> {
         if let Some(message) = call.share_plain_params(messages).map_err(wire_error)? {
             return Ok(Prepared {
                 method: call.method(),
-                params: message,
+                params: Parameters::Plain(message),
             });
         }
         self.collect(&mut driver.capabilities());
@@ -157,7 +186,8 @@ impl<'id> ClientHooks<'id> {
                         .map_err(wire_error)?,
                     caps,
                 )?
-                .into_params(),
+                .into_params()
+                .into(),
             })
         })
         .map_err(wire_error)?

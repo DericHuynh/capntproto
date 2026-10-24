@@ -397,7 +397,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         #[cfg(feature = "alloc")]
         let plain = _frame.retain_pointer(_messages, _content)?.map(|message| {
             alloc::boxed::Box::new(PlainResults {
-                message,
+                message: PlainReader::Shared(message),
                 owner: None,
             })
         });
@@ -545,11 +545,7 @@ pub(super) struct AdmittedPlain {
 impl AdmittedPlain {
     #[cfg(feature = "alloc")]
     #[inline(always)]
-    pub(super) fn owned(
-        message: capnp::message::CachedPointerReader<
-            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
-        >,
-    ) -> Self {
+    pub(super) fn owned(message: PlainReader) -> Self {
         Self {
             discarded: false,
             plain: Some(alloc::boxed::Box::new(PlainResults {
@@ -586,10 +582,32 @@ pub(super) struct AdmittedReturn<'i, 'e, 'a, I, const N: usize> {
 /// reuse until the final response reader has gone away.
 #[cfg(feature = "alloc")]
 pub struct PlainResults {
-    message: capnp::message::CachedPointerReader<
-        capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
-    >,
+    message: PlainReader,
     owner: Option<alloc::rc::Rc<dyn core::any::Any>>,
+}
+// A buffered return transfers its reader outright. Retained frames keep the
+// shared traversal allowance required by their other outstanding observers.
+#[cfg(feature = "alloc")]
+pub(super) enum PlainReader {
+    Unique(
+        capnp::message::CheckedPointerReader<
+            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+        >,
+    ),
+    Shared(
+        capnp::message::CachedPointerReader<
+            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+        >,
+    ),
+}
+#[cfg(feature = "alloc")]
+impl PlainReader {
+    fn root(&self) -> capnp::any_pointer::Reader<'_> {
+        match self {
+            Self::Unique(message) => message.root(),
+            Self::Shared(message) => message.root(),
+        }
+    }
 }
 #[cfg(feature = "alloc")]
 impl PlainResults {
