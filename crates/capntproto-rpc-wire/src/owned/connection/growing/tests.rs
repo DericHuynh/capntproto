@@ -153,7 +153,11 @@ fn canceled_responses_are_queued_by_their_exact_return() {
                     NonZeroUsize::new(1).unwrap(),
                 )
                 .unwrap();
-            assert_eq!(driver.maintenance_published_retirement(), !queue.is_empty());
+            if !queue.is_empty() {
+                assert!(driver.maintenance_effects().output());
+                assert!(driver.maintenance_effects().resources());
+            }
+            assert!(!driver.maintenance_effects().routes());
             if !queue.is_empty() {
                 drain(&mut queue, messages, |root| {
                     assert!(matches!(
@@ -845,15 +849,20 @@ fn idle_certificate_observes_new_retirement_without_invalidation() {
         for _ in 0..128 {
             match poll!() {
                 Progress::Import(()) => {
-                    assert!(driver.maintenance_published_retirement());
+                    assert!(driver.maintenance_effects().output());
+                    assert!(driver.maintenance_effects().resources());
+                    assert!(!driver.maintenance_effects().routes());
                     released = true;
                 }
                 Progress::Idle => {
-                    assert!(!driver.maintenance_published_retirement());
+                    assert_eq!(driver.maintenance_effects(), MaintenanceEffects::default());
                     assert!(released);
                     break;
                 }
-                _ => assert!(!driver.maintenance_published_retirement()),
+                _ => {
+                    assert!(driver.maintenance_effects().resources());
+                    assert!(!driver.maintenance_effects().routes());
+                }
             }
         }
         assert!(released);

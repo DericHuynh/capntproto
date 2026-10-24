@@ -147,3 +147,26 @@ fn outgoing_notification_coalesces_without_losing_general_work() {
     }
     assert_eq!(second.0.load(Ordering::SeqCst), 2);
 }
+
+#[test]
+fn producer_notifications_preserve_identity_across_threads_and_parent_replacement() {
+    let mut notifications = Notifications::default();
+    let calls = notifications.producer(WorkSet::CALLS);
+    let foreign = notifications.producer(WorkSet::FOREIGN);
+    let commands = notifications.producer(WorkSet::COMMANDS);
+    notifications.take(Waker::noop());
+    std::thread::spawn(move || {
+        calls.wake_by_ref();
+        calls.wake();
+    })
+    .join()
+    .unwrap();
+    assert_eq!(notifications.take(Waker::noop()), WorkSet::CALLS);
+    foreign.wake();
+    commands.wake();
+    assert_eq!(
+        notifications.take(Waker::noop()),
+        WorkSet::FOREIGN | WorkSet::COMMANDS
+    );
+    assert_eq!(notifications.pending(), WorkSet::NONE);
+}

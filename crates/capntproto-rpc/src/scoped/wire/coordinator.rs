@@ -94,6 +94,7 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     notifications: Notifications,
     control_waker: Waker,
     worker_waker: Waker,
+    foreign_waker: Waker,
     enqueue_waker: Rc<EnqueueWake>,
     commands: Rc<handle::Commands>,
     output: io::Output,
@@ -141,7 +142,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         // Commands have one coordinator owner and retain this stable notifier.
         // Parent-task replacement is handled by WorkWake's registration, so
         // ordinary calls need not register the command inbox again.
-        commands.register(notifications.waker());
+        commands.register(notifications.producer(WorkSet::COMMANDS));
+        let foreign_waker = notifications.producer(WorkSet::FOREIGN);
         Ok(Self {
             driver,
             hooks,
@@ -156,6 +158,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             notifications,
             control_waker,
             worker_waker,
+            foreign_waker,
             enqueue_waker,
             commands,
             output: io::Output::new(),

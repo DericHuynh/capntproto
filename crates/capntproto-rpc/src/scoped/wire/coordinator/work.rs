@@ -26,6 +26,30 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             self.schedule.active |= WorkSet::COMMANDS;
         }
     }
+    /// The wire producer reports transition effects even if its final poll
+    /// suspends. Keep exact operation queues and the unfinished fair rotation.
+    fn maintenance_changed(&mut self, effects: connection::MaintenanceEffects) {
+        let mut ready = WorkSet::NONE;
+        if effects.routes() {
+            ready |= WorkSet::FOREIGN | WorkSet::CALLS | WorkSet::WORKER;
+        }
+        if effects.calls() {
+            ready |= WorkSet::CALLS;
+        }
+        if effects.answers() {
+            ready |= WorkSet::WORKER;
+        }
+        if effects.admission() {
+            ready |= WorkSet::ACCEPT;
+        }
+        if effects.resources() {
+            ready |= WorkSet::CALLS | WorkSet::FOREIGN | WorkSet::WORKER;
+        }
+        if effects.output() {
+            self.control_idle = false;
+        }
+        self.schedule.active |= ready;
+    }
     pub(super) fn resume_at(&mut self, lane: Lane) {
         // Once every lane has certified idle, start a new scan at the
         // lane made ready by this event. During an unfinished scan preserve
@@ -50,7 +74,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             output,
             cx,
             &mut budget,
-            &self.notifications.waker(),
+            &self
+                .notifications
+                .producer(WorkSet::CALLS | WorkSet::FOREIGN | WorkSet::MAINTENANCE),
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -68,28 +94,19 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         if notified & WorkSet::CONTROL != WorkSet::NONE {
             self.control_idle = false;
         }
-        let changed = notified & !WorkSet::CONTROL;
-        if changed != WorkSet::NONE {
-            if changed & !(WorkSet::CALLS | WorkSet::WORKER) == WorkSet::NONE
-                && changed & WorkSet::WORKER != WorkSet::NONE
-            {
-                // The worker queue already retains the specific ready keys.
-                // Early pipelines can also unblock dispatch and maintenance.
-                self.schedule.resume_at(Lane::Worker);
-                self.progressed();
-            } else if changed == WorkSet::CALLS {
-                // A newly enqueued request cannot change foreign promises,
-                // server tasks, network controls or cleanup before admission.
-                if self.schedule.active == WorkSet::NONE {
-                    self.schedule.cursor = Lane::Calls;
-                }
-                self.schedule.active |= WorkSet::CALLS;
+        let ready = notified & !WorkSet::CONTROL;
+        if ready != WorkSet::NONE {
+            self.schedule.resume_at(if ready == WorkSet::WORKER {
+                Lane::Worker
             } else {
-                // Coalesced application notifications still carry readiness
-                // in the worker queue. Protocol effects are committed by
-                // ingress and ControlContext, never inferred from a wake.
-                self.schedule.resume_at(Lane::Calls);
-                self.progressed();
+                Lane::Calls
+            });
+            // Operation queues retain exact keys. Early server pipelines require
+            // maintenance as well, but a wake does not resolve foreign promises
+            // or admit unrelated calls. Actual transitions report those effects.
+            self.schedule.active |= ready;
+            if ready & WorkSet::WORKER != WorkSet::NONE {
+                self.schedule.active |= WorkSet::MAINTENANCE;
             }
         }
         if !self
@@ -357,7 +374,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 true
             };
             let mut publication = None;
-            let mut published_retirement = false;
             let outcome = if !writable {
                 Poll::Pending
             } else {
@@ -367,7 +383,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         match self.foreign.poll(
                             &mut self.hooks,
                             &mut self.driver.capabilities(),
-                            &mut application_cx,
+                            &mut Context::from_waker(&self.foreign_waker),
                             quantum,
                         ) {
                             Poll::Ready(Ok(foreign::Progress::Idle)) => Poll::Pending,
@@ -457,7 +473,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             },
                         );
                         *remaining += unused;
-                        published_retirement = self.driver.maintenance_published_retirement();
+                        self.maintenance_changed(self.driver.maintenance_effects());
                         match result {
                             Ok(connection::Progress::Idle) => Poll::Pending,
                             Ok(connection::Progress::Yield) => continue,
@@ -543,22 +559,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     if self.foreign.is_empty() {
                         self.schedule.active &= !WorkSet::FOREIGN;
                     }
-                } else if published_retirement
-                    && self.foreign.is_empty()
-                    && self.worker.is_empty()
-                    && self.commands.is_empty()
-                    && self.driver.runtime().queued() == 0
-                    && !self.driver.has_pending_call()
-                    && self.notifications.pending() == WorkSet::NONE
-                {
-                    // Finish/Release only retire existing owners. Revisit
-                    // outgoing calls which may have waited for capacity and
-                    // continue cleanup, preserving unrelated idle scans.
-                    // Owner destructors and independent futures still wake the
-                    // ordinary lanes; controls observe every publication.
-                    self.control_idle = false;
-                    self.schedule.active |= (WorkSet::CALLS) | (WorkSet::MAINTENANCE);
-                } else {
+                } else if index != Lane::Maintenance {
                     self.progressed();
                 }
                 advanced = true;

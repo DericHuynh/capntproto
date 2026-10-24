@@ -286,7 +286,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     ) -> Result<(), Box<Cause<R::Error, W::Error>>> {
         // All application lanes use one stable wake identity. Borrow it across
         // polls rather than incrementing an atomic Arc count for every lane.
-        let waker = self.notifications.waker();
+        let waker = self
+            .notifications
+            .producer(WorkSet::CALLS | WorkSet::FOREIGN | WorkSet::MAINTENANCE);
         let mut pump = Pump::default();
         loop {
             // Buffered transports can admit and prepare their next frame in
