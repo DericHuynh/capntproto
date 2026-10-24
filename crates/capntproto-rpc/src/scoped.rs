@@ -64,9 +64,8 @@ struct Inbox {
     admission: Option<Rc<crate::admission::Admission>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
     queue: RefCell<VecDeque<Box<Call>>>,
-    // One pre-reserved release record per registry slot. Endpoint destruction
-    // never allocates or borrows the graph; only the driver consumes records.
-    released: RefCell<VecDeque<usize>>,
+    owners: Ownership,
+
     wake: RefCell<Option<Waker>>,
     enqueue_wake: RefCell<Option<Rc<wire::coordinator::EnqueueWake>>>,
     shutdown: Shutdown,
@@ -74,6 +73,25 @@ struct Inbox {
     live_calls: Cell<usize>,
     maximum_calls: usize,
     maximum_clients: usize,
+}
+/// One shared work owner for endpoint destruction and metadata notifications.
+/// Hooks retain this through their inbox; the scoped registry consumes the same
+/// queue identities. A notification never scans or borrows the capability graph.
+#[derive(Default)]
+struct Ownership {
+    // Pre-reserved once per registry slot: final endpoint Drop cannot allocate.
+    released: RefCell<VecDeque<usize>>,
+    metadata: wire::ready::Queue,
+    wake: RefCell<Option<Waker>>,
+}
+impl Ownership {
+    fn register(&self) {
+        // AtomicWaker consumes its registration on wake. Rearm before observing
+        // or consuming work, including stale events from recycled slots.
+        if let Some(wake) = self.wake.borrow().as_ref() {
+            self.metadata.register(wake);
+        }
+    }
 }
 struct CallTemplate {
     interface: u64,
@@ -112,6 +130,13 @@ impl Inbox {
         let wake = self.enqueue_wake.borrow().clone();
         match wake {
             Some(wake) => wake.notify(),
+            None => self.notify(),
+        }
+    }
+    fn notify_ownership(&self) {
+        let signal = self.owners.wake.borrow().clone();
+        match signal {
+            Some(signal) => signal.wake(),
             None => self.notify(),
         }
     }
@@ -212,7 +237,7 @@ impl Endpoint {
         }
         self.notify_binding();
         if let Some(inbox) = self.inbox.upgrade() {
-            inbox.notify();
+            inbox.notify_ownership();
         }
     }
 }
@@ -223,13 +248,13 @@ struct Resolution {
 impl Drop for Endpoint {
     fn drop(&mut self) {
         if let Some(inbox) = self.inbox.upgrade() {
-            let mut released = inbox.released.borrow_mut();
+            let mut released = inbox.owners.released.borrow_mut();
             if let Some(index) = self.index.get() {
                 debug_assert!(released.len() < released.capacity());
                 released.push_back(index);
             }
             drop(released);
-            inbox.notify();
+            inbox.notify_ownership();
         }
     }
 }
@@ -260,7 +285,6 @@ pub struct ClientHooks<'id> {
     sources_bound: bool,
     listener: Option<capntproto_rpc_engine::clients::Listener<'id>>,
     metadata_work: capntproto_rpc_engine::work_queue::Queue,
-    metadata_ready: wire::ready::Queue,
     maximum_clients: usize,
 }
 impl<'id> ClientHooks<'id> {
@@ -279,7 +303,7 @@ impl<'id> ClientHooks<'id> {
                 admission: None,
                 joins: None,
                 queue: RefCell::new(VecDeque::new()),
-                released: RefCell::new(VecDeque::new()),
+                owners: Ownership::default(),
                 wake: RefCell::new(None),
                 enqueue_wake: RefCell::new(None),
                 shutdown: shutdown::Receiver::new(),
@@ -295,7 +319,6 @@ impl<'id> ClientHooks<'id> {
             sources_bound: false,
             listener: None,
             metadata_work: capntproto_rpc_engine::work_queue::Queue::EMPTY,
-            metadata_ready: wire::ready::Queue::default(),
             maximum_clients,
         }
     }
@@ -470,7 +493,7 @@ impl<'id> ClientHooks<'id> {
             }
             // Pending records plus live endpoints can never exceed the slot
             // count. Reserve before publication so Drop cannot reject a release.
-            let mut released = self.inbox.released.borrow_mut();
+            let mut released = self.inbox.owners.released.borrow_mut();
             let additional = index + 1 - released.len();
             if released.try_reserve(additional).is_err() {
                 graph.release(client);
@@ -580,7 +603,7 @@ impl<'id> ClientHooks<'id> {
     pub fn reclaim_released(&mut self, graph: &mut impl Capabilities<'id>) {
         // Most synchronization points have no releases. Keep that test at the
         // call site instead of entering the graph-release loop on every turn.
-        if !self.inbox.released.borrow().is_empty() {
+        if !self.inbox.owners.released.borrow().is_empty() {
             self.drain_released(graph);
         }
     }
@@ -589,7 +612,7 @@ impl<'id> ClientHooks<'id> {
     fn drain_released(&mut self, graph: &mut impl Capabilities<'id>) {
         loop {
             // Release the queue borrow before touching graph ownership.
-            let index = self.inbox.released.borrow_mut().pop_front();
+            let index = self.inbox.owners.released.borrow_mut().pop_front();
             let Some(index) = index else { break };
             let key = self.entries[index]
                 .as_ref()
@@ -609,7 +632,7 @@ impl<'id> ClientHooks<'id> {
                 graph.unsubscribe(subscription);
             }
             if entry.metadata_watch.is_some() {
-                self.metadata_ready.remove(index);
+                self.inbox.owners.metadata.remove(index);
             }
             graph.release(entry.client);
         }
@@ -691,6 +714,7 @@ impl<'id> ClientHooks<'id> {
         project_metadata: bool,
         bind_sources: bool,
     ) {
+        self.inbox.owners.register();
         self.reclaim_released(graph);
         if bind_sources && !self.sources_bound {
             // One-time activation of the source contract. Admission thereafter
@@ -735,7 +759,7 @@ impl<'id> ClientHooks<'id> {
             }
         }
         if project_metadata && (!self.sources_bound || bind_sources) {
-            while let Some(ready) = self.metadata_ready.pop() {
+            while let Some(ready) = self.inbox.owners.metadata.pop() {
                 let index = ready.index();
                 let Some(entry) = self.entries.get_mut(index).and_then(Option::as_mut) else {
                     continue;
@@ -802,10 +826,12 @@ impl<'id> ClientHooks<'id> {
                     };
                     if !same {
                         if entry.metadata_watch.take().is_some() {
-                            self.metadata_ready.remove(index);
+                            self.inbox.owners.metadata.remove(index);
                         }
                         if let Some(source) = changed {
-                            let wake = self.metadata_ready.insert(index, true);
+                            // This watch is polled below; only a subsequent notification
+                            // should enqueue it. A pre-queued slot suppresses that wake.
+                            let wake = self.inbox.owners.metadata.insert(index, false);
                             let mut watch = source.subscribe();
                             let _ = watch.poll_changed(&mut Context::from_waker(&wake));
                             entry.metadata_watch = Some((watch, wake));
@@ -899,11 +925,28 @@ impl<'id> ClientHooks<'id> {
         }
     }
 
+    pub(super) fn ownership_ready(&self, graph: &impl Capabilities<'id>) -> bool {
+        self.inbox.owners.register();
+        !self.sources_bound
+            || !self.inbox.owners.released.borrow().is_empty()
+            || !self.metadata_work.is_empty()
+            || self
+                .listener
+                .as_ref()
+                .is_some_and(|listener| graph.has_events(listener))
+            || !self.inbox.owners.metadata.is_empty()
+    }
+
     /// Poll one owned call. Keep it on downstream capacity rejection before
     /// polling another call, so admission preserves the original order.
     /// The bridge has one consumer; the latest poll registers its wake.
     pub(super) fn register_next(&self, waker: &Waker) {
-        self.metadata_ready.register(waker);
+        // Standalone scoped users retain the combined polling contract. Hosted
+        // connections bind ownership to its own producer once, independently of
+        // application call futures and their wake registrations.
+        if self.inbox.owners.wake.borrow().is_none() {
+            self.inbox.owners.metadata.register(waker);
+        }
         if self
             .inbox
             .wake

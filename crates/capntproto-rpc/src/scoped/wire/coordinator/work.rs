@@ -74,9 +74,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             output,
             cx,
             &mut budget,
-            &self
-                .notifications
-                .producer(WorkSet::CALLS | WorkSet::FOREIGN | WorkSet::MAINTENANCE),
+            &self.notifications.producer(WorkSet::CALLS),
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -118,6 +116,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             .is_some_and(|old| Rc::ptr_eq(old, &self.enqueue_waker))
         {
             *self.hooks.inbox.enqueue_wake.borrow_mut() = Some(self.enqueue_waker.clone());
+            *self.hooks.inbox.owners.wake.borrow_mut() = Some(self.foreign_waker.clone());
+            self.hooks
+                .inbox
+                .owners
+                .metadata
+                .register(&self.foreign_waker);
         }
         // IO-only or spurious polls must preserve a completed idle scan. Real
         // protocol progress and application wakeups invalidate it explicitly.
@@ -591,7 +595,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     pub(super) fn collect_hooks<'domain, O: Output<I>>(
         hooks: &mut ClientHooks<'domain>,
         driver: &mut Peer<'_, 'domain, '_, I, P, C, H>,

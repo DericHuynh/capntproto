@@ -85,12 +85,12 @@ fn release_journal_tracks_final_owners_without_growing_on_drop() {
                 drop(alias);
                 owners.push(client);
             }
-            assert!(hooks.inbox.released.borrow().is_empty());
-            let capacity = hooks.inbox.released.borrow().capacity();
+            assert!(hooks.inbox.owners.released.borrow().is_empty());
+            let capacity = hooks.inbox.owners.released.borrow().capacity();
             // No collection between drops: every published slot needs a record.
             while let Some(owner) = owners.pop() {
                 drop(owner);
-                assert_eq!(hooks.inbox.released.borrow().capacity(), capacity);
+                assert_eq!(hooks.inbox.owners.released.borrow().capacity(), capacity);
             }
             assert!(graph.take_retired().is_none());
             hooks.reclaim_released(graph);

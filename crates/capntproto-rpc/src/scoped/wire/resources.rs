@@ -54,7 +54,21 @@ impl<'id> ClientHooks<'id> {
     /// Subscribe imported routes to change sources before publishing
     /// hooks. None declares no remote metadata. Local opaque hooks retain their
     /// policy-preserving observer, since their authority cannot be unwrapped.
+    #[inline(always)]
     pub fn collect_wire<I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>(
+        &mut self,
+        driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
+        subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
+        local: impl FnMut(&S) -> EndpointMetadata,
+        local_changes: impl FnMut(&S) -> Option<Rc<MetadataChanges>>,
+    ) {
+        if !self.ownership_ready(&driver.capabilities()) {
+            return;
+        }
+        self.synchronize_wire(driver, subscribe, local, local_changes);
+    }
+    #[inline(never)]
+    fn synchronize_wire<I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>(
         &mut self,
         driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
         mut subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
