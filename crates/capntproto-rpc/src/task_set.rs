@@ -115,7 +115,7 @@ where
             parent: futures::task::AtomicWaker::new(),
         });
 
-        let mut set = Self {
+        let set = Self {
             enqueued: Some(receiver),
             connection: None,
             in_progress: ReadySet::new(),
@@ -131,11 +131,6 @@ where
             reaper,
         };
 
-        // If the FuturesUnordered ever gets empty, its stream will terminate, which
-        // is not what we want. So we make sure there is always at least one future in it.
-        set.in_progress
-            .push(TaskInProgress::Task(Box::pin(::futures::future::pending())));
-
         let handle = TaskSetHandle { sender };
 
         (handle, set)
@@ -149,9 +144,8 @@ where
         if self.on_empty_fulfillers.is_empty() {
             return;
         }
-        // There is always the one pending() future that we added in `new()`.
         if self.connection.is_none()
-            && self.in_progress.len() <= 1
+            && self.in_progress.len() == 0
             && self.last.len() == 0
             && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())
         {
@@ -279,7 +273,7 @@ where
         }
         if self.enqueued.is_none()
             && self.connection.is_none()
-            && self.in_progress.len() <= 1
+            && self.in_progress.len() == 0
             && self.last.len() == 0
         {
             Poll::Ready(Ok(()))
@@ -357,11 +351,11 @@ impl<E: 'static> TaskSet<E> {
         }
 
         // on_empty() must also complete when it was queued on an already
-        // empty set. The sentinel future is not an application task.
+        // empty set.
         self.update_on_empty_fulfillers();
         if self.enqueued.is_none()
             && self.connection.is_none()
-            && self.in_progress.len() <= 1
+            && self.in_progress.len() == 0
             && self.last.len() == 0
         {
             return Poll::Ready(Ok(()));
@@ -370,7 +364,10 @@ impl<E: 'static> TaskSet<E> {
             match Stream::poll_next(Pin::new(&mut self.in_progress), cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(v) => match v {
-                    None => return Poll::Ready(Ok(())),
+                    // An empty ready set can accept work again. The admission
+                    // queue, direct connection and deferred tasks own their
+                    // wake registrations; only their closure above ends us.
+                    None => return Poll::Pending,
                     Some(TaskDone::Continue(result)) => {
                         // FuturesUnordered has released the completed task.
                         // Reap here instead of allocating a mapped future and
@@ -382,7 +379,7 @@ impl<E: 'static> TaskSet<E> {
                         self.update_on_empty_fulfillers();
                         if self.enqueued.is_none()
                             && self.connection.is_none()
-                            && self.in_progress.len() <= 1
+                            && self.in_progress.len() == 0
                             && self.last.len() == 0
                         {
                             return Poll::Ready(Ok(()));
@@ -425,6 +422,56 @@ mod tests {
     }
     fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
         Pin::new(future).poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
+    }
+
+    #[test]
+    fn idle_set_accepts_later_work_and_only_finishes_after_admission_closes() {
+        #[derive(Default)]
+        struct Notify(std::sync::atomic::AtomicUsize);
+        impl Wake for Notify {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
+        let notifications = Arc::new(Notify::default());
+        let wake = Waker::from(notifications.clone());
+        let mut cx = Context::from_waker(&wake);
+        for _ in 0..3 {
+            assert!(Pin::new(&mut tasks).poll(&mut cx).is_pending());
+            let mut drained = handle.on_empty();
+            assert!(Pin::new(&mut tasks).poll(&mut cx).is_pending());
+            assert_eq!(poll(&mut drained), Poll::Ready(Ok(())));
+            let before = notifications.0.load(Ordering::SeqCst);
+            let (complete, wait) = oneshot::channel();
+            handle.add(async { wait.await.unwrap() });
+            assert!(notifications.0.load(Ordering::SeqCst) > before);
+            assert!(Pin::new(&mut tasks).poll(&mut cx).is_pending());
+            let mut drained = handle.on_empty();
+            assert!(Pin::new(&mut tasks).poll(&mut cx).is_pending());
+            assert!(poll(&mut drained).is_pending());
+            complete.send(Ok(())).unwrap();
+            assert!(Pin::new(&mut tasks).poll(&mut cx).is_pending());
+            assert_eq!(poll(&mut drained), Poll::Ready(Ok(())));
+        }
+        assert_eq!(results.borrow().as_slice(), &[Ok(()), Ok(()), Ok(())]);
+        let before = notifications.0.load(Ordering::SeqCst);
+        drop(handle);
+        assert!(notifications.0.load(Ordering::SeqCst) > before);
+        assert_eq!(Pin::new(&mut tasks).poll(&mut cx), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn closed_admission_still_waits_for_deferred_work() {
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
+        handle.add_last(async { Err(9) });
+        drop(handle);
+        assert!(poll(&mut tasks).is_pending());
+        assert!(results.borrow().is_empty());
+        assert_eq!(poll(&mut tasks), Poll::Ready(Ok(())));
+        assert_eq!(results.borrow().as_slice(), &[Err(9)]);
     }
 
     #[test]

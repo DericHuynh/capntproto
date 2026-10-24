@@ -145,10 +145,10 @@ impl<F: Future + Unpin> Stream for ReadySet<F> {
         if let Some(queued) = self.queued.as_mut() {
             return Pin::new(queued).poll_next(cx);
         }
-        self.ready.parent.register(cx.waker());
         if self.live == 0 {
             return Poll::Ready(None);
         }
+        self.ready.parent.register(cx.waker());
         // A single bounded rotation prevents self-waking or mutually waking
         // tasks from monopolizing the executor. Their notifications schedule
         // another rotation, including a wake during the final task's poll.
@@ -204,6 +204,27 @@ mod tests {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
+    #[test]
+    fn reusable_and_promoted_sets_accept_work_after_becoming_empty() {
+        for count in [1, REUSABLE_TASKS, REUSABLE_TASKS + 1] {
+            let mut set = ReadySet::new();
+            let mut cx = Context::from_waker(Waker::noop());
+            for _ in 0..3 {
+                assert_eq!(Pin::new(&mut set).poll_next(&mut cx), Poll::Ready(None));
+                for value in 0..count {
+                    set.push(std::future::ready(value));
+                }
+                let mut completed = Vec::new();
+                while let Poll::Ready(Some(value)) = Pin::new(&mut set).poll_next(&mut cx) {
+                    completed.push(value);
+                }
+                completed.sort_unstable();
+                assert_eq!(completed, (0..count).collect::<Vec<_>>());
+                assert_eq!(set.len(), 0);
+            }
+        }
+    }
+
     struct Wait {
         value: usize,
         ready: Rc<Cell<bool>>,
