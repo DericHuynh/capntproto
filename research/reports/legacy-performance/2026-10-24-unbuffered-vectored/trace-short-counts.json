@@ -1,0 +1,2765 @@
+{
+  "scope": "Entire peer lifecycle, including handshake, ciphertext, shutdown, QUIC ACK/retry/control packets. Attempts include errors, would-block and unreturned calls at termination; unreturned calls are counted separately. Batched UDP returns datagrams, not bytes. No Capn Proto message count inference.",
+  "journals": {
+    "tls-bulk-1m-0-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 1680,
+        "write_positive": 1680,
+        "syscall_write_attempts": 1680,
+        "write_returned_bytes": 13654391,
+        "read_attempts": 1794,
+        "read_nonpositive": 242,
+        "syscall_read_attempts": 1794,
+        "read_positive": 1552,
+        "read_returned_bytes": 12605018
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 1744,
+        "read_nonpositive": 64,
+        "syscall_read_attempts": 1744,
+        "read_positive": 1680,
+        "read_returned_bytes": 13654391,
+        "write_attempts": 1554,
+        "write_positive": 1554,
+        "syscall_write_attempts": 1554,
+        "write_returned_bytes": 12605042
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 170,
+        "read_positive": 170,
+        "syscall_recvfrom_attempts": 170,
+        "read_returned_bytes": 12602353
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 175,
+        "read_positive": 174,
+        "syscall_recvfrom_attempts": 175,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602503,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 161,
+        "read_positive": 161,
+        "syscall_recvfrom_attempts": 161,
+        "read_returned_bytes": 12602352
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 174,
+        "read_positive": 173,
+        "syscall_recvfrom_attempts": 174,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602502,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-portable/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 192,
+        "read_positive": 192,
+        "syscall_recvfrom_attempts": 192,
+        "read_returned_bytes": 12602354
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 175,
+        "read_positive": 174,
+        "syscall_recvfrom_attempts": 175,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602378,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 161,
+        "read_positive": 161,
+        "syscall_recvfrom_attempts": 161,
+        "read_returned_bytes": 12602354
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-0-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 174,
+        "read_positive": 173,
+        "syscall_recvfrom_attempts": 174,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602378,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 1679,
+        "write_positive": 1679,
+        "syscall_write_attempts": 1679,
+        "write_returned_bytes": 13654391,
+        "read_attempts": 1737,
+        "read_nonpositive": 186,
+        "syscall_read_attempts": 1737,
+        "read_positive": 1551,
+        "read_returned_bytes": 12605019
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 1739,
+        "read_nonpositive": 60,
+        "syscall_read_attempts": 1739,
+        "read_positive": 1679,
+        "read_returned_bytes": 13654391,
+        "write_attempts": 1553,
+        "write_positive": 1553,
+        "syscall_write_attempts": 1553,
+        "write_returned_bytes": 12605043
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 199,
+        "read_positive": 199,
+        "syscall_recvfrom_attempts": 199,
+        "read_returned_bytes": 12602354
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 178,
+        "read_positive": 177,
+        "syscall_recvfrom_attempts": 178,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602504,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 170,
+        "read_positive": 170,
+        "syscall_recvfrom_attempts": 170,
+        "read_returned_bytes": 12602354
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 178,
+        "read_positive": 177,
+        "syscall_recvfrom_attempts": 178,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602504,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-portable/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 183,
+        "read_positive": 183,
+        "syscall_recvfrom_attempts": 183,
+        "read_returned_bytes": 12602352
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 180,
+        "read_positive": 179,
+        "syscall_recvfrom_attempts": 180,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602376,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 194,
+        "read_positive": 194,
+        "syscall_recvfrom_attempts": 194,
+        "read_returned_bytes": 12602353
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-1-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 212,
+        "read_positive": 211,
+        "syscall_recvfrom_attempts": 212,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602377,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 1680,
+        "write_positive": 1680,
+        "syscall_write_attempts": 1680,
+        "write_returned_bytes": 13654391,
+        "read_attempts": 1727,
+        "read_nonpositive": 175,
+        "syscall_read_attempts": 1727,
+        "read_positive": 1552,
+        "read_returned_bytes": 12605020
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 1832,
+        "read_positive": 1680,
+        "syscall_read_attempts": 1832,
+        "read_returned_bytes": 13654391,
+        "write_attempts": 1554,
+        "write_positive": 1554,
+        "syscall_write_attempts": 1554,
+        "write_returned_bytes": 12605044,
+        "read_nonpositive": 152
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 161,
+        "read_positive": 161,
+        "syscall_recvfrom_attempts": 161,
+        "read_returned_bytes": 12602354
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 175,
+        "read_positive": 174,
+        "syscall_recvfrom_attempts": 175,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602504,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 180,
+        "read_positive": 180,
+        "syscall_recvfrom_attempts": 180,
+        "read_returned_bytes": 12602352
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 209,
+        "read_positive": 208,
+        "syscall_recvfrom_attempts": 209,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602502,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-portable/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 185,
+        "read_positive": 185,
+        "syscall_recvfrom_attempts": 185,
+        "read_returned_bytes": 12602352
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 178,
+        "read_positive": 177,
+        "syscall_recvfrom_attempts": 178,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602376,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 174,
+        "read_positive": 174,
+        "syscall_recvfrom_attempts": 174,
+        "read_returned_bytes": 12602353
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-2-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 203,
+        "read_positive": 202,
+        "syscall_recvfrom_attempts": 203,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602377,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 1679,
+        "write_positive": 1679,
+        "syscall_write_attempts": 1679,
+        "write_returned_bytes": 13654391,
+        "read_attempts": 1661,
+        "read_nonpositive": 110,
+        "syscall_read_attempts": 1661,
+        "read_positive": 1551,
+        "read_returned_bytes": 12605019
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 1732,
+        "read_nonpositive": 53,
+        "syscall_read_attempts": 1732,
+        "read_positive": 1679,
+        "read_returned_bytes": 13654391,
+        "write_attempts": 1553,
+        "write_positive": 1553,
+        "syscall_write_attempts": 1553,
+        "write_returned_bytes": 12605043
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 163,
+        "read_positive": 163,
+        "syscall_recvfrom_attempts": 163,
+        "read_returned_bytes": 12602353
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 174,
+        "read_positive": 173,
+        "syscall_recvfrom_attempts": 174,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602503,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 160,
+        "read_positive": 160,
+        "syscall_recvfrom_attempts": 160,
+        "read_returned_bytes": 12602352
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 174,
+        "read_positive": 173,
+        "syscall_recvfrom_attempts": 174,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602502,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-portable/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 162,
+        "read_positive": 162,
+        "syscall_recvfrom_attempts": 162,
+        "read_returned_bytes": 12602354
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 175,
+        "read_positive": 174,
+        "syscall_recvfrom_attempts": 175,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602378,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 160,
+        "read_positive": 160,
+        "syscall_recvfrom_attempts": 160,
+        "read_returned_bytes": 12602353
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-3-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 180,
+        "read_positive": 179,
+        "syscall_recvfrom_attempts": 180,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602377,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 1679,
+        "write_positive": 1679,
+        "syscall_write_attempts": 1679,
+        "write_returned_bytes": 13654391,
+        "read_attempts": 1666,
+        "read_nonpositive": 115,
+        "syscall_read_attempts": 1666,
+        "read_positive": 1551,
+        "read_returned_bytes": 12605019
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 1725,
+        "read_nonpositive": 45,
+        "syscall_read_attempts": 1725,
+        "read_positive": 1680,
+        "read_returned_bytes": 13654391,
+        "write_attempts": 1553,
+        "write_positive": 1553,
+        "syscall_write_attempts": 1553,
+        "write_returned_bytes": 12605043
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 163,
+        "read_positive": 163,
+        "syscall_recvfrom_attempts": 163,
+        "read_returned_bytes": 12602352
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 178,
+        "read_positive": 177,
+        "syscall_recvfrom_attempts": 178,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602502,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652424,
+        "read_attempts": 192,
+        "read_positive": 192,
+        "syscall_recvfrom_attempts": 192,
+        "read_returned_bytes": 12602351
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 176,
+        "read_positive": 175,
+        "syscall_recvfrom_attempts": 176,
+        "read_returned_bytes": 13652424,
+        "write_attempts": 113,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 113,
+        "write_returned_bytes": 12602501,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-portable/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 161,
+        "read_positive": 161,
+        "syscall_recvfrom_attempts": 161,
+        "read_returned_bytes": 12602351
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 175,
+        "read_positive": 174,
+        "syscall_recvfrom_attempts": 175,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602375,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 120,
+        "write_positive": 120,
+        "syscall_sendto_attempts": 120,
+        "write_returned_bytes": 13652408,
+        "read_attempts": 160,
+        "read_positive": 160,
+        "syscall_recvfrom_attempts": 160,
+        "read_returned_bytes": 12602353
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-bulk-1m-4-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 174,
+        "read_positive": 173,
+        "syscall_recvfrom_attempts": 174,
+        "read_returned_bytes": 13652408,
+        "write_attempts": 112,
+        "write_positive": 112,
+        "syscall_sendto_attempts": 112,
+        "write_returned_bytes": 12602377,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 92543,
+        "read_attempts": 31,
+        "read_nonpositive": 15,
+        "syscall_read_attempts": 31,
+        "read_positive": 16,
+        "read_returned_bytes": 78412
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 92543,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 78436
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59618
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59768,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59769,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59618
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59642,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59620
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-0-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59644,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 92543,
+        "read_attempts": 31,
+        "read_nonpositive": 15,
+        "syscall_read_attempts": 31,
+        "read_positive": 16,
+        "read_returned_bytes": 78410
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 30,
+        "read_positive": 15,
+        "syscall_read_attempts": 30,
+        "read_returned_bytes": 92543,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 78434,
+        "read_nonpositive": 15
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59620
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59770,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59769,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59643,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-1-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59643,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 92543,
+        "read_attempts": 31,
+        "read_nonpositive": 15,
+        "syscall_read_attempts": 31,
+        "read_positive": 16,
+        "read_returned_bytes": 78412
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 92543,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 78436
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59769,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59620
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59770,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59643,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59618
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-2-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59642,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 92543,
+        "read_attempts": 31,
+        "read_nonpositive": 15,
+        "syscall_read_attempts": 31,
+        "read_positive": 16,
+        "read_returned_bytes": 78411
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 92543,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 78435
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59620
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59770,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59769,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59620
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59644,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-3-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59643,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 92543,
+        "read_attempts": 31,
+        "read_nonpositive": 15,
+        "syscall_read_attempts": 31,
+        "read_positive": 16,
+        "read_returned_bytes": 78411
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 92543,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 78435
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59619
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59769,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59620
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 59770,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59618
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59642,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 74546,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 59618
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-concurrent-32-4-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 74546,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 59642,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_write_attempts": 27,
+        "write_returned_bytes": 21179,
+        "read_attempts": 56,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 56,
+        "read_positive": 28,
+        "read_returned_bytes": 18819
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 55,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 55,
+        "read_positive": 27,
+        "read_returned_bytes": 21179,
+        "write_attempts": 29,
+        "write_positive": 29,
+        "syscall_write_attempts": 29,
+        "write_returned_bytes": 18843
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16132
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16282,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16132
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16282,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-portable/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16155,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-0-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16155,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_write_attempts": 27,
+        "write_returned_bytes": 21179,
+        "read_attempts": 55,
+        "read_nonpositive": 27,
+        "syscall_read_attempts": 55,
+        "read_positive": 28,
+        "read_returned_bytes": 18819
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 55,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 55,
+        "read_positive": 27,
+        "read_returned_bytes": 21179,
+        "write_attempts": 29,
+        "write_positive": 29,
+        "syscall_write_attempts": 29,
+        "write_returned_bytes": 18843
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16281,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16130
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16280,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-portable/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16129
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16153,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-1-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16155,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_write_attempts": 27,
+        "write_returned_bytes": 21179,
+        "read_attempts": 55,
+        "read_nonpositive": 27,
+        "syscall_read_attempts": 55,
+        "read_positive": 28,
+        "read_returned_bytes": 18820
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 55,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 55,
+        "read_positive": 27,
+        "read_returned_bytes": 21179,
+        "write_attempts": 29,
+        "write_positive": 29,
+        "syscall_write_attempts": 29,
+        "write_returned_bytes": 18844
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16281,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16132
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16282,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-portable/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16130
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16154,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16132
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-2-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16156,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_write_attempts": 27,
+        "write_returned_bytes": 21179,
+        "read_attempts": 56,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 56,
+        "read_positive": 28,
+        "read_returned_bytes": 18818
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 55,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 55,
+        "read_positive": 27,
+        "read_returned_bytes": 21179,
+        "write_attempts": 29,
+        "write_positive": 29,
+        "syscall_write_attempts": 29,
+        "write_returned_bytes": 18842
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16281,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16281,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-portable/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16155,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16132
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-3-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16156,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_write_attempts": 27,
+        "write_returned_bytes": 21179,
+        "read_attempts": 56,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 56,
+        "read_positive": 28,
+        "read_returned_bytes": 18819
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 55,
+        "read_nonpositive": 28,
+        "syscall_read_attempts": 55,
+        "read_positive": 27,
+        "read_returned_bytes": 21179,
+        "write_attempts": 29,
+        "write_positive": 29,
+        "syscall_write_attempts": 29,
+        "write_returned_bytes": 18843
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16130
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16280,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18106,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18106,
+        "write_attempts": 28,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 28,
+        "write_returned_bytes": 16281,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-portable/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16155,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 18146,
+        "read_attempts": 26,
+        "read_positive": 26,
+        "syscall_recvfrom_attempts": 26,
+        "read_returned_bytes": 16131
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-dependent-read-4-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 28,
+        "read_positive": 27,
+        "syscall_recvfrom_attempts": 28,
+        "read_returned_bytes": 18146,
+        "write_attempts": 27,
+        "write_positive": 27,
+        "syscall_sendto_attempts": 27,
+        "write_returned_bytes": 16155,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 21395,
+        "read_attempts": 32,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 32,
+        "read_positive": 16,
+        "read_returned_bytes": 18820
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 21395,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 18844
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15868
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16018,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16017,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15868
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15892,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-0-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15891,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 21395,
+        "read_attempts": 33,
+        "read_nonpositive": 17,
+        "syscall_read_attempts": 33,
+        "read_positive": 16,
+        "read_returned_bytes": 18819
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 21395,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 18843
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15868
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 15,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 15,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16018,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15866
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16016,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15868
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15892,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-1-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15891,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 21395,
+        "read_attempts": 32,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 32,
+        "read_positive": 16,
+        "read_returned_bytes": 18819
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 21395,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 18843
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16017,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16017,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15866
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15890,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-2-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15891,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 21395,
+        "read_attempts": 33,
+        "read_nonpositive": 17,
+        "syscall_read_attempts": 33,
+        "read_positive": 16,
+        "read_returned_bytes": 18819
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 21395,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 18843
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16017,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16017,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15866
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15890,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-3-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15891,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-cpp/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_write_attempts": 15,
+        "write_returned_bytes": 21395,
+        "read_attempts": 32,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 32,
+        "read_positive": 16,
+        "read_returned_bytes": 18819
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-cpp/service-0.strace": {
+      "counts": {
+        "read_attempts": 31,
+        "read_nonpositive": 16,
+        "syscall_read_attempts": 31,
+        "read_positive": 15,
+        "read_returned_bytes": 21395,
+        "write_attempts": 17,
+        "write_positive": 17,
+        "syscall_write_attempts": 17,
+        "write_returned_bytes": 18843
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-legacy/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-legacy/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16017,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-legacy-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15868
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-legacy-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 16,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 16,
+        "write_returned_bytes": 16018,
+        "read_nonpositive": 1,
+        "write_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-portable/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-portable/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15891,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-portable-baseline/client.strace": {
+      "counts": {
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 18226,
+        "read_attempts": 14,
+        "read_positive": 14,
+        "syscall_recvfrom_attempts": 14,
+        "read_returned_bytes": 15867
+      },
+      "unfinished_socket_calls": 0
+    },
+    "tls-pipelined-read-4-portable-baseline/service-0.strace": {
+      "counts": {
+        "read_attempts": 16,
+        "read_positive": 15,
+        "syscall_recvfrom_attempts": 16,
+        "read_returned_bytes": 18226,
+        "write_attempts": 15,
+        "write_positive": 15,
+        "syscall_sendto_attempts": 15,
+        "write_returned_bytes": 15891,
+        "read_nonpositive": 1
+      },
+      "unfinished_socket_calls": 0
+    }
+  }
+}

@@ -123,3 +123,14 @@ initially stopped when the preceding run was cancelled. Its failed job was
 rerun after that preceding qualification restarted; the guard has now passed
 and the dedicated benchmark bundle is building. No new droplet results are
 claimed here, and the allocation-parity gaps remain open.
+
+
+## Subsequent trace-led optimization
+
+[The vectored Unbuffered follow-up](../2026-10-24-unbuffered-vectored/README.md)
+profiles the copy regression and removes the outer 128 KiB plaintext staging
+pass. Both implementation steps have separate five-repetition comparisons.
+Final bulk instruction counts improve about 1%, allocations remain at 275 legacy
+and 286 portable for TLS bulk-1m, and local latency remains mixed. The pinned
+rustls ciphertext-output copy remains. Dedicated qualification 40059426498 is
+queued behind the preceding campaigns; these local results do not qualify it.

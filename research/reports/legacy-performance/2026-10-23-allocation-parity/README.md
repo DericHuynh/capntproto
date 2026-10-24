@@ -245,3 +245,21 @@ Both endpoint tests, all 22 encrypted RPC integration tests, and warnings-denied
 This shared transport change follows the direct-reply qualification source. Neither run 40022705577 nor 40030571555 contains it. Its complete count, cumulative-byte, and latency effects remain unmeasured; the 571.20-block trace identifies removed work and must not be reported as a measured candidate improvement.
 
 [Run 40031849761](https://github.com/DericHuynh/capntproto/actions/runs/40031849761) schedules the full dedicated qualification of borrowed routing implementation `1a9e5fc2950c0b6c7025a0383d0a2d48a8f5d667` against frozen `3aec134`. Source `6ee9ecb23597f03604cbf8c265a9df55a764e1f0` adds only the isolated workflow caller. Its preliminary job waits for run 40030571555 to acquire the dedicated measurement slot before starting the build, preserving GitHub's single pending benchmark job. This is scheduled validation, not a completed performance result. The shared adapter is rebuilt into both current legacy and portable.
+
+
+## Follow-up: Unbuffered TLS allocations and vectored writes
+
+[Local trace-led measurements](../2026-10-24-unbuffered-vectored/README.md) after the
+Unbuffered API switch estimate **275 legacy, 286 portable and 2340.67 C++ allocation
+blocks per TLS bulk-1m operation**, summed over both peers using paired 2/8-operation
+DHAT captures. Rustls record allocations account for 260 blocks in both Rust
+variants. The new record-aware vectored writer reduces copy instructions while
+preserving those allocation counts; each implementation step also has five native
+repetitions with mean/spread and paired socket traces.
+
+This selected local case puts legacy below both references. It does not close the
+full 48-case dedicated-host allocation gap or establish a uniform latency gain.
+[Qualification 40059426498](https://github.com/DericHuynh/capntproto/actions/runs/40059426498)
+tests implementation `e4b71e700f198f8da7ef7f02c99e2174b5e41013` against frozen
+post-switch legacy and portable `34b5cdabf2201d0b50f03ec6dc18b35e8a9f1807` after the
+preceding Unbuffered qualification acquires the dedicated measurement slot.

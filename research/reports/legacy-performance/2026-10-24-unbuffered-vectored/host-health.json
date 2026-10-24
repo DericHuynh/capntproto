@@ -1,0 +1,104 @@
+{
+  "step1-native": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 141.08681634,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 201573404,
+      "user_usec": 110645769,
+      "system_usec": 90927634,
+      "nice_usec": 0,
+      "nr_periods": 1410,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 225,
+    "maximum_aggregate_trial_cpu_steal_percent": 8.333333333333334
+  },
+  "final-native": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 142.070513314,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 202306838,
+      "user_usec": 109029444,
+      "system_usec": 93277394,
+      "nice_usec": 0,
+      "nr_periods": 1419,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 225,
+    "maximum_aggregate_trial_cpu_steal_percent": 8.333333333333334
+  },
+  "step1-trace-short": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 4.00214526,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 4950350,
+      "user_usec": 2402751,
+      "system_usec": 2547598,
+      "nice_usec": 0,
+      "nr_periods": 40,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 100,
+    "maximum_aggregate_trial_cpu_steal_percent": 12.5
+  },
+  "final-trace-short": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 4.002797811,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 4783762,
+      "user_usec": 2075462,
+      "system_usec": 2708300,
+      "nice_usec": 0,
+      "nr_periods": 40,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 100,
+    "maximum_aggregate_trial_cpu_steal_percent": 11.11111111111111
+  },
+  "step1-trace-long": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 15.006932026,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 21145739,
+      "user_usec": 8207285,
+      "system_usec": 12938454,
+      "nice_usec": 0,
+      "nr_periods": 146,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 100,
+    "maximum_aggregate_trial_cpu_steal_percent": 5.714285714285714
+  },
+  "final-trace-long": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 14.014497392,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 20151936,
+      "user_usec": 7981430,
+      "system_usec": 12170506,
+      "nice_usec": 0,
+      "nr_periods": 140,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 100,
+    "maximum_aggregate_trial_cpu_steal_percent": 6.666666666666667
+  }
+}
