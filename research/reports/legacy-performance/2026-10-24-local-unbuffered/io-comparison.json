@@ -1,0 +1,525 @@
+{
+  "metric": "Successful ciphertext socket syscalls per whole operation, summed over both peers; mean \u00b1 run SD of five paired (100 - 10)/90 slopes with identical warmup.",
+  "rows": [
+    {
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "read": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      },
+      "write": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      }
+    },
+    {
+      "case": "dependent-read",
+      "implementation": "portable",
+      "read": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      },
+      "write": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      }
+    },
+    {
+      "case": "dependent-read",
+      "implementation": "cpp",
+      "read": {
+        "mean": 4.002222222222223,
+        "sd": 0.004969039949999515,
+        "samples": [
+          4.0,
+          4.0,
+          4.011111111111111,
+          4.0,
+          4.0
+        ]
+      },
+      "write": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      }
+    },
+    {
+      "case": "dependent-read",
+      "implementation": "legacy-baseline",
+      "read": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      },
+      "write": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      }
+    },
+    {
+      "case": "dependent-read",
+      "implementation": "portable-baseline",
+      "read": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      },
+      "write": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "cpp",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "portable-baseline",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "implementation": "cpp",
+      "read": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "read": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "implementation": "portable-baseline",
+      "read": {
+        "mean": 4.0,
+        "sd": 0.0,
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      },
+      "write": {
+        "mean": 2.0,
+        "sd": 0.0,
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "read": {
+        "mean": 35.53333333333333,
+        "sd": 4.164399383131044,
+        "samples": [
+          31.144444444444446,
+          37.77777777777778,
+          41.36666666666667,
+          32.233333333333334,
+          35.144444444444446
+        ]
+      },
+      "write": {
+        "mean": 18.0,
+        "sd": 0.0,
+        "samples": [
+          18.0,
+          18.0,
+          18.0,
+          18.0,
+          18.0
+        ]
+      }
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "read": {
+        "mean": 29.55333333333333,
+        "sd": 5.233553899574655,
+        "samples": [
+          28.41111111111111,
+          26.466666666666665,
+          38.62222222222222,
+          25.58888888888889,
+          28.677777777777777
+        ]
+      },
+      "write": {
+        "mean": 18.0,
+        "sd": 0.0,
+        "samples": [
+          18.0,
+          18.0,
+          18.0,
+          18.0,
+          18.0
+        ]
+      }
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "cpp",
+      "read": {
+        "mean": 258.00444444444446,
+        "sd": 0.018592445034105363,
+        "samples": [
+          258.02222222222224,
+          258.0,
+          258.02222222222224,
+          257.97777777777776,
+          258.0
+        ]
+      },
+      "write": {
+        "mean": 258.0,
+        "sd": 0.022222222222239907,
+        "samples": [
+          258.02222222222224,
+          257.97777777777776,
+          258.02222222222224,
+          257.97777777777776,
+          258.0
+        ]
+      }
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "legacy-baseline",
+      "read": {
+        "mean": 140.80666666666667,
+        "sd": 2.9831274499618723,
+        "samples": [
+          143.07777777777778,
+          143.2888888888889,
+          135.94444444444446,
+          140.3,
+          141.42222222222222
+        ]
+      },
+      "write": {
+        "mean": 34.0,
+        "sd": 0.0,
+        "samples": [
+          34.0,
+          34.0,
+          34.0,
+          34.0,
+          34.0
+        ]
+      }
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "portable-baseline",
+      "read": {
+        "mean": 137.24444444444444,
+        "sd": 2.380683582710581,
+        "samples": [
+          140.51111111111112,
+          136.17777777777778,
+          138.95555555555555,
+          135.66666666666666,
+          134.9111111111111
+        ]
+      },
+      "write": {
+        "mean": 34.0,
+        "sd": 0.0,
+        "samples": [
+          34.0,
+          34.0,
+          34.0,
+          34.0,
+          34.0
+        ]
+      }
+    }
+  ]
+}

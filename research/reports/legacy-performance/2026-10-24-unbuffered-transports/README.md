@@ -13,6 +13,14 @@ Both maintained Rust drivers use the new shared transports; C++ remains the
 supported TLS reference. C++ QUIC is still unsupported. No local timing or
 allocation benchmarks were run.
 
+## Subsequent local measurements
+
+The user requested local benchmarks after this implementation. The
+[local comparison](../2026-10-24-local-unbuffered/README.md) records 405 main timing
+trials, a larger 25-trial bulk repeat and 200 syscall diagnostic trials. It finds
+lower TLS socket counts, including concurrent-32 read parity, but regressions in
+TLS bulk latency. Dedicated-host qualification and allocation parity remain open.
+
 ## Changes
 
 All production quiche stream receive calls now use `Connection::stream_recv_buf()`.
