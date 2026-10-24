@@ -24,7 +24,7 @@ Four new tests cover zero allocation counts and bytes, caller storage reuse, exp
 
 The complete engine builds for `thumbv7em-none-eabi` with no features. A [standalone probe](embedded-link.rs) links without a global allocator; the [ELF check](embedded-link-local.json) finds no undefined or allocator symbols. It exercises retained guards, final publication, reentry, explicit completion and storage reuse. This is link-only evidence, not execution on a board or a claim that the complete hosted driver is allocation-free.
 
-[Focused CI](https://github.com/DericHuynh/capntproto/actions/runs/40140249948) passed **234 engine alloc, 188 engine no-alloc, 377 hosted RPC and 30 encrypted TLS/QUIC tests**: 829 executions across overlapping profiles. Warnings-denied engine/RPC Clippy, workspace formatting, the Cortex-M engine build, RPC no-default check and the standalone allocator-free link passed. [Validation](validation.json) records the job and source identities. All 48 profiling captures completed after compilation, with no failures. The dedicated-droplet campaign is building its bundle; five-repeat latency results remain pending.
+[Focused CI](https://github.com/DericHuynh/capntproto/actions/runs/40140249948) passed **234 engine alloc, 188 engine no-alloc, 377 hosted RPC and 30 encrypted TLS/QUIC tests**: 829 executions across overlapping profiles. Warnings-denied engine/RPC Clippy, workspace formatting, the Cortex-M engine build, RPC no-default check and the standalone allocator-free link passed. [Validation](validation.json) records the job and source identities. All 48 profiling captures completed after compilation, with no failures. The dedicated-droplet campaign has now completed successfully. Its five-repeat latency results are retained below, including regressions.
 
 ## Measured result
 
@@ -49,7 +49,26 @@ QUIC counts are **21.850 vs 21.450**, **72.150 vs 72.850**, and **219.025 vs 218
 
 With both revisions built at the same source path, **`.text` is 9,872,167 bytes and `.rodata` is 828,005 bytes in both binaries**. The earlier apparent 768-byte code-size saving is absent in this comparison. No size reduction is credited to this extraction.
 
-The measured guard/answer paths preserve their instruction counts and TLS allocation counts. Dedicated latency qualification is still open; no wall-clock speedup or every-case preservation is claimed.
+The measured guard/answer paths preserve their instruction counts and TLS allocation counts. The completed latency run does not establish every-case preservation.
+
+## Completed dedicated latency
+
+All jobs in [run 40140249948](https://github.com/DericHuynh/capntproto/actions/runs/40140249948) succeeded, including cleanup. The run retained 1,080 trials and 48 transport/case rows, with five fresh-process repetitions and 1,000 samples per repetition. [The complete table](latency.md) reports mean ± sample standard deviation of the five repetition means; [raw summary](latency-summary.json), [comparison](latency-comparison.json) and [provenance](latency-provenance.json) retain all values. This is a separate native campaign from the instruction captures.
+
+Against the cancellation-extraction control, geometric-mean latency is **+0.90% TLS** and **+2.36% QUIC**. Lower means appear in 14/24 TLS and 11/24 QUIC cases. This is not a speedup or a parity result. Representative TLS values in microseconds are:
+
+| Case | Frozen mean ± run SD | Factored mean ± run SD | Change |
+| --- | ---: | ---: | ---: |
+| Unary | 45.19 ± 10.38 | 51.27 ± 11.53 | +13.47% |
+| Dependent read | 108.68 ± 19.97 | 86.82 ± 0.99 | −20.11% |
+| Pipeline | 52.95 ± 0.93 | 59.71 ± 15.89 | +12.75% |
+| Concurrent-32 | 135.14 ± 2.23 | 151.92 ± 26.92 | +12.42% |
+| Callback | 103.15 ± 20.68 | 99.27 ± 19.67 | −3.76% |
+| Deep-32 / concurrent-32 | 461.28 ± 19.65 | 461.86 ± 72.38 | +0.13% |
+
+The unmodified portable-path comparison also swings, including +15.55% for QUIC deep-32 and −15.13% for TLS deep-32. Every trial has CPU accounting, with no observed cgroup throttling; maximum measured aggregate CPU steal is 3.03%, and maximum single-CPU steal is 12.5%. Repetition spread, control movement and separate build paths limit causal attribution. They do not prove that the listed regressions are harmless or entirely host-caused. No case or sample was removed.
+
+The later [idle-task investigation](../2026-10-24-legacy-idle/README.md) addresses unnecessary scheduler work and repeats simulated counters with an identical-binary control. Its runtime is not in this native run.
 
 ## Remaining ownership boundary
 

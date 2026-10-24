@@ -45,7 +45,7 @@ All raw captures, binary hashes, section sizes, symbol addresses and selected di
 
 Local verification: 19 Python tests passed, including an end-to-end synthetic capture test for both peers and all repetitions; the all-event parser reconciled all 48 original peer captures; Rust formatting and whitespace checks passed. Focused CI has passed core/hosted tests, Clippy, formatting, embedded checks and encrypted TLS/QUIC tests. The repeated profile captures are running; results are pending.
 
-Native timing for this scheduler candidate is not yet qualified. The prior Return-ownership dedicated run is separate and cannot validate this new scheduler change.
+Native timing for this scheduler candidate is not yet qualified. The prior Return-ownership dedicated run has completed: [its full report](../2026-10-24-legacy-return/latency.md) shows +0.90% TLS / +2.36% QUIC geometric-mean latency and substantial repetition spread. It does not establish parity, and it does not contain this scheduler change. The regressions remain unresolved; simulated-counter improvements alone cannot certify native latency.
 
 ## Reproduction
 
