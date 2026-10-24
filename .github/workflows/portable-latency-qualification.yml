@@ -1,0 +1,16 @@
+name: Performance / Portable latency qualification
+on:
+  push:
+    branches: [codex/portable-latency-qualification-20261024]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  qualify:
+    uses: ./.github/workflows/performance.yml
+    with:
+      campaign: run-secure
+      portable_base: ead825906d300b47475f14230381b218c62d9c64
+      region: auto
+      size: auto
+    secrets: inherit
