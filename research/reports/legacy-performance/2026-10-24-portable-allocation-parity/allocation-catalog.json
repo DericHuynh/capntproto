@@ -1,0 +1,1282 @@
+{
+  "overview": {
+    "tls": {
+      "cases": 24,
+      "portable_at_or_below_legacy": 24,
+      "portable_at_or_below_cpp": 24
+    },
+    "quic": {
+      "cases": 24,
+      "portable_at_or_below_legacy": 20,
+      "portable_at_or_below_cpp": 0
+    }
+  },
+  "rows": [
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "blocks": 7.000000000000007,
+      "bytes": 912.1111111111444,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "portable",
+      "blocks": 7.000000000000008,
+      "bytes": 952.1111111111358,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "cpp",
+      "blocks": 91.48888888887043,
+      "bytes": 64926.600000004575,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "blocks": 46.00000000000009,
+      "bytes": 6860.111111111157,
+      "sites": {
+        "take_received_plaintext": 4.000000000000001,
+        "into_hook": 2.0000000000000004
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "blocks": 46.00000000000039,
+      "bytes": 7387.933333333332,
+      "sites": {
+        "take_received_plaintext": 4.000000000000001,
+        "into_hook": 2.0,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "cpp",
+      "blocks": 246.97777777775326,
+      "bytes": 166880.222222227,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "blocks": 58.0000000000006,
+      "bytes": 7447.933333333377,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0000000000000004
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "blocks": 58.000000000000945,
+      "bytes": 8228.022222222224,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "cpp",
+      "blocks": 233.48888888886407,
+      "bytes": 155443.60000000446,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "blocks": 23.000000000000007,
+      "bytes": 132464.02222222212,
+      "sites": {
+        "take_received_plaintext": 10.0,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "blocks": 23.00000000000001,
+      "bytes": 133136.02222222232,
+      "sites": {
+        "take_received_plaintext": 10.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "cpp",
+      "blocks": 262.86666666664235,
+      "bytes": 441936.55555554404,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "blocks": 144.9999999999997,
+      "bytes": 4195712.022222224,
+      "sites": {
+        "take_received_plaintext": 129.99999999999997,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "blocks": 142.9999999999999,
+      "bytes": 4196304.200000006,
+      "sites": {
+        "take_received_plaintext": 130.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "cpp",
+      "blocks": 2363.799999999786,
+      "bytes": 6022665.711111043,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "blocks": 528.9999999999959,
+      "bytes": 16778624.022222262,
+      "sites": {
+        "take_received_plaintext": 514.0,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "blocks": 526.9999999999947,
+      "bytes": 16779216.022222266,
+      "sites": {
+        "take_received_plaintext": 514.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "cpp",
+      "blocks": 8899.355555556065,
+      "bytes": 23784184.82222217,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "blocks": 8.000000000000007,
+      "bytes": 4536.111111111151,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "portable",
+      "blocks": 8.000000000000007,
+      "bytes": 4576.022222222234,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "cpp",
+      "blocks": 96.48888888887143,
+      "bytes": 69526.64444444852,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "blocks": 201.99999999999596,
+      "bytes": 40519.93333333336,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "blocks": 197.9999999999952,
+      "bytes": 37704.11111111116,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "PreparedCall": 1.3877787807814457e-17,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "cpp",
+      "blocks": 2062.4888888887413,
+      "bytes": 1585396.5999999815,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "blocks": 207.99999999999594,
+      "bytes": 151623.93333333312,
+      "sites": {
+        "take_received_plaintext": 7.999999999999999,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "blocks": 203.99999999999517,
+      "bytes": 148808.0222222219,
+      "sites": {
+        "take_received_plaintext": 7.999999999999999,
+        "PreparedCall": 1.3877787807814457e-17,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "cpp",
+      "blocks": 2146.6222222220135,
+      "bytes": 1782586.511111094,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "blocks": 1660.0888888888692,
+      "bytes": 456684.5555555565,
+      "sites": {
+        "take_received_plaintext": 34.0,
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "blocks": 1571.7555555555246,
+      "bytes": 447018.0444444456,
+      "sites": {
+        "take_received_plaintext": 38.57777777777779,
+        "PreparedCall": -1.249000902703301e-16,
+        "into_hook": 96.00000000000003,
+        "PlainParams": 96.0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "cpp",
+      "blocks": 8559.822222221497,
+      "bytes": 6742089.11111084,
+      "sites": {}
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "blocks": 21.311111111111018,
+      "bytes": 2252.8222222222635,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "portable",
+      "blocks": 21.133333333333105,
+      "bytes": 2242.511111111156,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "blocks": 74.48888888888975,
+      "bytes": 11312.577777777793,
+      "sites": {
+        "into_hook": 2.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "blocks": 73.80000000000055,
+      "bytes": 11783.155555555582,
+      "sites": {
+        "into_hook": 2.0,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "blocks": 72.60000000000016,
+      "bytes": 11059.33333333334,
+      "sites": {
+        "into_hook": 2.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "blocks": 71.80000000000047,
+      "bytes": 11726.977777777794,
+      "sites": {
+        "into_hook": 2.0,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "blocks": 104.02222222222267,
+      "bytes": 267538.3333333331,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "blocks": 101.04444444444508,
+      "bytes": 267480.13333333225,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "blocks": 1244.9777777777952,
+      "bytes": 6331598.955555569,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "blocks": 1252.5777777777876,
+      "bytes": 6334133.822222236,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "blocks": 4969.022222222179,
+      "bytes": 25326443.31111112,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "blocks": 4913.222222222175,
+      "bytes": 25325869.3555556,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "blocks": 22.177777777777806,
+      "bytes": 9330.688888888926,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "portable",
+      "blocks": 22.466666666666498,
+      "bytes": 9370.044444444477,
+      "sites": {
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "blocks": 218.62222222221627,
+      "bytes": 52655.42222222223,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "blocks": 214.15555555554823,
+      "bytes": 49691.28888888882,
+      "sites": {
+        "PreparedCall": 1.3877787807814457e-17,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "blocks": 277.2666666666601,
+      "bytes": 277120.91111111094,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "blocks": 270.42222222221574,
+      "bytes": 273599.2444444431,
+      "sites": {
+        "PreparedCall": 1.3877787807814457e-17,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "blocks": 2019.6888888887433,
+      "bytes": 728527.8444444429,
+      "sites": {
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "blocks": 1941.0888888887312,
+      "bytes": 719310.2444444451,
+      "sites": {
+        "PreparedCall": -1.249000902703301e-16,
+        "into_hook": 96.00000000000004,
+        "PlainParams": 96.00000000000001
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "blocks": 7.0000000000000036,
+      "bytes": 784.0222222222544,
+      "sites": {
+        "take_received_plaintext": 1.9999999999999998,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "blocks": 7.000000000000007,
+      "bytes": 824.1111111111342,
+      "sites": {
+        "take_received_plaintext": 1.9999999999999998,
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "cpp",
+      "blocks": 91.48888888887056,
+      "bytes": 64798.600000004466,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "blocks": 7.0000000000000036,
+      "bytes": 912.0222222222612,
+      "sites": {
+        "take_received_plaintext": 1.9999999999999998,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "blocks": 7.000000000000007,
+      "bytes": 952.022222222241,
+      "sites": {
+        "take_received_plaintext": 1.9999999999999998,
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "cpp",
+      "blocks": 91.48888888887056,
+      "bytes": 64926.600000004415,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "blocks": 7.0000000000000036,
+      "bytes": 2831.9333333333666,
+      "sites": {
+        "take_received_plaintext": 1.9999999999999998,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "blocks": 7.000000000000007,
+      "bytes": 2872.022222222245,
+      "sites": {
+        "take_received_plaintext": 1.9999999999999998,
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "cpp",
+      "blocks": 91.48888888887056,
+      "bytes": 66846.5555555598,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "blocks": 23.0,
+      "bytes": 132464.02222222192,
+      "sites": {
+        "take_received_plaintext": 10.0,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "blocks": 23.000000000000007,
+      "bytes": 133136.11111111098,
+      "sites": {
+        "take_received_plaintext": 10.0,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "cpp",
+      "blocks": 263.8444444444202,
+      "bytes": 442448.86666665215,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "blocks": 7.000000000000007,
+      "bytes": 784.0222222222578,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "blocks": 7.000000000000008,
+      "bytes": 824.0222222222524,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "cpp",
+      "blocks": 91.48888888887045,
+      "bytes": 64798.644444449,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "blocks": 7.000000000000007,
+      "bytes": 2832.022222222258,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "blocks": 7.000000000000008,
+      "bytes": 2871.9333333333575,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "cpp",
+      "blocks": 91.48888888887043,
+      "bytes": 66846.5777777824,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "blocks": 205.9999999999957,
+      "bytes": 102751.93333333354,
+      "sites": {
+        "take_received_plaintext": 6.0,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "blocks": 201.99999999999514,
+      "bytes": 99936.02222222253,
+      "sites": {
+        "take_received_plaintext": 6.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 1.3877787807814457e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "cpp",
+      "blocks": 2110.7555555553995,
+      "bytes": 1696128.3555555365,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "legacy",
+      "blocks": 15.000000000000009,
+      "bytes": 4575.933333333372,
+      "sites": {
+        "take_received_plaintext": 4.000000000000001,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "portable",
+      "blocks": 15.000000000000005,
+      "bytes": 4656.200000000033,
+      "sites": {
+        "take_received_plaintext": 4.000000000000001,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "cpp",
+      "blocks": 180.97777777775252,
+      "bytes": 130549.22222222722,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy",
+      "blocks": 36.00000000000016,
+      "bytes": 3336.022222222272,
+      "sites": {
+        "take_received_plaintext": 4.000000000000001,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "portable",
+      "blocks": 34.00000000000012,
+      "bytes": 3311.9333333333543,
+      "sites": {
+        "take_received_plaintext": 4.000000000000001,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "cpp",
+      "blocks": 204.97777777775306,
+      "bytes": 139392.22222222664,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "blocks": 49.000000000000284,
+      "bytes": 1049983.933333335,
+      "sites": {
+        "take_received_plaintext": 34.0,
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "blocks": 47.00000000000051,
+      "bytes": 1050576.111111112,
+      "sites": {
+        "take_received_plaintext": 34.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "cpp",
+      "blocks": 687.7555555555292,
+      "bytes": 1560546.3777777585,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "blocks": 8.000000000000007,
+      "bytes": 1848.0222222222578,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "portable",
+      "blocks": 8.000000000000007,
+      "bytes": 1887.933333333347,
+      "sites": {
+        "take_received_plaintext": 2.0,
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "cpp",
+      "blocks": 96.48888888887143,
+      "bytes": 66838.55555555965,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "blocks": 55.59999999999958,
+      "bytes": 13527.622222222179,
+      "sites": {
+        "take_received_plaintext": 8.0,
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "blocks": 52.91111111111044,
+      "bytes": 12693.19999999971,
+      "sites": {
+        "take_received_plaintext": 8.0,
+        "PreparedCall": 4.85722573273506e-17,
+        "into_hook": 2.999999999999999,
+        "PlainParams": 3.0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "cpp",
+      "blocks": 361.4444444445597,
+      "bytes": 261116.42222221603,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "blocks": 1581.9111111110865,
+      "bytes": 455235.2222222202,
+      "sites": {
+        "take_received_plaintext": 20.0,
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "blocks": 1562.9999999999666,
+      "bytes": 452640.1999999977,
+      "sites": {
+        "take_received_plaintext": 20.0,
+        "PreparedCall": 1.5265566588595902e-16,
+        "into_hook": 96.00000000000003,
+        "PlainParams": 96.0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "cpp",
+      "blocks": 8304.488888887425,
+      "bytes": 6638159.377777607,
+      "sites": {}
+    },
+    {
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "blocks": 3522.2222222223813,
+      "bytes": 937867.533333335,
+      "sites": {
+        "take_received_plaintext": 58.000000000000014,
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "blocks": 3383.222222222413,
+      "bytes": 923028.3555555576,
+      "sites": {
+        "take_received_plaintext": 65.77777777777781,
+        "PreparedCall": 9.298117831235686e-16,
+        "into_hook": 223.9999999999999,
+        "PlainParams": 224.00000000000006
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "cpp",
+      "blocks": 16967.53333333255,
+      "bytes": 13394737.444444068,
+      "sites": {}
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "blocks": 21.62222222222234,
+      "bytes": 2028.111111111165,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "blocks": 21.13333333333332,
+      "bytes": 1986.511111111169,
+      "sites": {
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "blocks": 21.62222222222234,
+      "bytes": 2283.933333333391,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "blocks": 20.844444444444438,
+      "bytes": 2212.1777777778166,
+      "sites": {
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "blocks": 21.622222222222405,
+      "bytes": 6124.111111111177,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "blocks": 21.44444444444447,
+      "bytes": 6113.26666666674,
+      "sites": {
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "blocks": 104.37777777777832,
+      "bytes": 267581.99999999965,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "blocks": 101.4222222222229,
+      "bytes": 267523.8222222212,
+      "sites": {
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "blocks": 21.93333333333329,
+      "bytes": 2058.688888888938,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "blocks": 21.15555555555529,
+      "bytes": 1987.1111111111543,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "blocks": 21.48888888888877,
+      "bytes": 6105.266666666716,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "blocks": 20.822222222221914,
+      "bytes": 6051.755555555599,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "blocks": 255.51111111110473,
+      "bytes": 178018.6888888889,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "blocks": 248.35555555554797,
+      "bytes": 174448.13333333304,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 1.3877787807814457e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "legacy",
+      "blocks": 43.17777777777795,
+      "bytes": 8901.64444444448,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "portable",
+      "blocks": 43.466666666666825,
+      "bytes": 9018.044444444477,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "legacy",
+      "blocks": 64.2000000000006,
+      "bytes": 5821.888888888943,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "portable",
+      "blocks": 62.31111111111161,
+      "bytes": 5815.133333333376,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "blocks": 335.9555555555539,
+      "bytes": 1584159.7333333285,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "blocks": 333.0,
+      "bytes": 1584897.0888888831,
+      "sites": {
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "blocks": 22.288888888888913,
+      "bytes": 3972.222222222274,
+      "sites": {
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "portable",
+      "blocks": 22.466666666666498,
+      "bytes": 3994.222222222256,
+      "sites": {
+        "PreparedCall": 6.938893903907228e-18,
+        "into_hook": 6.938893903907228e-18
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "blocks": 139.93333333333496,
+      "bytes": 24474.68888888906,
+      "sites": {
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "blocks": 136.44444444444767,
+      "bytes": 23546.04444444468,
+      "sites": {
+        "PreparedCall": 4.85722573273506e-17,
+        "into_hook": 2.999999999999999,
+        "PlainParams": 3.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "blocks": 1778.7999999999165,
+      "bytes": 721463.5333333262,
+      "sites": {
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "blocks": 1756.5999999999074,
+      "bytes": 718166.022222216,
+      "sites": {
+        "PreparedCall": 1.5265566588595902e-16,
+        "into_hook": 96.00000000000004,
+        "PlainParams": 96.00000000000001
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "blocks": 4118.088888889177,
+      "bytes": 1455253.0666667097,
+      "sites": {
+        "into_hook": 4.85722573273506e-17
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "blocks": 4029.933333333683,
+      "bytes": 1456098.4222222774,
+      "sites": {
+        "PreparedCall": 9.298117831235686e-16,
+        "into_hook": 223.99999999999983,
+        "PlainParams": 223.99999999999997
+      }
+    }
+  ]
+}

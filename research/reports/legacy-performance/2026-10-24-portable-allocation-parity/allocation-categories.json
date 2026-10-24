@@ -1,0 +1,677 @@
+{
+  "method": "Partition by a quiche:: frame first, then take_received_plaintext; other includes RPC, fixtures, runtime and remaining transport work. Counts sum all peers; paired warmed 5/50 slopes.",
+  "rows": [
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "other": 4.999999999999997,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "portable",
+      "other": 4.999999999999996,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "other": 42.0000000000002,
+      "rustls_received_plaintext": 4.000000000000001
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "other": 42.000000000000384,
+      "rustls_received_plaintext": 4.000000000000001
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "other": 56.000000000000675,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "other": 56.00000000000089,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "other": 13.000000000000004,
+      "rustls_received_plaintext": 10.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "other": 12.999999999999998,
+      "rustls_received_plaintext": 10.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "other": 15.000000000000004,
+      "rustls_received_plaintext": 129.99999999999997
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "other": 13.0,
+      "rustls_received_plaintext": 130.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "other": 15.000000000000004,
+      "rustls_received_plaintext": 514.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "other": 13.0,
+      "rustls_received_plaintext": 514.0
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "other": 6.0,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "portable",
+      "other": 6.0,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "other": 200.00000000000037,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "other": 196.00000000000077,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "other": 200.00000000000037,
+      "rustls_received_plaintext": 7.999999999999999
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "other": 196.00000000000077,
+      "rustls_received_plaintext": 7.999999999999999
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "other": 1626.0888888888724,
+      "rustls_received_plaintext": 34.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "other": 1533.177777777756,
+      "rustls_received_plaintext": 38.57777777777778
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "other": 5.044444444444445,
+      "quiche": 16.266666666666676
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "portable",
+      "other": 4.999999999999999,
+      "quiche": 16.133333333333344
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "other": 42.022222222222474,
+      "quiche": 32.46666666666666
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "other": 42.000000000000625,
+      "quiche": 31.8
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "other": 56.044444444445226,
+      "quiche": 16.555555555555568
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "other": 56.00000000000099,
+      "quiche": 15.800000000000011
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "other": 17.11111111111112,
+      "quiche": 86.91111111111186
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "other": 17.000000000000007,
+      "quiche": 84.0444444444452
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "other": 55.57777777777864,
+      "quiche": 1189.4000000000055
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "other": 53.88888888888995,
+      "quiche": 1198.6888888888946
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "other": 180.17777777777778,
+      "quiche": 4788.844444444465
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "other": 174.7111111111109,
+      "quiche": 4738.511111111109
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "other": 6.044444444444444,
+      "quiche": 16.133333333333344
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "portable",
+      "other": 6.0,
+      "quiche": 16.466666666666676
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "other": 200.08888888888936,
+      "quiche": 18.533333333333346
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "other": 196.00000000000094,
+      "quiche": 18.155555555555566
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "other": 202.11111111111154,
+      "quiche": 75.15555555555669
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "other": 198.00000000000088,
+      "quiche": 72.42222222222307
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "other": 1628.4222222222086,
+      "quiche": 391.266666666668
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "other": 1542.7555555555318,
+      "quiche": 398.33333333333303
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "other": 4.999999999999999,
+      "rustls_received_plaintext": 1.9999999999999998
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "other": 4.999999999999997,
+      "rustls_received_plaintext": 1.9999999999999998
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "other": 5.0,
+      "rustls_received_plaintext": 1.9999999999999998
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "other": 4.999999999999997,
+      "rustls_received_plaintext": 1.9999999999999998
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "other": 5.0,
+      "rustls_received_plaintext": 1.9999999999999998
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "other": 4.999999999999997,
+      "rustls_received_plaintext": 1.9999999999999998
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "other": 13.000000000000009,
+      "rustls_received_plaintext": 10.0
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "other": 13.000000000000005,
+      "rustls_received_plaintext": 10.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "other": 4.999999999999997,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "other": 4.999999999999996,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "other": 4.999999999999997,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "other": 4.999999999999996,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "other": 200.00000000000045,
+      "rustls_received_plaintext": 6.0
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "other": 196.00000000000085,
+      "rustls_received_plaintext": 6.0
+    },
+    {
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "legacy",
+      "other": 10.999999999999998,
+      "rustls_received_plaintext": 4.000000000000001
+    },
+    {
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "portable",
+      "other": 10.999999999999998,
+      "rustls_received_plaintext": 4.000000000000001
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy",
+      "other": 31.999999999999982,
+      "rustls_received_plaintext": 4.000000000000001
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "portable",
+      "other": 29.99999999999998,
+      "rustls_received_plaintext": 4.000000000000001
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "other": 15.000000000000004,
+      "rustls_received_plaintext": 34.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "other": 13.0,
+      "rustls_received_plaintext": 34.0
+    },
+    {
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "other": 6.0,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "portable",
+      "other": 6.0,
+      "rustls_received_plaintext": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "other": 47.59999999999989,
+      "rustls_received_plaintext": 8.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "other": 44.911111111111325,
+      "rustls_received_plaintext": 8.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "other": 1561.9111111110929,
+      "rustls_received_plaintext": 20.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "other": 1542.999999999977,
+      "rustls_received_plaintext": 20.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "other": 3464.2222222222285,
+      "rustls_received_plaintext": 58.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "other": 3317.4444444444575,
+      "rustls_received_plaintext": 65.77777777777779
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "other": 5.0444444444444425,
+      "quiche": 16.57777777777779
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "other": 4.999999999999997,
+      "quiche": 16.133333333333347
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "other": 5.044444444444443,
+      "quiche": 16.57777777777779
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "other": 4.999999999999997,
+      "quiche": 15.844444444444457
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "other": 5.044444444444443,
+      "quiche": 16.577777777777793
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "other": 4.999999999999997,
+      "quiche": 16.444444444444454
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "other": 17.13333333333334,
+      "quiche": 87.24444444444535
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "other": 17.00000000000001,
+      "quiche": 84.42222222222314
+    },
+    {
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "other": 5.044444444444445,
+      "quiche": 16.8888888888889
+    },
+    {
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "other": 4.999999999999999,
+      "quiche": 16.155555555555566
+    },
+    {
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "other": 5.044444444444446,
+      "quiche": 16.444444444444457
+    },
+    {
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "other": 4.999999999999999,
+      "quiche": 15.822222222222234
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "other": 202.11111111111157,
+      "quiche": 53.40000000000001
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "other": 198.00000000000074,
+      "quiche": 50.355555555555576
+    },
+    {
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "legacy",
+      "other": 11.022222222222222,
+      "quiche": 32.15555555555555
+    },
+    {
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "portable",
+      "other": 10.999999999999998,
+      "quiche": 32.46666666666667
+    },
+    {
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "legacy",
+      "other": 32.02222222222221,
+      "quiche": 32.17777777777777
+    },
+    {
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "portable",
+      "other": 30.00000000000002,
+      "quiche": 32.31111111111111
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "other": 24.999999999999996,
+      "quiche": 310.9555555555506
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "other": 22.977777777777778,
+      "quiche": 310.02222222221707
+    },
+    {
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "other": 6.044444444444444,
+      "quiche": 16.244444444444454
+    },
+    {
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "portable",
+      "other": 6.0,
+      "quiche": 16.466666666666676
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "other": 48.044444444444515,
+      "quiche": 91.88888888888913
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "other": 45.000000000000135,
+      "quiche": 91.44444444444458
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "other": 1570.1333333333166,
+      "quiche": 208.66666666665998
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "other": 1551.0222222221958,
+      "quiche": 205.57777777777054
+    },
+    {
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "other": 3465.999999999997,
+      "quiche": 652.0888888889091
+    },
+    {
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "other": 3344.222222222241,
+      "quiche": 685.711111111132
+    }
+  ]
+}

@@ -297,3 +297,32 @@ allocation counts unchanged.
 [Qualification 40070062202](https://github.com/DericHuynh/capntproto/actions/runs/40070062202)
 tests runtime `36318e3` against both frozen `5b8fef2` controls, after the preceding
 campaign acquires the dedicated slot. Results remain pending.
+
+
+## Follow-up: portable ownership and concurrent allocation parity
+
+The [portable allocation pass](../2026-10-24-portable-allocation-parity/README.md)
+removes temporary shared-reader promotion, duplicate output owners, boxed plain
+dispatch parameters on the synchronous path, unnecessary contiguous-result
+owners, temporary segment vectors, and the separate response receiver. Bounded
+completion reuse now follows observed concurrency, and the first pending waiter
+stays inline. The repository adopts the changed low-level APIs without shims.
+
+For runtime `8f7f500`, all **24 TLS cases** meet or beat current legacy's allocation
+count and are below C++ in the local catalog. Portable unary/pipeline/bulk-1m fall
+from **10/67/156** to **7/58/143**, versus legacy **7/58/145**. Concurrent-32 is
+**198 versus 202**; deep-32-concurrent-32 is **204 versus 208**. QUIC has
+**20/24** point estimates at or below legacy. Repeated QUIC bulk/deep captures
+retain transport variability; this is not an all-QUIC parity claim.
+
+Allocation bytes and CPU remain separate open gaps: portable unary/pipeline
+allocate about **40/780 extra bytes**, and pipeline uses about **51.8% more
+simulated instructions** than legacy. Both drivers still allocate 130 rustls
+received-plaintext record buffers per selected TLS bulk-1m operation. The full
+report preserves all 48 five-repeat latency rows, paired allocation profiles,
+socket traces, all intermediate steps, and 745 passing final test executions.
+
+[Dedicated qualification 40078632826](https://github.com/DericHuynh/capntproto/actions/runs/40078632826)
+is scheduled against frozen `aad53bf` controls (runtime `36318e3`). Its source is
+`3d2b627`, with runtime parent `8f7f500`. Dedicated results remain pending, so the
+local measurements do not close the dedicated-host performance qualification.

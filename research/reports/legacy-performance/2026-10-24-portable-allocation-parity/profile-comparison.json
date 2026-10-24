@@ -1,0 +1,1632 @@
+{
+  "metric": "Both peers. Callgrind startup-subtracted slopes: 10/50 with 2 warmups for small cases; 2/8 with 1 warmup for bulk. Current DHAT slopes: 5/50 with 10 warmups. Frozen step5 DHAT controls use Callgrind-sized windows. Simulated counters; instrumented latency excluded.",
+  "rows": [
+    {
+      "case": "unary-small",
+      "implementation": "legacy",
+      "events": {
+        "Ir": 46375.15000000002,
+        "Dr": 12672.199999999993,
+        "Dw": 9772.625,
+        "I1mr": 3187.3750000000005,
+        "D1mr": 208.6249999999999,
+        "D1mw": 199.325,
+        "ILmr": 0.07499999999998863,
+        "DLmr": -5.684341886080802e-14,
+        "DLmw": 0.625,
+        "Bc": 5978.125,
+        "Bcm": 351.1500000000001,
+        "Bi": 568.975,
+        "Bim": 169.95000000000002
+      },
+      "allocations": {
+        "blocks": 7.000000000000007,
+        "bytes": 912.1111111111444
+      },
+      "allocation_sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17
+      },
+      "memory_copy_instructions": 1452.3250000000007,
+      "hot_files": [
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          2156.000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          1871.4500000000005
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          1699.0
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1658.0000000000002
+        ],
+        [
+          "crates/capntproto-rpc/src/rpc.rs",
+          1512.000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1485.6250000000043
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          1452.3250000000007
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          1429.0000000000007
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          1225.8999999999994
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          1061.0000000000018
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          1040.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          1039.9999999999995
+        ],
+        [
+          "crates/capntproto-rpc/src/task_set.rs",
+          1024.0000000000002
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          976.0000000000001
+        ],
+        [
+          "crates/capntproto-rpc/src/task_set/ready_set.rs",
+          964.0
+        ],
+        [
+          "crates/capntproto-rpc/src/twoparty.rs",
+          954.0
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          882.0
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          878.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/task/wake.rs",
+          863.9999999999997
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          782.9999999999999
+        ]
+      ]
+    },
+    {
+      "case": "unary-small",
+      "implementation": "portable",
+      "events": {
+        "Ir": 46808.350000000006,
+        "Dr": 13676.925000000003,
+        "Dw": 9813.574999999997,
+        "I1mr": 3977.7750000000005,
+        "D1mr": 399.525,
+        "D1mw": 339.65,
+        "ILmr": 0.14999999999997726,
+        "DLmr": 5.684341886080802e-14,
+        "DLmw": 1.0500000000000114,
+        "Bc": 6214.5250000000015,
+        "Bcm": 411.54999999999995,
+        "Bi": 488.0000000000001,
+        "Bim": 147.0
+      },
+      "allocations": {
+        "blocks": 7.000000000000008,
+        "bytes": 952.1111111111358
+      },
+      "allocation_sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18
+      },
+      "memory_copy_instructions": 1642.4250000000002,
+      "hot_files": [
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          1702.8499999999997
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          1699.0
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1670.0000000000002
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          1642.4249999999993
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          1538.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          1394.1750000000009
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          1136.9999999999986
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1130.2500000000039
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          1122.0000000000057
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          1040.0000000000002
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          966.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          886.9999999999997
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          879.9999999999999
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          878.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          767.9999999999997
+        ],
+        [
+          "crates/capntproto-futures/src/write_queue/engine.rs",
+          732.0000000000001
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          730.3749999999987
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          697.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/task/wake.rs",
+          681.9999999999999
+        ],
+        [
+          "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs",
+          642.9999999999999
+        ]
+      ]
+    },
+    {
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "events": {
+        "Ir": 46406.20000000001,
+        "Dr": 12680.999999999996,
+        "Dw": 9781.424999999996,
+        "I1mr": 3215.525,
+        "D1mr": 199.67499999999984,
+        "D1mw": 201.62500000000006,
+        "ILmr": 0.05000000000003979,
+        "DLmr": -0.02499999999992042,
+        "DLmw": 0.5000000000000284,
+        "Bc": 5984.8499999999985,
+        "Bcm": 322.44999999999993,
+        "Bi": 569.0000000000001,
+        "Bim": 180.07500000000002
+      },
+      "allocations": {
+        "blocks": 7.0,
+        "bytes": 912.0
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 1452.9750000000008,
+      "hot_files": [
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          2156.000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          1879.3500000000004
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          1699.0
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1658.0000000000002
+        ],
+        [
+          "crates/capntproto-rpc/src/rpc.rs",
+          1512.000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1485.6250000000043
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          1452.9750000000008
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          1428.000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          1225.8999999999994
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          1070.0000000000023
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          1040.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          1039.9999999999995
+        ],
+        [
+          "crates/capntproto-rpc/src/task_set.rs",
+          1024.0000000000002
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          976.0000000000001
+        ],
+        [
+          "crates/capntproto-rpc/src/task_set/ready_set.rs",
+          964.0
+        ],
+        [
+          "crates/capntproto-rpc/src/twoparty.rs",
+          954.0
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          882.0
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          878.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/task/wake.rs",
+          863.9999999999997
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          782.9999999999999
+        ]
+      ]
+    },
+    {
+      "case": "unary-small",
+      "implementation": "portable-baseline",
+      "events": {
+        "Ir": 46808.125,
+        "Dr": 13674.925000000003,
+        "Dw": 9798.775000000001,
+        "I1mr": 4072.8500000000004,
+        "D1mr": 431.025,
+        "D1mw": 350.67500000000007,
+        "ILmr": 0.17499999999995453,
+        "DLmr": 0.07499999999998863,
+        "DLmw": 0.9499999999999318,
+        "Bc": 6216.125000000004,
+        "Bcm": 408.0499999999997,
+        "Bi": 487.97500000000014,
+        "Bim": 149.00000000000003
+      },
+      "allocations": {
+        "blocks": 7.0,
+        "bytes": 951.8
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 1639.550000000001,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          1699.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          1696.8499999999997
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1670.0000000000002
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          1639.5500000000002
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          1538.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          1415.0750000000007
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          1140.9999999999984
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          1133.0000000000052
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1131.2500000000039
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          1040.0000000000002
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          965.0000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          886.9999999999997
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          879.9999999999999
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          878.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          776.9999999999995
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          732.4750000000006
+        ],
+        [
+          "crates/capntproto-futures/src/write_queue/engine.rs",
+          732.0000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          698.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/task/wake.rs",
+          686.9999999999999
+        ],
+        [
+          "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs",
+          642.9999999999999
+        ]
+      ]
+    },
+    {
+      "case": "unary-small",
+      "implementation": "cpp",
+      "events": {
+        "Ir": 114602.0249999999,
+        "Dr": 26342.925000000017,
+        "Dw": 37356.874999999985,
+        "I1mr": 5234.275000000001,
+        "D1mr": 714.0249999999992,
+        "D1mw": 572.8,
+        "ILmr": 0.025000000000034106,
+        "DLmr": -1.1368683772161603e-13,
+        "DLmw": 1.375,
+        "Bc": 28846.47499999999,
+        "Bcm": 720.6750000000011,
+        "Bi": 2053.5999999999967,
+        "Bim": 887.5499999999997
+      },
+      "allocations": {
+        "blocks": 91.48888888887043,
+        "bytes": 64926.600000004575
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 531.9499999999998,
+      "hot_files": [
+        [
+          "???",
+          84794.40000000861
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S",
+          16720.800000000003
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          11390.475000000046
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          547.95
+        ],
+        [
+          "./malloc/./malloc/arena.c",
+          285.39999999999895
+        ],
+        [
+          "./nptl/./nptl/pthread_getspecific.c",
+          170.0
+        ],
+        [
+          "./nptl/./nptl/cancellation.c",
+          160.0
+        ],
+        [
+          "./csu/./csu/errno-loc.c",
+          108.0
+        ],
+        [
+          "./nptl/./nptl/pthread_once.c",
+          100.00000000000007
+        ],
+        [
+          "./time/../sysdeps/unix/sysv/linux/clock_gettime.c",
+          80.0
+        ],
+        [
+          "./libio/./libio/iofwrite.c",
+          51.00000000000001
+        ],
+        [
+          "./libio/./libio/fileops.c",
+          44.999999999999915
+        ],
+        [
+          "./io/../sysdeps/unix/sysv/linux/read.c",
+          36.0
+        ],
+        [
+          "./libio/./libio/putc.c",
+          20.0
+        ],
+        [
+          "./misc/../sysdeps/unix/sysv/linux/epoll_wait.c",
+          20.0
+        ],
+        [
+          "./io/../sysdeps/unix/sysv/linux/write.c",
+          18.0
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S",
+          16.0
+        ],
+        [
+          "./libio/./libio/libioP.h",
+          15.999999999999975
+        ],
+        [
+          "./elf/../sysdeps/x86_64/tls_get_addr.S",
+          11.000000000000002
+        ],
+        [
+          "./malloc/../string/bits/string_fortified.h",
+          7.999999999999999
+        ]
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "events": {
+        "Ir": 96206.04999999996,
+        "Dr": 25201.049999999996,
+        "Dw": 19147.525,
+        "I1mr": 5236.25,
+        "D1mr": 614.5,
+        "D1mw": 592.5,
+        "ILmr": 0.10000000000002274,
+        "DLmr": 0.07499999999993179,
+        "DLmw": 0.625,
+        "Bc": 11088.150000000001,
+        "Bcm": 820.0999999999999,
+        "Bi": 944.0000000000001,
+        "Bim": 334.95000000000005
+      },
+      "allocations": {
+        "blocks": 58.0000000000006,
+        "bytes": 7447.933333333377
+      },
+      "allocation_sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0000000000000004
+      },
+      "memory_copy_instructions": 4092.0,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          12960.000000000002
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          7170.85
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          4552.275000000011
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          4212.999999999999
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          4091.999999999999
+        ],
+        [
+          "crates/capntproto-rpc/src/rpc.rs",
+          3643.0000000000005
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          3559.0000000000005
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          2199.000000000004
+        ],
+        [
+          "crates/capntproto-rpc/src/twoparty.rs",
+          2168.000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          2149.9000000000005
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          1932.999999999999
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          1916.0000000000016
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1658.0000000000002
+        ],
+        [
+          "crates/capntproto-core/src/private/arena.rs",
+          1622.0000000000002
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1619.6250000000034
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/hash/sip.rs",
+          1345.0000000000002
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          1337.0000000000016
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          1254.0
+        ],
+        [
+          "crates/capntproto-rpc/src/rpc/dispatch.rs",
+          1119.0
+        ],
+        [
+          "crates/capntproto-core/src/message.rs",
+          1063.0000000000002
+        ]
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "events": {
+        "Ir": 146030.0,
+        "Dr": 41878.40000000001,
+        "Dw": 29457.550000000003,
+        "I1mr": 10560.525,
+        "D1mr": 1279.6000000000004,
+        "D1mw": 1141.15,
+        "ILmr": 0.125,
+        "DLmr": 0.025000000000034106,
+        "DLmw": 0.9000000000000341,
+        "Bc": 18402.65,
+        "Bcm": 1944.0500000000004,
+        "Bi": 1196.0500000000002,
+        "Bim": 522.95
+      },
+      "allocations": {
+        "blocks": 58.000000000000945,
+        "bytes": 8228.022222222224
+      },
+      "allocation_sites": {
+        "take_received_plaintext": 2.0,
+        "into_hook": 2.0,
+        "PreparedCall": 6.938893903907228e-18
+      },
+      "memory_copy_instructions": 5574.35,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          12962.0
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          7296.924999999999
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          6912.999999999996
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          6785.350000000006
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          5574.349999999999
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          4105.000000000002
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          3833.899999999999
+        ],
+        [
+          "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs",
+          3418.0000000000005
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          3055.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          3035.000000000007
+        ],
+        [
+          "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs",
+          2741.0
+        ],
+        [
+          "crates/capntproto-rpc-wire/src/owned.rs",
+          2321.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          2312.000000000006
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          2119.000000000001
+        ],
+        [
+          "crates/capntproto-core/src/private/arena.rs",
+          2036.0
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1944.0000000000005
+        ],
+        [
+          "crates/capntproto-rpc-engine/src/clients.rs",
+          1861.05
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          1770.9999999999986
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1643.2500000000043
+        ],
+        [
+          "crates/capntproto-rpc-engine/src/messages/backing.rs",
+          1624.9999999999998
+        ]
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "events": {
+        "Ir": 96235.625,
+        "Dr": 25215.700000000004,
+        "Dw": 19154.199999999997,
+        "I1mr": 5273.0,
+        "D1mr": 619.7,
+        "D1mw": 609.5749999999999,
+        "ILmr": 0.12500000000005684,
+        "DLmr": 0.0,
+        "DLmw": 0.6250000000000284,
+        "Bc": 11088.824999999997,
+        "Bcm": 795.3,
+        "Bi": 944.0250000000001,
+        "Bim": 341.0
+      },
+      "allocations": {
+        "blocks": 58.0,
+        "bytes": 7448.1
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 4092.25,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          12960.000000000002
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          7160.95
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          4567.275000000011
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          4212.999999999999
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          4092.249999999999
+        ],
+        [
+          "crates/capntproto-rpc/src/rpc.rs",
+          3643.0000000000005
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          3558.0000000000005
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          2217.0000000000036
+        ],
+        [
+          "crates/capntproto-rpc/src/twoparty.rs",
+          2168.000000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          2149.9000000000005
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          1933.9999999999995
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          1916.0000000000016
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1658.0000000000002
+        ],
+        [
+          "crates/capntproto-core/src/private/arena.rs",
+          1622.0000000000002
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1619.6250000000034
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/hash/sip.rs",
+          1345.0000000000002
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          1337.0000000000016
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          1254.0
+        ],
+        [
+          "crates/capntproto-rpc/src/rpc/dispatch.rs",
+          1119.0
+        ],
+        [
+          "crates/capntproto-core/src/message.rs",
+          1063.0000000000002
+        ]
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "portable-baseline",
+      "events": {
+        "Ir": 145939.9,
+        "Dr": 41865.8,
+        "Dw": 29409.700000000004,
+        "I1mr": 10679.9,
+        "D1mr": 1239.4,
+        "D1mw": 1127.5750000000003,
+        "ILmr": 0.14999999999997726,
+        "DLmr": 0.024999999999977263,
+        "DLmw": 0.9000000000000341,
+        "Bc": 18396.575,
+        "Bcm": 2021.55,
+        "Bi": 1195.975,
+        "Bim": 530.0250000000001
+      },
+      "allocations": {
+        "blocks": 58.0,
+        "bytes": 8212.0
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 5556.1500000000015,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          12962.0
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          7212.675
+        ],
+        [
+          "crates/capntproto-core/src/private/layout.rs",
+          6911.999999999996
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs",
+          6774.350000000006
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          5556.150000000001
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          4114.000000000003
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          3881.9249999999997
+        ],
+        [
+          "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs",
+          3418.0000000000005
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/mem/mod.rs",
+          3062.000000000007
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          3055.0
+        ],
+        [
+          "crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs",
+          2741.0
+        ],
+        [
+          "crates/capntproto-rpc-wire/src/owned.rs",
+          2321.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          2310.000000000006
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/cell.rs",
+          2138.000000000002
+        ],
+        [
+          "crates/capntproto-core/src/private/arena.rs",
+          2036.0
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          1944.0000000000005
+        ],
+        [
+          "crates/capntproto-rpc-engine/src/clients.rs",
+          1859.05
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          1772.9999999999986
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/sync/atomic.rs",
+          1645.2500000000043
+        ],
+        [
+          "crates/capntproto-rpc-engine/src/messages/backing.rs",
+          1624.9999999999998
+        ]
+      ]
+    },
+    {
+      "case": "pipelined-read",
+      "implementation": "cpp",
+      "events": {
+        "Ir": 303237.6000000001,
+        "Dr": 70544.40000000005,
+        "Dw": 88219.575,
+        "I1mr": 11948.5,
+        "D1mr": 1572.8999999999992,
+        "D1mw": 1310.3,
+        "ILmr": 0.02499999999992042,
+        "DLmr": 1.1368683772161603e-13,
+        "DLmw": 1.3499999999997954,
+        "Bc": 67251.47500000002,
+        "Bcm": 1893.125,
+        "Bi": 5195.6,
+        "Bim": 2109.0500000000006
+      },
+      "allocations": {
+        "blocks": 233.48888888886407,
+        "bytes": 155443.60000000446
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 2413.35,
+      "hot_files": [
+        [
+          "???",
+          232285.62500001217
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S",
+          33727.8
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          32341.624999999927
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          2429.3499999999995
+        ],
+        [
+          "./malloc/./malloc/arena.c",
+          744.1999999999995
+        ],
+        [
+          "./nptl/./nptl/pthread_getspecific.c",
+          442.0
+        ],
+        [
+          "./csu/./csu/errno-loc.c",
+          276.0
+        ],
+        [
+          "./nptl/./nptl/pthread_once.c",
+          260.0000000000002
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S",
+          160.99999999999977
+        ],
+        [
+          "./nptl/./nptl/cancellation.c",
+          160.0
+        ],
+        [
+          "./time/../sysdeps/unix/sysv/linux/clock_gettime.c",
+          120.0
+        ],
+        [
+          "./libio/./libio/iofwrite.c",
+          51.00000000000001
+        ],
+        [
+          "./libio/./libio/fileops.c",
+          44.999999999999915
+        ],
+        [
+          "./elf/../sysdeps/x86_64/tls_get_addr.S",
+          44.0
+        ],
+        [
+          "./io/../sysdeps/unix/sysv/linux/read.c",
+          36.0
+        ],
+        [
+          "./malloc/../sysdeps/generic/calloc-clear-memory.h",
+          24.0
+        ],
+        [
+          "./libio/./libio/putc.c",
+          20.0
+        ],
+        [
+          "./misc/../sysdeps/unix/sysv/linux/epoll_wait.c",
+          20.0
+        ],
+        [
+          "./io/../sysdeps/unix/sysv/linux/write.c",
+          18.0
+        ],
+        [
+          "./malloc/../string/bits/string_fortified.h",
+          16.0
+        ]
+      ]
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "events": {
+        "Ir": 18066792.833333332,
+        "Dr": 8722170.5,
+        "Dw": 7413784.0,
+        "I1mr": 4753.833333333333,
+        "D1mr": 170633.6666666667,
+        "D1mw": 173688.66666666663,
+        "ILmr": 0.8333333333334849,
+        "DLmr": -0.16666666666696983,
+        "DLmw": 1.3333333333321207,
+        "Bc": 6561943.833333333,
+        "Bcm": 4129.166666666667,
+        "Bi": 8288.0,
+        "Bim": 734.0
+      },
+      "allocations": {
+        "blocks": 144.9999999999997,
+        "bytes": 4195712.022222224
+      },
+      "allocation_sites": {
+        "take_received_plaintext": 129.99999999999997,
+        "into_hook": 2.0816681711721685e-17
+      },
+      "memory_copy_instructions": 6582737.0,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          10648558.0
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          6582737.0
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S",
+          139290.33333333328
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S",
+          120999.0
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          98292.0
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          62909.99999999999
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          61660.166666666664
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          25799.166666666657
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/aes_gcm.rs",
+          14950.0
+        ],
+        [
+          "vendor/rustls/src/msgs/message/outbound.rs",
+          14949.5
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          14401.166666666657
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          14191.666666666666
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          13011.166666666668
+        ],
+        [
+          "vendor/rustls/src/record_layer.rs",
+          12299.999999999998
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          12227.999999999807
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          12007.000000000005
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/gcm.rs",
+          11568.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          11325.666666666668
+        ],
+        [
+          "vendor/rustls/src/crypto/cipher.rs",
+          11309.999999999998
+        ],
+        [
+          "vendor/rustls/src/crypto/ring/tls13.rs",
+          10789.999999999998
+        ]
+      ]
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "events": {
+        "Ir": 18105392.0,
+        "Dr": 8757955.666666668,
+        "Dw": 7447599.999999999,
+        "I1mr": 8516.666666666666,
+        "D1mr": 164059.66666666666,
+        "D1mw": 175439.0,
+        "ILmr": 1.0000000000002274,
+        "DLmr": -0.16666666666606034,
+        "DLmw": 1.8189894035458565e-12,
+        "Bc": 6592240.666666666,
+        "Bcm": 4174.166666666666,
+        "Bi": 8291.666666666666,
+        "Bim": 887.3333333333333
+      },
+      "allocations": {
+        "blocks": 142.9999999999999,
+        "bytes": 4196304.200000006
+      },
+      "allocation_sites": {
+        "take_received_plaintext": 130.0,
+        "into_hook": 2.0816681711721685e-17,
+        "PreparedCall": 6.938893903907228e-18,
+        "retain_parts": 2.0
+      },
+      "memory_copy_instructions": 6613383.333333332,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          10648763.999999998
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          6613383.333333333
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S",
+          139287.8333333333
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S",
+          120984.66666666667
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          98291.99999999999
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          62909.99999999999
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          46612.666666666664
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          26061.16666666666
+        ],
+        [
+          "vendor/rustls/src/msgs/message/outbound.rs",
+          14971.499999999998
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/aes_gcm.rs",
+          14950.0
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          14321.666666666668
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          13954.833333333327
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          13687.66666666666
+        ],
+        [
+          "vendor/rustls/src/record_layer.rs",
+          12299.999999999996
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          11648.833333333218
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/gcm.rs",
+          11567.999999999998
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          11462.49999999999
+        ],
+        [
+          "vendor/rustls/src/crypto/cipher.rs",
+          11309.999999999998
+        ],
+        [
+          "vendor/rustls/src/crypto/ring/tls13.rs",
+          10789.999999999996
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/aes_gcm/aeshwclmulmovbe.rs",
+          10140.0
+        ]
+      ]
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "legacy-baseline",
+      "events": {
+        "Ir": 18077389.666666664,
+        "Dr": 8723298.666666668,
+        "Dw": 7414833.666666667,
+        "I1mr": 5020.666666666667,
+        "D1mr": 175707.3333333333,
+        "D1mw": 173428.8333333333,
+        "ILmr": -0.8333333333332575,
+        "DLmr": 0.6666666666669698,
+        "DLmw": 0.500000000001819,
+        "Bc": 6563568.333333333,
+        "Bcm": 4495.833333333333,
+        "Bi": 8304.833333333332,
+        "Bim": 846.6666666666665
+      },
+      "allocations": {
+        "blocks": 145.0,
+        "bytes": 4195712.0
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 6591557.999999999,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          10648558.0
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          6591557.999999999
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S",
+          139290.33333333328
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S",
+          121043.33333333333
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          98292.0
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          62909.99999999999
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          61638.666666666664
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          25871.166666666657
+        ],
+        [
+          "vendor/rustls/src/msgs/message/outbound.rs",
+          14966.5
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/aes_gcm.rs",
+          14950.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          14449.5
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          14238.333333333334
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          13026.833333333332
+        ],
+        [
+          "vendor/rustls/src/record_layer.rs",
+          12299.999999999998
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          12255.999999999874
+        ],
+        [
+          "crates/capntproto-futures/src/buffered_read.rs",
+          12062.16666666667
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/gcm.rs",
+          11568.0
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          11350.500000000002
+        ],
+        [
+          "vendor/rustls/src/crypto/cipher.rs",
+          11309.999999999998
+        ],
+        [
+          "vendor/rustls/src/crypto/ring/tls13.rs",
+          10789.999999999998
+        ]
+      ]
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "portable-baseline",
+      "events": {
+        "Ir": 18104006.0,
+        "Dr": 8756753.5,
+        "Dw": 7446497.166666666,
+        "I1mr": 9063.166666666666,
+        "D1mr": 163058.5,
+        "D1mw": 175368.66666666666,
+        "ILmr": 3.3333333333332575,
+        "DLmr": -0.33333333333303017,
+        "DLmw": 0.5,
+        "Bc": 6591202.0,
+        "Bcm": 4282.000000000001,
+        "Bi": 8280.833333333332,
+        "Bim": 862.8333333333333
+      },
+      "allocations": {
+        "blocks": 143.0,
+        "bytes": 4196304.666666667
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 6612347.333333333,
+      "hot_files": [
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-gcm-x86_64-elf.S",
+          10648763.999999998
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          6612347.333333334
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S",
+          139288.99999999997
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S",
+          121063.0
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/aesni-x86_64-elf.S",
+          98291.99999999999
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/pregenerated/ghash-x86_64-elf.S",
+          62909.99999999999
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          46634.33333333332
+        ],
+        [
+          "src/rpc/tls/stream.rs",
+          26000.833333333325
+        ],
+        [
+          "vendor/rustls/src/msgs/message/outbound.rs",
+          14965.499999999998
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/aes_gcm.rs",
+          14950.0
+        ],
+        [
+          "vendor/rustls/src/conn/unbuffered.rs",
+          14286.666666666668
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/num/uint_macros.rs",
+          13927.666666666668
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs",
+          13682.999999999996
+        ],
+        [
+          "vendor/rustls/src/record_layer.rs",
+          12299.999999999996
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ptr/mod.rs",
+          11654.666666666653
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/gcm.rs",
+          11567.999999999998
+        ],
+        [
+          "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/slice/index.rs",
+          11449.66666666666
+        ],
+        [
+          "vendor/rustls/src/crypto/cipher.rs",
+          11309.999999999998
+        ],
+        [
+          "vendor/rustls/src/crypto/ring/tls13.rs",
+          10789.999999999996
+        ],
+        [
+          "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/aead/aes_gcm/aeshwclmulmovbe.rs",
+          10140.0
+        ]
+      ]
+    },
+    {
+      "case": "bulk-1m",
+      "implementation": "cpp",
+      "events": {
+        "Ir": 19349972.166666664,
+        "Dr": 7535667.5,
+        "Dw": 6176675.999999999,
+        "I1mr": 115189.33333333334,
+        "D1mr": 208279.66666666666,
+        "D1mw": 178804.8333333333,
+        "ILmr": 1.1666666666669698,
+        "DLmr": 9.094947017729282e-13,
+        "DLmw": 3.5,
+        "Bc": 5079033.499999999,
+        "Bcm": 15162.999999999993,
+        "Bi": 73101.16666666667,
+        "Bim": 32751.33333333333
+      },
+      "allocations": {
+        "blocks": 2363.799999999786,
+        "bytes": 6022665.711111043
+      },
+      "allocation_sites": {},
+      "memory_copy_instructions": 4385831.333333334,
+      "hot_files": [
+        [
+          "???",
+          14311311.333333248
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S",
+          4385845.333333334
+        ],
+        [
+          "./malloc/./malloc/malloc.c",
+          245328.8333333333
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S",
+          216721.66666666663
+        ],
+        [
+          "./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S",
+          139289.0
+        ],
+        [
+          "./nptl/./nptl/pthread_getspecific.c",
+          13288.333333333334
+        ],
+        [
+          "./nptl/./nptl/cancellation.c",
+          10509.0
+        ],
+        [
+          "./nptl/./nptl/pthread_once.c",
+          7816.666666666666
+        ],
+        [
+          "./csu/./csu/errno-loc.c",
+          7092.5
+        ],
+        [
+          "./malloc/./malloc/arena.c",
+          6985.000000000001
+        ],
+        [
+          "./io/../sysdeps/unix/sysv/linux/read.c",
+          2437.5
+        ],
+        [
+          "./io/../sysdeps/unix/sysv/linux/write.c",
+          2322.0
+        ],
+        [
+          "./time/../sysdeps/unix/sysv/linux/clock_gettime.c",
+          469.99999999999994
+        ],
+        [
+          "./misc/../sysdeps/unix/sysv/linux/epoll_wait.c",
+          215.0
+        ],
+        [
+          "./misc/./misc/sbrk.c",
+          108.99999999999997
+        ],
+        [
+          "./libio/./libio/iofwrite.c",
+          51.000000000000014
+        ],
+        [
+          "./libio/./libio/fileops.c",
+          45.000000000000014
+        ],
+        [
+          "./malloc/./malloc/morecore.c",
+          39.99999999999999
+        ],
+        [
+          "./libio/./libio/putc.c",
+          19.999999999999996
+        ],
+        [
+          "./misc/../sysdeps/unix/sysv/linux/brk.c",
+          18.0
+        ]
+      ]
+    }
+  ]
+}
