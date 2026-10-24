@@ -250,9 +250,10 @@ fn lost_creation_response_is_not_retried_and_cleanup_recovers_it() {
 fn janitor_preserves_active_hosts_and_foreign_resources() {
     let owner = tag("test/capntproto");
     let expired = format!("{owner}-1-1");
-    let active = format!("{owner}-{}-2", chrono::Utc::now().timestamp());
+    let created = chrono::Utc::now() - chrono::Duration::hours(3);
+    let active = format!("{owner}-{}-2", created.timestamp());
     let api = Fake::default();
-    api.hosts.borrow_mut().extend([json!({"id":1,"name":expired,"tags":[owner],"created_at":"2000-01-01T00:00:00Z"}),json!({"id":2,"name":active,"tags":[owner],"created_at":"2100-01-01T00:00:00Z"}),json!({"id":3,"name":"unrelated","tags":["production"],"created_at":"2000-01-01T00:00:00Z"})]);
+    api.hosts.borrow_mut().extend([json!({"id":1,"name":expired,"tags":[owner],"created_at":"2000-01-01T00:00:00Z"}),json!({"id":2,"name":active,"tags":[owner],"created_at":created.to_rfc3339()}),json!({"id":3,"name":"unrelated","tags":["production"],"created_at":"2000-01-01T00:00:00Z"})]);
     api.keys.borrow_mut().extend([
         json!({"id":1,"name":expired}),
         json!({"id":2,"name":active}),

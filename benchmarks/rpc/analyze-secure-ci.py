@@ -94,6 +94,9 @@ else:
         binaries=scope['binaries'],native_trials=len(scope['trials']),aggregate=aggregate,latency=native['rows'])
     report['host_counters']=dict(quotas=sorted(quotas),trials=len(host_samples),maximum_all_cpu_steal_percent=max((s['steal_percent'].get('cpu',0) for s in host_samples),default=0),maximum_single_cpu_steal_percent=max((v for s in host_samples for k,v in s['steal_percent'].items() if k!='cpu'),default=0),trials_with_cpu_stat=sum(s['cpu_stat_available'] for s in host_samples),throttled_trials=sum((s['nr_throttled'] or 0)>0 for s in host_samples) if any(s['cpu_stat_available'] for s in host_samples) else None,total_throttled_usec=sum(s['throttled_usec'] or 0 for s in host_samples) if any(s['cpu_stat_available'] for s in host_samples) else None)
     (directory/'host-counters.json').write_text(json.dumps(host_samples,indent=2)+'\n')
+    # Retain the independently validated latency phase even if a later profile
+    # is truncated. This checkpoint does not certify the diagnostic campaign.
+    (directory/'native-summary.json').write_text(json.dumps(dict(report, diagnostics_complete=False),indent=2)+'\n')
     print('NATIVE_AGGREGATE',json.dumps(aggregate),flush=True)
 profiles=json.loads((root/'profiles/scope.json').read_text())
 raw=[];arena=[];allocation_sites=[]
