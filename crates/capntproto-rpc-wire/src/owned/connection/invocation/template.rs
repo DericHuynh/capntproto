@@ -515,7 +515,7 @@ impl<'a> EncodedCall<'a> {
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> Result<Frame<'pool>, super::super::super::Error> {
         let validation = frame
-            .with(messages, |root| -> capnp::Result<()> {
+            .with_borrowed_root(messages, |root| -> capnp::Result<()> {
                 let rpc_capnp::message::Call(call) = root.which()? else {
                     unreachable!("built Call")
                 };

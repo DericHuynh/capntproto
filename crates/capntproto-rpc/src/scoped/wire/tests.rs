@@ -114,11 +114,24 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
         let PayloadBody::Shared { message } = &payload.body else {
             panic!("shared frame")
         };
-        let allocation = core::ptr::from_ref(&**message).cast::<()>();
+        let content_pointer = message
+            .message
+            .root()
+            .get_as::<capnp::data::Reader>()
+            .unwrap()
+            .as_ptr();
         let content = match kind {
             PayloadKind::Params => {
                 let params = payload.into_params();
-                assert_eq!(core::ptr::from_ref(&*params).cast::<()>(), allocation);
+                assert_eq!(
+                    params
+                        .get()
+                        .unwrap()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap()
+                        .as_ptr(),
+                    content_pointer
+                );
                 params
                     .get()
                     .unwrap()
@@ -128,7 +141,15 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
             }
             PayloadKind::Results => {
                 let response = payload.into_response();
-                assert_eq!(core::ptr::from_ref(&*response).cast::<()>(), allocation);
+                assert_eq!(
+                    response
+                        .get()
+                        .unwrap()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap()
+                        .as_ptr(),
+                    content_pointer
+                );
                 response
                     .get()
                     .unwrap()

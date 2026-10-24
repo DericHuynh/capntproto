@@ -280,7 +280,7 @@ impl<'pool> Frame<'pool> {
     ) -> Result<Self, Error> {
         let mut writer = messages.reserve(minimum.max(16)).map_err(Error::Storage)?;
         let result = self
-            .with(messages, |source| -> Result<usize, Error> {
+            .with_borrowed_root(messages, |source| -> Result<usize, Error> {
                 let mut view = messages
                     .write_borrowed(&mut writer)
                     .map_err(Error::Storage)?;

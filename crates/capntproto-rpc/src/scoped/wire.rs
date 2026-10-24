@@ -43,7 +43,7 @@ enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
     Return(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
     Admitted(Box<owned::PlainResults>),
-    Shared { message: Box<SharedPayload> },
+    Shared { message: SharedPayload },
 }
 struct SharedPayload {
     message: capnp::message::CachedPointerReader<
@@ -76,7 +76,7 @@ impl Payload {
             }
             PayloadBody::Shared { message } if self.caps.is_empty() => {
                 debug_assert!(self.caps.is_empty());
-                message
+                Box::new(message)
             }
             _ => Box::new(self),
         }
@@ -115,7 +115,7 @@ impl Payload {
         if let Some(message) = retained {
             return Ok(Self {
                 body: PayloadBody::Shared {
-                    message: Box::new(SharedPayload { message }),
+                    message: SharedPayload { message },
                 },
                 caps,
             });
@@ -132,7 +132,7 @@ impl Payload {
                 capnp::private::capability::ResponseHook::get(&**message)?
             }
             PayloadBody::Shared { message } => {
-                capnp::private::capability::ResponseHook::get(&**message)?
+                capnp::private::capability::ResponseHook::get(message)?
             }
         };
         root.imbue(&self.caps);

@@ -31,10 +31,10 @@ impl Payload {
         match self.body {
             PayloadBody::Shared { message } if self.caps.is_empty() => {
                 // Admission proved this immutable frame has no capabilities.
-                // The existing allocation already owns its storage and reader;
-                // wrapping the Payload again would add a box to every call.
+                // Move the reader directly into the parameter hook without
+                // a second wrapper around the capability-free payload.
                 debug_assert!(self.caps.is_empty());
-                message
+                Box::new(message)
             }
             _ => Box::new(self),
         }
