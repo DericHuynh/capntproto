@@ -198,6 +198,25 @@ impl<'storage, 'bytes> Buffers<'storage, 'bytes> {
         };
         (0..len).map(|index| self.at(index))
     }
+    #[inline(always)]
+    pub fn reuse_indices(&self) -> impl Iterator<Item = usize> {
+        let (start, len) = match self {
+            Self::Borrowed(buffers) => (0, buffers.len()),
+            #[cfg(feature = "alloc")]
+            Self::Growing(buffers) => (buffers.reuse_after.get().min(buffers.len()), buffers.len()),
+        };
+        (start..len).chain(0..start)
+    }
+    #[inline(always)]
+    pub fn reused(&self, index: usize) {
+        match self {
+            Self::Borrowed(_) => {
+                let _ = index;
+            }
+            #[cfg(feature = "alloc")]
+            Self::Growing(buffers) => buffers.reused(index),
+        }
+    }
     pub fn append(&self, minimum: usize) -> Option<usize> {
         match self {
             Self::Borrowed(_) => {
