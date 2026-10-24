@@ -34,7 +34,11 @@ TLS allocations remain exactly **7 / 58 / 202** for unary / pipeline / concurren
 
 The QUIC unary diagnostic is 22.050 versus 21.325 allocations per operation. [Normalized stack differences](quic-unary-allocation-stacks.json) attribute +0.700 to next-packet-key derivation and +0.025 to handshake signature work; two formatting differences cancel. No changed stack is in the extracted direct-reply path. Several slopes are negative, showing the limits of subtracting independent startup captures. Pipeline is 72.700 versus 73.050 and concurrent-32 is exactly 218.700 in both. These single pairs do not establish repeated all-QUIC allocation parity.
 
-This first extraction is retained as a small candidate. Dedicated latency remains pending, and the next architectural extraction is deferred until that comparison is available.
+The dedicated run has now completed successfully. Across 24 cases per transport, the geometric mean of extracted/frozen legacy latency changed **−0.24% on TLS** and **+0.73% on QUIC**, or **+0.24% combined**. Exactly 12 of 24 means were lower on each transport. This is broadly neutral aggregate evidence, not every-case parity or a speedup claim.
+
+The [full latency table](latency.md) reports means and the standard deviation of five fresh-process repetition means (1,000 samples per repetition). QUIC deep-8 rose 22.85% (74.25 ± 20.87 µs versus 60.44 ± 2.89 µs); TLS fanout-32 rose 18.02% (225.39 ± 77.37 µs versus 190.97 ± 2.57 µs). The untouched portable TLS fanout control also rose 22.77%. These outliers and spreads leave individual regressions unresolved; they are not removed from the aggregate. Raw repetition means and sample statistics remain in [latency-summary.json](latency-summary.json), with [provenance](latency-provenance.json).
+
+The candidate remains a small measured extraction. A second, separately qualified cancellation extraction uses this runtime as its immediate control, so its incremental cost can be distinguished from the first extraction.
 
 ## Remaining boundaries, in order
 
@@ -57,4 +61,4 @@ rustc --edition=2021 --target thumbv7em-none-eabi -C panic=abort -C opt-level=2 
 python3 research/reports/legacy-performance/2026-10-24-legacy-factoring/verify-embedded-elf.py
 ```
 
-No main-branch merge was performed. Only direct completion was extracted in this pass; the cancellation and ownership changes listed above remain future measured steps.
+No main-branch merge was performed. This report covers direct completion only; cancellation and later ownership changes require their own measurements.
