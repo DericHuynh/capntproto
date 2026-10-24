@@ -103,6 +103,7 @@ fn storage() -> Rc<Storage> {
     REENTRANT.with(|slot| slot.borrow().as_ref().unwrap().clone())
 }
 struct CancelOnDrop;
+#[allow(clippy::manual_noop_waker)] // The destructor must run; Waker::noop has none.
 impl Wake for CancelOnDrop {
     fn wake(self: Arc<Self>) {}
 }
