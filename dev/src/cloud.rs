@@ -301,9 +301,6 @@ fn cleanup(api: &impl Api, name: &str, owner: &str) -> Result<()> {
     Ok(())
 }
 fn janitor(api: &impl Api, owner: &str) -> Result<()> {
-    // The encrypted qualification can measure for four hours, then archive
-    // diagnostics and reclaim its hosts. Do not reap a live campaign midway.
-    const MAXIMUM_AGE: i64 = 6 * 60 * 60;
     let now = chrono::Utc::now().timestamp();
     let prefix = format!("{owner}-");
     let mut names = BTreeSet::new();
@@ -311,7 +308,7 @@ fn janitor(api: &impl Api, owner: &str) -> Result<()> {
         let name = crate::string(&d, "name")?;
         let created =
             chrono::DateTime::parse_from_rfc3339(crate::string(&d, "created_at")?)?.timestamp();
-        if name.starts_with(&prefix) && owned(&d, name, owner) && now - created > MAXIMUM_AGE {
+        if name.starts_with(&prefix) && owned(&d, name, owner) && now - created > 7200 {
             names.insert(name.to_owned());
         }
     }
@@ -322,7 +319,7 @@ fn janitor(api: &impl Api, owner: &str) -> Result<()> {
                 .split('-')
                 .next()
                 .and_then(|s| s.parse::<i64>().ok())
-                .is_some_and(|t| now - t > MAXIMUM_AGE)
+                .is_some_and(|t| now - t > 7200)
             {
                 names.insert(name.to_owned());
             }

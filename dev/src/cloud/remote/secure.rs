@@ -41,10 +41,9 @@ python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-refe
         &host.options,
         &host.public.to_string(),
         command,
-        // Five implementations plus both encrypted transports exceeded two
-        // hours in run 40078632826. Keep all native repetitions and diagnostics;
-        // the workflow and janitor leave additional time for archive/cleanup.
-        4 * 60 * 60,
+        // The complete 48-case DHAT matrix alone took 57 minutes on the
+        // dedicated host. Leave room for the native and Callgrind phases.
+        7200,
         cancel,
     );
     // Salvage partial output independently of failure/cancellation, before the
