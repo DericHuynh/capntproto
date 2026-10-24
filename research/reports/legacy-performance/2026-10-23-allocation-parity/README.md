@@ -4,6 +4,10 @@
 
 **Latest measured dispatch qualification: 44/48 allocation targets met, four bulk-transfer gaps, zero unmeasured cases. See the [qualification report](../2026-10-24-dispatch-qualification/README.md) for allocation attribution, five-run latency means/spread, and remaining read-count gaps. Later candidates are being qualified; full allocation parity remains unmet.**
 
+The [Unbuffered TLS / direct QUIC receive candidate](../2026-10-24-unbuffered-transports/README.md)
+is queued for dedicated qualification in run 40046022437. It is not included in
+the measured 44/48 result above.
+
 The ownership comparison preserved below met 10/48 targets. It predates the scheduler and subsequent candidates.
 
 Implementation: [9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f](https://github.com/DericHuynh/capntproto/commit/9650ddb00df52e5b5aa1e1aa6d4c2c17963a125f).
