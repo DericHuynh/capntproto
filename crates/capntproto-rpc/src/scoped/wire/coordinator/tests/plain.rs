@@ -1046,6 +1046,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                 queue.reserve().unwrap().accept(messages, offer);
                 messages.release(lease);
                 for _ in 0..4096 {
+                    let consumed = reader.consumed;
                     if let Poll::Ready(result) = coordinator.poll_prepared(
                         messages,
                         &mut queue,
@@ -1062,6 +1063,10 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     ) {
                         result.unwrap();
                     }
+                    assert!(
+                        reader.consumed - consumed <= budget.min(32),
+                        "ready control traffic must obey the same receive-turn bound"
+                    );
                     if reader.frames.is_empty()
                         && pending.is_none()
                         && queue.is_empty()
@@ -1132,6 +1137,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     reader.frames.push_back(words);
                 }
                 for _ in 0..4096 {
+                    let consumed = reader.consumed;
                     if let Poll::Ready(result) = coordinator.poll_prepared(
                         messages,
                         &mut queue,
@@ -1148,6 +1154,10 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     ) {
                         result.unwrap();
                     }
+                    assert!(
+                        reader.consumed - consumed <= budget.min(32),
+                        "ready control traffic must obey the same receive-turn bound"
+                    );
                     if reader.frames.is_empty()
                         && pending.is_none()
                         && coordinator.schedule.active == WorkSet::NONE
@@ -1302,7 +1312,7 @@ fn buffered_reply_batches_respect_frame_budget_and_stop_between_frames() {
                         if !pipeline && budget == 1 && before == 1 && !stop_after_first {
                             assert!(control.polls > control_polls);
                         }
-                        assert!(reader.consumed - before <= budget.min(8));
+                        assert!(reader.consumed - before <= budget.min(32));
                         if pipeline && budget >= 4 && before == 0 && !stop_after_first {
                             assert!(
                                 reader.consumed > 1,

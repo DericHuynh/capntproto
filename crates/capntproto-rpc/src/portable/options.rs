@@ -28,7 +28,7 @@ pub struct Options {
     pub output_queue: NonZeroUsize,
     /// Cooperative work/read/write allowance per poll. The hosted default of
     /// 128 lets the ordinary call and cleanup lanes complete in one turn while
-    /// retaining the coordinator's separate eight-frame input bound.
+    /// retaining the coordinator's separate 32-frame input bound.
     pub poll_budget: NonZeroUsize,
     pub reader: capnp::message::ReaderOptions,
     pub maximum_fds: usize,

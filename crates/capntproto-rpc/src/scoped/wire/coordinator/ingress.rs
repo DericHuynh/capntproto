@@ -4,6 +4,12 @@ use super::*;
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
 {
+    // Match the legacy receive loop's cooperative frame bound. Smaller caller
+    // budgets still win, and stop/flow/output-pressure checks run between
+    // frames. A buffered burst need not yield and flush after every eight.
+    fn input_budget(&self) -> usize {
+        self.options.budget.get().min(32)
+    }
     #[inline(always)]
     pub(super) fn delivered_plain<O: Output<I>>(
         &mut self,
@@ -81,7 +87,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
 
                             pump.blocked = false;
                             self.delivered_plain(index, message, controls);
-                            if pump.frames < self.options.budget.get().min(8)
+                            if pump.frames < self.input_budget()
                                 && (self.calls.can_batch_replies() || !self.worker.is_empty())
                             {
                                 continue;
@@ -254,8 +260,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 if completed.is_some()
                     && self.worker.is_empty()
-                    && (!reader.has_buffered_next_frame()
-                        || pump.frames >= self.options.budget.get().min(8))
+                    && (!reader.has_buffered_next_frame() || pump.frames >= self.input_budget())
                 {
                     // Let the application enqueue its next call before
                     // scanning cleanup when no bounded buffered successor is
@@ -266,7 +271,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     return Poll::Pending;
                 }
             }
-            if pump.frames >= self.options.budget.get().min(8) {
+            if pump.frames >= self.input_budget() {
                 pump.frames = 0;
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
@@ -275,7 +280,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // Output publication has no separate batching policy here.
             let buffered_input = reader.has_buffered_next_frame();
             let end_input_turn = !buffered_input
-                || pump.frames + 1 >= self.options.budget.get().min(8)
+                || pump.frames + 1 >= self.input_budget()
                 || !messages.can_reserve(
                     self.options
                         .input_bytes
@@ -351,7 +356,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
 
                         self.delivered_plain(index, message, controls);
                         pump.frames += 1;
-                        if pump.frames < self.options.budget.get().min(8)
+                        if pump.frames < self.input_budget()
                             && (self.calls.can_batch_replies() || !self.worker.is_empty())
                         {
                             continue;
