@@ -1,0 +1,290 @@
+[
+  {
+    "case": "unary-small",
+    "total_delta": 21.0,
+    "largest_increases": [
+      {
+        "function": "ring::aead::aes_gcm::aeshwclmulmovbe::seal",
+        "delta": 4.0
+      },
+      {
+        "function": "<capnp::capability::Promise<(), capnp::Error> as core::future::future::Future>::poll",
+        "delta": 3.0
+      },
+      {
+        "function": "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        "delta": 3.0
+      },
+      {
+        "function": "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        "delta": 3.0
+      },
+      {
+        "function": "<capnp_rpc::rpc::rpc_tables::PeerSlots<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>::insert",
+        "delta": 2.0
+      }
+    ],
+    "largest_decreases": [
+      {
+        "function": "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "delta": -3.0
+      },
+      {
+        "function": "capntproto_rpc_bench::workflows::capability::echo::{closure#0}",
+        "delta": -3.0
+      },
+      {
+        "function": "<capntproto_rpc_engine::peer_table::PeerTable<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp_rpc::rpc::rpc_tables::HostedSparse<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>>::remove",
+        "delta": -2.0
+      },
+      {
+        "function": "<rustls::crypto::ring::tls13::Tls13MessageEncrypter as rustls::crypto::cipher::MessageEncrypter>::encrypt",
+        "delta": -2.0
+      },
+      {
+        "function": "<alloc::rc::Rc<capnp_rpc::rpc::QuestionCell<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>::drop_slow",
+        "delta": -1.0
+      }
+    ]
+  },
+  {
+    "case": "dependent-read",
+    "total_delta": 46.125,
+    "largest_increases": [
+      {
+        "function": "ring::aead::aes_gcm::aeshwclmulmovbe::seal",
+        "delta": 9.0
+      },
+      {
+        "function": "<capnp_rpc::rpc::rpc_tables::PeerSlots<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>::insert",
+        "delta": 6.0
+      },
+      {
+        "function": "<capnp::capability::Promise<(), capnp::Error> as core::future::future::Future>::poll",
+        "delta": 5.0
+      },
+      {
+        "function": "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        "delta": 5.0
+      },
+      {
+        "function": "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        "delta": 5.0
+      }
+    ],
+    "largest_decreases": [
+      {
+        "function": "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "delta": -5.0
+      },
+      {
+        "function": "capntproto_rpc_bench::workflows::capability::operation::{closure#0}",
+        "delta": -4.0
+      },
+      {
+        "function": "<capnp_futures::buffered_read::Storage>::bytes",
+        "delta": -3.0
+      },
+      {
+        "function": "<capntproto_rpc_engine::peer_table::PeerTable<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp_rpc::rpc::rpc_tables::HostedSparse<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>>::remove",
+        "delta": -3.0
+      },
+      {
+        "function": "<futures_util::future::future::shared::Shared<capnp::capability::Promise<(), capnp::Error>> as core::future::future::Future>::poll",
+        "delta": -3.0
+      }
+    ]
+  },
+  {
+    "case": "pipelined-read",
+    "total_delta": 19.974999999999966,
+    "largest_increases": [
+      {
+        "function": "ring::aead::aes_gcm::aeshwclmulmovbe::seal",
+        "delta": 7.0
+      },
+      {
+        "function": "<capnp_rpc::rpc::rpc_tables::PeerSlots<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>::insert",
+        "delta": 4.0
+      },
+      {
+        "function": "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        "delta": 4.0
+      },
+      {
+        "function": "core::ptr::drop_glue::<capnp_rpc::rpc::ResponseVariant<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>",
+        "delta": 4.0
+      },
+      {
+        "function": "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        "delta": 3.0
+      }
+    ],
+    "largest_decreases": [
+      {
+        "function": "capntproto_rpc_bench::workflows::capability::operation::{closure#0}",
+        "delta": -4.0
+      },
+      {
+        "function": "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "delta": -3.0
+      },
+      {
+        "function": "<alloc::rc::Rc<core::cell::RefCell<capnp_rpc::rpc::ImportClient<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>>::drop_slow",
+        "delta": -2.0
+      },
+      {
+        "function": "<capnp_futures::buffered_read::Storage>::bytes",
+        "delta": -2.0
+      },
+      {
+        "function": "<capnp_rpc::fd::IncomingFds>::new",
+        "delta": -2.0
+      }
+    ]
+  },
+  {
+    "case": "concurrent-32",
+    "total_delta": -206.97500000000002,
+    "largest_increases": [
+      {
+        "function": "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        "delta": 34.0
+      },
+      {
+        "function": "<capnp_rpc::twoparty::OutgoingMessage>::acquire",
+        "delta": 33.0
+      },
+      {
+        "function": "ring::aead::aes_gcm::aeshwclmulmovbe::seal",
+        "delta": 6.0
+      },
+      {
+        "function": "<capnp::capability::Promise<(), capnp::Error> as core::future::future::Future>::poll",
+        "delta": 4.0
+      },
+      {
+        "function": "<capnp_rpc::twoparty::IncomingMessage as capnp_rpc::IncomingMessage>::get_body",
+        "delta": 2.0
+      }
+    ],
+    "largest_decreases": [
+      {
+        "function": "<capnp_futures::buffered_read::Storage>::bytes",
+        "delta": -33.0
+      },
+      {
+        "function": "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::get_segment",
+        "delta": -32.0
+      },
+      {
+        "function": "<capnp_rpc::fd::IncomingFds>::new",
+        "delta": -32.0
+      },
+      {
+        "function": "<capnp_rpc::rpc::ResultsDone>::from_results_inner::<capntproto_rpc_wire::rpc_twoparty_capnp::Side>",
+        "delta": -32.0
+      },
+      {
+        "function": "<capnp_rpc::twoparty::Connection<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::Connection<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::new_outgoing_return",
+        "delta": -32.0
+      }
+    ]
+  },
+  {
+    "case": "callback",
+    "total_delta": 51.97500000000002,
+    "largest_increases": [
+      {
+        "function": "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        "delta": 9.0
+      },
+      {
+        "function": "ring::aead::aes_gcm::aeshwclmulmovbe::seal",
+        "delta": 8.0
+      },
+      {
+        "function": "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        "delta": 6.0
+      },
+      {
+        "function": "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        "delta": 6.0
+      },
+      {
+        "function": "<capnp::capability::Promise<(), capnp::Error> as core::future::future::Future>::poll",
+        "delta": 5.0
+      }
+    ],
+    "largest_decreases": [
+      {
+        "function": "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "delta": -5.0
+      },
+      {
+        "function": "<rustls::crypto::ring::tls13::Tls13MessageEncrypter as rustls::crypto::cipher::MessageEncrypter>::encrypt",
+        "delta": -4.0
+      },
+      {
+        "function": "<capntproto_rpc_bench::workflows::capability::Service as capntproto_rpc_bench::echo_capnp::workflows::Server>::callback::{closure#0}",
+        "delta": -3.0
+      },
+      {
+        "function": "<capntproto_rpc_engine::peer_table::PeerTable<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>, capnp_rpc::rpc::rpc_tables::HostedSparse<capntproto_rpc_engine::ids::AnswerId, capnp_rpc::rpc::Answer<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>>::remove",
+        "delta": -3.0
+      },
+      {
+        "function": "<futures_util::future::future::shared::Shared<capnp::capability::Promise<(), capnp::Error>> as core::future::future::Future>::poll",
+        "delta": -3.0
+      }
+    ]
+  },
+  {
+    "case": "deep-32-concurrent-32",
+    "total_delta": -203.9000000000001,
+    "largest_increases": [
+      {
+        "function": "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        "delta": 37.0
+      },
+      {
+        "function": "<capnp_rpc::twoparty::OutgoingMessage>::acquire",
+        "delta": 33.0
+      },
+      {
+        "function": "ring::aead::aes_gcm::aeshwclmulmovbe::seal",
+        "delta": 7.0
+      },
+      {
+        "function": "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        "delta": 5.0
+      },
+      {
+        "function": "capnp::private::layout::wire_helpers::deep_copy_pointee",
+        "delta": 5.0
+      }
+    ],
+    "largest_decreases": [
+      {
+        "function": "<capnp_futures::buffered_read::Storage>::bytes",
+        "delta": -36.0
+      },
+      {
+        "function": "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::get_segment",
+        "delta": -32.0
+      },
+      {
+        "function": "<capnp_rpc::fd::IncomingFds>::new",
+        "delta": -32.0
+      },
+      {
+        "function": "<capnp_rpc::twoparty::Connection<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::Connection<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::new_outgoing_return",
+        "delta": -32.0
+      },
+      {
+        "function": "<capntproto_rpc_bench::topology::Service as capntproto_rpc_bench::echo_capnp::access_service::Server>::access",
+        "delta": -31.0
+      }
+    ]
+  }
+]
