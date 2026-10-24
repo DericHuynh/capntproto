@@ -1,0 +1,59 @@
+{
+  "checkout": "/tmp/capntproto-legacy-next",
+  "runtime": "38da514a0016818195e112318a2a052e875138f7",
+  "qualification": "04951ba38fe74b8264e17098812b89bc84822f34",
+  "baseline": "54f9c2e829c5274ef10c0703d402172ff25031b1",
+  "feature_branch": "codex/legacy-answer-cancellation",
+  "qualification_branch": "codex/legacy-cancellation-qualification-20261024",
+  "run_id": 40134974277,
+  "verify_job_id": 120994453821,
+  "status": "Focused verification and diagnostics passed; dedicated latency campaign in progress.",
+  "runtime_with_tests": "a5677a63bb13273dff614205367f944a00145acf",
+  "previous_run": {
+    "id": 40134847987,
+    "conclusion": "failure",
+    "reason": "Clippy flagged the destructor-only test waker; fixed with a scoped documented exception. Both engine test profiles passed."
+  },
+  "source_checks": {
+    "qualified_runtime_tree_matches_feature_crates": true,
+    "runtime_source_sha256": "e7b168dc7dcc22c80788bdafc841b645187015e7f538b5d6fe4383cccb064218",
+    "local_rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+    "local_elf_check": {
+      "target": "thumbv7em-none-eabi",
+      "artifact": "/tmp/legacy-factor2-embedded.elf",
+      "bytes": 704892,
+      "sha256": "379cb360a4636d80a00faeaac36260838264a133cf924a93a030338e217f9cf6",
+      "undefined_symbols": [],
+      "allocator_symbols": [],
+      "entry_present": true,
+      "source_sha256": "48693731dfe6c94bd6c631155bb37ba913366407d01a743e8bbfa79d596d3761",
+      "scope": "Link-only, not executed on a board. Borrowed cancellation cells and task; black-boxed cell references prevent eliminating the entire cancellation sequence."
+    }
+  },
+  "verified_job": {
+    "id": 120994453821,
+    "conclusion": "success"
+  },
+  "diagnostic_artifact": {
+    "id": 12576404686,
+    "bytes": 15939276,
+    "sha256": "24b9028aeb133375fc23bb78483189874159d906e8e96804af610d4231a84ee1",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40134974277/artifacts/12576404686"
+  },
+  "latency_bundle_job": {
+    "id": 120998457413,
+    "status": "in_progress"
+  },
+  "binaries": {
+    "legacy": {
+      "path": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench",
+      "sha256": "de47da140289e1b08079f580098c910a0dd7711d57a8a5c7369b7ea16e43d3e2",
+      "sections": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370776       8672\n.rela.plt                1296     379448\n.rodata                819813     380928\n.gcc_except_table      457104    1200744\n.debug_gdb_scripts         34    1657848\n.eh_frame_hdr          103980    1657884\n.eh_frame              842852    1761864\n.text                 9871399    2608832\n.init                      27   12480232\n.fini                      13   12480260\n.plt                      880   12480288\n.tdata                    112   12485264\n.tbss                     456   12485376\n.fini_array                 8   12485376\n.init_array                16   12485384\n.data.rel.ro           263120   12485408\n.dynamic                  464   12748528\n.got                     2648   12748992\n.got.plt                  456   12751640\n.relro_padding           2848   12752096\n.tm_clone_table             0   12756192\n.data                    3272   12756192\n.bss                     4684   12759472\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21701772          0\n.debug_aranges         167280          0\n.debug_ranges         6701600          0\n.debug_str           33738082          0\n.debug_line           6890901          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85351978\n\n\n"
+    },
+    "legacy-baseline": {
+      "path": "/home/runner/work/_temp/legacy-baseline",
+      "sha256": "6de2a70a2055b363155a5ad8b323ac62526aae3896ff34cddfd12fabbdc935e8",
+      "sections": "/home/runner/work/_temp/legacy-baseline  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370824       8672\n.rela.plt                1296     379496\n.rodata                828005     380928\n.gcc_except_table      457168    1208936\n.debug_gdb_scripts         34    1666104\n.eh_frame_hdr          103988    1666140\n.eh_frame              842932    1770128\n.text                 9872167    2617216\n.init                      27   12489384\n.fini                      13   12489412\n.plt                      880   12489440\n.tdata                    112   12494416\n.tbss                     456   12494528\n.fini_array                 8   12494528\n.init_array                16   12494536\n.data.rel.ro           263168   12494560\n.dynamic                  464   12757728\n.got                     2648   12758192\n.got.plt                  456   12760840\n.relro_padding           1840   12761296\n.tm_clone_table             0   12765392\n.data                    3272   12765392\n.bss                     4684   12768672\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703512          0\n.debug_aranges         167264          0\n.debug_ranges         6701728          0\n.debug_str           33728087          0\n.debug_line           6899839          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85360973\n\n\n"
+    }
+  }
+}

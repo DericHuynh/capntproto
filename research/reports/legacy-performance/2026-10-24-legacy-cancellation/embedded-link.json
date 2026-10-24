@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/home/runner/work/_temp/legacy-cancellation.elf",
+  "bytes": 704892,
+  "sha256": "eec8a7b4cd55ae6f9a1d83261ab46941139c9cb020964f68906acd1b3fe01e87",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "48693731dfe6c94bd6c631155bb37ba913366407d01a743e8bbfa79d596d3761",
+  "scope": "Link-only, not executed on a board. Borrowed cancellation cells and task; black-boxed cell references prevent eliminating the entire cancellation sequence."
+}
