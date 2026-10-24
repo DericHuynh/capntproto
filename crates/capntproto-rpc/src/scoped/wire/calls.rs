@@ -370,7 +370,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             messages,
             options,
             cx,
-            budget,
+            &mut budget.get(),
             import,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
@@ -472,7 +472,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             messages,
             options,
             cx,
-            budget,
+            &mut budget.get(),
             import,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
@@ -549,7 +549,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         messages: &mut messages::Messages<'p, '_, '_>,
         options: capnp::message::ReaderOptions,
         cx: &mut Context<'_>,
-        budget: NonZeroUsize,
+        budget: &mut usize,
         mut import: impl FnMut(
             &mut capntproto_rpc_wire::owned::connection::Scope<
                 '_,
@@ -583,7 +583,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         }
         hooks.register_next(cx.waker());
         let mut advanced = false;
-        for _ in 0..budget.get() {
+        while *budget != 0 {
+            *budget -= 1;
             let dispatch_ready = driver.runtime().dispatch_is_pending()
                 || driver
                     .capabilities()

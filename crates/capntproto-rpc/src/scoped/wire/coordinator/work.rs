@@ -121,7 +121,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             && self.calls.is_empty()
             && !self.hooks.inbox.queue.borrow().is_empty()
         {
-            let quantum = (*remaining).min(8);
+            let mut quantum = (*remaining).min(8);
             *remaining -= quantum;
             self.schedule.cursor = Lane::Worker;
             if let Err(error) = queue.ensure_capacity() {
@@ -138,9 +138,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 scratch,
                 output,
                 &mut Context::from_waker(waker),
-                NonZeroUsize::new(quantum).unwrap(),
+                &mut quantum,
                 false,
             );
+            *remaining += quantum;
             return match result {
                 Poll::Ready(Err(error)) => Poll::Ready(Err(*error)),
                 Poll::Ready(Ok(Progress::Published { plain: true }))
@@ -199,7 +200,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
         }
         if self.schedule.active == WorkSet::WORKER && *remaining > 0 {
-            let quantum = (*remaining).min(8);
+            let mut quantum = (*remaining).min(8);
             *remaining -= quantum;
             self.schedule.cursor = Lane::Maintenance;
             if let Err(error) = queue.ensure_capacity() {
@@ -210,13 +211,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 return Poll::Ready(Err(wire_error(error)));
             }
-            let result = self.poll_worker(
-                messages,
-                queue,
-                scratch,
-                output,
-                NonZeroUsize::new(quantum).unwrap(),
-            );
+            let result = self.poll_worker(messages, queue, scratch, output, &mut quantum);
+            *remaining += quantum;
             if self.driver.runtime().has_retired() {
                 self.schedule.active |= WorkSet::MAINTENANCE;
             }
@@ -279,8 +275,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         while *remaining > 0 && self.schedule.active != WorkSet::NONE {
             let index = self.schedule.next().expect("active work");
             // Amortize each lane's scan setup while retaining a shared bound
-            // and a rotating cursor. Application lanes charge their allowance;
-            // maintenance reports the exact number of visited steps.
+            // and a rotating cursor. Calls, workers and maintenance return
+            // unused allowance when publication or suspension ends a visit.
             let empty = match index {
                 Lane::Foreign => self.foreign.is_empty(),
                 Lane::Accept => {
@@ -378,32 +374,41 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         Ok(true) => Poll::Ready(Ok(())),
                         Err(e) => Poll::Ready(Err(e)),
                     },
-                    Lane::Calls => match self.poll_calls(
-                        messages,
-                        queue,
-                        scratch,
-                        output,
-                        &mut application_cx,
-                        quantum,
-                        true,
-                    ) {
-                        Poll::Ready(Ok(Progress::Idle)) => Poll::Pending,
-                        Poll::Ready(Ok(Progress::Yield)) => continue,
-                        Poll::Ready(Ok(Progress::Completed)) => {
-                            completed = true;
-                            self.delivered = true;
-                            Poll::Ready(Ok(()))
+                    Lane::Calls => {
+                        let mut unused = quantum.get();
+                        let result = self.poll_calls(
+                            messages,
+                            queue,
+                            scratch,
+                            output,
+                            &mut application_cx,
+                            &mut unused,
+                            true,
+                        );
+                        *remaining += unused;
+                        match result {
+                            Poll::Ready(Ok(Progress::Idle)) => Poll::Pending,
+                            Poll::Ready(Ok(Progress::Yield)) => continue,
+                            Poll::Ready(Ok(Progress::Completed)) => {
+                                completed = true;
+                                self.delivered = true;
+                                Poll::Ready(Ok(()))
+                            }
+                            Poll::Ready(Ok(Progress::Published { plain })) => {
+                                publication = Some(plain);
+                                Poll::Ready(Ok(()))
+                            }
+                            Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+                            Poll::Ready(Err(e)) => Poll::Ready(Err(*e)),
+                            Poll::Pending => Poll::Pending,
                         }
-                        Poll::Ready(Ok(Progress::Published { plain })) => {
-                            publication = Some(plain);
-                            Poll::Ready(Ok(()))
-                        }
-                        Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
-                        Poll::Ready(Err(e)) => Poll::Ready(Err(*e)),
-                        Poll::Pending => Poll::Pending,
-                    },
+                    }
                     Lane::Worker => {
-                        match self.poll_worker(messages, queue, scratch, output, quantum) {
+                        let mut unused = quantum.get();
+                        let result =
+                            self.poll_worker(messages, queue, scratch, output, &mut unused);
+                        *remaining += unused;
+                        match result {
                             Poll::Ready(Ok(server::Progress::Idle)) => Poll::Pending,
                             Poll::Ready(Ok(server::Progress::Yield)) => continue,
                             Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
@@ -616,7 +621,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         scratch: &mut [u32],
         output: &O,
         cx: &mut Context<'_>,
-        quantum: NonZeroUsize,
+        quantum: &mut usize,
         refresh: bool,
     ) -> Poll<Result<Progress, Box<Error>>> {
         let options = self.options;
@@ -721,7 +726,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
         scratch: &mut [u32],
         output: &O,
-        quantum: NonZeroUsize,
+        quantum: &mut usize,
     ) -> Poll<capnp::Result<server::Progress>> {
         let options = self.options;
         let queue = RefCell::new(queue);

@@ -282,7 +282,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             minimum,
             options,
             cx,
-            budget,
+            &mut budget.get(),
             import,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
@@ -344,7 +344,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             minimum,
             options,
             cx,
-            budget,
+            &mut budget.get(),
             import,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
@@ -379,7 +379,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         minimum: usize,
         options: capnp::message::ReaderOptions,
         cx: &mut Context<'_>,
-        budget: NonZeroUsize,
+        remaining_budget: &mut usize,
         mut import: impl FnMut(
             &mut capntproto_rpc_wire::owned::connection::Scope<
                 '_,
@@ -415,12 +415,12 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             return Poll::Ready(Err(Error::from_kind(kind)));
         }
         if self.is_empty() {
+            *remaining_budget = remaining_budget.saturating_sub(1);
             return Poll::Ready(Ok(Progress::Idle));
         }
         self.ready.register(cx.waker());
         let mut advanced = false;
-        let mut remaining_budget = budget.get();
-        while remaining_budget != 0 {
+        while *remaining_budget != 0 {
             if (self.protocol_turn || self.ready.is_empty())
                 && driver.ledgers().answers.has_changed_producers()
             {
@@ -433,13 +433,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     .results();
                 self.protocol_turn = false;
                 results.protocol_changed();
-                remaining_budget -= 1;
-                if remaining_budget == 0 {
+                *remaining_budget -= 1;
+                if *remaining_budget == 0 {
                     break;
                 }
             }
             self.protocol_turn = true;
             let Some(ready) = self.ready.pop() else {
+                *remaining_budget -= 1;
                 return if advanced {
                     Poll::Ready(Ok(Progress::Advanced))
                 } else {
@@ -449,7 +450,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             let index = ready.index();
             let Some(entry) = self.entries[index].as_mut() else {
                 // A stale notification cannot refer to a new generation.
-                remaining_budget -= 1;
+                *remaining_budget -= 1;
                 continue;
             };
             if entry.result_revision != entry.results.revision() {
@@ -461,7 +462,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             // chains its answer continuation. Only suspension or the shared
             // budget yields the operation; intermediate stages need no enqueue.
             let outcome = loop {
-                remaining_budget -= 1;
+                *remaining_budget -= 1;
                 #[cfg(test)]
                 {
                     entry.polls += 1;
@@ -481,7 +482,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     &mut publish,
                     &mut prepare,
                     &mut publish_plain,
-                    &mut remaining_budget,
+                    remaining_budget,
                     &mut self.completed_plain,
                     &mut self.completed_ordinary,
                 );
@@ -498,7 +499,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 advanced |= preparing && outcome.is_pending();
                 if matches!(outcome, Poll::Ready(Ok(Progress::Advanced))) {
                     advanced = true;
-                    if remaining_budget != 0 {
+                    if *remaining_budget != 0 {
                         continue;
                     }
                 }

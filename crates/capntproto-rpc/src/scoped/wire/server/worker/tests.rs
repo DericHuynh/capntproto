@@ -302,7 +302,7 @@ fn imported_metadata_is_ready_during_synchronous_server_dispatch() {
                     512,
                     Default::default(),
                     &mut Context::from_waker(Waker::noop()),
-                    NonZeroUsize::new(1).unwrap(),
+                    &mut 1,
                     import,
                     |hooks, driver| hooks.collect_wire(
                         driver,
