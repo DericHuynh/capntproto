@@ -175,3 +175,89 @@ async fn corrupted_application_record_is_rejected() {
     .await
     .expect("corrupt TLS record test stalled");
 }
+
+// Exercise the public vectored contract across empty slices, record boundaries,
+// partial acceptance, socket backpressure and independent reader/writer wakers.
+#[tokio::test]
+async fn vectored_records_preserve_order_under_bidirectional_backpressure() {
+    async fn write(mut stream: impl AsyncWrite + Unpin, bytes: Vec<u8>) {
+        assert!(stream.is_write_vectored());
+        assert_eq!(stream.write_vectored(&[]).await.unwrap(), 0);
+        assert_eq!(
+            stream
+                .write_vectored(&[io::IoSlice::new(&[])])
+                .await
+                .unwrap(),
+            0
+        );
+        let cuts = [
+            0,
+            0,
+            1,
+            16_383,
+            16_384,
+            16_385,
+            131_073,
+            131_073,
+            200_003,
+            bytes.len(),
+        ];
+        let mut buffers: Vec<_> = cuts
+            .windows(2)
+            .map(|w| io::IoSlice::new(&bytes[w[0]..w[1]]))
+            .collect();
+        let mut remaining = &mut buffers[..];
+        while !remaining.is_empty() {
+            let size = stream.write_vectored(remaining).await.unwrap();
+            assert!(size > 0);
+            io::IoSlice::advance_slices(&mut remaining, size);
+        }
+        stream.shutdown().await.unwrap();
+    }
+    async fn read(mut stream: impl AsyncRead + Unpin, bytes: Vec<u8>) {
+        let mut received = Vec::new();
+        stream.read_to_end(&mut received).await.unwrap();
+        assert_eq!(received, bytes);
+    }
+    tokio::time::timeout(TIMEOUT, async {
+        for fragment in [None, Some(32)] {
+            let pki = Pki::new();
+            let mut client_config = (*pki.client(false)).clone();
+            let mut server_config = (*pki.server(false)).clone();
+            client_config.max_fragment_size = fragment;
+            server_config.max_fragment_size = fragment;
+            let (client, server) = tokio::io::duplex(257);
+            let client = TlsStream::connect(
+                BufStream::with_capacity(113, 127, client),
+                Arc::new(client_config),
+                "localhost".try_into().unwrap(),
+            );
+            let server = TlsStream::accept(
+                BufStream::with_capacity(79, 97, server),
+                Arc::new(server_config),
+            );
+            let request: Vec<_> = (0..300_001).map(|i| (i % 251) as u8).collect();
+            let response: Vec<_> = (0..400_007).map(|i| (i % 241) as u8).collect();
+            // With tiny records, post-handshake tickets can exceed the duplex
+            // capacity. Each peer must start reading after its own handshake.
+            let (client, server) = tokio::join!(
+                async {
+                    let (reader, writer) = tokio::io::split(client.await.unwrap());
+                    let writer = tokio::spawn(write(writer, request.clone()));
+                    let reader = tokio::spawn(read(reader, response.clone()));
+                    tokio::try_join!(writer, reader)
+                },
+                async {
+                    let (reader, writer) = tokio::io::split(server.await.unwrap());
+                    let writer = tokio::spawn(write(writer, response.clone()));
+                    let reader = tokio::spawn(read(reader, request.clone()));
+                    tokio::try_join!(writer, reader)
+                },
+            );
+            client.unwrap();
+            server.unwrap();
+        }
+    })
+    .await
+    .expect("vectored TLS traffic stalled");
+}

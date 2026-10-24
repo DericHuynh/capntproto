@@ -160,7 +160,7 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
     let (read, write) = tokio::io::split(stream);
     let mut network = twoparty::VatNetwork::new_with_send_buffer(
         read.compat(),
-        TokioIo::encrypted(write),
+        TokioIo::new(write),
         side,
         options,
         move |_| window,

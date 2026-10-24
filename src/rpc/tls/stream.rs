@@ -7,7 +7,7 @@ use rustls::{
     client::UnbufferedClientConnection,
     pki_types::ServerName,
     server::UnbufferedServerConnection,
-    unbuffered::{ConnectionState, EncodeError, EncryptError, UnbufferedStatus},
+    unbuffered::{ConnectionState, EncodeError, EncryptError, UnbufferedStatus, WriteTraffic},
     ClientConfig, CommonState, ServerConfig,
 };
 use std::{
@@ -23,6 +23,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 // This buffer never shrinks when a record has been consumed.
 const INPUT_BYTES: usize = 64 * 1024 + 18 * 1024;
 const WRITE_BYTES: usize = 128 * 1024;
+const RECORD_BYTES: usize = 16 * 1024;
 const OUTPUT_BYTES: usize = WRITE_BYTES + 1024;
 
 /// An authenticated TLS stream using rustls's Unbuffered connection API.
@@ -35,6 +36,7 @@ pub struct TlsStream<S> {
     incoming: Buffer,
     outgoing: Buffer,
     plaintext: Buffer,
+    write_batch: Vec<u8>,
     peer_closed: bool,
     write_closed: bool,
     eof: bool,
@@ -95,6 +97,7 @@ enum Operation<'a, 'b> {
     Handshake,
     Read(&'a mut ReadBuf<'b>),
     Write(&'a [u8]),
+    WriteVectored(&'a [io::IoSlice<'b>]),
     Flush,
     Shutdown,
 }
@@ -105,6 +108,90 @@ enum Action {
     Ready(usize),
 }
 
+// Encrypt contiguous payloads directly. Only records crossing a slice boundary
+// need a plaintext copy; ciphertext still accumulates into one bounded write.
+fn encrypt<Data>(
+    traffic: &mut WriteTraffic<'_, Data>,
+    bytes: &[u8],
+    outgoing: &mut Buffer,
+) -> io::Result<()> {
+    let size = match traffic.encrypt(bytes, &mut outgoing.bytes[outgoing.end..]) {
+        Ok(size) => size,
+        Err(EncryptError::InsufficientSize(required)) => {
+            outgoing
+                .bytes
+                .resize(outgoing.end + required.required_size, 0);
+            traffic
+                .encrypt(bytes, &mut outgoing.bytes[outgoing.end..])
+                .map_err(io::Error::other)?
+        }
+        Err(error) => return Err(io::Error::other(error)),
+    };
+    outgoing.end += size;
+    outgoing.flushed = false;
+    Ok(())
+}
+
+fn encrypt_vectored<Data>(
+    traffic: &mut WriteTraffic<'_, Data>,
+    buffers: &[io::IoSlice<'_>],
+    outgoing: &mut Buffer,
+    batch: &mut Vec<u8>,
+) -> io::Result<usize> {
+    // Most RPC writes fit in one record. Copy that batch once without walking
+    // the general cross-record cursor for every slice.
+    let length = buffers.iter().try_fold(0usize, |length, b| {
+        length.checked_add(b.len()).filter(|n| *n <= RECORD_BYTES)
+    });
+    if let Some(length) = length {
+        batch.clear();
+        batch.reserve_exact(length);
+        for buffer in buffers {
+            batch.extend_from_slice(buffer);
+        }
+        encrypt(traffic, batch, outgoing)?;
+        return Ok(length);
+    }
+    let mut slices = buffers
+        .iter()
+        .map(|b| &b[..])
+        .filter(|b| !b.is_empty())
+        .peekable();
+    let mut current = slices.next().unwrap_or_default();
+    let mut accepted = 0;
+    while !current.is_empty() && accepted < WRITE_BYTES {
+        let limit = (WRITE_BYTES - accepted).min(current.len());
+        if limit >= RECORD_BYTES || slices.peek().is_none() {
+            // Keep a partial record for the next slice, unless this is the end.
+            let size = if slices.peek().is_none() {
+                limit
+            } else {
+                limit / RECORD_BYTES * RECORD_BYTES
+            };
+            encrypt(traffic, &current[..size], outgoing)?;
+            accepted += size;
+            current = &current[size..];
+            if current.is_empty() {
+                current = slices.next().unwrap_or_default();
+            }
+        } else {
+            batch.clear();
+            let limit = RECORD_BYTES.min(WRITE_BYTES - accepted);
+            while batch.len() < limit && !current.is_empty() {
+                let size = current.len().min(limit - batch.len());
+                batch.extend_from_slice(&current[..size]);
+                current = &current[size..];
+                if current.is_empty() {
+                    current = slices.next().unwrap_or_default();
+                }
+            }
+            encrypt(traffic, batch, outgoing)?;
+            accepted += batch.len();
+        }
+    }
+    Ok(accepted)
+}
+
 // Handling a state and applying *all* its discard bytes is one operation. No
 // borrowed rustls state survives an await or an underlying IO poll.
 fn handle<Data>(
@@ -112,6 +199,7 @@ fn handle<Data>(
     operation: &mut Operation<'_, '_>,
     outgoing: &mut Buffer,
     plaintext: &mut Buffer,
+    write_batch: &mut Vec<u8>,
     peer_closed: &mut bool,
     write_closed: &mut bool,
 ) -> io::Result<(usize, Action)> {
@@ -178,22 +266,15 @@ fn handle<Data>(
             }
             Operation::Write(bytes) => {
                 let bytes = &bytes[..bytes.len().min(WRITE_BYTES)];
-                let size = match traffic.encrypt(bytes, &mut outgoing.bytes[outgoing.end..]) {
-                    Ok(size) => size,
-                    Err(EncryptError::InsufficientSize(required)) => {
-                        outgoing
-                            .bytes
-                            .resize(outgoing.end + required.required_size, 0);
-                        traffic
-                            .encrypt(bytes, &mut outgoing.bytes[outgoing.end..])
-                            .map_err(io::Error::other)?
-                    }
-                    Err(error) => return Err(io::Error::other(error)),
-                };
-                outgoing.end += size;
-                outgoing.flushed = false;
+                encrypt(&mut traffic, bytes, outgoing)?;
                 Action::Ready(bytes.len())
             }
+            Operation::WriteVectored(buffers) => Action::Ready(encrypt_vectored(
+                &mut traffic,
+                buffers,
+                outgoing,
+                write_batch,
+            )?),
             Operation::Shutdown => {
                 if !*write_closed {
                     let size = traffic
@@ -250,6 +331,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
             incoming: Buffer::new(INPUT_BYTES),
             outgoing: Buffer::new(OUTPUT_BYTES),
             plaintext: Buffer::default(),
+            write_batch: Vec::new(),
             peer_closed: false,
             write_closed: false,
             eof: false,
@@ -321,7 +403,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
     ) -> Poll<io::Result<usize>> {
         if matches!(
             operation,
-            Operation::Write(_) | Operation::Shutdown | Operation::Flush
+            Operation::Write(_)
+                | Operation::WriteVectored(_)
+                | Operation::Shutdown
+                | Operation::Flush
         ) {
             std::task::ready!(self.poll_transmit(cx))?;
         }
@@ -334,6 +419,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
                     &mut operation,
                     &mut self.outgoing,
                     &mut self.plaintext,
+                    &mut self.write_batch,
                     &mut self.peer_closed,
                     &mut self.write_closed,
                 )?,
@@ -342,6 +428,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
                     &mut operation,
                     &mut self.outgoing,
                     &mut self.plaintext,
+                    &mut self.write_batch,
                     &mut self.peer_closed,
                     &mut self.write_closed,
                 )?,
@@ -368,6 +455,28 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
                 }
             }
         }
+    }
+    fn poll_write_operation(
+        &mut self,
+        cx: &mut Context<'_>,
+        operation: Operation<'_, '_>,
+        empty: bool,
+    ) -> Poll<io::Result<usize>> {
+        if self.write_closed {
+            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+        }
+        if empty {
+            return Poll::Ready(Ok(0));
+        }
+        self.progressed = false;
+        let result = self.poll_drive(cx, operation);
+        if self.progressed {
+            self.wake_reader();
+        }
+        if result.is_pending() {
+            self.writer = Some(cx.waker().clone());
+        }
+        result
     }
     fn wake_reader(&mut self) {
         if let Some(waker) = self.reader.take() {
@@ -417,22 +526,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsStream<S> {
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        if this.write_closed {
-            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
-        }
-        if bytes.is_empty() {
-            return Poll::Ready(Ok(0));
-        }
-        this.progressed = false;
-        let result = this.poll_drive(cx, Operation::Write(bytes));
-        if this.progressed {
-            this.wake_reader();
-        }
-        if result.is_pending() {
-            this.writer = Some(cx.waker().clone());
-        }
-        result
+        self.get_mut()
+            .poll_write_operation(cx, Operation::Write(bytes), bytes.is_empty())
+    }
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buffers: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        self.get_mut().poll_write_operation(
+            cx,
+            Operation::WriteVectored(buffers),
+            buffers.iter().all(|b| b.is_empty()),
+        )
+    }
+    fn is_write_vectored(&self) -> bool {
+        true
     }
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();

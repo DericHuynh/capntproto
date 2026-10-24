@@ -17,11 +17,10 @@ pub(crate) fn defer(cx: &mut Context<'_>) {
     let _ = std::future::Future::poll(yielding.as_mut(), cx);
 }
 
-// Encryption transports consume each plaintext slice themselves. Coalescing a
-// bounded batch avoids rustls's temporary slice vector and quiche's separate
-// stream-send allocation for each RPC segment table. Plain sockets keep their
-// scatter/gather path. Writers without scatter/gather, including QUIC, can
-// consume a bounded prefix of large batches instead of a standalone header.
+// QUIC consumes each plaintext slice separately. Coalescing a bounded batch
+// avoids a stream-send allocation for every RPC segment table. Plain TCP and
+// TLS keep their scatter/gather paths; TLS combines fragments at record boundaries.
+// Scalar writers consume a bounded prefix instead of a standalone header.
 const ENCRYPTED_BATCH_BYTES: usize = 128 * 1024;
 pub(crate) struct TokioIo<T> {
     inner: T,
@@ -34,6 +33,7 @@ impl<T> TokioIo<T> {
             encrypted_batch: None,
         }
     }
+    #[cfg(any(feature = "quic", test))]
     pub(crate) fn encrypted(inner: T) -> Self {
         Self {
             inner,
