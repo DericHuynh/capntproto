@@ -194,8 +194,11 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         {
             return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into());
         }
-        let proof = Validation::new(0, options);
-        if proof.is_none() || self.validation.get() != proof {
+        if !self
+            .validation
+            .get()
+            .is_some_and(|proof| proof.matches(0, options))
+        {
             // The private immutable envelope has exactly these three struct
             // layouts. The public editor can only change the selected content.
             // Charge their normal traversal/nesting cost, then validate that
@@ -226,7 +229,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             }
             self.message
                 .validate_capability_indices(0, selected_options)?;
-            self.validation.set(proof);
+            self.validation.set(Validation::new(0, options));
         }
         Ok(Some(EncodedCall {
             segment,

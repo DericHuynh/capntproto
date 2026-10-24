@@ -68,16 +68,17 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
     pub fn freeze(self) -> FrozenReturn<A> {
         use capnp::message::ReaderSegments;
         let message = self.message.message();
-        let layout = frame_layout_lengths((0..message.len()).map(|index| {
+        let framed_len = frame_layout_lengths((0..message.len()).map(|index| {
             message
                 .get_segment(index as u32)
                 .expect("builder segment")
                 .len()
-        }));
+        }))
+        .and_then(|(_, length)| core::num::NonZeroUsize::new(length));
         FrozenReturn {
             message: self.message,
             returned: self.returned,
-            layout,
+            framed_len,
             validation: Default::default(),
         }
     }
@@ -89,7 +90,7 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
 pub struct FrozenReturn<A: capnp::message::Allocator> {
     message: capnp::message::SelectedBuilder<A>,
     returned: usize,
-    layout: Option<(usize, usize)>,
+    framed_len: Option<core::num::NonZeroUsize>,
     validation: core::cell::Cell<Option<Validation>>,
 }
 impl<A: capnp::message::Allocator> FrozenReturn<A> {
@@ -101,7 +102,7 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
         }
     }
     pub fn framed_len(&self) -> Option<usize> {
-        self.layout.map(|(_, length)| length)
+        self.framed_len.map(core::num::NonZeroUsize::get)
     }
     pub fn segment_count(&self) -> usize {
         use capnp::message::ReaderSegments;
@@ -130,9 +131,13 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'pool>>, super::super::Error> {
         let segments = self.message.message();
-        let Some((header, length)) = self.layout else {
+        let Some(length) = self.framed_len() else {
             return Ok(None);
         };
+        use capnp::message::ReaderSegments;
+        // The table length is a constant-time consequence of segment count;
+        // retaining it separately would enlarge every inline result owner.
+        let header = (segments.len() / 2 + 1) * 8;
         let words = (length - header) / 8;
         self.validate(capabilities, words, options)?;
         self.copy_validated(
@@ -146,8 +151,11 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
         words: usize,
         options: capnp::message::ReaderOptions,
     ) -> Result<(), super::super::Error> {
-        let proof = Validation::new(capabilities, options);
-        if proof.is_some() && self.validation.get() == proof {
+        if self
+            .validation
+            .get()
+            .is_some_and(|proof| proof.matches(capabilities, options))
+        {
             return Ok(());
         }
         if options
@@ -181,7 +189,7 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
         }
         self.message
             .validate_capability_indices(capabilities, selected)?;
-        self.validation.set(proof);
+        self.validation.set(Validation::new(capabilities, options));
         Ok(())
     }
     #[allow(clippy::too_many_arguments)]
@@ -320,10 +328,10 @@ impl FrozenReturn<capnp::message::HeapAllocator> {
         let Some(source_capacity) = message.retained_segment_bytes() else {
             return Ok(None);
         };
-        let Some((header_len, length)) = self.layout else {
+        let Some(length) = self.framed_len() else {
             return Ok(None);
         };
-        self.validate(0, (length - header_len) / 8, options)?;
+        self.validate(0, (length - 16) / 8, options)?;
         let mut header = [0; 16];
         header[..4].copy_from_slice(&1u32.to_le_bytes());
         header[4..8].copy_from_slice(&((first.len() / 8) as u32).to_le_bytes());
