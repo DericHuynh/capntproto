@@ -32,7 +32,9 @@ use capnp::private::capability::{
 };
 use capnp::Error;
 
-use capntproto_rpc_engine::completion::{cancellation::Cancellation, direct, shared as oneshot};
+use capntproto_rpc_engine::completion::{
+    cancellation::Cancellation, direct, return_guard::ReturnOwnership, shared as oneshot,
+};
 use futures::{future, Future, FutureExt, TryFutureExt};
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -355,6 +357,11 @@ impl AnswerStatus {
     #[inline]
     fn cancellation(&self) -> Cancellation<'_> {
         Cancellation::new(&self.task_canceled, &self.task_waker)
+    }
+
+    #[inline]
+    fn return_ownership(&self) -> ReturnOwnership<'_> {
+        ReturnOwnership::new(&self.return_guards, &self.return_has_been_sent)
     }
 }
 
@@ -1310,7 +1317,7 @@ impl<VatId> ConnectionState<VatId> {
                 debug_assert!(self.connection.borrow().is_err());
                 return;
             };
-            answer.status.return_has_been_sent.set(true);
+            answer.status.return_ownership().mark_sent();
             let words = mem::take(&mut answer.request_words);
             if answer.status.received_finish.get() {
                 (answers.slots.remove(&id), words)
@@ -2383,13 +2390,7 @@ impl<VatId> ReturnGuard<VatId> {
         status: AnswerStatusRef,
         redirect: bool,
     ) -> Self {
-        status.return_guards.set(
-            status
-                .return_guards
-                .get()
-                .checked_add(1)
-                .expect("return guard overflow"),
-        );
+        status.return_ownership().retain();
         Self {
             state: Rc::downgrade(state),
             id,
@@ -2401,13 +2402,7 @@ impl<VatId> ReturnGuard<VatId> {
 }
 impl<VatId> Clone for ReturnGuard<VatId> {
     fn clone(&self) -> Self {
-        self.status.return_guards.set(
-            self.status
-                .return_guards
-                .get()
-                .checked_add(1)
-                .expect("return guard overflow"),
-        );
+        self.status.return_ownership().retain();
         Self {
             state: self.state.clone(),
             id: self.id,
@@ -2419,9 +2414,7 @@ impl<VatId> Clone for ReturnGuard<VatId> {
 }
 impl<VatId> Drop for ReturnGuard<VatId> {
     fn drop(&mut self) {
-        let remaining = self.status.return_guards.get() - 1;
-        self.status.return_guards.set(remaining);
-        if remaining != 0 || self.status.return_has_been_sent.replace(true) {
+        if !self.status.return_ownership().release() {
             return;
         }
         let Some(state) = self.state.upgrade() else {

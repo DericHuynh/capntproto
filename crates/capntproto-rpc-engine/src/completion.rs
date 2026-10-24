@@ -11,6 +11,7 @@ use core::{
 };
 pub mod cancellation;
 pub mod direct;
+pub mod return_guard;
 mod state;
 use state::{observed, Phase};
 #[cfg(capntproto_verus)]
