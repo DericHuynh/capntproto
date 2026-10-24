@@ -1,0 +1,152 @@
+{
+  "metric": "Whole operation, all peers: paired 10/50-operation DHAT slopes with two identical warmups. Single diagnostic pair, not repeated latency or QUIC allocation qualification.",
+  "rows": [
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "blocks": 7.0,
+      "bytes": 911.9
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "portable",
+      "blocks": 7.0,
+      "bytes": 951.9
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "portable-baseline",
+      "blocks": 7.0,
+      "bytes": 952.1
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "cpp",
+      "blocks": 91.5,
+      "bytes": 64938.05
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "blocks": 58.0,
+      "bytes": 7448.2
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "blocks": 58.0,
+      "bytes": 8228.0
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "portable-baseline",
+      "blocks": 58.0,
+      "bytes": 8227.9
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "cpp",
+      "blocks": 233.5,
+      "bytes": 155454.975
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "blocks": 202.0,
+      "bytes": 40520.2
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "blocks": 198.0,
+      "bytes": 37704.0
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "portable-baseline",
+      "blocks": 198.0,
+      "bytes": 37704.0
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "cpp",
+      "blocks": 2062.5,
+      "bytes": 1585407.975
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "blocks": 21.7,
+      "bytes": 2296.4
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "portable",
+      "blocks": 20.8,
+      "bytes": 2210.0
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "portable-baseline",
+      "blocks": 21.15,
+      "bytes": 2245.0
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "blocks": 73.025,
+      "bytes": 11106.725
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "blocks": 71.8,
+      "bytes": 11726.2
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "portable-baseline",
+      "blocks": 72.125,
+      "bytes": 11760.125
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "blocks": 218.725,
+      "bytes": 52677.0
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "blocks": 214.525,
+      "bytes": 49728.275
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "portable-baseline",
+      "blocks": 213.775,
+      "bytes": 49657.525
+    }
+  ]
+}

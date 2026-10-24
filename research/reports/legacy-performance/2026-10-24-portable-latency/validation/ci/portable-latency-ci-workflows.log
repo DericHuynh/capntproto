@@ -1,0 +1,4 @@
+   Compiling capntproto-dev v0.1.0 (/workspace/capntproto/dev)
+    Finished `dev` profile [unoptimized] target(s) in 4.78s
+     Running `/tmp/capntproto-build-cache/bench/debug/capntproto-dev check-workflows`
+Workflow triggers and dependencies passed

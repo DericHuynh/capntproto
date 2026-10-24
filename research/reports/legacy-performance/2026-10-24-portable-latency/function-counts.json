@@ -1,0 +1,2072 @@
+[
+  {
+    "step": 2,
+    "case": "unary-small",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1758.0000000000023
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1699.000000000003
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1452.999999999993
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        1085.000000000003
+      ],
+      [
+        "<capnp_rpc::task_set::ready_set::ReadySet<capnp_rpc::task_set::TaskInProgress<capnp::Error>> as futures_core::stream::Stream>::poll_next",
+        1074.0
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000025
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        1013.999999999999
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        906.9999999999989
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999997
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ]
+    ]
+  },
+  {
+    "step": 2,
+    "case": "unary-small",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        6.000000000000001
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0000000000000004
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        2.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1.0000000000000002
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        2377.000000000005
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1698.9999999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1645.27500000002
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1627.0000000000023
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1240.9999999999955
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000027
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999994
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        754.9999999999987
+      ],
+      [
+        "_aesni_ctr32_ghash_6x",
+        734.0000000000001
+      ],
+      [
+        "<tokio::runtime::io::registration::Registration>::poll_ready",
+        719.9999999999998
+      ],
+      [
+        "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        714.0000000000002
+      ]
+    ]
+  },
+  {
+    "step": 2,
+    "case": "pipelined-read",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        4091.9499999999925
+      ],
+      [
+        "free",
+        3734.825
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        2509.0
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        2395.9999999999995
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        2304.0000000000005
+      ],
+      [
+        "malloc",
+        2296.9250000000006
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1958.0000000000011
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        1938.0000000000039
+      ],
+      [
+        "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>",
+        1546.9999999999975
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ]
+    ]
+  },
+  {
+    "step": 2,
+    "case": "pipelined-read",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        17.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        13.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        12.999999999999998
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        8.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.000000000000001
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        5586.825000000061
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        5479.000000000023
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        5356.99999999998
+      ],
+      [
+        "free",
+        3737.0750000000007
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3156.999999999998
+      ],
+      [
+        "malloc",
+        2359.6250000000014
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        2090.0000000000023
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::maintenance_step::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        2083.0000000000045
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        2032.0000000000061
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1619.9999999999939
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::poll_maintenance_budget_with::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        1318.0000000000005
+      ]
+    ]
+  },
+  {
+    "step": 2,
+    "case": "concurrent-32",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        35648.00000000003
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        34719.99999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        26989.174999999843
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        21163.999999999975
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        14271.999999999976
+      ],
+      [
+        "_int_malloc",
+        13427.674999999994
+      ],
+      [
+        "free",
+        12783.674999999994
+      ],
+      [
+        "<capnp_rpc::rpc::ResultsDone>::from_results_inner::<capntproto_rpc_wire::rpc_twoparty_capnp::Side>",
+        11584.0
+      ],
+      [
+        "<capnp_futures::write_queue::local::Sender<capnp_rpc::twoparty::QueuedMessage>>::enqueue_inner",
+        10907.999999999985
+      ]
+    ]
+  },
+  {
+    "step": 2,
+    "case": "concurrent-32",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        66.00000000000001
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        63.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        41.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        5.000000000000001
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::map::Map<core::ops::range::Range<usize>, <capntproto_rpc_engine::messages::backing::Buffers>::iter::{closure#0}>> as core::iter::traits::iterator::Iterator>::next",
+        42519.99999999998
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        41189.99999999991
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        35916.05000000011
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}",
+        31888.999999999964
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}",
+        26479.999999999996
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        21888.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        19186.000000000036
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        16669.000000000047
+      ],
+      [
+        "<capnp::private::layout::PointerReader>::validate_capability_indices_in::<capnp::private::arena::CachedReaderArena<&capnp::private::arena::ReaderArenaImpl<&capnp::message::Builder<capnp::message::HeapAllocator>>>>",
+        14784.000000000015
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ]
+    ]
+  },
+  {
+    "step": 3,
+    "case": "unary-small",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1758.0000000000023
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1699.000000000003
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1453.0249999999974
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        1085.000000000003
+      ],
+      [
+        "<capnp_rpc::task_set::ready_set::ReadySet<capnp_rpc::task_set::TaskInProgress<capnp::Error>> as futures_core::stream::Stream>::poll_next",
+        1074.0
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000025
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        1013.999999999999
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        906.9999999999989
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999997
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ]
+    ]
+  },
+  {
+    "step": 3,
+    "case": "unary-small",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        6.000000000000001
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0000000000000004
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        2.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1.0000000000000002
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        2377.000000000005
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1698.9999999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1645.0000000000196
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1627.0000000000023
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1257.9999999999957
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000027
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999994
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        754.9999999999987
+      ],
+      [
+        "_aesni_ctr32_ghash_6x",
+        734.0000000000001
+      ],
+      [
+        "<tokio::runtime::io::registration::Registration>::poll_ready",
+        719.9999999999998
+      ],
+      [
+        "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        714.0000000000002
+      ]
+    ]
+  },
+  {
+    "step": 3,
+    "case": "pipelined-read",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        4091.9749999999704
+      ],
+      [
+        "free",
+        3734.825
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        2509.0
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        2395.9999999999995
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        2304.0000000000005
+      ],
+      [
+        "malloc",
+        2296.874999999999
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1958.0000000000011
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        1938.0000000000039
+      ],
+      [
+        "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>",
+        1546.9999999999975
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1422.6499999999996
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1344.674999999999
+      ]
+    ]
+  },
+  {
+    "step": 3,
+    "case": "pipelined-read",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        17.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        13.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        12.999999999999998
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        8.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.000000000000001
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        5559.000000000018
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        5479.000000000023
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        5431.999999999974
+      ],
+      [
+        "free",
+        3737.0750000000007
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3156.999999999998
+      ],
+      [
+        "malloc",
+        2359.675
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        2090.0000000000023
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::maintenance_step::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        2083.0000000000045
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        2052.0000000000055
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1640.999999999994
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::poll_maintenance_budget_with::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        1318.0000000000005
+      ]
+    ]
+  },
+  {
+    "step": 3,
+    "case": "concurrent-32",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        35648.00000000003
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        34719.99999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        26987.949999999884
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        21163.999999999975
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        14271.999999999976
+      ],
+      [
+        "_int_malloc",
+        13432.725
+      ],
+      [
+        "free",
+        12783.749999999998
+      ],
+      [
+        "<capnp_rpc::rpc::ResultsDone>::from_results_inner::<capntproto_rpc_wire::rpc_twoparty_capnp::Side>",
+        11584.0
+      ],
+      [
+        "<capnp_futures::write_queue::local::Sender<capnp_rpc::twoparty::QueuedMessage>>::enqueue_inner",
+        10907.999999999985
+      ]
+    ]
+  },
+  {
+    "step": 3,
+    "case": "concurrent-32",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        66.00000000000001
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        63.00000000000001
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        39.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        3.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::map::Map<core::ops::range::Range<usize>, <capntproto_rpc_engine::messages::backing::Buffers>::iter::{closure#0}>> as core::iter::traits::iterator::Iterator>::next",
+        42519.99999999998
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        40605.99999999993
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        35916.05000000011
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}",
+        31888.999999999964
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}",
+        26479.999999999996
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        22368.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        19268.000000000033
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        16983.000000000055
+      ],
+      [
+        "<capnp::private::layout::PointerReader>::validate_capability_indices_in::<capnp::private::arena::CachedReaderArena<&capnp::private::arena::ReaderArenaImpl<&capnp::message::Builder<capnp::message::HeapAllocator>>>>",
+        14784.000000000015
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ]
+    ]
+  },
+  {
+    "step": 4,
+    "case": "unary-small",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1758.0000000000023
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1699.000000000003
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1452.9749999999929
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        1085.000000000003
+      ],
+      [
+        "<capnp_rpc::task_set::ready_set::ReadySet<capnp_rpc::task_set::TaskInProgress<capnp::Error>> as futures_core::stream::Stream>::poll_next",
+        1074.0
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000025
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        1013.999999999999
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        906.9999999999989
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999997
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ]
+    ]
+  },
+  {
+    "step": 4,
+    "case": "unary-small",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        6.000000000000001
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0000000000000004
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        2.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1.0000000000000002
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        2479.000000000008
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1698.9999999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1660.6750000000097
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1627.0000000000023
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1257.9999999999957
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000027
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999994
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        754.9999999999987
+      ],
+      [
+        "_aesni_ctr32_ghash_6x",
+        734.0000000000001
+      ],
+      [
+        "<tokio::runtime::io::registration::Registration>::poll_ready",
+        719.9999999999998
+      ],
+      [
+        "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        714.0000000000002
+      ]
+    ]
+  },
+  {
+    "step": 4,
+    "case": "pipelined-read",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        4092.024999999994
+      ],
+      [
+        "free",
+        3734.825
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        2509.0
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        2395.9999999999995
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        2304.0000000000005
+      ],
+      [
+        "malloc",
+        2296.925
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1958.0000000000011
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        1938.0000000000039
+      ],
+      [
+        "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>",
+        1546.9999999999975
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ]
+    ]
+  },
+  {
+    "step": 4,
+    "case": "pipelined-read",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        17.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        13.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        12.999999999999998
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        8.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.000000000000001
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        5581.275000000018
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        5518.00000000003
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        5431.999999999974
+      ],
+      [
+        "free",
+        3737.0749999999994
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3156.999999999998
+      ],
+      [
+        "malloc",
+        2359.5750000000003
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        2090.0000000000023
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::maintenance_step::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        2083.0000000000045
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        2052.0000000000055
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1640.999999999994
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::poll_maintenance_budget_with::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        1318.0000000000005
+      ]
+    ]
+  },
+  {
+    "step": 4,
+    "case": "concurrent-32",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        35648.00000000003
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        34719.99999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        26985.999999999916
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        21163.999999999975
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        14271.999999999976
+      ],
+      [
+        "_int_malloc",
+        13432.724999999984
+      ],
+      [
+        "free",
+        12783.749999999989
+      ],
+      [
+        "<capnp_rpc::rpc::ResultsDone>::from_results_inner::<capntproto_rpc_wire::rpc_twoparty_capnp::Side>",
+        11584.0
+      ],
+      [
+        "<capnp_futures::write_queue::local::Sender<capnp_rpc::twoparty::QueuedMessage>>::enqueue_inner",
+        10907.999999999985
+      ]
+    ]
+  },
+  {
+    "step": 4,
+    "case": "concurrent-32",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        66.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        63.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        39.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        3.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}",
+        49054.00000000002
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        37023.999999999985
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        36299.99999999992
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::transport::vat::Reader as capnp_rpc::scoped::wire::coordinator::transport::Input<capnp_rpc::scoped::wire::resources::Import>>::take_buffered_frame",
+        29584.99999999996
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}",
+        24005.999999999953
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        22368.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        19268.000000000033
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        16983.000000000055
+      ],
+      [
+        "<capnp::private::layout::PointerReader>::validate_capability_indices_in::<capnp::private::arena::CachedReaderArena<&capnp::private::arena::ReaderArenaImpl<&capnp::message::Builder<capnp::message::HeapAllocator>>>>",
+        14784.000000000015
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ]
+    ]
+  },
+  {
+    "step": 5,
+    "case": "unary-small",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1758.0000000000023
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1699.000000000003
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1453.2499999999925
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        1085.000000000003
+      ],
+      [
+        "<capnp_rpc::task_set::ready_set::ReadySet<capnp_rpc::task_set::TaskInProgress<capnp::Error>> as futures_core::stream::Stream>::poll_next",
+        1074.0
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000025
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        1013.999999999999
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        906.9999999999989
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999997
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ]
+    ]
+  },
+  {
+    "step": 5,
+    "case": "unary-small",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        6.000000000000001
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0000000000000004
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        2.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1.0000000000000002
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        2479.000000000008
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1698.9999999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1660.6250000000132
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1627.0000000000023
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1247.999999999995
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000027
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999994
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        754.9999999999987
+      ],
+      [
+        "_aesni_ctr32_ghash_6x",
+        734.0000000000001
+      ],
+      [
+        "<tokio::runtime::io::registration::Registration>::poll_ready",
+        719.9999999999998
+      ],
+      [
+        "<capnp_futures::buffered_read::BufferedRead<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::poll_prepare_frame",
+        714.0000000000002
+      ]
+    ]
+  },
+  {
+    "step": 5,
+    "case": "pipelined-read",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        4091.9499999999925
+      ],
+      [
+        "free",
+        3734.825
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        2509.0
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        2395.9999999999995
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        2304.0000000000005
+      ],
+      [
+        "malloc",
+        2296.9250000000006
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1958.0000000000011
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        1938.0000000000039
+      ],
+      [
+        "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>",
+        1546.9999999999975
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ]
+    ]
+  },
+  {
+    "step": 5,
+    "case": "pipelined-read",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        17.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        13.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        12.999999999999998
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        8.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        5583.0750000000135
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        5518.00000000003
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        5430.9999999999745
+      ],
+      [
+        "free",
+        3737.0749999999994
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3156.999999999998
+      ],
+      [
+        "malloc",
+        2359.7250000000013
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        2090.0000000000023
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::maintenance_step::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        2083.0000000000045
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        2052.0000000000055
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1521.9999999999948
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::poll_maintenance_budget_with::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        1318.0000000000005
+      ]
+    ]
+  },
+  {
+    "step": 5,
+    "case": "concurrent-32",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        35648.00000000003
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        34719.99999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        26984.82499999992
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        21163.999999999975
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        14271.999999999976
+      ],
+      [
+        "_int_malloc",
+        13437.77499999999
+      ],
+      [
+        "free",
+        12783.824999999993
+      ],
+      [
+        "<capnp_rpc::rpc::ResultsDone>::from_results_inner::<capntproto_rpc_wire::rpc_twoparty_capnp::Side>",
+        11584.0
+      ],
+      [
+        "<capnp_futures::write_queue::local::Sender<capnp_rpc::twoparty::QueuedMessage>>::enqueue_inner",
+        10907.999999999985
+      ]
+    ]
+  },
+  {
+    "step": 5,
+    "case": "concurrent-32",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        37.0
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        34.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        32.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        2.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}",
+        49054.00000000002
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        36590.99999999997
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        36299.99999999993
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::transport::vat::Reader as capnp_rpc::scoped::wire::coordinator::transport::Input<capnp_rpc::scoped::wire::resources::Import>>::take_buffered_frame",
+        29584.99999999996
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        27628.999999999938
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}",
+        24005.999999999953
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        22368.0
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<capnp::private::layout::PointerReader>::validate_capability_indices_in::<capnp::private::arena::CachedReaderArena<&capnp::private::arena::ReaderArenaImpl<&capnp::message::Builder<capnp::message::HeapAllocator>>>>",
+        14784.000000000015
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ],
+      [
+        "<capnp_rpc::scoped::wire::calls::Calls<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::admit::<capnp_rpc::scoped::wire::server::results::Producer, (), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}>",
+        13536.000000000002
+      ]
+    ]
+  },
+  {
+    "step": 6,
+    "case": "unary-small",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1758.0000000000023
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1699.000000000003
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1453.250000000001
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        1085.000000000003
+      ],
+      [
+        "<capnp_rpc::task_set::ready_set::ReadySet<capnp_rpc::task_set::TaskInProgress<capnp::Error>> as futures_core::stream::Stream>::poll_next",
+        1074.0
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000025
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        1013.999999999999
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        906.9999999999989
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999997
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ]
+    ]
+  },
+  {
+    "step": 6,
+    "case": "unary-small",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        6.000000000000001
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        2.0000000000000004
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        2.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1.0000000000000002
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        2486.0000000000086
+      ],
+      [
+        "ring_core_0_17_14__aes_hw_ctr32_encrypt_blocks",
+        1698.9999999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        1645.0000000000118
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1627.0000000000023
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1247.999999999995
+      ],
+      [
+        "ring_core_0_17_14__gcm_ghash_avx",
+        1040.0000000000027
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::server::server_conn::ServerConnectionData>>::process_tls_records",
+        893.9999999999994
+      ],
+      [
+        "<rustls::conn::UnbufferedConnectionCommon<rustls::client::client_conn::ClientConnectionData>>::process_tls_records",
+        880.9999999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        754.9999999999987
+      ],
+      [
+        "_aesni_ctr32_ghash_6x",
+        734.0000000000001
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}",
+        722.9999999999994
+      ],
+      [
+        "<tokio::runtime::io::registration::Registration>::poll_ready",
+        719.9999999999998
+      ]
+    ]
+  },
+  {
+    "step": 6,
+    "case": "pipelined-read",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        4091.9749999999704
+      ],
+      [
+        "free",
+        3734.825
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        2509.0
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        2395.9999999999995
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        2304.0000000000005
+      ],
+      [
+        "malloc",
+        2296.925
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        1958.0000000000011
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        1938.0000000000039
+      ],
+      [
+        "<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&core::any::TypeId>",
+        1546.9999999999975
+      ],
+      [
+        "<tokio::task::local::LocalSet>::run_until::<capntproto_rpc_bench::run::{closure#2}>::{closure#0}",
+        1414.9499999999998
+      ],
+      [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        1340.9999999999989
+      ]
+    ]
+  },
+  {
+    "step": 6,
+    "case": "pipelined-read",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        17.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        13.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        12.999999999999998
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        8.0
+      ],
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        6.000000000000001
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        11716.000000000126
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        5635.00000000003
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        5574.625000000007
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        5430.9999999999745
+      ],
+      [
+        "free",
+        3737.075
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        3156.999999999998
+      ],
+      [
+        "malloc",
+        2359.6250000000005
+      ],
+      [
+        "<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>::poll_drive",
+        2090.0000000000023
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::maintenance_step::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}>",
+        2083.0000000000045
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        2052.0000000000055
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::transport::vat::Reader as capnp_rpc::scoped::wire::coordinator::transport::Input<capnp_rpc::scoped::wire::resources::Import>>::take_buffered_frame",
+        1533.0000000000005
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        1521.9999999999948
+      ]
+    ]
+  },
+  {
+    "step": 6,
+    "case": "concurrent-32",
+    "implementation": "legacy",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp::private::arena::ReaderArenaImpl<capnp_futures::buffered_read::BufferedSegments> as capnp::private::arena::ReaderArena>::check_offset_and_read",
+        35648.00000000003
+      ],
+      [
+        "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::handle_message",
+        34719.99999999995
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        26989.174999999894
+      ],
+      [
+        "<capnp_rpc::twoparty::OwnedIncomingStream<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>> as capnp_rpc::IncomingMessageStream>::poll_receive",
+        21163.999999999975
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ],
+      [
+        "<capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::with_send_buffer_and_clock::<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}, <capnp_rpc::twoparty::VatNetwork<tokio_util::compat::Compat<tokio::io::split::ReadHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>>>::new_with_send_buffer<capntproto::rpc::io::TokioIo<tokio::io::split::WriteHalf<capntproto::rpc::tls::stream::TlsStream<tokio::net::tcp::stream::TcpStream>>>, capntproto::rpc::tls::network::{closure#0}>::{closure#0}>::{closure#4}",
+        14271.999999999976
+      ],
+      [
+        "_int_malloc",
+        13427.674999999994
+      ],
+      [
+        "free",
+        12783.674999999994
+      ],
+      [
+        "<capnp_rpc::rpc::ResultsDone>::from_results_inner::<capntproto_rpc_wire::rpc_twoparty_capnp::Side>",
+        11584.0
+      ],
+      [
+        "<capnp_futures::write_queue::local::Sender<capnp_rpc::twoparty::QueuedMessage>>::enqueue_inner",
+        10907.999999999985
+      ]
+    ]
+  },
+  {
+    "step": 6,
+    "case": "concurrent-32",
+    "implementation": "portable",
+    "calls": [
+      [
+        "<capnp_futures::buffered_read::Frame>::parse",
+        64.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        37.0
+      ],
+      [
+        "<capntproto_rpc_wire::owned::connection::Driver<capnp_rpc::scoped::wire::resources::Import, capnp_rpc::scoped::wire::server::results::Producer, (), alloc::rc::Rc<dyn capnp::private::capability::ClientHook>, 0, 1>>::ready_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Bundle>",
+        34.00000000000001
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::collect_hooks::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        32.0
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_active_work::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        2.0
+      ]
+    ],
+    "top_self_instructions": [
+      [
+        "_aesni_ctr32_ghash_6x",
+        54719.99999999952
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}",
+        49310.000000000015
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::drive::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, core::future::poll_fn::PollFn<<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::run_connection<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources, capnp_rpc::scoped::wire::coordinator::transport::vat::Reader, capnp_rpc::scoped::wire::coordinator::transport::vat::Writer, capnp_rpc::scoped::wire::coordinator::bootstrap::TwoParty<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#1}>, capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#5}, core::future::poll_fn::PollFn<capnp_rpc::portable::connection::run<capntproto_rpc_wire::rpc_twoparty_capnp::Side>::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#0}::{closure#3}>>::{closure#0}::{closure#0}>>::{closure#0}::{closure#0}",
+        36817.99999999998
+      ],
+      [
+        "__memcpy_avx_unaligned_erms",
+        36301.99999999993
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::transport::vat::Reader as capnp_rpc::scoped::wire::coordinator::transport::Input<capnp_rpc::scoped::wire::resources::Import>>::take_buffered_frame",
+        30096.999999999953
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_work_budget::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>",
+        27628.999999999938
+      ],
+      [
+        "<capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls::<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}",
+        24325.999999999935
+      ],
+      [
+        "<capnp_rpc::scoped::wire::server::worker::Worker<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::poll_using::<(), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#2}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_worker<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#3}>",
+        22368.0
+      ],
+      [
+        "capntproto_rpc_bench::topology::traverse",
+        17088.00000000001
+      ],
+      [
+        "<capnp::private::layout::PointerReader>::validate_capability_indices_in::<capnp::private::arena::CachedReaderArena<&capnp::private::arena::ReaderArenaImpl<&capnp::message::Builder<capnp::message::HeapAllocator>>>>",
+        14784.000000000015
+      ],
+      [
+        "<futures_util::future::try_future::into_future::IntoFuture<capntproto_rpc_bench::topology::access::{closure#0}> as core::future::future::Future>::poll",
+        14272.000000000022
+      ],
+      [
+        "<capnp_rpc::scoped::wire::calls::Calls<capnp_rpc::scoped::wire::resources::Import, 0, 1>>::admit::<capnp_rpc::scoped::wire::server::results::Producer, (), <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::poll_calls<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#1}, <capnp_rpc::scoped::wire::coordinator::Coordinator<capnp_rpc::scoped::wire::resources::Import, (), 0, 1>>::hook_refresh<capnp_rpc::scoped::wire::coordinator::transport::vat::Resources>::{closure#0}>",
+        13536.000000000002
+      ]
+    ]
+  }
+]

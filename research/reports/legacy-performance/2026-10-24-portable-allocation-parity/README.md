@@ -93,7 +93,7 @@ Both versions still copy plaintext once into its ciphertext destination. The tar
 
 ## Dedicated qualification
 
-[Run 40078632826](https://github.com/DericHuynh/capntproto/actions/runs/40078632826) uses workflow commit `3d2b627807d04246f474d8d9d80130209ed0219f`, with runtime parent `8f7f500`. Both controls are frozen at `aad53bf` (runtime `36318e3`). Its guard waits for run 40070062202 to acquire the dedicated measurement slot or finish successfully before entering the benchmark queue. Local measurements are exploratory; dedicated results are pending.
+[Run 40078632826](https://github.com/DericHuynh/capntproto/actions/runs/40078632826) uses workflow commit `3d2b627807d04246f474d8d9d80130209ed0219f`, with runtime parent `8f7f500`. Both controls are frozen at `aad53bf` (runtime `36318e3`). Its guard waited for run 40070062202 before entering the benchmark queue. The run completed native timing and Callgrind, then timed out during DHAT at the 7,200-second SSH limit. Cleanup of both droplets and keys passed; this incomplete campaign does not close qualification. The [latency and CI follow-up](../2026-10-24-portable-latency/README.md) records the new candidate, preserved evidence and faster routine workflow.
 
 ## Evidence and reproduction
 

@@ -323,6 +323,8 @@ report preserves all 48 five-repeat latency rows, paired allocation profiles,
 socket traces, all intermediate steps, and 745 passing final test executions.
 
 [Dedicated qualification 40078632826](https://github.com/DericHuynh/capntproto/actions/runs/40078632826)
-is scheduled against frozen `aad53bf` controls (runtime `36318e3`). Its source is
-`3d2b627`, with runtime parent `8f7f500`. Dedicated results remain pending, so the
-local measurements do not close the dedicated-host performance qualification.
+ran against frozen `aad53bf` controls (runtime `36318e3`). Its source is
+`3d2b627`, with runtime parent `8f7f500`. Native timing and Callgrind finished,
+but DHAT exceeded the 7,200-second SSH limit; cleanup passed. The incomplete
+campaign does not close qualification. The [latency and CI follow-up](../2026-10-24-portable-latency/README.md)
+records current gaps, the next droplet run and the faster default CI path.
