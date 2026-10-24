@@ -1,0 +1,24 @@
+{
+  "run_id": 40140249948,
+  "job_id": 121010292441,
+  "conclusion": "success",
+  "tests": {
+    "engine_alloc": 234,
+    "engine_no_alloc": 188,
+    "hosted_rpc": 377,
+    "secure_tls_quic": 30,
+    "total_executions_including_overlapping_profiles": 829
+  },
+  "engine_clippy_warnings_denied": true,
+  "rpc_clippy_warnings_denied": true,
+  "workspace_formatting": true,
+  "thumbv7em_none_eabi": {
+    "engine_build": true,
+    "rpc_no_default_check": true,
+    "standalone_link_without_global_allocator": true
+  },
+  "job_log_sha256": "45beff011e1fb986aadc0a4a8998289824ecf277b8d6d046c9cd85b88a0f2fef",
+  "profile_build_path": "/home/runner/work/capntproto/capntproto/target/legacy-profile-source",
+  "profile_control_checkout": "a5677a63bb13273dff614205367f944a00145acf",
+  "profile_candidate_checkout": "bb7c58da6d2c853e25e7d42a320ecc62b0efeaf4"
+}

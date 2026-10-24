@@ -1,0 +1,44 @@
+{
+  "checkout": "/tmp/capntproto-legacy-next",
+  "runtime": "6904a4ce5dda49470303b586f4d2b87a7a25dc47",
+  "qualification": "bb7c58da6d2c853e25e7d42a320ecc62b0efeaf4",
+  "baseline": "a5677a63bb13273dff614205367f944a00145acf",
+  "feature_branch": "codex/legacy-return-ownership",
+  "qualification_branch": "codex/legacy-return-qualification-20261024",
+  "run_id": 40140249948,
+  "verify_job_id": 121010292441,
+  "status": "Focused verification and diagnostics passed; dedicated latency bundle is building.",
+  "local_link_evidence": "/tmp/legacy-factor3-embedded-link.json",
+  "source_path_control": "Both profile builds use target/legacy-profile-source; main checkout remains candidate for tests and profiler.",
+  "source_checks": {
+    "qualified_crate_sources_match_feature_branch": true,
+    "local_rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+    "core_source_sha256": "4bbd082420f714deb4f638c2b9ca49737e46ee9874c9818a35d90d0cb31c226d"
+  },
+  "verified_job": {
+    "id": 121010292441,
+    "conclusion": "success"
+  },
+  "diagnostic_artifact": {
+    "id": 12579116027,
+    "bytes": 15893007,
+    "sha256": "29ef42345440a8ee010a92d905b6f24cbd268887f1d4e905372e094a23c6b9ad",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40140249948/artifacts/12579116027"
+  },
+  "latency_bundle_job": {
+    "id": 121012723195,
+    "status": "in_progress"
+  },
+  "binaries": {
+    "legacy": {
+      "path": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench",
+      "sha256": "f9b5e24915b713ce3ed26cdc0b8dea5a6d3df09cb94bb9230e7bea9c8aeb51b0",
+      "sections": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370752       8672\n.rela.plt                1296     379424\n.rodata                828005     380928\n.gcc_except_table      457132    1208936\n.debug_gdb_scripts         34    1666068\n.eh_frame_hdr          103988    1666104\n.eh_frame              842932    1770096\n.text                 9872167    2617152\n.init                      27   12489320\n.fini                      13   12489348\n.plt                      880   12489376\n.tdata                    112   12494352\n.tbss                     456   12494464\n.fini_array                 8   12494464\n.init_array                16   12494472\n.data.rel.ro           263088   12494496\n.dynamic                  464   12757584\n.got                     2648   12758048\n.got.plt                  456   12760696\n.relro_padding           1984   12761152\n.tm_clone_table             0   12765248\n.data                    3272   12765248\n.bss                     4684   12768528\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703987          0\n.debug_aranges         167264          0\n.debug_ranges         6703312          0\n.debug_str           33737868          0\n.debug_line           6891828          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85364758\n\n\n"
+    },
+    "legacy-baseline": {
+      "path": "/home/runner/work/_temp/legacy-baseline",
+      "sha256": "269736f097cea99dce7c28c7819136b3acce317e6f4f8b0f6fabe0b870f0d404",
+      "sections": "/home/runner/work/_temp/legacy-baseline  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370776       8672\n.rela.plt                1296     379448\n.rodata                828005     380928\n.gcc_except_table      457156    1208936\n.debug_gdb_scripts         34    1666092\n.eh_frame_hdr          103988    1666128\n.eh_frame              842932    1770120\n.text                 9872167    2617152\n.init                      27   12489320\n.fini                      13   12489348\n.plt                      880   12489376\n.tdata                    112   12494352\n.tbss                     456   12494464\n.fini_array                 8   12494464\n.init_array                16   12494472\n.data.rel.ro           263120   12494496\n.dynamic                  464   12757616\n.got                     2648   12758080\n.got.plt                  456   12760728\n.relro_padding           1952   12761184\n.tm_clone_table             0   12765280\n.data                    3272   12765280\n.bss                     4684   12768560\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703195          0\n.debug_aranges         167264          0\n.debug_ranges         6702608          0\n.debug_str           33737519          0\n.debug_line           6891597          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85362730\n\n\n"
+    }
+  }
+}
