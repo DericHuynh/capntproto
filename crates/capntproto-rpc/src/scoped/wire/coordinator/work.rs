@@ -116,11 +116,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             self.schedule.active &= !(WorkSet::MAINTENANCE);
             *remaining -= 1;
         }
-        if self.schedule.active == WorkSet::CALLS
+        // A batch of immediately routable calls can share the other lanes'
+        // idle certificates. Sleeping response owners do not require a scan.
+        while self.schedule.active == WorkSet::CALLS
             && *remaining > 0
-            && self.calls.is_empty()
+            && self.calls.idle_after_publication()
             && !self.hooks.inbox.queue.borrow().is_empty()
         {
+            self.direct_publication = false;
             let mut quantum = (*remaining).min(8);
             *remaining -= quantum;
             self.schedule.cursor = Lane::Worker;
@@ -146,7 +149,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Poll::Ready(Err(error)) => Poll::Ready(Err(*error)),
                 Poll::Ready(Ok(Progress::Published { plain: true }))
                     if self.calls.idle_after_publication()
-                        && self.hooks.inbox.queue.borrow().is_empty()
                         && self.notifications.pending() == WorkSet::NONE =>
                 {
                     self.direct_publication = true;
@@ -157,10 +159,16 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // may retire graph owners; those alone need cleanup now.
                     // Application/resource notifications already prevent this
                     // branch through WorkWake's changed check above.
-                    if self.driver.runtime().has_retired() {
-                        self.schedule.active = WorkSet::MAINTENANCE;
+                    self.schedule.active = if self.hooks.inbox.queue.borrow().is_empty() {
+                        WorkSet::NONE
                     } else {
-                        self.schedule.active = WorkSet::NONE;
+                        WorkSet::CALLS
+                    };
+                    if self.driver.runtime().has_retired() {
+                        self.schedule.active |= WorkSet::MAINTENANCE;
+                    }
+                    if self.schedule.active == WorkSet::CALLS && *remaining != 0 {
+                        continue;
                     }
                     Poll::Ready(Ok(()))
                 }
@@ -520,7 +528,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // cancellation/new-call wake delivered during its callbacks.
                 if publication == Some(true)
                     && self.calls.idle_after_publication()
-                    && self.hooks.inbox.queue.borrow().is_empty()
                     && self.notifications.pending() == WorkSet::NONE
                 {
                     // This publication used the direct, routable, data-only
@@ -530,7 +537,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // question/cleanup scan that publication actually changed.
                     self.control_idle = false;
                     self.schedule.active |= WorkSet::MAINTENANCE;
-                    self.schedule.active &= !(WorkSet::CALLS);
+                    if self.hooks.inbox.queue.borrow().is_empty() {
+                        self.schedule.active &= !WorkSet::CALLS;
+                    }
                     if self.foreign.is_empty() {
                         self.schedule.active &= !WorkSet::FOREIGN;
                     }

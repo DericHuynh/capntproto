@@ -1874,78 +1874,90 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
 }
 
 #[test]
-fn early_call_publication_preserves_budget_for_the_next_request() {
-    with_peer(|mut driver, messages| {
-        let mut hooks = ClientHooks::new(8, 8);
-        let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
-        let mut coordinator = Coordinator::new(
-            driver,
-            hooks,
-            NonZeroUsize::new(4).unwrap(),
-            None,
-            options(),
-        )
-        .unwrap();
-        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
-        let mut cx = Context::from_waker(Waker::noop());
-        for _ in 0..256 {
-            if let Poll::Ready(result) =
-                coordinator.poll_work(messages, &mut queue, &mut [0; 32], &NoResources, &mut cx)
-            {
+fn plain_burst_preserves_idle_lanes_and_stays_within_actual_work_budget() {
+    for capability in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(8, 8);
+            let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+            let mut coordinator = Coordinator::new(
+                driver,
+                hooks,
+                NonZeroUsize::new(4).unwrap(),
+                None,
+                options(),
+            )
+            .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+            let mut cx = Context::from_waker(Waker::noop());
+            for _ in 0..256 {
+                if let Poll::Ready(result) =
+                    coordinator.poll_work(messages, &mut queue, &mut [0; 32], &NoResources, &mut cx)
+                {
+                    result.unwrap();
+                }
+                if coordinator.schedule.active == WorkSet::NONE {
+                    break;
+                }
+            }
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+            let requests: Vec<_> = (0..if capability { 2 } else { 3 })
+                .map(|method| {
+                    let mut request = client
+                        .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                            7,
+                            method,
+                            None,
+                            capability::CallHints {
+                                no_promise_pipelining: true,
+                                ..Default::default()
+                            },
+                        );
+                    if capability && method == 1 {
+                        request.get().set_as_capability(client.hook.add_ref());
+                    }
+                    request.send()
+                })
+                .collect();
+            let wake = coordinator.notifications.waker();
+            let visits: &[(usize, usize)] = if capability {
+                &[(2, 2)]
+            } else {
+                &[(2, 2), (1, 3)]
+            };
+            for &(budget, published) in visits {
+                let mut remaining = budget;
+                let Poll::Ready(result) = coordinator.poll_work_budget(
+                    messages,
+                    &mut queue,
+                    &mut [0; 32],
+                    &NoResources,
+                    &mut cx,
+                    &mut remaining,
+                    &wake,
+                ) else {
+                    panic!("ready requests must publish within the available budget")
+                };
                 result.unwrap();
+                assert_eq!(remaining, 0);
+                assert_eq!(queue.len(), published);
+                assert_eq!(
+                    coordinator.direct_publication, !capability,
+                    "a later capability grant invalidates the plain-publication certificate"
+                );
             }
-            if coordinator.schedule.active == WorkSet::NONE {
-                break;
-            }
-        }
-        assert_eq!(coordinator.schedule.active, WorkSet::NONE);
-        let requests: Vec<_> = (0..2)
-            .map(|method| {
-                client
-                    .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
-                        7,
-                        method,
-                        None,
-                        capability::CallHints {
-                            no_promise_pipelining: true,
-                            ..Default::default()
-                        },
-                    )
-                    .send()
-            })
-            .collect();
-        let wake = coordinator.notifications.waker();
-        let mut remaining = 4;
-        while remaining != 0 && queue.len() != 2 {
-            let before = remaining;
-            if let Poll::Ready(result) = coordinator.poll_work_budget(
+            assert!(coordinator.hooks.inbox.queue.borrow().is_empty());
+            drop(requests);
+            drop(client);
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
                 messages,
                 &mut queue,
-                &mut [0; 32],
-                &NoResources,
-                &mut cx,
-                &mut remaining,
-                &wake,
-            ) {
-                result.unwrap();
-            }
-            assert!(remaining < before, "every active visit consumes work");
-        }
-        // Admission/publication uses one step. The unused allowance remains
-        // available for the rotating idle checks and the second publication.
-        assert_eq!(queue.len(), 2);
-        assert!(coordinator.hooks.inbox.queue.borrow().is_empty());
-        drop(requests);
-        drop(client);
-        futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
-            messages,
-            &mut queue,
-            &mut Policy::default(),
-            Ok(()),
-        ))
-        .unwrap();
-        reclaimed(messages);
-    });
+                &mut Policy::default(),
+                Ok(()),
+            ))
+            .unwrap();
+            reclaimed(messages);
+        });
+    }
 }
 
 #[test]
