@@ -292,7 +292,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // just to publish its already-ready frame.
                 Lane::Calls => self.hooks.inbox.queue.borrow().is_empty() && self.calls.is_empty(),
                 Lane::Worker => self.worker.is_empty(),
-                Lane::Maintenance => self.driver.maintenance_is_idle(messages, queue),
+                // Maintenance owns its bounded readiness selection and charges
+                // one step when idle. Probing here builds the same sixteen-class
+                // readiness mask again immediately before polling the lane.
+                Lane::Maintenance => false,
                 Lane::Commands => self.commands.is_empty(),
             };
             // A queued outgoing call's admission refreshes all hooks before
