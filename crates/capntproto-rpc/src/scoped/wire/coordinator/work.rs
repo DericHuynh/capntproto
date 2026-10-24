@@ -228,6 +228,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
                 Poll::Ready(Ok(server::Progress::Replied))
                     if self.worker.completed_ordinary()
+                        && self.worker.is_empty()
                         && self.schedule.active & (WorkSet::CALLS) == WorkSet::NONE
                         && self.foreign.is_empty()
                         && self.commands.is_empty()
@@ -238,12 +239,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 {
                     self.direct_publication = self.worker.completed_plain();
                     self.control_idle = false;
-                    self.schedule.active = if !self.worker.is_empty() {
-                        // Sibling services keep their own ready queue. A completed
-                        // reply cannot make unrelated call/foreign lanes runnable;
-                        // callbacks which do so have already notified WorkWake.
-                        WorkSet::WORKER | WorkSet::MAINTENANCE
-                    } else if self.driver.runtime().has_retired()
+                    self.schedule.active = if self.driver.runtime().has_retired()
                         || !self.driver.maintenance_is_idle(messages, queue)
                     {
                         WorkSet::MAINTENANCE
@@ -501,6 +497,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 if index == Lane::Worker
                     && self.worker.completed_ordinary()
+                    && self.worker.is_empty()
                     && self.schedule.active & (WorkSet::CALLS) == WorkSet::NONE
                     && self.foreign.is_empty()
                     && self.commands.is_empty()
@@ -517,12 +514,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     // Reentrant callbacks and independent wakes use WorkWake.
                     self.direct_publication = self.worker.completed_plain();
                     self.control_idle = false;
-                    self.schedule.active = if !self.worker.is_empty() {
-                        // Sibling services keep their own ready queue. A completed
-                        // reply cannot make unrelated call/foreign lanes runnable;
-                        // callbacks which do so have already notified WorkWake.
-                        WorkSet::WORKER | WorkSet::MAINTENANCE
-                    } else if self.driver.runtime().has_retired()
+                    self.schedule.active = if self.driver.runtime().has_retired()
                         || !self.driver.maintenance_is_idle(messages, queue)
                     {
                         WorkSet::MAINTENANCE
