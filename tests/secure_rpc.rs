@@ -10,3 +10,6 @@ mod tls_tests;
 
 #[path = "secure_rpc/unbuffered.rs"]
 mod unbuffered;
+
+#[path = "secure_rpc/rustls_direct.rs"]
+mod rustls_direct;

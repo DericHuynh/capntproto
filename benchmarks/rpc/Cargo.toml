@@ -54,3 +54,6 @@ harness = false
 [[bench]]
 name = "capnp_cpp"
 harness = false
+
+[patch.crates-io]
+rustls = { path = "../../vendor/rustls" }

@@ -148,7 +148,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "tokio-util",
  "x509-parser",
  "zeroize",
@@ -899,8 +898,6 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "once_cell",
  "ring",
@@ -1133,16 +1130,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
-]
-
-[[package]]
-name = "tokio-rustls"
-version = "0.26.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9cc2678c2cdd569ef8215e2afd7954ada2ae20b4fdd2c5fe6139a3b02d105db"
-dependencies = [
- "rustls",
- "tokio",
 ]
 
 [[package]]

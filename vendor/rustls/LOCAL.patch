@@ -1,0 +1,172 @@
+--- a/src/common_state.rs
++++ b/src/common_state.rs
+@@ -709,14 +709,9 @@
+         }
+ 
+         for m in fragments {
+-            let em = self
++            written += self
+                 .record_layer
+-                .encrypt_outgoing(m)
+-                .encode();
+-
+-            let len = em.len();
+-            outgoing_tls[written..written + len].copy_from_slice(&em);
+-            written += len;
++                .encrypt_outgoing_into(m, &mut outgoing_tls[written..]);
+         }
+ 
+         written
+--- a/src/crypto/cipher.rs
++++ b/src/crypto/cipher.rs
+@@ -153,6 +153,37 @@
+         msg: OutboundPlainMessage<'_>,
+         seq: u64,
+     ) -> Result<OutboundOpaqueMessage, Error>;
++
++    /// Encrypt and encode a complete TLS record directly into `output`.
++    ///
++    /// `output` must have room for the five-byte record header plus
++    /// `encrypted_payload_len(msg.payload.len())` bytes. A short buffer returns
++    /// `Error::EncryptError` without modifying it or calling the encrypter.
++    /// Only the returned prefix may be modified on success.
++    ///
++    /// The caller must not reuse `seq` with the same key, including after a
++    /// provider encryption failure. The default retains the owned-record path;
++    /// providers can override this to avoid its allocation and ciphertext copy.
++    fn encrypt_into(
++        &mut self,
++        msg: OutboundPlainMessage<'_>,
++        seq: u64,
++        output: &mut [u8],
++    ) -> Result<usize, Error> {
++        let required = self
++            .encrypted_payload_len(msg.payload.len())
++            .checked_add(5)
++            .ok_or(Error::EncryptError)?;
++        if output.len() < required {
++            return Err(Error::EncryptError);
++        }
++        let encoded = self.encrypt(msg, seq)?.encode();
++        let target = output
++            .get_mut(..encoded.len())
++            .ok_or(Error::EncryptError)?;
++        target.copy_from_slice(&encoded);
++        Ok(encoded.len())
++    }
+ 
+     /// Return the length of the ciphertext that results from encrypting plaintext of
+     /// length `payload_len`
+--- a/src/crypto/ring/tls13.rs
++++ b/src/crypto/ring/tls13.rs
+@@ -227,6 +227,35 @@
+         ))
+     }
+ 
++    fn encrypt_into(
++        &mut self,
++        msg: OutboundPlainMessage<'_>,
++        seq: u64,
++        output: &mut [u8],
++    ) -> Result<usize, Error> {
++        let plaintext_len = msg.payload.len();
++        let total_len = self.encrypted_payload_len(plaintext_len);
++        // Select the exact record before writing anything; extra caller capacity
++        // must remain untouched, and a short destination must be retryable.
++        let record = output
++            .get_mut(..5 + total_len)
++            .ok_or(Error::EncryptError)?;
++        let header = make_tls13_aad(total_len);
++        record[..5].copy_from_slice(&header);
++        let (payload, tag_output) = record[5..].split_at_mut(plaintext_len + 1);
++        msg.payload
++            .copy_to_slice(&mut payload[..plaintext_len]);
++        payload[plaintext_len] = msg.typ.into();
++
++        let nonce = aead::Nonce::assume_unique_for_key(Nonce::new(&self.iv, seq).0);
++        let tag = self
++            .enc_key
++            .seal_in_place_separate_tag(nonce, aead::Aad::from(header), payload)
++            .map_err(|_| Error::EncryptError)?;
++        tag_output.copy_from_slice(tag.as_ref());
++        Ok(record.len())
++    }
++
+     fn encrypted_payload_len(&self, payload_len: usize) -> usize {
+         payload_len + 1 + self.enc_key.algorithm().tag_len()
+     }
+--- a/src/msgs/message/outbound.rs
++++ b/src/msgs/message/outbound.rs
+@@ -98,6 +98,33 @@
+                     let end = if end - psize < len { end - psize } else { len };
+                     vec.extend_from_slice(&chunk[start..end]);
+                 }
++            }
++        }
++    }
++
++    /// Copy the selected plaintext range into an equally sized destination.
++    #[cfg(feature = "ring")]
++    pub(crate) fn copy_to_slice(&self, mut output: &mut [u8]) {
++        assert_eq!(output.len(), self.len());
++        match *self {
++            Self::Single(chunk) => output.copy_from_slice(chunk),
++            Self::Multiple { chunks, start, end } => {
++                let mut offset = 0;
++                for chunk in chunks {
++                    if offset >= end {
++                        break;
++                    }
++                    let next = offset + chunk.len();
++                    if next > start {
++                        let selected =
++                            &chunk[start.saturating_sub(offset)..(end - offset).min(chunk.len())];
++                        let (head, tail) = output.split_at_mut(selected.len());
++                        head.copy_from_slice(selected);
++                        output = tail;
++                    }
++                    offset = next;
++                }
++                assert!(output.is_empty());
+             }
+         }
+     }
+--- a/src/record_layer.rs
++++ b/src/record_layer.rs
+@@ -108,13 +108,33 @@
+         &mut self,
+         plain: OutboundPlainMessage<'_>,
+     ) -> OutboundOpaqueMessage {
++        let seq = self.next_write_seq();
++        self.message_encrypter
++            .encrypt(plain, seq)
++            .unwrap()
++    }
++
++    /// Encrypt into caller-owned record storage after the complete write has
++    /// passed CommonState's size preflight. Consume sequence numbers exactly as
++    /// the owned-record path does, including on provider failure.
++    pub(crate) fn encrypt_outgoing_into(
++        &mut self,
++        plain: OutboundPlainMessage<'_>,
++        output: &mut [u8],
++    ) -> usize {
++        assert!(output.len() >= plain.encoded_len(self));
++        let seq = self.next_write_seq();
++        self.message_encrypter
++            .encrypt_into(plain, seq, output)
++            .unwrap()
++    }
++
++    fn next_write_seq(&mut self) -> u64 {
+         debug_assert!(self.encrypt_state == DirectionState::Active);
+         assert!(self.next_pre_encrypt_action() != PreEncryptAction::Refuse);
+         let seq = self.write_seq;
+         self.write_seq += 1;
+-        self.message_encrypter
+-            .encrypt(plain, seq)
+-            .unwrap()
++        seq
+     }
+ 
+     /// Prepare to use the given `MessageEncrypter` for future message encryption.
