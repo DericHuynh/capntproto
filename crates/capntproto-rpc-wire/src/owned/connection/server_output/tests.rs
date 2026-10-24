@@ -16,6 +16,7 @@ fn direct_prepared_return_preserves_dependencies_and_rolls_back_every_capacity_f
         .results()
         .set_as::<capnp::text::Owned>("direct")
         .unwrap();
+    let prepared = prepared.freeze();
     let measured = allocation_counter::measure(|| {
         with_driver(|mut driver, messages| {
             let (call, target) = request(&mut driver, messages, false);
@@ -139,7 +140,7 @@ fn check_prepared_data_reply(_hosted: bool) {
             .results()
             .set_as::<capnp::text::Owned>("retained result")
             .unwrap();
-        source
+        source.freeze()
     });
     for canceled in [false, true] {
         let measured = allocation_counter::measure(|| {

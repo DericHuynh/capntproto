@@ -63,27 +63,51 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
     pub fn results(&mut self) -> capnp::any_pointer::Builder<'_> {
         self.message.get()
     }
-    /// Exact framed length when the private envelope's segment count fits the
-    /// wire reader. This is a storage hint, not a validation certificate.
-    pub fn framed_len(&self) -> Option<usize> {
+    /// End application mutation. Layout and successful validation belong to this
+    /// immutable owner and survive output backpressure and publication retries.
+    pub fn freeze(self) -> FrozenReturn<A> {
         use capnp::message::ReaderSegments;
         let message = self.message.message();
-        frame_layout_lengths((0..message.len()).map(|index| {
+        let layout = frame_layout_lengths((0..message.len()).map(|index| {
             message
                 .get_segment(index as u32)
                 .expect("builder segment")
                 .len()
-        }))
-        .map(|(_, length)| length)
+        }));
+        FrozenReturn {
+            message: self.message,
+            returned: self.returned,
+            layout,
+            validation: Default::default(),
+        }
     }
-    /// Number of immutable segments in this result envelope.
+}
+
+/// Immutable application result with retained framing and validation metadata.
+/// Publication edits only its separately owned header; it never edits these bytes.
+/// Capability ownership remains in the caller's table, not in the certificate.
+pub struct FrozenReturn<A: capnp::message::Allocator> {
+    message: capnp::message::SelectedBuilder<A>,
+    returned: usize,
+    layout: Option<(usize, usize)>,
+    validation: core::cell::Cell<Option<Validation>>,
+}
+impl<A: capnp::message::Allocator> FrozenReturn<A> {
+    /// Resume application mutation, discarding all framing and validation proofs.
+    pub fn into_builder(self) -> PreparedReturn<A> {
+        PreparedReturn {
+            message: self.message,
+            returned: self.returned,
+        }
+    }
+    pub fn framed_len(&self) -> Option<usize> {
+        self.layout.map(|(_, length)| length)
+    }
     pub fn segment_count(&self) -> usize {
         use capnp::message::ReaderSegments;
         self.message.message().len()
     }
     pub fn reader(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        // Like RpcServerResponseImpl::getResultsBuilder().asReader(), use the
-        // selected result field instead of decoding the envelope on each read.
         self.message.get_reader()
     }
     #[inline(always)]
@@ -105,14 +129,14 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'pool>>, super::super::Error> {
-        let segments = self.message.message().get_segments_for_output();
-        let Some((header, length)) = frame_layout(&segments) else {
+        let segments = self.message.message();
+        let Some((header, length)) = self.layout else {
             return Ok(None);
         };
         let words = (length - header) / 8;
         self.validate(capabilities, words, options)?;
         self.copy_validated(
-            answer, no_finish, messages, options, &segments, header, length,
+            answer, no_finish, messages, options, segments, header, length,
         )
     }
     #[inline(always)]
@@ -122,6 +146,10 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
         words: usize,
         options: capnp::message::ReaderOptions,
     ) -> Result<(), super::super::Error> {
+        let proof = Validation::new(capabilities, options);
+        if proof.is_some() && self.validation.get() == proof {
+            return Ok(());
+        }
         if options
             .traversal_limit_in_words
             .is_some_and(|limit| words > limit)
@@ -153,6 +181,7 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
         }
         self.message
             .validate_capability_indices(capabilities, selected)?;
+        self.validation.set(proof);
         Ok(())
     }
     #[allow(clippy::too_many_arguments)]
@@ -163,11 +192,12 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
         no_finish: bool,
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
-        segments: &[&[u8]],
+        segments: &impl capnp::message::ReaderSegments,
         header: usize,
         length: usize,
     ) -> Result<Option<Frame<'pool>>, super::super::Error> {
-        if let [segment] = segments {
+        if segments.len() == 1 {
+            let segment = segments.get_segment(0).expect("frozen first segment");
             let mut prefix = [0; 8];
             prefix[4..].copy_from_slice(&((segment.len() / 8) as u32).to_le_bytes());
             let lease = messages
@@ -179,7 +209,9 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
                 .map_err(super::super::Error::Storage)?;
             return Ok(Some(Frame::new(lease, options)));
         }
-        if let [first, second] = segments {
+        if segments.len() == 2 {
+            let first = segments.get_segment(0).expect("frozen first segment");
+            let second = segments.get_segment(1).expect("frozen second segment");
             // Large Data/Text results commonly spill from the envelope into a
             // second segment. Overwrite the complete frame transactionally,
             // just like the single-segment path, instead of clearing a large
@@ -208,7 +240,8 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
                 .map_err(super::super::Error::Storage)?;
             bytes[..4].copy_from_slice(&((segments.len() - 1) as u32).to_le_bytes());
             let mut start = header;
-            for (index, segment) in segments.iter().enumerate() {
+            for index in 0..segments.len() {
+                let segment = segments.get_segment(index as u32).expect("frozen segment");
                 let slot = (index + 1) * 4;
                 bytes[slot..slot + 4].copy_from_slice(&((segment.len() / 8) as u32).to_le_bytes());
                 let end = start + segment.len();
@@ -241,7 +274,7 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
 struct FramedReturnParts {
     header: [u8; 16],
     first: crate::owned::connection::retained::Envelope,
-    source: alloc::rc::Rc<PreparedReturn<capnp::message::HeapAllocator>>,
+    source: alloc::rc::Rc<FrozenReturn<capnp::message::HeapAllocator>>,
     capacity: usize,
 }
 impl messages::Parts for FramedReturnParts {
@@ -266,7 +299,7 @@ impl messages::Parts for FramedReturnParts {
         self.capacity
     }
 }
-impl PreparedReturn<capnp::message::HeapAllocator> {
+impl FrozenReturn<capnp::message::HeapAllocator> {
     fn retain_parts(
         self: &alloc::rc::Rc<Self>,
         answer: AnswerId,
@@ -287,7 +320,7 @@ impl PreparedReturn<capnp::message::HeapAllocator> {
         let Some(source_capacity) = message.retained_segment_bytes() else {
             return Ok(None);
         };
-        let Some((header_len, length)) = frame_layout(&[first, second]) else {
+        let Some((header_len, length)) = self.layout else {
             return Ok(None);
         };
         self.validate(0, (length - header_len) / 8, options)?;
@@ -320,9 +353,6 @@ impl PreparedReturn<capnp::message::HeapAllocator> {
     }
 }
 
-fn frame_layout(segments: &[&[u8]]) -> Option<(usize, usize)> {
-    frame_layout_lengths(segments.iter().map(|segment| segment.len()))
-}
 fn frame_layout_lengths(
     mut lengths: impl ExactSizeIterator<Item = usize>,
 ) -> Option<(usize, usize)> {
@@ -348,7 +378,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn try_send_answer_prepared<B: capnp::message::Allocator, R>(
         &mut self,
         request: &Request<'pool, 'id, I, CAPS, PATH>,
-        source: &PreparedReturn<B>,
+        source: &FrozenReturn<B>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         queue: &mut messages::Queue<'pool, '_, R>,
         options: capnp::message::ReaderOptions,
@@ -367,7 +397,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn try_send_answer_prepared_shared<R>(
         &mut self,
         request: &Request<'pool, 'id, I, CAPS, PATH>,
-        source: &alloc::rc::Rc<PreparedReturn<capnp::message::HeapAllocator>>,
+        source: &alloc::rc::Rc<FrozenReturn<capnp::message::HeapAllocator>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         queue: &mut messages::Queue<'pool, '_, R>,
         options: capnp::message::ReaderOptions,
@@ -389,8 +419,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     fn try_send_answer_prepared_using<B: capnp::message::Allocator, R>(
         &mut self,
         request: &Request<'pool, 'id, I, CAPS, PATH>,
-        source: &PreparedReturn<B>,
-        shared: Option<&alloc::rc::Rc<PreparedReturn<capnp::message::HeapAllocator>>>,
+        source: &FrozenReturn<B>,
+        shared: Option<&alloc::rc::Rc<FrozenReturn<capnp::message::HeapAllocator>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         queue: &mut messages::Queue<'pool, '_, R>,
         options: capnp::message::ReaderOptions,
@@ -467,7 +497,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         answer: answers::Key<'id>,
         interface: u64,
         method: u16,
-        source: &PreparedReturn<B>,
+        source: &FrozenReturn<B>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error> {
@@ -506,7 +536,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         answer: answers::Key<'id>,
         interface: u64,
         method: u16,
-        source: &PreparedReturn<B>,
+        source: &FrozenReturn<B>,
         capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
@@ -569,6 +599,62 @@ mod tests {
     use capnp::{word, Word};
     use capntproto_rpc_engine::ids::WireId;
     #[test]
+    fn frozen_return_revalidates_policy_and_thaw_discards_proofs() {
+        let mut source = PreparedReturn::from_template(
+            &PreparedReturnTemplate::default(),
+            capnp::message::HeapAllocator::new().first_segment_words(256),
+        );
+        source
+            .results()
+            .set_as::<capnp::data::Owned>(b"small".as_slice())
+            .unwrap();
+        let source = source.freeze();
+        let options = capnp::message::ReaderOptions {
+            nesting_limit: 8,
+            ..Default::default()
+        };
+        let words = source.message.message().size_in_words();
+        for _ in 0..3 {
+            source.validate(0, words, options).unwrap();
+        }
+        assert!(source
+            .validate(
+                0,
+                words,
+                capnp::message::ReaderOptions {
+                    nesting_limit: 3,
+                    ..options
+                }
+            )
+            .is_err());
+        assert!(source
+            .validate(
+                0,
+                words,
+                capnp::message::ReaderOptions {
+                    traversal_limit_in_words: Some(0),
+                    ..options
+                }
+            )
+            .is_err());
+        let old_length = source.framed_len().unwrap();
+        let mut source = source.into_builder();
+        let mut field = source.results();
+        for _ in 0..16 {
+            field = field.initn_as::<capnp::any_pointer_list::Builder>(1).get(0);
+        }
+        field
+            .set_as::<capnp::data::Owned>(b"deep".as_slice())
+            .unwrap();
+        let source = source.freeze();
+        assert!(source.framed_len().unwrap() > old_length);
+        let words = source.message.message().size_in_words();
+        assert!(source.validate(0, words, options).is_err());
+        source.validate(0, words, Default::default()).unwrap();
+        assert!(source.validate(0, words, options).is_err());
+    }
+
+    #[test]
     fn retained_return_parts_preserve_source_limits_and_copy_fallback() {
         use capnp::message::{HeapAllocator, ReaderSegments};
         use capntproto_rpc_engine::connection::Growth;
@@ -580,7 +666,7 @@ mod tests {
             .results()
             .set_as::<capnp::data::Owned>(&[0xa5; 8192][..])
             .unwrap();
-        let source = alloc::rc::Rc::new(source);
+        let source = alloc::rc::Rc::new(source.freeze());
         let original = capnp::serialize::write_message_to_words(source.message.message());
         #[cfg(not(miri))]
         assert_eq!(
@@ -713,6 +799,8 @@ mod tests {
             .set_as::<capnp::data::Owned>(b"second".as_slice())
             .unwrap();
         drop(template);
+        let first = first.freeze();
+        let second = second.freeze();
         let mut a = [word(0, 0, 0, 0, 0, 0, 0, 0); 64];
         let mut b = a;
         let mut buffers = [
@@ -749,6 +837,7 @@ mod tests {
                 .copy(AnswerId::from_wire(0), false, messages, Default::default())
                 .unwrap()
                 .unwrap();
+            let mut first = first.into_builder();
             first
                 .results()
                 .set_as::<capnp::data::Owned>(b"replaced".as_slice())
@@ -797,46 +886,61 @@ mod tests {
             .results()
             .set_as::<capnp::data::Owned>(payload.as_slice())
             .unwrap();
+        let source = source.freeze();
         assert_eq!(source.message.message().get_segments_for_output().len(), 2);
         let mut words = [word(0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa); 1024];
         let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
-        messages::with_messages(&mut buffers, &mut [], |messages| {
-            for (id, no_finish) in [(u32::MAX, true), (0, false)] {
-                let frame = source
-                    .copy(
-                        AnswerId::from_wire(id),
-                        no_finish,
-                        messages,
-                        Default::default(),
-                    )
-                    .unwrap()
-                    .unwrap();
-                frame
-                    .with(messages, |root| {
-                        let rpc_capnp::message::Return(returned) = root.which().unwrap() else {
-                            panic!("Return")
-                        };
-                        let returned = returned.unwrap();
-                        assert_eq!(returned.get_answer_id(), id);
-                        assert_eq!(returned.get_no_finish_needed(), no_finish);
-                        assert!(!returned.get_release_param_caps());
-                        let rpc_capnp::return_::Results(results) = returned.which().unwrap() else {
-                            panic!("results")
-                        };
-                        assert_eq!(
-                            results
-                                .unwrap()
-                                .get_content()
-                                .get_as::<capnp::data::Reader>()
-                                .unwrap(),
-                            payload
-                        );
-                    })
-                    .unwrap();
-                frame.release(messages);
-            }
-        })
-        .unwrap();
+        let publish = || {
+            messages::with_messages(&mut buffers, &mut [], |messages| {
+                for (id, no_finish) in [(u32::MAX, true), (0, false)] {
+                    let frame = source
+                        .copy(
+                            AnswerId::from_wire(id),
+                            no_finish,
+                            messages,
+                            Default::default(),
+                        )
+                        .unwrap()
+                        .unwrap();
+                    frame
+                        .with(messages, |root| {
+                            let rpc_capnp::message::Return(returned) = root.which().unwrap() else {
+                                panic!("Return")
+                            };
+                            let returned = returned.unwrap();
+                            assert_eq!(returned.get_answer_id(), id);
+                            assert_eq!(returned.get_no_finish_needed(), no_finish);
+                            assert!(!returned.get_release_param_caps());
+                            let rpc_capnp::return_::Results(results) = returned.which().unwrap()
+                            else {
+                                panic!("results")
+                            };
+                            assert_eq!(
+                                results
+                                    .unwrap()
+                                    .get_content()
+                                    .get_as::<capnp::data::Reader>()
+                                    .unwrap(),
+                                payload
+                            );
+                        })
+                        .unwrap();
+                    frame.release(messages);
+                }
+            })
+            .unwrap()
+        };
+        #[cfg(not(miri))]
+        assert_eq!(
+            allocation_counter::measure(publish).count_total,
+            0,
+            "frozen segmented publication borrows segment references and fixed output storage"
+        );
+        #[cfg(miri)]
+        {
+            let mut publish = publish;
+            publish();
+        }
         assert_eq!(
             &Word::words_to_bytes(&words)[12..16],
             &[0; 4],
@@ -866,6 +970,7 @@ mod tests {
             for index in 0..count {
                 data.set(index, &[index as u8; 64]);
             }
+            let source = source.freeze();
             let segments = source.message.message().get_segments_for_output().len();
             assert_eq!(segments, count as usize + 2);
             let mut words = alloc::vec![word(0, 0, 0, 0, 0, 0, 0, 0); 10_000];

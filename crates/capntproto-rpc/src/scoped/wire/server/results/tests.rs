@@ -523,6 +523,7 @@ fn prepared_return_rejects_capability_content_before_reserving_storage() {
     root.set_as_capability(crate::broken::new_cap(Error::failed(
         "test capability".into(),
     )));
+    let source = source.freeze();
     with_driver(|mut driver, messages| {
         let (call, target) = request(&mut driver, messages, Results::new());
         assert!(driver
@@ -559,6 +560,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
             .get(1)
             .set_as::<capnp::data::Owned>(&b"retained bytes"[..])
             .unwrap();
+        let source = source.freeze();
         with_driver(|mut driver, messages| {
             let (call, target) = request(&mut driver, messages, Results::new());
             let value = driver
@@ -661,6 +663,33 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                 result.release(messages, &mut driver.capabilities());
                 assert!(driver.prepare_answer_return(call.answer()).is_ok());
             }
+            // A successful publication under two capability slots does not
+            // authorize the same bytes against a smaller table on a later retry.
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    [Some(&value)].into_iter(),
+                    messages,
+                    Default::default(),
+                )
+                .is_err());
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    references.iter().copied(),
+                    messages,
+                    capnp::message::ReaderOptions {
+                        nesting_limit: 0,
+                        ..Default::default()
+                    },
+                )
+                .is_err());
             driver.capabilities().release(value);
             driver.capabilities().release(target);
             driver.release_call(call, messages);

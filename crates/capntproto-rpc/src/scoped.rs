@@ -1185,6 +1185,9 @@ pub struct Call {
     // Last: release admission after destroying callback-bearing call owners.
     _permit: Permit,
 }
+// The common request keeps its cached validation inline. Boxing it would add
+// another allocation to each call merely to shrink the uncommon hook variants.
+#[allow(clippy::large_enum_variant)]
 enum CallParams {
     Request(crate::local::Params),
     OwnedRequest(Box<crate::local::Request>),

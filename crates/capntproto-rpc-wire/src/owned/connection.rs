@@ -249,9 +249,10 @@ pub enum Error {
     UnknownInvocation,
 }
 
-/// Scheduling consequences of the last maintenance visit, including productive
-/// transitions before a later Pending, resource wait, or exhausted budget.
-/// Consumers must apply these effects independently of the returned progress.
+/// Conservative scheduling effects of the work attempted in the last visit.
+/// They include transitions before a later Pending, resource wait or exhausted
+/// budget. Consumers apply them independently of the returned progress; a bit
+/// requests reconsideration of an owner, not proof that it changed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct MaintenanceEffects(u8);
 impl MaintenanceEffects {
@@ -276,6 +277,8 @@ impl MaintenanceEffects {
     pub fn resources(self) -> bool {
         self.0 & Self::RESOURCES != 0
     }
+    /// Reconsider output/control readiness. This does not certify publication,
+    /// transport acceptance, flushing, or peer receipt.
     pub fn output(self) -> bool {
         self.0 & Self::OUTPUT != 0
     }
@@ -2109,7 +2112,11 @@ pub use local_result::{LocalPayload, LocalResult};
 #[cfg(feature = "alloc")]
 mod prepared_return;
 #[cfg(feature = "alloc")]
-pub use prepared_return::{PreparedReturn, PreparedReturnTemplate};
+pub use prepared_return::{FrozenReturn, PreparedReturn, PreparedReturnTemplate};
+#[cfg(feature = "alloc")]
+mod publication;
+#[cfg(feature = "alloc")]
+use publication::Validation;
 mod bootstrap;
 mod result_draft;
 mod server_output;

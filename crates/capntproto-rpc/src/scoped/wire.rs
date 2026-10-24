@@ -41,7 +41,7 @@ pub(crate) struct Payload {
 }
 enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
-    Return(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    Return(Rc<connection::FrozenReturn<capnp::message::HeapAllocator>>),
     Produced(server::Results),
     Admitted(Box<owned::PlainResults>),
     Shared { message: SharedPayload },
@@ -57,9 +57,7 @@ impl capnp::private::capability::ResponseHook for SharedPayload {
     }
 }
 impl Payload {
-    fn prepared_return(
-        &self,
-    ) -> Option<&connection::PreparedReturn<capnp::message::HeapAllocator>> {
+    fn prepared_return(&self) -> Option<&connection::FrozenReturn<capnp::message::HeapAllocator>> {
         match &self.body {
             PayloadBody::Return(message) => Some(message),
             PayloadBody::Produced(results) => results.prepared_return(),

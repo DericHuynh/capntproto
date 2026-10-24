@@ -53,6 +53,7 @@ pub struct PreparedCall<A: capnp::message::Allocator> {
     method: calls::DynamicCall,
     offsets: Option<(usize, usize)>,
     owner: Option<alloc::rc::Weak<PreparedCall<capnp::message::HeapAllocator>>>,
+    validation: core::cell::Cell<Option<Validation>>,
 }
 #[cfg(feature = "alloc")]
 impl<A: capnp::message::Allocator> PreparedCall<A> {
@@ -76,6 +77,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
                 offsets: template.offsets,
                 method,
                 owner: None,
+                validation: Default::default(),
             });
         }
         // Keep the common immutable-header copy separate from reselecting an
@@ -96,6 +98,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             offsets: template.offsets,
             method,
             owner: None,
+            validation: Default::default(),
         })
     }
     pub fn new(
@@ -134,6 +137,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             message,
             offsets,
             owner: None,
+            validation: Default::default(),
             method: calls::DynamicCall {
                 interface,
                 method,
@@ -143,6 +147,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         })
     }
     pub fn params(&mut self) -> capnp::any_pointer::Builder<'_> {
+        self.validation.set(None);
         self.message.get()
     }
     /// Read the same selected parameter field used by the mutable builder.
@@ -189,34 +194,40 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         {
             return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into());
         }
-        // The private immutable envelope has exactly these three struct
-        // layouts. The public editor can only change the selected content.
-        // Charge their normal traversal/nesting cost, then validate that
-        // selection directly instead of decoding the same envelope again.
-        // Its pointer-word charge replaces the ordinary message-root charge.
-        let prefix_words = [
-            rpc_capnp::api::Message::SIZE,
-            rpc_capnp::api::Call::SIZE,
-            rpc_capnp::api::Payload::SIZE,
-        ]
-        .iter()
-        .map(|size| usize::from(size.data) + usize::from(size.pointers))
-        .sum::<usize>();
-        let mut selected_options = options;
-        selected_options.nesting_limit = options
-            .nesting_limit
-            .checked_sub(3)
-            .filter(|limit| *limit >= 0)
-            .ok_or_else(|| {
-                capnp::Error::from_kind(capnp::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles)
-            })?;
-        if let Some(limit) = &mut selected_options.traversal_limit_in_words {
-            *limit = limit
-                .checked_sub(prefix_words)
-                .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::ReadLimitExceeded))?;
+        let proof = Validation::new(0, options);
+        if proof.is_none() || self.validation.get() != proof {
+            // The private immutable envelope has exactly these three struct
+            // layouts. The public editor can only change the selected content.
+            // Charge their normal traversal/nesting cost, then validate that
+            // selection directly instead of decoding the same envelope again.
+            // Its pointer-word charge replaces the ordinary message-root charge.
+            let prefix_words = [
+                rpc_capnp::api::Message::SIZE,
+                rpc_capnp::api::Call::SIZE,
+                rpc_capnp::api::Payload::SIZE,
+            ]
+            .iter()
+            .map(|size| usize::from(size.data) + usize::from(size.pointers))
+            .sum::<usize>();
+            let mut selected_options = options;
+            selected_options.nesting_limit = options
+                .nesting_limit
+                .checked_sub(3)
+                .filter(|limit| *limit >= 0)
+                .ok_or_else(|| {
+                    capnp::Error::from_kind(
+                        capnp::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
+                    )
+                })?;
+            if let Some(limit) = &mut selected_options.traversal_limit_in_words {
+                *limit = limit
+                    .checked_sub(prefix_words)
+                    .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::ReadLimitExceeded))?;
+            }
+            self.message
+                .validate_capability_indices(0, selected_options)?;
+            self.validation.set(proof);
         }
-        self.message
-            .validate_capability_indices(0, selected_options)?;
         Ok(Some(EncodedCall {
             segment,
             second,
@@ -1258,6 +1269,43 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn cached_call_validation_cannot_survive_parameter_mutation() {
+        let mut call = PreparedCall::from_template(
+            &PreparedCallTemplate::default(),
+            capnp::message::HeapAllocator::new().first_segment_words(256),
+            0,
+            0,
+        )
+        .unwrap();
+        let options = capnp::message::ReaderOptions {
+            nesting_limit: 8,
+            ..Default::default()
+        };
+        call.params()
+            .set_as::<capnp::data::Owned>(b"small".as_slice())
+            .unwrap();
+        for _ in 0..3 {
+            assert!(call.encoded(call.method, options).unwrap().is_some());
+        }
+        // Replacing the selected subtree leaves the private header unchanged.
+        // A cached success for its old bytes must not authorize this deep value.
+        let mut field = call.params();
+        for _ in 0..16 {
+            field = field.initn_as::<capnp::any_pointer_list::Builder>(1).get(0);
+        }
+        field
+            .set_as::<capnp::data::Owned>(b"deep".as_slice())
+            .unwrap();
+        assert!(call.encoded(call.method, options).is_err());
+        assert!(call
+            .encoded(call.method, Default::default())
+            .unwrap()
+            .is_some());
+        assert!(call.encoded(call.method, options).is_err());
     }
 
     #[cfg(feature = "alloc")]

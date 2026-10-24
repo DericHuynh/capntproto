@@ -50,19 +50,19 @@ impl Waiters {
 // output retains a separate message owner so an in-flight write does not keep
 // the worker's recyclable result context alive.
 enum CompletedPayload {
-    Plain(connection::PreparedReturn<capnp::message::HeapAllocator>),
-    Shared(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    Plain(connection::FrozenReturn<capnp::message::HeapAllocator>),
+    Shared(Rc<connection::FrozenReturn<capnp::message::HeapAllocator>>),
     General(Rc<Payload>),
 }
 /// A checked result envelope available for direct publication. Only segmented
 /// replies need an independent owner retained by asynchronous output.
 #[derive(Clone, Copy)]
 pub enum PlainPayload<'a> {
-    Inline(&'a connection::PreparedReturn<capnp::message::HeapAllocator>),
-    Shared(&'a Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    Inline(&'a connection::FrozenReturn<capnp::message::HeapAllocator>),
+    Shared(&'a Rc<connection::FrozenReturn<capnp::message::HeapAllocator>>),
 }
 impl<'a> PlainPayload<'a> {
-    pub fn message(&self) -> &'a connection::PreparedReturn<capnp::message::HeapAllocator> {
+    pub fn message(&self) -> &'a connection::FrozenReturn<capnp::message::HeapAllocator> {
         match self {
             Self::Inline(message) => message,
             Self::Shared(message) => message,
@@ -234,7 +234,7 @@ impl Results {
     }
     pub(in crate::scoped::wire) fn prepared_return(
         &self,
-    ) -> Option<&connection::PreparedReturn<capnp::message::HeapAllocator>> {
+    ) -> Option<&connection::FrozenReturn<capnp::message::HeapAllocator>> {
         self.0
             .payload
             .get()?
@@ -681,7 +681,7 @@ struct Hook {
 impl Drop for Hook {
     fn drop(&mut self) {
         let caps = std::mem::take(&mut self.caps);
-        let payload = match self.message.take() {
+        let payload = match self.message.take().map(connection::PreparedReturn::freeze) {
             Some(message) if caps.is_empty() => {
                 if message.segment_count() == 1 {
                     CompletedPayload::Plain(message)
