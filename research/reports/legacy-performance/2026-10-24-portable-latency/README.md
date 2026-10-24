@@ -1,5 +1,7 @@
 # Portable latency and benchmark CI — 24 October 2026
 
+The [receive batching and rejected scheduling experiments](../2026-10-24-portable-latency-followup/README.md) records the next experiments and dedicated latency campaign.
+
 Portable/legacy latency parity remains **open**. Runtime `b311711` removes redundant framing and scheduling work, and reduces concurrent-32 simulated instructions by 3.5% against frozen `8f7f500`. The full local timing comparison is effectively unchanged against that frozen portable control (+0.06% geometric mean), and portable remains 12.46% above current legacy across the 48 rows. These are exploratory results on a shared host, not qualified speedups.
 
 ## Shorter CI feedback

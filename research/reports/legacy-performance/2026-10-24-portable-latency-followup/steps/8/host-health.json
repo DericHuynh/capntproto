@@ -1,0 +1,74 @@
+{
+  "trace-short": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 7.003723127,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 8111694,
+      "user_usec": 3680637,
+      "system_usec": 4431058,
+      "nice_usec": 0,
+      "nr_periods": 70,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 150,
+    "maximum_aggregate_trial_cpu_steal_percent": 13.043478260869565,
+    "maximum_selected_cpu_trial_steal_percent": 50.0
+  },
+  "trace-long": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 27.013942263,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 38906992,
+      "user_usec": 17147791,
+      "system_usec": 21759202,
+      "nice_usec": 0,
+      "nr_periods": 266,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 150,
+    "maximum_aggregate_trial_cpu_steal_percent": 9.75609756097561,
+    "maximum_selected_cpu_trial_steal_percent": 33.333333333333336
+  },
+  "native-selected14": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 61.029657936,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 61874842,
+      "user_usec": 48739769,
+      "system_usec": 13135072,
+      "nice_usec": 0,
+      "nr_periods": 606,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 315,
+    "maximum_aggregate_trial_cpu_steal_percent": 8.333333333333334,
+    "maximum_selected_cpu_trial_steal_percent": 33.333333333333336
+  },
+  "native-full": {
+    "outer_cpu_max": "400000 100000",
+    "elapsed_seconds": 407.211276376,
+    "outer_cpu_stat_delta": {
+      "usage_usec": 541732917,
+      "user_usec": 360148247,
+      "system_usec": 181584671,
+      "nice_usec": 0,
+      "nr_periods": 4069,
+      "nr_throttled": 0,
+      "throttled_usec": 0,
+      "nr_bursts": 0,
+      "burst_usec": 0
+    },
+    "trials": 1080,
+    "maximum_aggregate_trial_cpu_steal_percent": 11.764705882352942,
+    "maximum_selected_cpu_trial_steal_percent": 50.0
+  }
+}
