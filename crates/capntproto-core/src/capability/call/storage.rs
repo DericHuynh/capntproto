@@ -30,6 +30,10 @@ impl<PH, RH> PreparedCall<PH, RH> {
     pub fn new(params: PH, results: RH) -> Self {
         Self { params, results }
     }
+    /// Transfer both original owners once, including their borrows and guards.
+    pub fn into_owners(self) -> (PH, RH) {
+        (self.params, self.results)
+    }
 }
 impl<P: Owned, R, PH: ParamsHook, RH: PayloadStorage<R>> CallStorage<P, R>
     for PreparedCall<PH, RH>

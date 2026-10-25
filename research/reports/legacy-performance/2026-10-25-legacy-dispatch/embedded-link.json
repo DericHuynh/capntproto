@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-completion-target/thumbv7em-none-eabi/debug/legacy-fixed-link",
+  "bytes": 572564,
+  "sha256": "a80f694c9b9cc1153f75c12ec76ba9e15eb1ed128e7db285b1854bc499af321a",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "b090605052f1eedf7477e8c3ef3d2b0227f926c0eee680008b08cb1b0c559330",
+  "scope": "Link-only legacy concrete CallContext owning generated service dispatch across suspension, real wake, cancellation, inherited methods, independent context and 32 concurrent calls. No bounded/hosted protocol driver is instantiated; not a complete RPC connection/conversation matrix, not board execution."
+}

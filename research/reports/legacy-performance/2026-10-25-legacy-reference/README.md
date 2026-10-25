@@ -28,3 +28,10 @@ allocation and strict-provenance qualification remain pending. The hosted record
 still uses Rc/Weak; this factors its ownership contract without claiming the
 whole legacy driver is allocation-free. Generated dispatch, capability hooks,
 message storage and protocol tables still require caller-backed integration.
+
+
+Qualification `e828d3ec633bff323b599b551c97526cb8472096`,
+[run 40191032409](https://github.com/DericHuynh/capntproto/actions/runs/40191032409),
+passes 26 strict-provenance Miri executions: two record cases across both profiles
+and pointer widths (8), plus nine actual legacy conversations on both widths (18).
+Hosted validation passes; repeated work/allocation profiles remain running.

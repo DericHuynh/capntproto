@@ -10,6 +10,8 @@ use crate::{
 use core::marker::PhantomData;
 mod storage;
 pub use storage::{CallStorage, PreparedCall};
+mod dispatch;
+pub use dispatch::{dispatch_call, dispatch_call_with_context};
 
 /// One admitted method invocation. Synchronous handlers borrow the original
 /// parameter and result storage. A handler that suspends must take ownership
@@ -39,6 +41,11 @@ impl<'call, P, R, H> CallContext<'call, P, R, H> {
             immediate_protection: true,
             marker: PhantomData,
         }
+    }
+    /// Transfer the original invocation storage without changing its admission,
+    /// cancellation or Return-publication responsibilities.
+    pub fn into_owner(self) -> H {
+        self.hook
     }
     #[doc(hidden)]
     pub fn into_typed<A, B>(self) -> CallContext<'call, A, B, H> {
