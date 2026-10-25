@@ -727,9 +727,10 @@ fn buffered_two_segment_framing_keeps_metadata_inline() {
         .unwrap();
     let bytes = capnp::serialize::write_message_to_words(&message);
     assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 1);
+    let frames = [bytes.as_slice(), bytes.as_slice()].concat();
     for short in [true, false] {
         let mut input = capnp_futures::BufferedRead::new(
-            futures::io::Cursor::new(&bytes),
+            futures::io::Cursor::new(&frames),
             ReaderOptions::new(),
         );
         let counts = allocation_counter::measure(|| {
@@ -742,15 +743,30 @@ fn buffered_two_segment_framing_keeps_metadata_inline() {
             assert_eq!(reader.get_segments().len(), 2);
             assert_eq!(reader.get_root::<capnp::data::Reader>().unwrap(), payload);
         });
-        // Retained messages allocate their payload; framing itself must not
-        // allocate metadata for the common root-plus-large-body layout.
-        assert_eq!(counts.count_total, u64::from(!short), "{counts:?}");
-        assert_eq!(counts.count_current, 0);
+        // The first retained frame creates its payload, cache owner and cache
+        // slots. Segment-table metadata stays inline; short-lived frames need
+        // none of those allocations. Released retained storage stays cached.
+        let cold_allocations = 3 * u64::from(!short);
+        assert_eq!(counts.count_total, cold_allocations, "{counts:?}");
+        assert_eq!(counts.count_current, 3 * i64::from(!short));
+        let warm = allocation_counter::measure(|| {
+            let reader = input
+                .try_read_message(|_| Ok(short))
+                .now_or_never()
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert_eq!(reader.get_segments().len(), 2);
+            assert_eq!(reader.get_root::<capnp::data::Reader>().unwrap(), payload);
+        });
+        assert_eq!(warm.count_total, 0, "{warm:?}");
+        assert_eq!(warm.bytes_total, 0);
+        assert_eq!(warm.count_current, 0);
     }
 }
 
 #[test]
-fn buffered_scratch_avoids_payload_allocations_and_owned_fallback_allocates_once() {
+fn buffered_scratch_avoids_payload_allocations_and_reuses_owned_fallback() {
     use futures::FutureExt;
     let payload = vec![0x5a; 8192];
     let mut message = capnp::message::Builder::new(
@@ -761,8 +777,9 @@ fn buffered_scratch_avoids_payload_allocations_and_owned_fallback_allocates_once
         .unwrap();
     let bytes = capnp::serialize::write_message_to_words(&message);
     let mut words = capnp::Word::allocate_zeroed_vec(bytes.len() / 8);
+    let frames = [bytes.as_slice(), bytes.as_slice()].concat();
     let mut input =
-        capnp_futures::BufferedRead::new(futures::io::Cursor::new(&bytes), ReaderOptions::new());
+        capnp_futures::BufferedRead::new(futures::io::Cursor::new(&frames), ReaderOptions::new());
     let fitting = allocation_counter::measure(|| {
         let message = input
             .try_read_message_with_scratch(&mut words, |_| Ok(false))
@@ -777,7 +794,7 @@ fn buffered_scratch_avoids_payload_allocations_and_owned_fallback_allocates_once
     assert_eq!(fitting.bytes_total, 0);
     assert_eq!(fitting.count_current, 0);
     let mut input =
-        capnp_futures::BufferedRead::new(futures::io::Cursor::new(&bytes), ReaderOptions::new());
+        capnp_futures::BufferedRead::new(futures::io::Cursor::new(&frames), ReaderOptions::new());
     let fallback = allocation_counter::measure(|| {
         let message = input
             .try_read_message_with_scratch(&mut [], |_| Ok(false))
@@ -790,9 +807,22 @@ fn buffered_scratch_avoids_payload_allocations_and_owned_fallback_allocates_once
     });
     assert_eq!(
         fallback.count_total,
-        fitting.count_total + 1,
+        fitting.count_total + 3,
         "{fallback:?}"
     );
     assert!(fallback.bytes_total >= fitting.bytes_total + bytes.len() as u64);
-    assert_eq!(fallback.count_current, 0);
+    assert_eq!(fallback.count_current, 3);
+    let warm = allocation_counter::measure(|| {
+        let message = input
+            .try_read_message_with_scratch(&mut [], |_| Ok(false))
+            .now_or_never()
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(!message.get_segments().uses_scratch());
+        assert_eq!(message.get_root::<capnp::data::Reader>().unwrap(), payload);
+    });
+    assert_eq!(warm.count_total, 0, "{warm:?}");
+    assert_eq!(warm.bytes_total, 0);
+    assert_eq!(warm.count_current, 0);
 }
