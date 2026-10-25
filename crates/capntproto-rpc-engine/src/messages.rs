@@ -184,6 +184,37 @@ pub struct Lease<'id> {
     brand: Brand<'id>,
 }
 
+/// A lease and its immutable used prefix travel together. Unlike read(), this
+/// view does not borrow a token stored beside it, so an owning message reader
+/// can move into a caller-pinned task without self references. Recover the lease
+/// before releasing it; dropping/forgetting this owner retains its reservation.
+#[must_use = "recover/release the lease or terminate the pool scope"]
+pub struct Reading<'id, 'storage> {
+    lease: Lease<'id>,
+    view: Ref<'storage, [u8]>,
+}
+impl<'id> Reading<'id, '_> {
+    pub fn bytes(&self) -> &[u8] {
+        &self.view
+    }
+    pub fn into_lease(self) -> Lease<'id> {
+        let Self { lease, view } = self;
+        drop(view);
+        lease
+    }
+}
+impl core::ops::Deref for Reading<'_, '_> {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        self.bytes()
+    }
+}
+impl AsRef<[u8]> for Reading<'_, '_> {
+    fn as_ref(&self) -> &[u8] {
+        self.bytes()
+    }
+}
+
 /// Rejected sealing returns the writer intact so the caller can retry/discard.
 #[derive(Debug)]
 pub struct SealError<'id> {
@@ -697,6 +728,12 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         'storage: 'view,
     {
         self.bytes(lease.key)
+    }
+    /// Transfer a live lease into a movable read owner without incrementing
+    /// readers or allocating. Other buffers and partial sends can progress.
+    pub fn read_owned(&self, lease: Lease<'id>) -> Reading<'id, 'storage> {
+        let view = self.bytes(lease.key);
+        Reading { lease, view }
     }
     #[inline(always)]
     fn bytes(&self, key: BufferKey) -> Ref<'storage, [u8]> {

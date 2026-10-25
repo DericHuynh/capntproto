@@ -34,3 +34,9 @@ executed on a board. Full hosted work/allocation qualification and strict-
 provenance Miri remain pending. This removes a pooling ownership blocker; it
 still does not instantiate the complete allocation-free connection driver or
 prove native latency/CPP parity.
+
+
+## Completed qualification
+
+[Immutable run 40199726566](https://github.com/DericHuynh/capntproto/actions/runs/40199726566) passed the hosted suite and 50 Miri test executions across two pointer widths. Both revisions were built at the same source path. Five paired repetitions retain means, sample SD and all regressions in comparison.md/json. Branch misses are simulated; these are not native latency measurements. All 715 common normalized function bodies match, and scoped question/scheduler Ir, Bc and Bi deltas are zero in every sample. TLS blocks remain 7/57/202 for unary/pipelined/concurrent. Whole-program noise and miss differences remain reported, without inferring hardware parity.
+Whole-program Bcm regressions are pipelined +0.473%, callback +0.047%, and deep +0.009%; other cases improve. Whole Ir changes range from -0.010% to +0.003%.

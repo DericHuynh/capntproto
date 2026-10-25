@@ -27,6 +27,11 @@ calls and real wake/cancellation cases.
 Local fixture all-target/core library Clippy, nine actual alloc-only legacy
 conversations, formatting and host execution pass. The M4 ELF has no allocator or
 undefined symbols (embedded-link.json), but is not board execution or the full
-connection conversation matrix. Full hosted work/allocation comparison and Miri
-remain pending. Outgoing publication and complete caller-backed connection/
+connection conversation matrix. Full hosted work/allocation comparison and Miri passed; qualification details follow. Outgoing publication and complete caller-backed connection/
 capability/pipeline integration still prevent claiming an allocation-free RpcSystem.
+
+
+## Completed qualification
+
+[Immutable run 40201769398](https://github.com/DericHuynh/capntproto/actions/runs/40201769398) passed the hosted suite and 54 Miri test executions across two pointer widths. Both revisions were built at the same source path. Five paired repetitions retain means, sample SD and all regressions in comparison.md/json. Branch misses are simulated; these are not native latency measurements. All 715 common normalized function bodies match, and scoped question/scheduler Ir, Bc and Bi deltas are zero in every sample. TLS blocks remain 7/57/202 for unary/pipelined/concurrent. Whole-program noise and miss differences remain reported, without inferring hardware parity.
+Whole-program Bcm regressions are pipelined +0.324%, concurrent +0.032%, and deep +0.013%; other cases improve. Whole Ir changes range from -0.056% to +0.038%.

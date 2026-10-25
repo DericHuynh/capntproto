@@ -53,3 +53,11 @@ adapter accepts BorrowMut<C>, so plain values and borrowed contexts use the same
 handler API. A flat resource capture fixes input -> results -> context cleanup
 order, including before first poll, invalid methods and output rejection. The
 case adds zero blocks/bytes in both profiles and checks each pool's reuse.
+
+
+The eighth case receives a serialized frame through the existing engine message
+pool. Reading owns both its affine reservation and Ref view; PooledBytes ends the
+view before calling the concrete release closure. The suspended generated call
+owns this chain. Completion and cancellation return the original buffer for
+immediate reservation, with zero allocated blocks/bytes. No extra pool or driver
+is introduced. Malformed framing is covered by actual incoming tests.

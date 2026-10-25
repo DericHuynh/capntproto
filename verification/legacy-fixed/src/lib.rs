@@ -803,9 +803,127 @@ pub fn owned_context_generated_invocations() -> Result<()> {
     }
     Ok(())
 }
+/// The production incoming owner reads directly from the existing message pool.
+/// Its finalizer runs only after the read view is gone, so reuse can be immediate.
+pub fn pooled_frame_generated_invocations() -> Result<()> {
+    use capntproto_rpc_engine::messages::{with_messages, Buffer};
+    use core::cell::RefCell;
+    for complete in [false, true] {
+        let mut source_words = [ZERO; 32];
+        let source = source(&mut source_words, false)?;
+        let mut pool_words = [ZERO; 64];
+        let mut buffers = [Buffer::new(capnp::Word::words_to_bytes_mut(
+            &mut pool_words,
+        ))];
+        with_messages(&mut buffers, &mut [], |messages| -> Result<()> {
+            let pool = RefCell::new(messages);
+            let released = Cell::new(false);
+            let params = Cell::new(0);
+            let retired = Cell::new(0);
+            let started = Cell::new(0);
+            let writer = pool.borrow_mut().reserve(512).unwrap();
+            let used = {
+                let mut pool = pool.borrow_mut();
+                let mut bytes = pool.write(&writer);
+                let total = bytes.len();
+                let mut out = &mut bytes[..];
+                capnp::serialize::write_message_segments(&mut out, &source)?;
+                total - out.len()
+            };
+            let lease = pool.borrow_mut().seal(writer, used).unwrap();
+            let reading = pool.borrow().read_owned(lease);
+            let bytes = capnp_rpc::incoming::PooledBytes::new(reading, |lease| {
+                pool.borrow_mut().release(lease);
+                let writer = pool
+                    .borrow_mut()
+                    .reserve(512)
+                    .expect("old read view still held");
+                pool.borrow_mut().discard(writer);
+                released.set(true);
+            });
+            let segments = capnp::serialize::NoAllocBufferSegments::from_buffer_exact(
+                bytes,
+                Default::default(),
+            )?;
+            let owner = Input {
+                reader: message::Reader::new(segments, Default::default()),
+                drops: &params,
+            };
+            let mut output_words = [ZERO; 32];
+            let mut output = message::FixedBuilder::new(&mut output_words)?;
+            let mut gate = completion::Slot::new();
+            let (ready, wait) = gate.pair().unwrap();
+            let mut service = node::ServerDispatch::new(Server {
+                gate: Some(wait),
+                params: &params,
+                retired: &retired,
+                started: &started,
+            });
+            {
+                let call = invocation(owner, &mut output)?;
+                let mut places = core::pin::pin!(tasks::PinnedSlots::<_, 1>::new());
+                let [place] = places.as_mut().places();
+                let mut task = Promise::from_owner(
+                    place
+                        .insert_erased(dispatch_call(
+                            call,
+                            &mut service,
+                            base::Owned::READ.interface_id(),
+                            0,
+                        ))
+                        .ok()
+                        .unwrap(),
+                );
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(Pin::new(&mut task).poll(&mut cx).is_pending());
+                assert!(!released.get());
+                assert!(pool.borrow_mut().reserve(1).is_err());
+                if complete {
+                    assert!(ready.send(()).is_ok());
+                    assert!(matches!(
+                        Pin::new(&mut task).poll(&mut cx),
+                        Poll::Ready(Ok(()))
+                    ));
+                    assert!(released.get());
+                }
+                drop(task);
+                assert!(places.is_empty());
+            }
+            assert_eq!(params.get(), 1);
+            assert_eq!(retired.get(), 1);
+            assert!(released.get());
+            let writer = pool.borrow_mut().reserve(512).unwrap();
+            pool.borrow_mut().discard(writer);
+            if complete {
+                let root = output.get_root_as_reader::<rpc_capnp::message::Reader<'_>>()?;
+                let rpc_capnp::message::Return(returned) = root.which()? else {
+                    panic!("Return lost")
+                };
+                let rpc_capnp::return_::Results(payload) = returned?.which()? else {
+                    panic!("results lost")
+                };
+                assert_eq!(
+                    payload?
+                        .get_content()
+                        .get_as::<legacy_capnp::base::read_results::Reader<'_>>()?
+                        .get_value(),
+                    42
+                );
+            }
+            Ok(())
+        })
+        .unwrap()?;
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pooled_wire_frames_survive_suspension_and_return_storage_on_completion_or_cancel() {
+        let m = allocation_counter::measure(|| pooled_frame_generated_invocations().unwrap());
+        assert_eq!((m.count_total, m.bytes_total), (0, 0));
+    }
     #[test]
     fn owned_application_context_guards_release_on_completion_cancel_and_unpolled_drop() {
         let m = allocation_counter::measure(|| owned_context_generated_invocations().unwrap());

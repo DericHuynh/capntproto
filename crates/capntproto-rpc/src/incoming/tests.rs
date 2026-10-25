@@ -3,6 +3,91 @@ use crate::rpc_capnp::{self, api};
 use capnp::{capability, field_api::Struct, message};
 use core::cell::Cell;
 const ZERO: capnp::Word = capnp::word(0, 0, 0, 0, 0, 0, 0, 0);
+
+#[test]
+fn pooled_frame_owner_returns_the_original_buffer_after_view_destruction() {
+    use crate::engine::messages::{with_messages, Buffer};
+    use core::cell::RefCell;
+    let measured = allocation_counter::measure(|| {
+        let mut source_words = [ZERO; 32];
+        let source = frame(&mut source_words, false);
+        let mut words = [ZERO; 64];
+        let mut buffers = [Buffer::new(capnp::Word::words_to_bytes_mut(&mut words))];
+        with_messages(&mut buffers, &mut [], |messages| {
+            let pool = RefCell::new(messages);
+            let released = Cell::new(false);
+            let writer = pool.borrow_mut().reserve(512).unwrap();
+            let used = {
+                let mut pool = pool.borrow_mut();
+                let mut view = pool.write(&writer);
+                let total = view.len();
+                let mut output = &mut view[..];
+                capnp::serialize::write_message_segments(&mut output, &source).unwrap();
+                total - output.len()
+            };
+            let lease = pool.borrow_mut().seal(writer, used).unwrap();
+            let reading = pool.borrow().read_owned(lease);
+            let bytes = PooledBytes::new(reading, |lease| {
+                pool.borrow_mut().release(lease);
+                // With one buffer, success also proves its old read guard ended.
+                let writer = pool.borrow_mut().reserve(512).unwrap();
+                pool.borrow_mut().discard(writer);
+                released.set(true);
+            });
+            let segments = capnp::serialize::NoAllocBufferSegments::from_buffer_exact(
+                bytes,
+                Default::default(),
+            )
+            .unwrap();
+            let reader = message::Reader::new(segments, Default::default());
+            let params = capability::Params::<rpc_capnp::exception::Owned, _>::from_owner(
+                Params::new(reader, ()),
+            );
+            assert_eq!(params.get().unwrap().get_reason().unwrap(), "retained");
+            assert!(!released.get());
+            assert_eq!(
+                pool.borrow_mut().reserve(1).err(),
+                Some(crate::engine::messages::Error::NoBuffer)
+            );
+            drop(params);
+            assert!(released.get());
+        })
+        .unwrap();
+    });
+    assert_eq!((measured.count_total, measured.bytes_total), (0, 0));
+}
+
+#[test]
+fn malformed_pooled_frame_returns_storage_when_the_parser_rejects_its_owner() {
+    use crate::engine::messages::{with_messages, Buffer};
+    use core::cell::RefCell;
+    let measured = allocation_counter::measure(|| {
+        let mut words = [ZERO; 8];
+        let mut buffers = [Buffer::new(capnp::Word::words_to_bytes_mut(&mut words))];
+        with_messages(&mut buffers, &mut [], |messages| {
+            let pool = RefCell::new(messages);
+            let released = Cell::new(false);
+            let writer = pool.borrow_mut().reserve(64).unwrap();
+            pool.borrow_mut().write(&writer)[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+            let lease = pool.borrow_mut().seal(writer, 8).unwrap();
+            let reading = pool.borrow().read_owned(lease);
+            let bytes = PooledBytes::new(reading, |lease| {
+                pool.borrow_mut().release(lease);
+                let writer = pool.borrow_mut().reserve(64).unwrap();
+                pool.borrow_mut().discard(writer);
+                released.set(true);
+            });
+            assert!(capnp::serialize::NoAllocBufferSegments::from_buffer_exact(
+                bytes,
+                Default::default()
+            )
+            .is_err());
+            assert!(released.get());
+        })
+        .unwrap();
+    });
+    assert_eq!((measured.count_total, measured.bytes_total), (0, 0));
+}
 struct Segments<'a> {
     bytes: &'a [u8],
     drops: &'a Cell<usize>,

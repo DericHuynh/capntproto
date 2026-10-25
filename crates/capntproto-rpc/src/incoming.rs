@@ -7,6 +7,42 @@ use capnp::{
 #[cfg(test)]
 mod tests;
 
+/// A whole sealed frame backed by the existing message pool. The finalizer is
+/// concrete and caller supplied; it receives the original lease only after the
+/// immutable buffer view has been destroyed. No copy, reference increment or
+/// allocator is introduced by this owner. It can back NoAllocBufferSegments.
+pub struct PooledBytes<'id, 'storage, F: FnOnce(crate::engine::messages::Lease<'id>)> {
+    reading: Option<crate::engine::messages::Reading<'id, 'storage>>,
+    release: Option<F>,
+}
+impl<'id, 'storage, F: FnOnce(crate::engine::messages::Lease<'id>)> PooledBytes<'id, 'storage, F> {
+    pub fn new(reading: crate::engine::messages::Reading<'id, 'storage>, release: F) -> Self {
+        Self {
+            reading: Some(reading),
+            release: Some(release),
+        }
+    }
+}
+impl<'id, F: FnOnce(crate::engine::messages::Lease<'id>)> core::ops::Deref
+    for PooledBytes<'id, '_, F>
+{
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        self.reading.as_ref().expect("live pooled frame").bytes()
+    }
+}
+impl<'id, F: FnOnce(crate::engine::messages::Lease<'id>)> AsRef<[u8]> for PooledBytes<'id, '_, F> {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+impl<'id, F: FnOnce(crate::engine::messages::Lease<'id>)> Drop for PooledBytes<'id, '_, F> {
+    fn drop(&mut self) {
+        let lease = self.reading.take().expect("live pooled frame").into_lease();
+        (self.release.take().expect("live frame finalizer"))(lease);
+    }
+}
+
 /// The capability bindings retained alongside an incoming frame. Unit leaves
 /// wire capability indices unbound; a driver must admit/resolve them in their
 /// originating message's descriptor context. It grants no callable authority.

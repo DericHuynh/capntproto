@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-reading.elf",
+  "bytes": 1675528,
+  "sha256": "41aa7e76d9cb0156eee832c55084f2cf5f70f73c10374ee6e65b90aacfff7386",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "8479a1e9c23617d6ca712ad3be68d9d31243e1529b8ee723fcec8173b1886114",
+  "scope": "Link-only actual legacy pooled frame ownership through existing message-pool owned reading, generated suspended dispatch and completion/cancellation buffer reuse. Not complete connection/conversation matrix or board execution."
+}
