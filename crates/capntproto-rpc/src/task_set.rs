@@ -19,13 +19,16 @@
 // THE SOFTWARE.
 
 use capntproto_rpc_engine::completion::shared as oneshot;
-use futures::{Future, Stream};
+use futures::{
+    task::{waker_ref, ArcWake},
+    Future, Stream,
+};
 use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::task::{Context, Poll, Wake, Waker};
+use std::task::{Context, Poll};
 
 mod queue;
 mod ready_set;
@@ -43,13 +46,10 @@ struct Activity {
     ready: AtomicBool,
     parent: futures::task::AtomicWaker,
 }
-impl Wake for Activity {
-    fn wake(self: Arc<Self>) {
-        self.wake_by_ref();
-    }
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.ready.store(true, Ordering::Release);
-        self.parent.wake();
+impl ArcWake for Activity {
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        arc_self.ready.store(true, Ordering::Release);
+        arc_self.parent.wake();
     }
 }
 
@@ -86,9 +86,7 @@ pub(crate) struct TaskSet<E> {
     in_progress: ReadySet<TaskInProgress<E>>,
     last: ReadySet<TaskInProgress<E>>,
     activity: Arc<Activity>,
-    activity_waker: Waker,
     last_activity: Arc<Activity>,
-    last_waker: Waker,
     deferred_last: bool,
     busy_turns: u8,
     defer: fn(&mut Context<'_>),
@@ -120,9 +118,7 @@ where
             connection: None,
             in_progress: ReadySet::new(),
             last: ReadySet::new(),
-            activity_waker: Waker::from(activity.clone()),
             activity,
-            last_waker: Waker::from(last_activity.clone()),
             last_activity,
             deferred_last: false,
             busy_turns: 0,
@@ -242,7 +238,11 @@ where
         self.activity.parent.register(cx.waker());
         self.last_activity.parent.register(cx.waker());
         let notified = self.activity.ready.swap(false, Ordering::AcqRel);
-        let wake = self.activity_waker.clone();
+        // Retain the concrete wake owner while polling mutable task state.
+        // The borrowed Waker adds no virtual clone/drop calls. Futures can
+        // still clone an owned Waker when they need to retain a registration.
+        let activity = self.activity.clone();
+        let wake = waker_ref(&activity);
         if let Poll::Ready(result) = self.poll_regular(&mut Context::from_waker(&wake)) {
             return Poll::Ready(result);
         }
@@ -267,7 +267,8 @@ where
         self.busy_turns = 0;
         self.deferred_last = false;
         self.last_activity.ready.store(false, Ordering::Release);
-        let last_wake = self.last_waker.clone();
+        let last_activity = self.last_activity.clone();
+        let last_wake = waker_ref(&last_activity);
         let mut last_cx = Context::from_waker(&last_wake);
         while let Poll::Ready(Some(done)) = Pin::new(&mut self.last).poll_next(&mut last_cx) {
             match done {
@@ -730,5 +731,52 @@ mod tests {
         handle.terminate(Err(17));
         handle.add(async { panic!("work after termination must not run") });
         assert_eq!(poll(&mut tasks), Poll::Ready(Err(17)));
+    }
+
+    #[test]
+    fn retained_connection_and_deferred_wakers_are_safe_after_task_set_drop() {
+        use std::task::Waker;
+
+        struct Notify;
+        impl std::task::Wake for Notify {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        for deferred in [false, true] {
+            let results = Rc::new(RefCell::new(Vec::new()));
+            let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results)));
+            let registered = Rc::new(RefCell::new(None::<Waker>));
+            let future = std::future::poll_fn({
+                let registered = registered.clone();
+                move |cx| {
+                    *registered.borrow_mut() = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            });
+            if deferred {
+                handle.add_last(future);
+            } else {
+                handle.try_add_connection(future).unwrap();
+            }
+            let parent = Arc::new(Notify);
+            let parent_weak = Arc::downgrade(&parent);
+            let parent_waker = Waker::from(parent);
+            for _ in 0..3 {
+                assert!(Pin::new(&mut tasks)
+                    .poll(&mut Context::from_waker(&parent_waker))
+                    .is_pending());
+            }
+            let retained = registered.borrow_mut().take().unwrap();
+            drop(tasks);
+            drop(handle);
+            drop(parent_waker);
+            assert!(parent_weak.upgrade().is_none());
+            std::thread::spawn(move || {
+                retained.wake_by_ref();
+                retained.wake();
+            })
+            .join()
+            .unwrap();
+        }
     }
 }
