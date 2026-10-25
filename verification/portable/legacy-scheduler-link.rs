@@ -126,8 +126,7 @@ fn exercise() {
         let activity = ACTIVITY.waker();
         let last_activity = LAST_ACTIVITY.waker();
         let mut connection = None;
-        let mut deferred_last = false;
-        let mut busy_turns = 0;
+        let mut publication = scheduler::Publication::new();
         let mut empty = bounded::Notifications::<1>::new();
         let mut reaper = Reaper(&completed);
         let mut runtime = scheduler::Parts {
@@ -143,8 +142,7 @@ fn exercise() {
                 ready: &DEFERRED,
                 parent: &bounded::StaticParent::new(&last_activity, |_| {}),
             },
-            deferred_last: &mut deferred_last,
-            busy_turns: &mut busy_turns,
+            publication: &mut publication,
             defer: |cx| cx.waker().wake_by_ref(),
             on_empty_fulfillers: &mut empty,
             reaper: &mut reaper,

@@ -1,0 +1,26 @@
+{
+  "scope": "Standalone exact production policy helpers/types with corresponding old/new signatures. Not complete instantiated scheduler, event counts or latency.",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "candidate_source_sha256": "10fe86da036f3660732f3a35fce252995402fdf99aa8c60c99605a41cbeca583",
+  "counts": {
+    "baseline": {
+      "instructions": 19,
+      "conditional_jumps": [
+        "je\t.LBB0_1"
+      ],
+      "conditional_moves": [
+        "cmovnel\t%eax, %r8d",
+        "cmovnel\t%r8d, %eax"
+      ]
+    },
+    "candidate": {
+      "instructions": 16,
+      "conditional_jumps": [
+        "je\t.LBB1_1"
+      ],
+      "conditional_moves": [
+        "cmovnel\t%eax, %ecx"
+      ]
+    }
+  }
+}

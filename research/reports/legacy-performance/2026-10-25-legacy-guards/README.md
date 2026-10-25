@@ -30,8 +30,7 @@ Local checks pass49 no-default core tests,14 documentation tests (4 ignored),
 four no-default incoming tests, nine actual alloc-only legacy conversations,
 core library and fixture all-target Clippy. Host execution passes all six cases.
 The M4 link has no allocator/undefined symbols (embedded-link.json), but has not
-executed on a board. Full hosted work/allocation qualification and strict-
-provenance Miri remain pending. This removes a pooling ownership blocker; it
+executed on a board. Full hosted work/allocation qualification and strict-provenance Miri passed; details follow. This removes a pooling ownership blocker; it
 still does not instantiate the complete allocation-free connection driver or
 prove native latency/CPP parity.
 

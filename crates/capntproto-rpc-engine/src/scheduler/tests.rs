@@ -65,7 +65,7 @@ macro_rules! environment {
     }};
 }
 macro_rules! scheduler {
-    ($env:ident, $inbox:ident, $connection:ident, $regular:ident, $last:ident, $empty:ident, $reaper:ident, $deferred:ident, $busy:ident) => {
+    ($env:ident, $inbox:ident, $connection:ident, $regular:ident, $last:ident, $empty:ident, $reaper:ident, $publication:ident) => {
         Parts {
             enqueued: &mut $inbox,
             connection: &mut $connection,
@@ -79,8 +79,7 @@ macro_rules! scheduler {
                 ready: $env.last_ready,
                 parent: &bounded::StaticParent::new(&$env.last_parent, |_| {}),
             },
-            deferred_last: &mut $deferred,
-            busy_turns: &mut $busy,
+            publication: &mut $publication,
             defer: |cx| cx.waker().wake_by_ref(),
             on_empty_fulfillers: &mut $empty,
             reaper: &mut $reaper,
@@ -218,10 +217,17 @@ fn capacity_precedes_first_poll_and_released_slots_wake_blocked_admission() {
         let mut empty = bounded::Notifications::<1>::new();
         let mut reaper = Reaped::default();
         let mut connection = None;
-        let mut deferred = false;
-        let mut busy = 0;
-        let mut runtime =
-            scheduler!(env, inbox, connection, regular, last, empty, reaper, deferred, busy);
+        let mut publication = Publication::new();
+        let mut runtime = scheduler!(
+            env,
+            inbox,
+            connection,
+            regular,
+            last,
+            empty,
+            reaper,
+            publication
+        );
         let mut cx = Context::from_waker(&env.outer);
         assert!(runtime.poll(&mut cx).is_pending());
         assert_eq!(state.polls[1].get(), 0);
@@ -283,10 +289,17 @@ fn independent_stop_bypasses_saturation_and_cancels_empty_notifications() {
             let mut empty = bounded::Notifications::<1>::new();
             let mut reaper = Reaped::default();
             let mut connection = None;
-            let mut deferred = false;
-            let mut busy = 0;
-            let mut runtime =
-                scheduler!(env, inbox, connection, regular, last, empty, reaper, deferred, busy);
+            let mut publication = Publication::new();
+            let mut runtime = scheduler!(
+                env,
+                inbox,
+                connection,
+                regular,
+                last,
+                empty,
+                reaper,
+                publication
+            );
             let mut cx = Context::from_waker(&env.outer);
             assert!(runtime.poll(&mut cx).is_pending());
             assert_eq!(state.polls[1].get(), 0);
@@ -359,10 +372,17 @@ fn direct_connection_and_deferred_publication_preserve_external_consumer_turn() 
         let mut empty = bounded::Notifications::<1>::new();
         let mut reaper = Reaped::default();
         let mut connection = None;
-        let mut deferred = false;
-        let mut busy = 0;
-        let mut runtime =
-            scheduler!(env, inbox, connection, regular, last, empty, reaper, deferred, busy);
+        let mut publication = Publication::new();
+        let mut runtime = scheduler!(
+            env,
+            inbox,
+            connection,
+            regular,
+            last,
+            empty,
+            reaper,
+            publication
+        );
         let mut cx = Context::from_waker(&env.outer);
         assert!(runtime.poll(&mut cx).is_pending());
         assert_eq!(state.polls[2].get(), 0);
@@ -420,10 +440,17 @@ fn perpetually_ready_ordinary_work_cannot_starve_deferred_io() {
         let mut empty = bounded::Notifications::<0>::new();
         let mut reaper = Reaped::default();
         let mut connection = None;
-        let mut deferred = false;
-        let mut busy = 0;
-        let mut runtime =
-            scheduler!(env, inbox, connection, regular, last, empty, reaper, deferred, busy);
+        let mut publication = Publication::new();
+        let mut runtime = scheduler!(
+            env,
+            inbox,
+            connection,
+            regular,
+            last,
+            empty,
+            reaper,
+            publication
+        );
         let mut cx = Context::from_waker(&env.outer);
         for _ in 0..34 {
             assert!(runtime.poll(&mut cx).is_pending());
@@ -438,25 +465,16 @@ fn perpetually_ready_ordinary_work_cannot_starve_deferred_io() {
     assert_eq!(measured.bytes_total, 0);
 }
 #[test]
-fn publication_selection_preserves_every_counter_and_flag_state() {
+fn publication_selection_preserves_fairness_and_bounds_every_next_state() {
     for busy in [false, true] {
-        for was_deferred in [false, true] {
-            for previous in 0..=u8::MAX {
-                let mut turns = previous;
-                let mut deferred = was_deferred;
-                let postpone = super::postpone_last(busy, &mut turns, &mut deferred);
-                let expected = (busy && previous < 32) || !was_deferred;
-                assert_eq!(postpone, expected);
-                assert_eq!(deferred, expected);
-                assert_eq!(
-                    turns,
-                    if expected {
-                        previous.saturating_add(1)
-                    } else {
-                        0
-                    }
-                );
-            }
+        for previous in 0..=u8::MAX {
+            let mut publication = Publication { turns: previous };
+            let postpone = publication.postpone(busy);
+            let was_deferred = previous != 0;
+            let expected = (busy && previous < 32) || !was_deferred;
+            assert_eq!(postpone, expected);
+            assert_eq!(publication.turns, if expected { previous + 1 } else { 0 });
+            assert!(publication.turns <= 32);
         }
     }
 }
