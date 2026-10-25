@@ -1,6 +1,8 @@
 #![no_std]
 //! Actual allocating legacy RPC without std, driven by application-owned transport.
 extern crate alloc;
+#[cfg(test)]
+extern crate std;
 use alloc::{boxed::Box, collections::VecDeque, rc::Rc, sync::Arc, task::Wake};
 use capnp::{
     capability::{FromClientHook, Promise},
@@ -455,6 +457,29 @@ mod tests {
     use super::*;
     use alloc::vec::Vec;
     #[test]
+    fn report_local_client_allocations() {
+        let fixture = Fixture::new();
+        // Warm and retain outer registry map capacity before tracing clients.
+        let warm: [_; 32] = core::array::from_fn(|index| fixture.callback_target(index as u64));
+        drop(warm);
+        let samples: [_; 5] = core::array::from_fn(|_| {
+            let mut clients: [Option<node::Client>; 32] = core::array::from_fn(|_| None);
+            let allocations = allocation_counter::measure(|| {
+                for (index, slot) in clients.iter_mut().enumerate() {
+                    *slot = Some(fixture.callback_target(index as u64));
+                }
+            });
+            assert!(clients.iter().all(Option::is_some));
+            allocations
+        });
+        std::println!(
+            r#"CLIENT_ALLOCATION_METRICS {{"blocks_samples":{:?},"bytes_samples":{:?},"pointer_bytes":{}}}"#,
+            samples.each_ref().map(|sample| sample.count_total),
+            samples.each_ref().map(|sample| sample.bytes_total),
+            core::mem::size_of::<usize>()
+        );
+    }
+    #[test]
     fn unary_and_retained_response() {
         let mut f = Fixture::new();
         let mut first = f.client.read_request();
@@ -664,7 +689,11 @@ mod tests {
         let owner = capnp_rpc::RevocableServer::<node::Client>::new_in(&registry, server.clone());
         let alias: node::Client = registry.new_client_from_rc(server);
         let mut f = Fixture::new();
-        assert!(f.drive(alias.read_request().send().promise).is_err());
+        let error = match f.drive(alias.read_request().send().promise) {
+            Ok(_) => panic!("revocable alias was admitted"),
+            Err(error) => error,
+        };
+        assert!(error.extra.contains("cannot create another client"));
         owner.revoke();
         assert!(f
             .drive(owner.get_client().read_request().send().promise)

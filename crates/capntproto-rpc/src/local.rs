@@ -44,6 +44,8 @@ use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
 
+#[cfg(all(test, feature = "std"))]
+mod allocation_tests;
 #[cfg(test)]
 mod owned_results_tests;
 
@@ -973,18 +975,39 @@ pub(crate) struct Client<S>
 where
     S: capability::Server + Clone,
 {
-    state: Rc<RefCell<ClientState<S>>>,
+    state: Rc<LocalState<S>>,
 }
 
 type LocalKey = (TypeId, usize);
+trait RegisteredState: Any {
+    fn is_live(&self) -> bool;
+}
+/// Liveness is readable without borrowing the application's mutable state.
+/// Both facts share one allocation; the registry retains only a weak owner.
+struct LocalState<S: capability::Server + Clone> {
+    live: Cell<bool>,
+    inner: RefCell<ClientState<S>>,
+}
+impl<S: capability::Server + Clone> core::ops::Deref for LocalState<S> {
+    type Target = RefCell<ClientState<S>>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl<S: capability::Server + Clone + 'static> RegisteredState for LocalState<S> {
+    #[inline]
+    fn is_live(&self) -> bool {
+        self.live.get()
+    }
+}
 struct LocalRegistration {
-    state: Weak<dyn Any>,
-    live: Weak<Cell<bool>>,
+    state: Weak<dyn RegisteredState>,
     revocable: bool,
 }
 impl LocalRegistration {
     fn is_live(&self) -> bool {
-        self.live.upgrade().is_some_and(|live| live.get())
+        self.state.upgrade().is_some_and(|state| state.is_live())
     }
 }
 #[cfg(feature = "std")]
@@ -1045,7 +1068,6 @@ where
     registration: Option<LocalKey>,
     #[cfg(not(feature = "std"))]
     registry: ClientRegistry,
-    live: Rc<Cell<bool>>,
     resolved: Option<Box<dyn ClientHook>>,
     resolve_task: Option<futures::future::Shared<Promise<(), Error>>>,
     resolve_canceler: Option<Rc<crate::revocable::Canceler>>,
@@ -1153,7 +1175,7 @@ struct StreamingCall<S>
 where
     S: capability::Server + Clone + 'static,
 {
-    state: Rc<RefCell<ClientState<S>>>,
+    state: Rc<LocalState<S>>,
     promise: Promise<(), Error>,
     completed: bool,
 }
@@ -1197,13 +1219,14 @@ impl<S> ClientState<S>
 where
     S: capability::Server + Clone + 'static,
 {
-    fn revoke(state: &Rc<RefCell<Self>>, error: Error) {
+    fn revoke(state: &Rc<LocalState<S>>, error: Error) {
+        let live = &state.live;
         let (server, revocation, resolution, queued) = {
             let mut state = state.borrow_mut();
             let Some(server) = state.inner.take() else {
                 return;
             };
-            state.live.set(false);
+            live.set(false);
             state.broken_error = Some(error.clone());
             state.blocked = false;
             #[cfg(all(feature = "std", unix))]
@@ -1238,7 +1261,7 @@ where
     }
 
     fn dispatch_or_queue(
-        state: Rc<RefCell<Self>>,
+        state: Rc<LocalState<S>>,
         interface_id: u64,
         method_id: u16,
         params: Box<dyn ParamsHook>,
@@ -1275,7 +1298,7 @@ where
     }
 
     fn dispatch_call(
-        state: Rc<RefCell<Self>>,
+        state: Rc<LocalState<S>>,
         interface_id: u64,
         method_id: u16,
         params: Box<dyn ParamsHook>,
@@ -1286,7 +1309,7 @@ where
     }
 
     fn dispatch_context(
-        state: Rc<RefCell<Self>>,
+        state: Rc<LocalState<S>>,
         interface_id: u64,
         method_id: u16,
         context: &mut dyn capnp::private::capability::CallContextHook,
@@ -1375,7 +1398,7 @@ where
         }
     }
 
-    fn unblock(state: Rc<RefCell<Self>>) {
+    fn unblock(state: Rc<LocalState<S>>) {
         loop {
             let blocked_call = {
                 let mut state_ref = state.borrow_mut();
@@ -1436,7 +1459,10 @@ where
                 .and_then(|entry| entry.state.upgrade())
         });
         existing
-            .and_then(|state| state.downcast::<RefCell<ClientState<S>>>().ok())
+            .and_then(|state| {
+                let state: Rc<dyn Any> = state;
+                state.downcast::<LocalState<S>>().ok()
+            })
             .is_some_and(|state| {
                 let state = state.borrow();
                 state.identity == identity && state.inner.is_some()
@@ -1474,20 +1500,19 @@ where
             ));
         }
         if let Some(existing) = existing {
-            let state = existing.downcast::<RefCell<ClientState<S>>>().ok().unwrap();
+            let existing: Rc<dyn Any> = existing;
+            let state = existing.downcast::<LocalState<S>>().ok().unwrap();
             if state.borrow().inner.is_some() {
                 return Box::new(Self { state });
             }
         }
         self.state.borrow_mut().registration = Some(key);
-        let erased: Rc<dyn Any> = self.state.clone();
-        let live = Rc::downgrade(&self.state.borrow().live);
+        let erased: Rc<dyn RegisteredState> = self.state.clone();
         self.with_registry(|clients| {
             clients.borrow_mut().entry(key.1).or_default().insert(
                 key.0,
                 LocalRegistration {
                     state: Rc::downgrade(&erased),
-                    live,
                     revocable,
                 },
             )
@@ -1631,24 +1656,26 @@ where
     #[inline]
     fn construct(server: S, #[cfg(not(feature = "std"))] registry: ClientRegistry) -> Self {
         let client = Self {
-            state: Rc::new(RefCell::new(ClientState {
-                identity: 0,
-                registration: None,
-                #[cfg(not(feature = "std"))]
-                registry,
-                live: Rc::new(Cell::new(true)),
-                resolved: None,
-                resolve_task: None,
-                resolve_canceler: None,
-                inner: Some(server),
-                revocation: None,
-                executor: None,
-                #[cfg(all(feature = "std", unix))]
-                fd: None,
-                broken_error: None,
-                blocked: false,
-                blocked_calls: VecDeque::new(),
-            })),
+            state: Rc::new(LocalState {
+                live: Cell::new(true),
+                inner: RefCell::new(ClientState {
+                    identity: 0,
+                    registration: None,
+                    #[cfg(not(feature = "std"))]
+                    registry,
+                    resolved: None,
+                    resolve_task: None,
+                    resolve_canceler: None,
+                    inner: Some(server),
+                    revocation: None,
+                    executor: None,
+                    #[cfg(all(feature = "std", unix))]
+                    fd: None,
+                    broken_error: None,
+                    blocked: false,
+                    blocked_calls: VecDeque::new(),
+                }),
+            }),
         };
         client.state.borrow_mut().identity = Rc::as_ptr(&client.state) as usize;
         client

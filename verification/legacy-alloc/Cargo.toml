@@ -13,6 +13,9 @@ resolver = "2"
 capnp = { package = "capntproto-core", path = "../../crates/capntproto-core", default-features = false, features = ["alloc"] }
 capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc", default-features = false, features = ["alloc"] }
 
+[dev-dependencies]
+allocation-counter = "=0.8.1"
+
 [build-dependencies]
 capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
 

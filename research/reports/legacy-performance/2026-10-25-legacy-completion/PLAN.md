@@ -15,8 +15,23 @@ Completion requires a no-std/no-alloc legacy RPC path exercising unary, dependen
 - Read ownership API: Params<T,H> and Response<T,H> can retain caller-backed readers/selected frame owners in no-default builds; hosted default fields remain boxed hooks. Traversal budgets survive moves, schema selection and wrapper changes. Qualified by run 40165853875: exact hosted component Ir/Bc/Bi parity and 261 normalized assembly functions unchanged, plus two-width Miri. Linked predictor deltas remain in the owners report.
 - Fallible output API: Results<T,H> and ResultStorage<T> retain a fixed root, envelope content field, borrowed provider or RefMut guard. Editors use the generator's existing FixedSchema mapping, preserve prior data on rejected growth, and never fall back to a heap. Qualified by run 40169817346: 1,129 unit/integration and 47 documentation executions pass, two-width strict-provenance Miri, selected component Ir/Bc/Bi exact parity and 139 normalized assembly functions unchanged. TLS blocks remain 7/58/202; all byte, libc and simulated predictor deltas remain in the results report.
 - Registration identity: remove Rc<()> tokens in favor of checked nonrecycling IDs. Five repeated direct allocation comparisons improve 128 blocks/2,048 bytes to zero per four waves of 32 pre-reserved registrations. Fourteen registry tests and eight no_std conversations pass locally; full hosted/performance qualification pending.
+- Local-client state: fuse live Cell and mutable dispatch data in one Rc, retaining borrowed liveness reads through a private trait. Five source-snapshot allocation comparisons for 32 live generated clients improve 160 blocks/16,512 bytes to 128/14,720 (SD zero). Nine alloc-only conversations, Clippy and M4 checks pass locally; full hosted work/Miri qualification pending.
 - Protocol/hook/message storage: eliminate mandatory Box/Rc/Vec ownership from the legacy core, preserving retained frames, pipelines, cleanup publication and ID reuse. Pending.
 - Profiles/API: the actual legacy RpcSystem now compiles in no_std + alloc, separately from OS adapters; its generated service interfaces import allocation types explicitly. Implicit local-client TLS is replaced by an explicit weak ClientRegistry in that profile, preserving one identity domain and revocation checks. Hosted types and implicit registry remain unchanged. Eight isolated no_std fixture tests pass unary/retained, deep/pipelined/concurrent, reverse callback, cancellation and registry/revocation behavior. Polling now requires a real wake notification. Shared core framing is exercised with three-byte reads, Interrupted and Pending, including retained frames and exact capacity/EOF causes. The application transport still allocates. Run 40171165717 passed hosted validation and selected component Ir/Bc/Bi parity; TLS blocks remain 7/58/202. Simulated Bim concurrent regresses 33.484%, retained explicitly. Expanded eight-case and alloc result owners pass two-width Miri in run 40172257171. Native latency remains unqualified. Both fixture and core-only facade check for M4. This is still allocating; full no-alloc hook/protocol ownership is pending. Hosted repeated qualification pending.
-- End-to-end proof and repeated hosted regressions: pending.
+- End-to-end proof and repeated hosted regressions: allocating legacy conversations are now tested on both pointer widths. The no-allocator legacy conversation and native latency qualification remain pending.
+
+## Remaining ownership boundary
+
+The blocker is no longer std imports. ClientHook/RequestHook/PipelineHook traffic
+still carries Box and Rc owners, consuming boxed hooks and `'static` erased
+futures. A borrowed frame/result provider alone cannot satisfy those ownership
+contracts without allocating. Next, protocol records must hold context/slot keys,
+while public handles retain the caller's context lifetime and generation. Caller-
+pinned task slots must own generated service futures, and fixed message/capability
+storage must cross the same call/return path. Internal records cannot retain public
+handles borrowing their own connection: that creates self references. Any-based
+`'static` lookup is also incompatible with arbitrary borrowed-context owners.
+API compatibility is not required; these contracts should be replaced directly,
+not hidden behind wrappers that allocate or select the other protocol driver.
 
 Each qualification pins an immutable commit. Later implementation work can proceed while that prior commit is tested. Reports must preserve the exact source/fixture identity, all five samples and spreads, allocations and bytes, and remaining native-latency limitations. No main merge is implied.

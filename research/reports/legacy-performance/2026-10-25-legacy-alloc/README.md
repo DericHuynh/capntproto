@@ -25,12 +25,12 @@ on thumbv7em-none-eabi. An earlier hosted
 all-target Clippy pass and final alloc-only library/fixture Clippy pass with warnings denied;
 core-only M4 checks and code-generator unit tests pass. This is not board execution,
 an allocation-free link, encrypted transport testing, or native latency measurement.
-The final hosted all-target Clippy retry was killed by workspace memory exhaustion
-(cgroup OOM kill rose 14 to 15), so CI must recheck the final revision.
-Run 40171165717 already passed hosted verification and two-width Miri of the initial
-five-case fixture; its repeated hosted profile is pending. The expanded eight-case
-wake/framing suite is qualified separately without another runtime performance run,
-since only verification code changes.
+The final local hosted all-target Clippy retry was killed by workspace memory
+exhaustion (cgroup OOM kill rose 14 to 15); CI subsequently passed that check.
+Run 40171165717 passed hosted verification, repeated profiles and two-width Miri
+of the initial five-case fixture. The expanded eight-case wake/framing suite passed
+separate qualification without another runtime performance run, since only its
+verification code changed.
 
 The remaining no-alloc blockers are real ownership interfaces: Box<dyn ClientHook> and
 consuming boxed request/results hooks, Rc-backed connection/question/pipeline owners,

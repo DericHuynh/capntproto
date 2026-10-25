@@ -7,7 +7,7 @@ Application-owned message queues implement `VatNetwork`/`Connection`; these queu
 the legacy runtime allocate. This does not prove allocation-free RPC or encrypted IO.
 
 Run `cargo test --locked --manifest-path verification/legacy-alloc/Cargo.toml`.
-The eight tests cover retained responses, depth-32 dependent reads and pipelines,
+The nine tests cover retained responses, depth-32 dependent reads and pipelines,
 32 concurrent calls, reverse callbacks, cancellation that destroys a suspended
 service future and leaves the connection live, and local identity/revocation in
 an explicit shared `ClientRegistry`. The fragmented transport serializes real
@@ -25,3 +25,11 @@ to check the same fixture without an OS. This is compilation evidence, not board
 or an allocator-free ELF link. M0 remains supported by the separate core-only profile;
 the allocating runtimes require pointer-width atomics. The schema build uses capnp
 and accepts `CAPNP_INCLUDE_DIR` for the standard annotation schema.
+
+`report_local_client_allocations` separately records five allocation samples while
+retaining 32 generated clients. `check-local-client-allocations.py` compares the
+actual local.rs source from a full baseline SHA to the working version in isolated
+RPC/fixture snapshots. It keeps the dependency profile and build path identical
+and never edits the real checkout. It excludes outer-map growth and is not a
+latency benchmark. `check-registration-allocations.py` separately traces 128
+unpublished connection registrations per sample, with map capacity pre-reserved.
