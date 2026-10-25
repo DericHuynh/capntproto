@@ -1,0 +1,35 @@
+{
+  "scope": "Standalone exact helper and previous policy, x86_64 release instruction selection. Not whole scheduler, event counts or latency.",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "source_sha256": "d564c5976b4d851519000fcf2dae49b126c981ca24aa08a9c760851b8b07c3ca",
+  "counts": {
+    "baseline": {
+      "instructions": 21,
+      "conditional_jumps": [
+        "je\t.LBB0_1",
+        "jb\t.LBB0_3",
+        "jne\t.LBB0_6",
+        "je\t.LBB0_2"
+      ],
+      "conditional_moves": [
+        "cmovnel\t%eax, %edi"
+      ],
+      "indirect_jumps": [
+        "jmpq\t*%rcx"
+      ]
+    },
+    "candidate": {
+      "instructions": 19,
+      "conditional_jumps": [
+        "je\t.LBB1_1"
+      ],
+      "conditional_moves": [
+        "cmovnel\t%eax, %r8d",
+        "cmovnel\t%r8d, %eax"
+      ],
+      "indirect_jumps": [
+        "jmpq\t*%rcx"
+      ]
+    }
+  }
+}

@@ -437,3 +437,26 @@ fn perpetually_ready_ordinary_work_cannot_starve_deferred_io() {
     assert_eq!(measured.count_total, 0);
     assert_eq!(measured.bytes_total, 0);
 }
+#[test]
+fn publication_selection_preserves_every_counter_and_flag_state() {
+    for busy in [false, true] {
+        for was_deferred in [false, true] {
+            for previous in 0..=u8::MAX {
+                let mut turns = previous;
+                let mut deferred = was_deferred;
+                let postpone = super::postpone_last(busy, &mut turns, &mut deferred);
+                let expected = (busy && previous < 32) || !was_deferred;
+                assert_eq!(postpone, expected);
+                assert_eq!(deferred, expected);
+                assert_eq!(
+                    turns,
+                    if expected {
+                        previous.saturating_add(1)
+                    } else {
+                        0
+                    }
+                );
+            }
+        }
+    }
+}

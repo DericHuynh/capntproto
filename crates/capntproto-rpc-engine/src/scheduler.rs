@@ -106,6 +106,20 @@ pub struct Parts<'a, A: Source, W, P, O, R: ?Sized> {
     pub reaper: &'a mut R,
     pub idle_regular: usize,
 }
+
+#[inline(always)]
+fn postpone_last(busy: bool, turns: &mut u8, deferred: &mut bool) -> bool {
+    // These inputs are plain values. Select both next-state fields before
+    // branching around the callback, leaving one control-flow decision.
+    let postpone = (busy & (*turns < 32)) | !*deferred;
+    // Keep the selection as a mask: LLVM can turn an equivalent conditional
+    // expression back into short-circuit branches around these stores.
+    let keep_turns = 0u8.wrapping_sub(u8::from(postpone));
+    *turns = turns.saturating_add(1) & keep_turns;
+    *deferred = postpone;
+    postpone
+}
+
 impl<A, W, P, O, R> Parts<'_, A, W, P, O, R>
 where
     A: Source,
@@ -175,14 +189,10 @@ where
             notified || self.activity.ready.load(Ordering::Acquire) || !self.enqueued.is_empty();
         // An external response consumer gets a turn before publication, while
         // the bounded delay prevents a ready producer starving transport IO.
-        if (busy && *self.busy_turns < 32) || !*self.deferred_last {
-            *self.busy_turns = self.busy_turns.saturating_add(1);
-            *self.deferred_last = true;
+        if postpone_last(busy, self.busy_turns, self.deferred_last) {
             (self.defer)(cx);
             return Poll::Pending;
         }
-        *self.busy_turns = 0;
-        *self.deferred_last = false;
         self.last_activity.ready.store(false, Ordering::Release);
         let last_activity = self.last_activity.parent.retain();
         let last_wake = last_activity.waker();
