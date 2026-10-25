@@ -11,7 +11,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-25T18:28:29Z · run 40221411023 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40221411023) · commit `58afd98e0424` · **failure**
+Latest Cargo run: [2026-10-25T18:57:37Z · run 40223719901 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40223719901) · commit `16228c6779b7` · **failure**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
@@ -19,7 +19,7 @@ Latest Cargo run: [2026-10-25T18:28:29Z · run 40221411023 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-25T18:28:29Z · run 40221411023 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40221411023) · commit `58afd98e0424` · **failure**
+[2026-10-25T18:57:37Z · run 40223719901 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40223719901) · commit `16228c6779b7` · **failure**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -27,7 +27,7 @@ Latest Cargo run: [2026-10-25T18:28:29Z · run 40221411023 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-25T18:28:29Z · run 40221411023 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40221411023) · commit `58afd98e0424` · **failure**
+[2026-10-25T18:57:37Z · run 40223719901 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40223719901) · commit `16228c6779b7` · **failure**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
@@ -37,7 +37,7 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-25T18:28:29Z · run 40221411023 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40221411023) · commit `58afd98e0424` · **failure**
+Latest benchmark run: [2026-10-25T18:57:37Z · run 40223719901 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40223719901) · commit `16228c6779b7` · **failure**
 
 Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
 
