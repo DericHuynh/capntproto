@@ -1,0 +1,53 @@
+{
+  "baseline": "0c363cfdb0ea30d30956c8535df8b010a277050d",
+  "subject": "crates/capntproto-rpc/src/local.rs",
+  "original_sha256": "eb067fc8a72cc37caa78a01b83bb3dbcd2968baff93aaaf0bbd2947720501eb4",
+  "candidate_sha256": "5f3da27e88f69e498e2b927289efb1ad9aa1294c24891f48b0fc7cd0df9c5a88",
+  "repetitions": 5,
+  "simultaneously_retained_clients": 32,
+  "results": {
+    "baseline": {
+      "blocks_samples": [
+        160,
+        160,
+        160,
+        160,
+        160
+      ],
+      "bytes_samples": [
+        16512,
+        16512,
+        16512,
+        16512,
+        16512
+      ],
+      "pointer_bytes": 8,
+      "blocks_mean": 160,
+      "blocks_sd": 0.0,
+      "bytes_mean": 16512,
+      "bytes_sd": 0.0
+    },
+    "candidate": {
+      "blocks_samples": [
+        128,
+        128,
+        128,
+        128,
+        128
+      ],
+      "bytes_samples": [
+        14720,
+        14720,
+        14720,
+        14720,
+        14720
+      ],
+      "pointer_bytes": 8,
+      "blocks_mean": 128,
+      "blocks_sd": 0.0,
+      "bytes_mean": 14720,
+      "bytes_sd": 0.0
+    }
+  },
+  "scope": "Actual alloc-only ClientRegistry and generated Node clients. Outer registry capacity warmed before tracing. Includes service owners, dispatch state, per-interface maps and boxed hooks. Other RPC owners remain; no timing claim."
+}

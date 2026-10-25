@@ -1,13 +1,13 @@
-//! Typed output access independent of its allocation and publication owner.
+//! Typed parameter/result payload access independent of allocation and publication.
 use crate::{
     field_api::{FixedField, FixedSchema, FixedStruct, Struct},
     message, MessageSize, Result,
 };
 
-/// The editor borrows its owner and cannot outlive the response storage.
+/// The editor borrows its owner and cannot outlive the payload storage.
 /// Fixed providers report capacity failure and retain their previous root;
 /// size hints never enlarge their caller-supplied capacity.
-pub trait ResultStorage<T> {
+pub trait PayloadStorage<T> {
     type Builder<'a>
     where
         Self: 'a;
@@ -15,7 +15,7 @@ pub trait ResultStorage<T> {
     fn try_init(&mut self, hint: Option<MessageSize>) -> Result<Self::Builder<'_>>;
 }
 
-impl<T, H: ResultStorage<T> + ?Sized> ResultStorage<T> for &mut H {
+impl<T, H: PayloadStorage<T> + ?Sized> PayloadStorage<T> for &mut H {
     type Builder<'a>
         = H::Builder<'a>
     where
@@ -27,7 +27,7 @@ impl<T, H: ResultStorage<T> + ?Sized> ResultStorage<T> for &mut H {
         (**self).try_init(hint)
     }
 }
-impl<T, H: ResultStorage<T> + ?Sized> ResultStorage<T> for core::cell::RefMut<'_, H> {
+impl<T, H: PayloadStorage<T> + ?Sized> PayloadStorage<T> for core::cell::RefMut<'_, H> {
     type Builder<'a>
         = H::Builder<'a>
     where
@@ -40,7 +40,7 @@ impl<T, H: ResultStorage<T> + ?Sized> ResultStorage<T> for core::cell::RefMut<'_
     }
 }
 
-impl<T: FixedSchema> ResultStorage<T> for message::FixedBuilder<'_> {
+impl<T: FixedSchema> PayloadStorage<T> for message::FixedBuilder<'_> {
     type Builder<'a>
         = FixedStruct<'a, T::Schema>
     where
@@ -60,9 +60,9 @@ impl<T: FixedSchema> ResultStorage<T> for message::FixedBuilder<'_> {
     }
 }
 
-// An RPC result owns the content field inside a Return envelope. Transferring
-// this field's full borrow preserves the independently initialized header.
-impl<T: FixedSchema> ResultStorage<T> for FixedField<'_, Struct<T::Schema>> {
+// An RPC payload can own the content field inside a Call or Return envelope.
+// Transferring its full borrow preserves the independently initialized header.
+impl<T: FixedSchema> PayloadStorage<T> for FixedField<'_, Struct<T::Schema>> {
     type Builder<'a>
         = FixedStruct<'a, T::Schema>
     where
@@ -80,7 +80,7 @@ impl<T: FixedSchema> ResultStorage<T> for FixedField<'_, Struct<T::Schema>> {
 }
 
 #[cfg(feature = "alloc")]
-impl<T: crate::traits::Owned> ResultStorage<T>
+impl<T: crate::traits::Owned> PayloadStorage<T>
     for alloc::boxed::Box<dyn crate::private::capability::ResultsHook>
 {
     type Builder<'a>

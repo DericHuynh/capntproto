@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-request.elf",
+  "bytes": 882236,
+  "sha256": "3b0f94d3a52679a14cbad26d0fbb73084d3ee8b5d8847d11cd07208e3ffc434c",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "dd0b4013d73032cafa5476e0d0af45e8cb3b7ffb68a811c955329add2b5dca3a",
+  "scope": "Link-only caller-backed legacy Request and Call envelope ownership transferred through a fixed completion slot; not a complete legacy RPC conversation, not executed on a board."
+}

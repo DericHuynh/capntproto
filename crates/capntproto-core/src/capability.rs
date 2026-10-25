@@ -23,7 +23,8 @@
 //!
 //! Roughly corresponds to capability.h in the C++ implementation.
 //! Parameters and responses can retain concrete frame owners in every profile.
-//! Allocating request, client and dispatch hooks are enabled by `alloc`.
+//! Requests can retain concrete parameter/publication owners in every profile.
+//! Dynamic client and dispatch hooks are enabled by `alloc`.
 
 #[cfg(feature = "alloc")]
 use core::future::Future;
@@ -45,8 +46,10 @@ use crate::{Error, MessageSize};
 
 #[cfg(test)]
 mod owner_views;
-mod result_storage;
-pub use result_storage::ResultStorage;
+mod payload_storage;
+mod request_storage;
+pub use payload_storage::PayloadStorage;
+pub use request_storage::{PreparedRequest, RequestStorage};
 
 #[cfg(feature = "alloc")]
 mod reply;
@@ -374,9 +377,43 @@ impl<R: Pipelined + Owned, E> Future for ResponsePromise<R, E> {
 /// A method call that has not been sent yet.
 #[cfg(feature = "alloc")]
 #[must_use = "an unsent request does nothing; send or forward it"]
-pub struct Request<Params, Results> {
+pub struct Request<Params, Results, H = alloc::boxed::Box<dyn RequestHook>> {
     pub marker: PhantomData<(Params, Results)>,
-    pub hook: alloc::boxed::Box<dyn RequestHook>,
+    pub hook: H,
+}
+#[cfg(not(feature = "alloc"))]
+#[must_use = "an unsent request does nothing; send or forward it"]
+pub struct Request<Params, Results, H> {
+    pub marker: PhantomData<(Params, Results)>,
+    pub hook: H,
+}
+impl<P, R, H> Request<P, R, H> {
+    /// Keep the concrete owner, including its borrow and cancellation guards.
+    pub fn from_owner(hook: H) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
+    pub fn try_get(&mut self) -> crate::Result<H::Builder<'_>>
+    where
+        H: PayloadStorage<P>,
+    {
+        self.hook.try_get(None)
+    }
+    pub fn try_init(&mut self) -> crate::Result<H::Builder<'_>>
+    where
+        H: PayloadStorage<P>,
+    {
+        self.hook.try_init(None)
+    }
+    #[inline(always)]
+    pub fn send(self) -> H::Sent
+    where
+        H: RequestStorage<R>,
+    {
+        RequestStorage::<R>::publish(self.hook)
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -435,17 +472,6 @@ where
     /// pipeline or its derived capabilities for as long as the call is needed.
     pub fn send_for_pipeline(self) -> Results::Pipeline {
         FromTypelessPipeline::new(self.hook.send_for_pipeline())
-    }
-
-    pub fn send(self) -> RemotePromise<Results> {
-        let RemotePromise {
-            promise, pipeline, ..
-        } = self.hook.send();
-        let typed_promise = promise.into_typed_response();
-        RemotePromise {
-            promise: typed_promise,
-            pipeline: FromTypelessPipeline::new(pipeline),
-        }
     }
 }
 
@@ -559,7 +585,7 @@ pub struct Results<T, H> {
     pub marker: PhantomData<T>,
     pub hook: H,
 }
-impl<T, H: ResultStorage<T>> Results<T, H> {
+impl<T, H: PayloadStorage<T>> Results<T, H> {
     pub fn from_owner(hook: H) -> Self {
         Self {
             marker: PhantomData,

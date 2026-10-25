@@ -29,6 +29,8 @@ pub mod pipeline;
 pub mod publication;
 pub mod reception;
 
+#[cfg(test)]
+mod request_owners;
 mod resources;
 #[cfg(test)]
 mod result_owners;
