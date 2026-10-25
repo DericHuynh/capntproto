@@ -43,6 +43,8 @@ pub mod questions;
 #[cfg(all(target_has_atomic = "ptr", target_has_atomic = "8"))]
 pub mod readiness;
 pub mod references;
+#[cfg(all(target_has_atomic = "ptr", target_has_atomic = "8"))]
+pub mod scheduler;
 #[doc(hidden)]
 pub mod storage;
 #[cfg(all(target_has_atomic = "ptr", target_has_atomic = "8"))]

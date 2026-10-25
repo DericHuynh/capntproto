@@ -31,6 +31,9 @@ pub struct Ring<T, const N: usize> {
     len: usize,
 }
 impl<T, const N: usize> Ring<T, N> {
+    pub fn is_full(&self) -> bool {
+        self.len == N
+    }
     pub const fn new() -> Self {
         Self {
             slots: [const { None }; N],

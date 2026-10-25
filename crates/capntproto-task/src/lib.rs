@@ -4,7 +4,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 use core::task::{RawWaker, RawWakerVTable, Waker};
 mod slots;
-pub use slots::Slots;
+pub use slots::{Erased, Owned, Place, Slots};
 
 /// A shared target. Wakers may invoke it on any thread after their task ends.
 pub trait Wake: Sync + 'static {
