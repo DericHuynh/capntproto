@@ -3,16 +3,17 @@
 Current quality and benchmark reports are generated under `target/quality/` and
 published as GitHub Actions artifacts. See [the quality guide](../../docs/wiki/Quality-and-Benchmarks.md)
 for report generation, coverage gates, and the comparison charts in each report's
-README.
+README. Generated reports linked to historical commits below are archived
+evidence; current outputs remain outside source control.
 
-The [legacy allocation and concurrency comparison](legacy-performance/2026-10-23-allocation-concurrency/README.md)
+The [legacy allocation and concurrency comparison](https://github.com/DericHuynh/capntproto/blob/65cd0ca29fc54aca837c2e850eb8e25e121c18d6/research/reports/legacy-performance/2026-10-23-allocation-concurrency/README.md)
 records frozen legacy controls, portable/C++ comparisons, allocation stacks,
 concurrent service-chain profiles, and a reproduced duplicate-wake publication
 bug. Completed timing evidence and incomplete diagnostics remain explicitly
 separate; final-runtime measurements expose modest aggregate TLS gains, a QUIC
 regression and an unresolved QUIC service-chain profiling gap.
 
-The [CI droplet comparison and borrowed Return validation](portable-performance/2026-10-23-ci-droplets/README.md)
+The [CI droplet comparison and borrowed Return validation](https://github.com/DericHuynh/capntproto/blob/65cd0ca29fc54aca837c2e850eb8e25e121c18d6/research/reports/portable-performance/2026-10-23-ci-droplets/README.md)
 records encrypted five-run measurements, syscall traces, instruction/allocation
 profiles, frozen portable controls and explicit remaining legacy gaps. All new
 performance evidence comes from the CI-provisioned DigitalOcean droplets.
