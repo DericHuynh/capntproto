@@ -1485,7 +1485,7 @@ where
                     views.get(&key.0).and_then(|entry| entry.state.upgrade()),
                     views
                         .values()
-                        .any(|entry| entry.is_live() && (revocable || entry.revocable)),
+                        .any(|entry| (revocable || entry.revocable) && entry.is_live()),
                 ),
                 None => (None, false),
             }

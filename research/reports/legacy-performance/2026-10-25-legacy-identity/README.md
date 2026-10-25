@@ -31,3 +31,25 @@ Steady-state 50−10 benchmark slopes subtract connection setup. They cannot on
 their own show this allocation saving. Qualification therefore also records this
 explicit setup/allocation comparison and includes registry assembly, alongside
 repeated hosted profiles. No local/native latency claim is made.
+
+## Qualification
+
+Source `0c363cfdb0ea30d30956c8535df8b010a277050d`, control `8cdaf86`,
+qualification `6c34f3c`, [run 40173642759](https://github.com/DericHuynh/capntproto/actions/runs/40173642759), passed.
+CI repeats the direct source allocation comparison with the same five identical
+128/2,048 → 0/0 samples. Full hosted verification passes, plus 16 actual alloc-only
+conversation and 28 registry strict-provenance Miri executions across two widths.
+
+The repeated six-case hosted profiles retain 240 trials. Registry plus scheduler
+self Ir/Bc/Bi slopes are unchanged; some registry work occurs only at setup, so
+this cannot replace the explicit allocation probe. 155/173 normalized common
+functions match; all 18 changed bodies are registry removal/destruction functions,
+as expected when eliminating Rc identity cleanup. TLS block slopes stay 7/58/202.
+Whole Ir ranges -0.032%..+0.060%, with deep +434.595 including +405.090 in memcpy.
+All bytes and QUIC spreads are preserved. Simulated Bcm improves in every case,
+but Bim regresses 8.401% unary, 0.540% dependent and 6.382% callback. Those are not
+hardware/native latency measurements and are not erased by the allocation gain.
+
+Artifact 12591867455: 81,134,637 bytes, SHA-256
+`fbdaaeea7b439846138b5c47ed4fb6ac96c9c49266ab5dc2a6cfdf85a8870459`.
+The complete assembly/symbols/raw profiles remain in that verified archive.
