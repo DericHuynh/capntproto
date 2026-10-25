@@ -2,6 +2,7 @@
 //! Callers retain the record until both the local reference and remote Return
 //! are gone. Cancellation does not authorize reusing an outstanding wire ID.
 
+pub mod reference;
 pub mod release;
 
 #[cfg(capntproto_verus)]

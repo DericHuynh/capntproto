@@ -343,7 +343,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         let mut export = Export::new(inner.add_ref());
         export.vine = Some(Rc::new(move |embargo| {
             let reference = reference.borrow();
-            let Some(state) = reference.connection_state.as_ref() else {
+            let Some(state) = reference.record.context() else {
                 return Ok(());
             };
             let Ok(mut message) = state.new_outgoing_message(32) else {
@@ -359,7 +359,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             d.reborrow()
                 .init_target()
                 .init_promised_answer()
-                .set_question_id(reference.id.to_wire());
+                .set_question_id(reference.record.id().to_wire());
             d.init_context().set_accept(embargo);
             let _ = message.send_detached();
             Ok(())

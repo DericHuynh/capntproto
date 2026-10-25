@@ -50,4 +50,25 @@ Qualification `ac011c440c0ad700c65cbe059a5f73671145697a`,
 [run 40186576383](https://github.com/DericHuynh/capntproto/actions/runs/40186576383),
 passes 42 strict-provenance Miri executions: 24 cleanup cases across both widths
 and fixed/alloc profiles, plus 18 actual legacy conversation cases across both
-widths. Full hosted verification passes; repeated profiling remains running.
+widths. Full hosted verification and all 240 profile trials pass. The five-repetition
+comparison retains means, sample SD and paired deltas. All six whole-program Ir
+means improve by 0.037–0.203%; simulated Bim improves by 7.185–24.219%. TLS
+allocation counts remain 7/57/202 for unary/pipelined/concurrent cases; byte and
+QUIC allocation samples remain in comparison.json.
+
+The concurrent trace attributes exactly -1,344 Ir and -192 conditional branches
+per batch (paired SD zero) to halving LocalTable<Question>::get_mut work. The
+QuestionCell drop path adds 64 conditional branches (SD zero), so extracting only
+the question-lifetime helper group would miss the lookup saving. Whole-program
+concurrent Ir falls 1,363.280 ± 23.854 (paired sample SD), and conditional branches
+fall 126.755 ± 4.706. The normalized disassembly comparison finds 656 of 708 common
+bodies unchanged, with no added/removed selected symbols. It is not byte equality.
+
+Conditional branch misses regress in unary (+0.666%), concurrent (+18.168%) and
+deep-concurrent (+7.549%). These are real simulated regressions; removing a lookup
+does not establish native speed or branch-prediction parity. Native latency has
+not been measured here. The complete raw archive remains GitHub artifact
+12597591936: 82,991,732 bytes, SHA-256
+7383fd179b0c92ff3f97a75604cba2a9d6daa941d1c45dcfe838e1fe1a5969e9.
+Selected attribution rows reconcile to whole-program deltas; assembly normalization
+and symbol scope are recorded separately.

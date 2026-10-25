@@ -39,3 +39,10 @@ droplets. Hosted QuestionCell, pipeline/capability/message storage and generated
 dispatch still retain allocating ownership. Factoring their receiver removes a
 contractual Rc requirement; it does not yet make the complete legacy driver
 allocation-free or establish compiled-work/native performance parity.
+
+
+Qualification `9950969c0c140032667e5f1822c0c354adbd9aa8`,
+[run 40189088815](https://github.com/DericHuynh/capntproto/actions/runs/40189088815),
+passes all 34 strict-provenance Miri executions: four receiver cases in each
+fixed/alloc profile and pointer width (16), plus nine actual legacy conversations
+on both widths (18). Hosted validation passes; repeated profiles remain running.
