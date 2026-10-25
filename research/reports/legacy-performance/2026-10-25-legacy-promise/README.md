@@ -54,3 +54,32 @@ Strict-provenance Miri passes 18 core and 32 wire ownership executions across
 64-bit/32-bit no-default/explicit-alloc profiles. Five core tests run without
 alloc, four with alloc; the fifth specifically requires the inline fixed error
 representation. Hosted compiled-work/allocation qualification remains running.
+
+
+## Hosted qualification
+
+Both jobs pass in run 40180710173, including the full hosted RPC suite, 30
+encrypted behavior tests and 50 targeted Miri executions. All 240 repeated
+work/allocation trials complete. Capability-owner plus scheduler self Ir/Bc/Bi
+slopes are exact; TLS block slopes remain 7/57/202 and every byte/QUIC sample
+is retained. Whole Ir ranges -0.006% to +0.038%, including a deep +63.160
+paired mean. The whole deep Bc delta is +68.080; helper-only equality does not
+prove whole-program equivalence.
+
+247/304 normalized common captured assembly bodies match; 25 symbols appear
+and 25 disappear. Making the default boxed future an explicit third generic
+argument also renames Promise/PromiseInner and functions containing those types.
+Raw function attribution preserves both names, so equal-work add/remove pairs
+must be grouped before assigning their large deltas to a runtime change. The
+summed capability-owner analysis includes both sides. It is not byte equivalence.
+
+Simulated Bim improves in five cases, including -15.167% unary and -8.061%
+concurrent, but regresses +1.555% pipeline. Bcm regresses +0.622% pipeline,
+while improving in the other five cases. These results do not repair the eight
+caller instructions introduced by the earlier Request change, and do not
+establish native latency or whole no-allocator RPC completion.
+
+Verified artifact 12594059851: 81,839,819 bytes, SHA-256
+`c660c5a1f83dccbbc412ef227f8a58125324319a590dbed0a5cb730a6522a3d0`.
+Raw profiles and captured assembly/symbols remain in that archive. Selected
+function attribution reconciles every whole-program delta.

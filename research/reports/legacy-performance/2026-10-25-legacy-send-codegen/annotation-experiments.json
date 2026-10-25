@@ -1,0 +1,24 @@
+{
+  "baseline_source": "ddeffe7e66aede9bfc614c966b9dc24f0f508c71",
+  "base_capability_sha256": "96fc21fb0272b29abd24f1a9ca6d047b6ee96519341375bbbb34c622c937aa8e",
+  "base_storage_sha256": "544b923ebe8f34bc3075cec63ad0a2f17dea46101637bab3d4893b784af1fd3a",
+  "harness_sha256": "5d954d715c2b97c765e76a3bcbe0b4a4dd16848551d828e5b0790a37f7a5c7f5",
+  "flags": "rustc1.97,opt3,overflow checks on,debug1; core release overflow checks on",
+  "scope": "Exploratory same-path source snapshots removing one of the two forced-inlining annotations. The final checked-in diagnostic independently reproduces the selected outer-only fix against the exact baseline core source.",
+  "results": [
+    {
+      "variant": "outer",
+      "counts": {
+        "legacy_send_compile[2346a913cb9eae1e]::current_future::{closure#0}": 204,
+        "legacy_send_compile[2346a913cb9eae1e]::original_future::{closure#0}": 204
+      }
+    },
+    {
+      "variant": "inner",
+      "counts": {
+        "legacy_send_compile[2346a913cb9eae1e]::current_future::{closure#0}": 204,
+        "legacy_send_compile[2346a913cb9eae1e]::original_future::{closure#0}": 204
+      }
+    }
+  ]
+}

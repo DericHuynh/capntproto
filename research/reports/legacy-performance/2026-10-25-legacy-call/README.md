@@ -39,3 +39,10 @@ to dedicated droplets. Actual legacy connection records, ClientHook/PipelineHook
 message/capability storage and generated service dispatch still require caller-
 backed integration. This is an ownership boundary extraction, not completion of
 no-global-allocator legacy RPC.
+
+
+Qualification `9292a818a6b8c24b5fd171035c142c8bbe0cf0f2`,
+[run 40181910314](https://github.com/DericHuynh/capntproto/actions/runs/40181910314),
+passes all 20 strict-provenance invocation Miri executions (five tests across
+both widths and no-default/explicit-alloc profiles). Full hosted tests pass;
+repeated work/allocation profiling remains running.

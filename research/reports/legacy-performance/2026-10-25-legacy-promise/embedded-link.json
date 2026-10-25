@@ -1,8 +1,8 @@
 {
   "target": "thumbv7em-none-eabi",
-  "artifact": "/tmp/legacy-promise.elf",
-  "bytes": 883772,
-  "sha256": "206f11fc911ac107b589bef1da43bf9ac50a8fc0d00295a8ae17e08bb0571bc0",
+  "artifact": "/home/runner/work/_temp/legacy-promise.elf",
+  "bytes": 883764,
+  "sha256": "c1877198d9967cf22b0894f1654aeaeaeadce288dfec280d510afbffa45c50db",
   "undefined_symbols": [],
   "allocator_symbols": [],
   "entry_present": true,

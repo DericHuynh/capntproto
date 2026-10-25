@@ -1,0 +1,5887 @@
+{
+  "scope": "All peers; five fresh-process pairs per variant; (50-10)/40 with two warmups. Sample SD describes paired slopes, including startup variation. Simulated branches; no latency claim.",
+  "rows": [
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "Bc": 5970.875,
+        "Bcm": 309.275,
+        "Bi": 540.975,
+        "Bim": 164.85,
+        "D1mr": 222.7,
+        "D1mw": 214.075,
+        "DLmr": 0.05,
+        "DLmw": 0.55,
+        "Dr": 12435.0,
+        "Dw": 9629.525,
+        "I1mr": 3179.475,
+        "ILmr": 0.15,
+        "Ir": 45984.0
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "Bc": 5972.15,
+        "Bcm": 309.45,
+        "Bi": 541.0,
+        "Bim": 139.975,
+        "D1mr": 209.475,
+        "D1mw": 230.25,
+        "DLmr": -0.025,
+        "DLmw": 0.575,
+        "Dr": 12435.975,
+        "Dw": 9631.85,
+        "I1mr": 3202.275,
+        "ILmr": 0.075,
+        "Ir": 45988.15
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "Bc": 5973.775,
+        "Bcm": 310.0,
+        "Bi": 541.025,
+        "Bim": 139.95,
+        "D1mr": 208.75,
+        "D1mw": 230.3,
+        "DLmr": -0.025,
+        "DLmw": 0.55,
+        "Dr": 12436.425,
+        "Dw": 9632.25,
+        "I1mr": 3202.075,
+        "ILmr": 0.05,
+        "Ir": 45992.5
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "Bc": 5970.725,
+        "Bcm": 310.375,
+        "Bi": 540.95,
+        "Bim": 164.975,
+        "D1mr": 220.075,
+        "D1mw": 210.075,
+        "DLmr": 0.05,
+        "DLmw": 0.5,
+        "Dr": 12440.55,
+        "Dw": 9633.0,
+        "I1mr": 3179.6,
+        "ILmr": 0.125,
+        "Ir": 46030.55
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "Bc": 5974.325,
+        "Bcm": 309.575,
+        "Bi": 541.05,
+        "Bim": 165.025,
+        "D1mr": 219.4,
+        "D1mw": 210.15,
+        "DLmr": -0.025,
+        "DLmw": 0.525,
+        "Dr": 12429.5,
+        "Dw": 9629.475,
+        "I1mr": 3179.65,
+        "ILmr": 0.0,
+        "Ir": 45941.075
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "Bc": 5974.225,
+        "Bcm": 309.525,
+        "Bi": 541.025,
+        "Bim": 140.025,
+        "D1mr": 209.05,
+        "D1mw": 229.75,
+        "DLmr": 0.025,
+        "DLmw": 0.55,
+        "Dr": 12441.2,
+        "Dw": 9634.825,
+        "I1mr": 3202.3,
+        "ILmr": -0.05,
+        "Ir": 46036.8
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "Bc": 5971.875,
+        "Bcm": 309.375,
+        "Bi": 541.0,
+        "Bim": 139.975,
+        "D1mr": 208.95,
+        "D1mw": 230.175,
+        "DLmr": -0.05,
+        "DLmw": 0.55,
+        "Dr": 12433.35,
+        "Dw": 9630.2,
+        "I1mr": 3202.15,
+        "ILmr": -0.025,
+        "Ir": 45978.075
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "Bc": 5972.375,
+        "Bcm": 309.45,
+        "Bi": 541.0,
+        "Bim": 165.05,
+        "D1mr": 219.525,
+        "D1mw": 210.15,
+        "DLmr": -0.025,
+        "DLmw": 0.5,
+        "Dr": 12434.45,
+        "Dw": 9630.925,
+        "I1mr": 3179.525,
+        "ILmr": 0.025,
+        "Ir": 45983.425
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "Bc": 5971.475,
+        "Bcm": 310.375,
+        "Bi": 540.95,
+        "Bim": 165.1,
+        "D1mr": 219.9,
+        "D1mw": 210.15,
+        "DLmr": 0.075,
+        "DLmw": 0.575,
+        "Dr": 12433.15,
+        "Dw": 9629.9,
+        "I1mr": 3179.45,
+        "ILmr": 0.075,
+        "Ir": 45979.0
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "Bc": 5970.775,
+        "Bcm": 309.1,
+        "Bi": 540.975,
+        "Bim": 139.95,
+        "D1mr": 209.25,
+        "D1mw": 230.525,
+        "DLmr": -0.025,
+        "DLmw": 0.55,
+        "Dr": 12434.225,
+        "Dw": 9630.45,
+        "I1mr": 3202.475,
+        "ILmr": 0.05,
+        "Ir": 45980.225
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "Bc": 14125.225,
+        "Bcm": 915.75,
+        "Bi": 1204.05,
+        "Bim": 389.975,
+        "D1mr": 798.225,
+        "D1mw": 753.25,
+        "DLmr": 0.025,
+        "DLmw": 0.725,
+        "Dr": 30975.25,
+        "Dw": 23451.775,
+        "I1mr": 7049.175,
+        "ILmr": -0.1,
+        "Ir": 117818.275
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "Bc": 14125.25,
+        "Bcm": 888.8,
+        "Bi": 1204.05,
+        "Bim": 377.0,
+        "D1mr": 760.375,
+        "D1mw": 743.425,
+        "DLmr": -0.075,
+        "DLmw": 0.75,
+        "Dr": 30954.825,
+        "Dw": 23441.025,
+        "I1mr": 7028.925,
+        "ILmr": -0.025,
+        "Ir": 117665.45
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "Bc": 14123.95,
+        "Bcm": 889.475,
+        "Bi": 1204.0,
+        "Bim": 376.95,
+        "D1mr": 765.8,
+        "D1mw": 750.85,
+        "DLmr": 0.0,
+        "DLmw": 0.625,
+        "Dr": 30970.45,
+        "Dw": 23447.175,
+        "I1mr": 7029.8,
+        "ILmr": 0.075,
+        "Ir": 117775.675
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "Bc": 14125.4,
+        "Bcm": 915.2,
+        "Bi": 1204.05,
+        "Bim": 390.025,
+        "D1mr": 800.65,
+        "D1mw": 753.375,
+        "DLmr": 0.05,
+        "DLmw": 0.725,
+        "Dr": 30966.825,
+        "Dw": 23448.225,
+        "I1mr": 7049.2,
+        "ILmr": -0.1,
+        "Ir": 117761.75
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "Bc": 14121.25,
+        "Bcm": 917.275,
+        "Bi": 1203.975,
+        "Bim": 389.95,
+        "D1mr": 798.025,
+        "D1mw": 750.625,
+        "DLmr": 0.025,
+        "DLmw": 0.625,
+        "Dr": 30969.95,
+        "Dw": 23447.15,
+        "I1mr": 7049.4,
+        "ILmr": 0.025,
+        "Ir": 117795.5
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "Bc": 14123.925,
+        "Bcm": 886.85,
+        "Bi": 1204.0,
+        "Bim": 376.95,
+        "D1mr": 762.85,
+        "D1mw": 745.35,
+        "DLmr": -0.025,
+        "DLmw": 0.725,
+        "Dr": 30974.075,
+        "Dw": 23449.425,
+        "I1mr": 7028.7,
+        "ILmr": 0.0,
+        "Ir": 117816.075
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "Bc": 14126.075,
+        "Bcm": 888.2,
+        "Bi": 1204.05,
+        "Bim": 376.95,
+        "D1mr": 761.1,
+        "D1mw": 743.025,
+        "DLmr": 0.0,
+        "DLmw": 0.725,
+        "Dr": 30966.4,
+        "Dw": 23447.725,
+        "I1mr": 7028.875,
+        "ILmr": -0.075,
+        "Ir": 117764.1
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "Bc": 14124.05,
+        "Bcm": 915.025,
+        "Bi": 1203.975,
+        "Bim": 389.9,
+        "D1mr": 801.85,
+        "D1mw": 753.55,
+        "DLmr": 0.0,
+        "DLmw": 0.675,
+        "Dr": 30965.025,
+        "Dw": 23446.875,
+        "I1mr": 7049.225,
+        "ILmr": 0.025,
+        "Ir": 117754.475
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "Bc": 14122.85,
+        "Bcm": 914.475,
+        "Bi": 1204.0,
+        "Bim": 389.975,
+        "D1mr": 804.725,
+        "D1mw": 752.875,
+        "DLmr": 0.0,
+        "DLmw": 0.75,
+        "Dr": 30966.9,
+        "Dw": 23446.975,
+        "I1mr": 7049.15,
+        "ILmr": 0.025,
+        "Ir": 117759.075
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "Bc": 14123.525,
+        "Bcm": 891.125,
+        "Bi": 1203.975,
+        "Bim": 376.95,
+        "D1mr": 763.3,
+        "D1mw": 749.375,
+        "DLmr": 0.025,
+        "DLmw": 0.6,
+        "Dr": 30976.275,
+        "Dw": 23448.95,
+        "I1mr": 7028.85,
+        "ILmr": 0.075,
+        "Ir": 117829.725
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "Bc": 11076.325,
+        "Bcm": 760.8,
+        "Bi": 914.025,
+        "Bim": 319.075,
+        "D1mr": 622.95,
+        "D1mw": 609.025,
+        "DLmr": 0.0,
+        "DLmw": 0.675,
+        "Dr": 25236.15,
+        "Dw": 19129.1,
+        "I1mr": 5292.75,
+        "ILmr": -0.075,
+        "Ir": 96761.725
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "Bc": 11070.925,
+        "Bcm": 762.95,
+        "Bi": 914.0,
+        "Bim": 324.075,
+        "D1mr": 611.975,
+        "D1mw": 609.875,
+        "DLmr": 0.025,
+        "DLmw": 0.65,
+        "Dr": 25241.425,
+        "Dw": 19130.8,
+        "I1mr": 5274.725,
+        "ILmr": 0.075,
+        "Ir": 96785.225
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "Bc": 11070.25,
+        "Bcm": 764.85,
+        "Bi": 914.025,
+        "Bim": 324.0,
+        "D1mr": 602.775,
+        "D1mw": 609.95,
+        "DLmr": 0.05,
+        "DLmw": 0.65,
+        "Dr": 25252.925,
+        "Dw": 19134.95,
+        "I1mr": 5276.075,
+        "ILmr": 0.0,
+        "Ir": 96845.85
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "Bc": 11069.5,
+        "Bcm": 756.175,
+        "Bi": 914.025,
+        "Bim": 319.05,
+        "D1mr": 623.05,
+        "D1mw": 607.025,
+        "DLmr": -0.025,
+        "DLmw": 0.65,
+        "Dr": 25244.775,
+        "Dw": 19131.15,
+        "I1mr": 5294.25,
+        "ILmr": 0.1,
+        "Ir": 96790.475
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "Bc": 11070.625,
+        "Bcm": 755.35,
+        "Bi": 914.05,
+        "Bim": 318.9,
+        "D1mr": 624.9,
+        "D1mw": 607.825,
+        "DLmr": 0.0,
+        "DLmw": 0.725,
+        "Dr": 25242.75,
+        "Dw": 19131.525,
+        "I1mr": 5292.65,
+        "ILmr": 0.025,
+        "Ir": 96786.85
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "Bc": 11071.225,
+        "Bcm": 762.875,
+        "Bi": 914.0,
+        "Bim": 323.9,
+        "D1mr": 605.0,
+        "D1mw": 608.575,
+        "DLmr": -0.025,
+        "DLmw": 0.7,
+        "Dr": 25249.05,
+        "Dw": 19134.1,
+        "I1mr": 5274.475,
+        "ILmr": 0.075,
+        "Ir": 96841.25
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "Bc": 11069.35,
+        "Bcm": 763.975,
+        "Bi": 913.975,
+        "Bim": 324.05,
+        "D1mr": 605.275,
+        "D1mw": 607.025,
+        "DLmr": 0.025,
+        "DLmw": 0.6,
+        "Dr": 25239.075,
+        "Dw": 19128.475,
+        "I1mr": 5275.65,
+        "ILmr": 0.075,
+        "Ir": 96773.9
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "Bc": 11070.8,
+        "Bcm": 759.9,
+        "Bi": 914.025,
+        "Bim": 319.025,
+        "D1mr": 624.0,
+        "D1mw": 606.95,
+        "DLmr": 0.025,
+        "DLmw": 0.675,
+        "Dr": 25245.275,
+        "Dw": 19130.975,
+        "I1mr": 5292.9,
+        "ILmr": 0.025,
+        "Ir": 96798.275
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "Bc": 11073.525,
+        "Bcm": 761.95,
+        "Bi": 914.0,
+        "Bim": 319.125,
+        "D1mr": 623.7,
+        "D1mw": 609.05,
+        "DLmr": -0.025,
+        "DLmw": 0.65,
+        "Dr": 25233.65,
+        "Dw": 19125.425,
+        "I1mr": 5292.825,
+        "ILmr": 0.075,
+        "Ir": 96713.475
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "Bc": 11071.075,
+        "Bcm": 763.125,
+        "Bi": 914.0,
+        "Bim": 323.95,
+        "D1mr": 608.7,
+        "D1mw": 610.725,
+        "DLmr": 0.05,
+        "DLmw": 0.625,
+        "Dr": 25241.7,
+        "Dw": 19131.025,
+        "I1mr": 5274.6,
+        "ILmr": 0.025,
+        "Ir": 96786.7
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "Bc": 78994.775,
+        "Bcm": 2012.275,
+        "Bi": 6330.0,
+        "Bim": 856.075,
+        "D1mr": 2714.325,
+        "D1mw": 2259.45,
+        "DLmr": -0.025,
+        "DLmw": -0.2,
+        "Dr": 184734.6,
+        "Dw": 145545.8,
+        "I1mr": 26357.95,
+        "ILmr": 0.05,
+        "Ir": 670489.075
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "Bc": 79000.525,
+        "Bcm": 1890.025,
+        "Bi": 6330.025,
+        "Bim": 787.025,
+        "D1mr": 2758.35,
+        "D1mw": 2263.575,
+        "DLmr": -0.1,
+        "DLmw": -0.225,
+        "Dr": 184728.575,
+        "Dw": 145550.325,
+        "I1mr": 25892.15,
+        "ILmr": -0.025,
+        "Ir": 670444.25
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "Bc": 78994.4,
+        "Bcm": 1889.0,
+        "Bi": 6330.0,
+        "Bim": 787.1,
+        "D1mr": 2753.175,
+        "D1mw": 2261.8,
+        "DLmr": 0.0,
+        "DLmw": -0.225,
+        "Dr": 184748.05,
+        "Dw": 145550.9,
+        "I1mr": 25892.35,
+        "ILmr": 0.025,
+        "Ir": 670590.2
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "Bc": 79000.95,
+        "Bcm": 2011.975,
+        "Bi": 6330.025,
+        "Bim": 855.925,
+        "D1mr": 2714.1,
+        "D1mw": 2258.35,
+        "DLmr": 0.0,
+        "DLmw": -0.2,
+        "Dr": 184740.625,
+        "Dw": 145554.225,
+        "I1mr": 26357.725,
+        "ILmr": 0.025,
+        "Ir": 670542.55
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "Bc": 78999.925,
+        "Bcm": 2011.95,
+        "Bi": 6330.025,
+        "Bim": 856.05,
+        "D1mr": 2716.825,
+        "D1mw": 2258.925,
+        "DLmr": -0.025,
+        "DLmw": -0.175,
+        "Dr": 184724.3,
+        "Dw": 145547.675,
+        "I1mr": 26357.625,
+        "ILmr": 0.05,
+        "Ir": 670429.025
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "Bc": 78988.975,
+        "Bcm": 1891.3,
+        "Bi": 6329.975,
+        "Bim": 787.0,
+        "D1mr": 2722.25,
+        "D1mw": 2247.15,
+        "DLmr": 0.0,
+        "DLmw": -0.275,
+        "Dr": 184748.125,
+        "Dw": 145544.425,
+        "I1mr": 25894.45,
+        "ILmr": -0.025,
+        "Ir": 670585.125
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "Bc": 79000.875,
+        "Bcm": 1889.225,
+        "Bi": 6330.025,
+        "Bim": 786.975,
+        "D1mr": 2759.5,
+        "D1mw": 2264.775,
+        "DLmr": -0.025,
+        "DLmw": -0.175,
+        "Dr": 184740.225,
+        "Dw": 145554.0,
+        "I1mr": 25892.125,
+        "ILmr": 0.0,
+        "Ir": 670541.675
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "Bc": 78995.625,
+        "Bcm": 2012.7,
+        "Bi": 6330.0,
+        "Bim": 855.95,
+        "D1mr": 2713.775,
+        "D1mw": 2259.125,
+        "DLmr": -0.025,
+        "DLmw": -0.25,
+        "Dr": 184741.975,
+        "Dw": 145548.325,
+        "I1mr": 26357.85,
+        "ILmr": 0.05,
+        "Ir": 670543.975
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "Bc": 78994.6,
+        "Bcm": 2013.45,
+        "Bi": 6330.0,
+        "Bim": 856.05,
+        "D1mr": 2696.45,
+        "D1mw": 2253.05,
+        "DLmr": 0.0,
+        "DLmw": -0.25,
+        "Dr": 184743.575,
+        "Dw": 145549.65,
+        "I1mr": 26359.8,
+        "ILmr": 0.05,
+        "Ir": 670545.2
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "Bc": 78989.325,
+        "Bcm": 1890.825,
+        "Bi": 6329.975,
+        "Bim": 786.95,
+        "D1mr": 2723.0,
+        "D1mw": 2247.45,
+        "DLmr": 0.05,
+        "DLmw": -0.275,
+        "Dr": 184740.65,
+        "Dw": 145541.175,
+        "I1mr": 25894.45,
+        "ILmr": 0.0,
+        "Ir": 670531.9
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "Bc": 13657.85,
+        "Bcm": 860.925,
+        "Bi": 1262.05,
+        "Bim": 450.975,
+        "D1mr": 548.2,
+        "D1mw": 427.725,
+        "DLmr": 0.025,
+        "DLmw": 0.525,
+        "Dr": 28307.975,
+        "Dw": 21941.975,
+        "I1mr": 6947.0,
+        "ILmr": -0.025,
+        "Ir": 103877.075
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "Bc": 13655.975,
+        "Bcm": 805.1,
+        "Bi": 1262.025,
+        "Bim": 425.025,
+        "D1mr": 531.425,
+        "D1mw": 433.55,
+        "DLmr": 0.05,
+        "DLmw": 0.5,
+        "Dr": 28307.675,
+        "Dw": 21940.55,
+        "I1mr": 6937.825,
+        "ILmr": 0.075,
+        "Ir": 103874.175
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "Bc": 13656.45,
+        "Bcm": 804.25,
+        "Bi": 1262.0,
+        "Bim": 424.975,
+        "D1mr": 523.0,
+        "D1mw": 420.175,
+        "DLmr": -0.075,
+        "DLmw": 0.575,
+        "Dr": 28300.225,
+        "Dw": 21938.65,
+        "I1mr": 6938.025,
+        "ILmr": 0.05,
+        "Ir": 103820.6
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "Bc": 13657.125,
+        "Bcm": 860.95,
+        "Bi": 1262.0,
+        "Bim": 450.95,
+        "D1mr": 550.3,
+        "D1mw": 430.15,
+        "DLmr": 0.05,
+        "DLmw": 0.575,
+        "Dr": 28315.725,
+        "Dw": 21944.775,
+        "I1mr": 6947.225,
+        "ILmr": 0.05,
+        "Ir": 103931.3
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "Bc": 13656.825,
+        "Bcm": 861.65,
+        "Bi": 1262.0,
+        "Bim": 451.025,
+        "D1mr": 549.45,
+        "D1mw": 428.575,
+        "DLmr": 0.05,
+        "DLmw": 0.6,
+        "Dr": 28309.375,
+        "Dw": 21942.675,
+        "I1mr": 6946.975,
+        "ILmr": 0.0,
+        "Ir": 103881.0
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "Bc": 13656.6,
+        "Bcm": 803.475,
+        "Bi": 1262.0,
+        "Bim": 425.0,
+        "D1mr": 526.8,
+        "D1mw": 426.45,
+        "DLmr": 0.05,
+        "DLmw": 0.5,
+        "Dr": 28308.95,
+        "Dw": 21942.45,
+        "I1mr": 6938.175,
+        "ILmr": 0.05,
+        "Ir": 103879.225
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "Bc": 13655.4,
+        "Bcm": 802.275,
+        "Bi": 1261.975,
+        "Bim": 424.975,
+        "D1mr": 527.0,
+        "D1mw": 426.725,
+        "DLmr": 0.0,
+        "DLmw": 0.525,
+        "Dr": 28307.575,
+        "Dw": 21941.3,
+        "I1mr": 6938.075,
+        "ILmr": 0.0,
+        "Ir": 103872.8
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "Bc": 13655.825,
+        "Bcm": 861.55,
+        "Bi": 1262.025,
+        "Bim": 450.975,
+        "D1mr": 546.075,
+        "D1mw": 430.1,
+        "DLmr": 0.0,
+        "DLmw": 0.525,
+        "Dr": 28302.025,
+        "Dw": 21938.475,
+        "I1mr": 6947.025,
+        "ILmr": 0.075,
+        "Ir": 103825.9
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "Bc": 13656.85,
+        "Bcm": 861.725,
+        "Bi": 1262.0,
+        "Bim": 451.025,
+        "D1mr": 551.175,
+        "D1mw": 429.25,
+        "DLmr": 0.0,
+        "DLmw": 0.55,
+        "Dr": 28301.15,
+        "Dw": 21939.35,
+        "I1mr": 6947.2,
+        "ILmr": 0.05,
+        "Ir": 103825.025
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "Bc": 13656.45,
+        "Bcm": 803.7,
+        "Bi": 1262.0,
+        "Bim": 425.075,
+        "D1mr": 523.375,
+        "D1mw": 420.275,
+        "DLmr": 0.025,
+        "DLmw": 0.55,
+        "Dr": 28306.825,
+        "Dw": 21941.1,
+        "I1mr": 6937.85,
+        "ILmr": 0.0,
+        "Ir": 103871.725
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "Bc": 655416.8,
+        "Bcm": 3048.95,
+        "Bi": 29500.0,
+        "Bim": 2916.925,
+        "D1mr": 13475.6,
+        "D1mw": 16906.25,
+        "DLmr": -0.025,
+        "DLmw": -0.225,
+        "Dr": 1195761.475,
+        "Dw": 903336.65,
+        "I1mr": 28789.85,
+        "ILmr": 0.05,
+        "Ir": 3542679.2
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "Bc": 655486.075,
+        "Bcm": 2880.475,
+        "Bi": 29500.025,
+        "Bim": 2825.075,
+        "D1mr": 13513.325,
+        "D1mw": 16889.775,
+        "DLmr": 0.0,
+        "DLmw": -0.25,
+        "Dr": 1195820.125,
+        "Dw": 903405.5,
+        "I1mr": 28444.45,
+        "ILmr": -0.05,
+        "Ir": 3542701.175
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "Bc": 655481.1,
+        "Bcm": 2880.025,
+        "Bi": 29500.0,
+        "Bim": 2825.05,
+        "D1mr": 13447.375,
+        "D1mw": 17149.425,
+        "DLmr": -0.075,
+        "DLmw": -0.2,
+        "Dr": 1195823.6,
+        "Dw": 903399.65,
+        "I1mr": 28444.325,
+        "ILmr": -0.025,
+        "Ir": 3542736.375
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "Bc": 655421.75,
+        "Bcm": 3048.675,
+        "Bi": 29500.025,
+        "Bim": 2916.95,
+        "D1mr": 13525.125,
+        "D1mw": 16868.9,
+        "DLmr": 0.05,
+        "DLmw": -0.25,
+        "Dr": 1195763.6,
+        "Dw": 903344.375,
+        "I1mr": 28790.05,
+        "ILmr": -0.025,
+        "Ir": 3542690.925
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "Bc": 655414.875,
+        "Bcm": 3048.05,
+        "Bi": 29500.0,
+        "Bim": 2916.95,
+        "D1mr": 13371.2,
+        "D1mw": 17046.125,
+        "DLmr": 0.1,
+        "DLmw": -0.175,
+        "Dr": 1195753.575,
+        "Dw": 903333.525,
+        "I1mr": 28788.675,
+        "ILmr": 0.025,
+        "Ir": 3542619.325
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "Bc": 655486.7,
+        "Bcm": 2882.25,
+        "Bi": 29500.025,
+        "Bim": 2824.925,
+        "D1mr": 13515.1,
+        "D1mw": 16910.475,
+        "DLmr": 0.0,
+        "DLmw": -0.25,
+        "Dr": 1195819.325,
+        "Dw": 903404.925,
+        "I1mr": 28444.75,
+        "ILmr": -0.05,
+        "Ir": 3542699.85
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "Bc": 655485.425,
+        "Bcm": 2880.85,
+        "Bi": 29500.025,
+        "Bim": 2824.975,
+        "D1mr": 13540.825,
+        "D1mw": 16904.375,
+        "DLmr": 0.0,
+        "DLmw": -0.25,
+        "Dr": 1195823.65,
+        "Dw": 903405.75,
+        "I1mr": 28443.225,
+        "ILmr": -0.075,
+        "Ir": 3542739.65
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "Bc": 655414.725,
+        "Bcm": 3048.375,
+        "Bi": 29499.975,
+        "Bim": 2916.975,
+        "D1mr": 13348.3,
+        "D1mw": 17062.275,
+        "DLmr": 0.0,
+        "DLmw": -0.175,
+        "Dr": 1195765.775,
+        "Dw": 903333.075,
+        "I1mr": 28791.225,
+        "ILmr": 0.0,
+        "Ir": 3542695.025
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "Bc": 655412.575,
+        "Bcm": 3047.85,
+        "Bi": 29499.975,
+        "Bim": 2917.025,
+        "D1mr": 13345.025,
+        "D1mw": 17065.1,
+        "DLmr": -0.05,
+        "DLmw": -0.15,
+        "Dr": 1195755.75,
+        "Dw": 903328.675,
+        "I1mr": 28790.375,
+        "ILmr": 0.075,
+        "Ir": 3542628.25
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "Bc": 655481.825,
+        "Bcm": 2881.15,
+        "Bi": 29500.0,
+        "Bim": 2825.05,
+        "D1mr": 13502.8,
+        "D1mw": 16944.775,
+        "DLmr": 0.025,
+        "DLmw": -0.2,
+        "Dr": 1195827.575,
+        "Dw": 903402.35,
+        "I1mr": 28444.95,
+        "ILmr": -0.025,
+        "Ir": 3542751.475
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 911.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 911.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 911.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7392.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7391.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7392.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7392.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7392.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7392.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7391.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7392.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7391.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "blocks": 57.0,
+        "bytes": 7392.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40519.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40519.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40519.9
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "blocks": 21.7,
+        "bytes": 2296.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "blocks": 21.675,
+        "bytes": 2295.525
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "blocks": 21.7,
+        "bytes": 2296.6
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "blocks": 22.05,
+        "bytes": 2331.4
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "blocks": 21.7,
+        "bytes": 2296.4
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "blocks": 21.7,
+        "bytes": 2296.4
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "blocks": 21.725,
+        "bytes": 2296.875
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "blocks": 21.675,
+        "bytes": 2295.725
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "blocks": 21.375,
+        "bytes": 2262.275
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "blocks": 21.725,
+        "bytes": 2297.075
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "blocks": 72.05,
+        "bytes": 11051.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "blocks": 71.375,
+        "bytes": 10982.475
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "blocks": 71.675,
+        "bytes": 11015.725
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "blocks": 71.725,
+        "bytes": 11016.875
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "blocks": 71.7,
+        "bytes": 11016.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "blocks": 71.7,
+        "bytes": 11016.6
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "blocks": 72.05,
+        "bytes": 11051.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "blocks": 71.35,
+        "bytes": 10981.4
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "blocks": 71.675,
+        "bytes": 11015.525
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "blocks": 71.725,
+        "bytes": 11017.075
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "counts": {
+        "blocks": 219.075,
+        "bytes": 52712.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "counts": {
+        "blocks": 219.425,
+        "bytes": 52746.8
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "counts": {
+        "blocks": 219.075,
+        "bytes": 52712.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "counts": {
+        "blocks": 218.725,
+        "bytes": 52677.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "counts": {
+        "blocks": 219.075,
+        "bytes": 52712.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "counts": {
+        "blocks": 218.725,
+        "bytes": 52677.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "counts": {
+        "blocks": 219.1,
+        "bytes": 52712.675
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "counts": {
+        "blocks": 218.725,
+        "bytes": 52677.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "counts": {
+        "blocks": 219.1,
+        "bytes": 52712.475
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "counts": {
+        "blocks": 219.1,
+        "bytes": 52712.875
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "Bc": {
+          "baseline": {
+            "mean": 5971.955,
+            "sd": 1.475042372272564,
+            "minimum": 5970.725,
+            "maximum": 5974.325,
+            "samples": [
+              5970.875,
+              5970.725,
+              5974.325,
+              5972.375,
+              5971.475
+            ]
+          },
+          "candidate": {
+            "mean": 5972.5599999999995,
+            "sd": 1.4205632685665504,
+            "minimum": 5970.775,
+            "maximum": 5974.225,
+            "samples": [
+              5972.15,
+              5973.775,
+              5974.225,
+              5971.875,
+              5970.775
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.6049999999997453,
+            "sd": 1.5690761613125321,
+            "minimum": -0.7000000000007276,
+            "maximum": 3.0499999999992724,
+            "samples": [
+              1.2749999999996362,
+              3.0499999999992724,
+              -0.0999999999994543,
+              -0.5,
+              -0.7000000000007276
+            ]
+          },
+          "change_percent": 0.010130685847427606
+        },
+        "Bcm": {
+          "baseline": {
+            "mean": 309.81,
+            "sd": 0.5266640295292716,
+            "minimum": 309.275,
+            "maximum": 310.375,
+            "samples": [
+              309.275,
+              310.375,
+              309.575,
+              309.45,
+              310.375
+            ]
+          },
+          "candidate": {
+            "mean": 309.49,
+            "sd": 0.32720406476692093,
+            "minimum": 309.1,
+            "maximum": 310.0,
+            "samples": [
+              309.45,
+              310.0,
+              309.525,
+              309.375,
+              309.1
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.3199999999999932,
+            "sd": 0.568550789287986,
+            "minimum": -1.2749999999999773,
+            "maximum": 0.17500000000001137,
+            "samples": [
+              0.17500000000001137,
+              -0.375,
+              -0.05000000000001137,
+              -0.07499999999998863,
+              -1.2749999999999773
+            ]
+          },
+          "change_percent": -0.10328911268196417
+        },
+        "Bi": {
+          "baseline": {
+            "mean": 540.985,
+            "sd": 0.04183300132666573,
+            "minimum": 540.95,
+            "maximum": 541.05,
+            "samples": [
+              540.975,
+              540.95,
+              541.05,
+              541.0,
+              540.95
+            ]
+          },
+          "candidate": {
+            "mean": 541.005,
+            "sd": 0.020916500663332865,
+            "minimum": 540.975,
+            "maximum": 541.025,
+            "samples": [
+              541.0,
+              541.025,
+              541.025,
+              541.0,
+              540.975
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.01999999999998181,
+            "sd": 0.03708099243544459,
+            "minimum": -0.024999999999977263,
+            "maximum": 0.07499999999993179,
+            "samples": [
+              0.024999999999977263,
+              0.07499999999993179,
+              -0.024999999999977263,
+              0.0,
+              0.024999999999977263
+            ]
+          },
+          "change_percent": 0.0036969601744931578
+        },
+        "Bim": {
+          "baseline": {
+            "mean": 165.0,
+            "sd": 0.09519716382330184,
+            "minimum": 164.85,
+            "maximum": 165.1,
+            "samples": [
+              164.85,
+              164.975,
+              165.025,
+              165.05,
+              165.1
+            ]
+          },
+          "candidate": {
+            "mean": 139.975,
+            "sd": 0.030618621784796688,
+            "minimum": 139.95,
+            "maximum": 140.025,
+            "samples": [
+              139.975,
+              139.95,
+              140.025,
+              139.975,
+              139.95
+            ]
+          },
+          "paired_delta": {
+            "mean": -25.025000000000006,
+            "sd": 0.10155048005795335,
+            "minimum": -25.150000000000006,
+            "maximum": -24.875,
+            "samples": [
+              -24.875,
+              -25.025000000000006,
+              -25.0,
+              -25.075000000000017,
+              -25.150000000000006
+            ]
+          },
+          "change_percent": -15.16666666666667
+        },
+        "D1mr": {
+          "baseline": {
+            "mean": 220.32,
+            "sd": 1.3582387492631705,
+            "minimum": 219.4,
+            "maximum": 222.7,
+            "samples": [
+              222.7,
+              220.075,
+              219.4,
+              219.525,
+              219.9
+            ]
+          },
+          "candidate": {
+            "mean": 209.095,
+            "sd": 0.27861263431509975,
+            "minimum": 208.75,
+            "maximum": 209.475,
+            "samples": [
+              209.475,
+              208.75,
+              209.05,
+              208.95,
+              209.25
+            ]
+          },
+          "paired_delta": {
+            "mean": -11.225,
+            "sd": 1.175664705602745,
+            "minimum": -13.224999999999994,
+            "maximum": -10.349999999999994,
+            "samples": [
+              -13.224999999999994,
+              -11.324999999999989,
+              -10.349999999999994,
+              -10.575000000000017,
+              -10.650000000000006
+            ]
+          },
+          "change_percent": -5.094862018881627
+        },
+        "D1mw": {
+          "baseline": {
+            "mean": 210.92,
+            "sd": 1.763997590701297,
+            "minimum": 210.075,
+            "maximum": 214.075,
+            "samples": [
+              214.075,
+              210.075,
+              210.15,
+              210.15,
+              210.15
+            ]
+          },
+          "candidate": {
+            "mean": 230.20000000000002,
+            "sd": 0.2833946012188682,
+            "minimum": 229.75,
+            "maximum": 230.525,
+            "samples": [
+              230.25,
+              230.3,
+              229.75,
+              230.175,
+              230.525
+            ]
+          },
+          "paired_delta": {
+            "mean": 19.28000000000001,
+            "sd": 1.7600071022583956,
+            "minimum": 16.17500000000001,
+            "maximum": 20.375,
+            "samples": [
+              16.17500000000001,
+              20.225000000000023,
+              19.599999999999994,
+              20.025000000000006,
+              20.375
+            ]
+          },
+          "change_percent": 9.14090650483596
+        },
+        "DLmr": {
+          "baseline": {
+            "mean": 0.025,
+            "sd": 0.04677071733467427,
+            "minimum": -0.025,
+            "maximum": 0.075,
+            "samples": [
+              0.05,
+              0.05,
+              -0.025,
+              -0.025,
+              0.075
+            ]
+          },
+          "candidate": {
+            "mean": -0.02,
+            "sd": 0.027386127875258306,
+            "minimum": -0.05,
+            "maximum": 0.025,
+            "samples": [
+              -0.025,
+              -0.025,
+              0.025,
+              -0.05,
+              -0.025
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.045000000000000005,
+            "sd": 0.059686681931566614,
+            "minimum": -0.1,
+            "maximum": 0.05,
+            "samples": [
+              -0.07500000000000001,
+              -0.07500000000000001,
+              0.05,
+              -0.025,
+              -0.1
+            ]
+          },
+          "change_percent": -180.00000000000003
+        },
+        "DLmw": {
+          "baseline": {
+            "mean": 0.53,
+            "sd": 0.032596012026013234,
+            "minimum": 0.5,
+            "maximum": 0.575,
+            "samples": [
+              0.55,
+              0.5,
+              0.525,
+              0.5,
+              0.575
+            ]
+          },
+          "candidate": {
+            "mean": 0.555,
+            "sd": 0.011180339887498909,
+            "minimum": 0.55,
+            "maximum": 0.575,
+            "samples": [
+              0.575,
+              0.55,
+              0.55,
+              0.55,
+              0.55
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.025000000000000022,
+            "sd": 0.030618621784789708,
+            "minimum": -0.02499999999999991,
+            "maximum": 0.050000000000000044,
+            "samples": [
+              0.02499999999999991,
+              0.050000000000000044,
+              0.025000000000000022,
+              0.050000000000000044,
+              -0.02499999999999991
+            ]
+          },
+          "change_percent": 4.7169811320754755
+        },
+        "Dr": {
+          "baseline": {
+            "mean": 12434.53,
+            "sd": 3.9897681636904707,
+            "minimum": 12429.5,
+            "maximum": 12440.55,
+            "samples": [
+              12435.0,
+              12440.55,
+              12429.5,
+              12434.45,
+              12433.15
+            ]
+          },
+          "candidate": {
+            "mean": 12436.235,
+            "sd": 3.0462374332938658,
+            "minimum": 12433.35,
+            "maximum": 12441.2,
+            "samples": [
+              12435.975,
+              12436.425,
+              12441.2,
+              12433.35,
+              12434.225
+            ]
+          },
+          "paired_delta": {
+            "mean": 1.705000000000291,
+            "sd": 5.972577960981655,
+            "minimum": -4.125,
+            "maximum": 11.700000000000728,
+            "samples": [
+              0.9750000000003638,
+              -4.125,
+              11.700000000000728,
+              -1.1000000000003638,
+              1.0750000000007276
+            ]
+          },
+          "change_percent": 0.01371181701278851
+        },
+        "Dw": {
+          "baseline": {
+            "mean": 9630.565,
+            "sd": 1.4807726023937575,
+            "minimum": 9629.475,
+            "maximum": 9633.0,
+            "samples": [
+              9629.525,
+              9633.0,
+              9629.475,
+              9630.925,
+              9629.9
+            ]
+          },
+          "candidate": {
+            "mean": 9631.915,
+            "sd": 1.8487833837418297,
+            "minimum": 9630.2,
+            "maximum": 9634.825,
+            "samples": [
+              9631.85,
+              9632.25,
+              9634.825,
+              9630.2,
+              9630.45
+            ]
+          },
+          "paired_delta": {
+            "mean": 1.3500000000007275,
+            "sd": 2.5644809416330503,
+            "minimum": -0.75,
+            "maximum": 5.350000000000364,
+            "samples": [
+              2.3250000000007276,
+              -0.75,
+              5.350000000000364,
+              -0.7249999999985448,
+              0.5500000000010914
+            ]
+          },
+          "change_percent": 0.014017869148910032
+        },
+        "I1mr": {
+          "baseline": {
+            "mean": 3179.54,
+            "sd": 0.08403868156993381,
+            "minimum": 3179.45,
+            "maximum": 3179.65,
+            "samples": [
+              3179.475,
+              3179.6,
+              3179.65,
+              3179.525,
+              3179.45
+            ]
+          },
+          "candidate": {
+            "mean": 3202.255,
+            "sd": 0.15350081433010898,
+            "minimum": 3202.075,
+            "maximum": 3202.475,
+            "samples": [
+              3202.275,
+              3202.075,
+              3202.3,
+              3202.15,
+              3202.475
+            ]
+          },
+          "paired_delta": {
+            "mean": 22.715000000000053,
+            "sd": 0.2081165538827457,
+            "minimum": 22.47499999999991,
+            "maximum": 23.02500000000009,
+            "samples": [
+              22.800000000000182,
+              22.47499999999991,
+              22.65000000000009,
+              22.625,
+              23.02500000000009
+            ]
+          },
+          "change_percent": 0.7144115186473532
+        },
+        "ILmr": {
+          "baseline": {
+            "mean": 0.075,
+            "sd": 0.06373774391990981,
+            "minimum": 0.0,
+            "maximum": 0.15,
+            "samples": [
+              0.15,
+              0.125,
+              0.0,
+              0.025,
+              0.075
+            ]
+          },
+          "candidate": {
+            "mean": 0.02,
+            "sd": 0.054198708471697,
+            "minimum": -0.05,
+            "maximum": 0.075,
+            "samples": [
+              0.075,
+              0.05,
+              -0.05,
+              -0.025,
+              0.05
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.055,
+            "sd": 0.02091650066335189,
+            "minimum": -0.075,
+            "maximum": -0.024999999999999994,
+            "samples": [
+              -0.075,
+              -0.075,
+              -0.05,
+              -0.05,
+              -0.024999999999999994
+            ]
+          },
+          "change_percent": -73.33333333333334
+        },
+        "Ir": {
+          "baseline": {
+            "mean": 45983.61,
+            "sd": 31.75700021255361,
+            "minimum": 45941.075,
+            "maximum": 46030.55,
+            "samples": [
+              45984.0,
+              46030.55,
+              45941.075,
+              45983.425,
+              45979.0
+            ]
+          },
+          "candidate": {
+            "mean": 45995.15,
+            "sd": 24.005500671722956,
+            "minimum": 45978.075,
+            "maximum": 46036.8,
+            "samples": [
+              45988.15,
+              45992.5,
+              46036.8,
+              45978.075,
+              45980.225
+            ]
+          },
+          "paired_delta": {
+            "mean": 11.539999999999418,
+            "sd": 49.98141091946453,
+            "minimum": -38.05000000000291,
+            "maximum": 95.72500000000582,
+            "samples": [
+              4.150000000001455,
+              -38.05000000000291,
+              95.72500000000582,
+              -5.350000000005821,
+              1.2249999999985448
+            ]
+          },
+          "change_percent": 0.025095898299414547
+        }
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "Bc": {
+          "baseline": {
+            "mean": 14123.755,
+            "sd": 1.7355114519932435,
+            "minimum": 14121.25,
+            "maximum": 14125.4,
+            "samples": [
+              14125.225,
+              14125.4,
+              14121.25,
+              14124.05,
+              14122.85
+            ]
+          },
+          "candidate": {
+            "mean": 14124.545,
+            "sd": 1.0743311872978236,
+            "minimum": 14123.525,
+            "maximum": 14126.075,
+            "samples": [
+              14125.25,
+              14123.95,
+              14123.925,
+              14126.075,
+              14123.525
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.7900000000001455,
+            "sd": 1.6351223195832083,
+            "minimum": -1.4499999999989086,
+            "maximum": 2.6749999999992724,
+            "samples": [
+              0.024999999999636202,
+              -1.4499999999989086,
+              2.6749999999992724,
+              2.025000000001455,
+              0.6749999999992724
+            ]
+          },
+          "change_percent": 0.005593413366347303
+        },
+        "Bcm": {
+          "baseline": {
+            "mean": 915.545,
+            "sd": 1.068790203922157,
+            "minimum": 914.475,
+            "maximum": 917.275,
+            "samples": [
+              915.75,
+              915.2,
+              917.275,
+              915.025,
+              914.475
+            ]
+          },
+          "candidate": {
+            "mean": 888.89,
+            "sd": 1.5798140713387667,
+            "minimum": 886.85,
+            "maximum": 891.125,
+            "samples": [
+              888.8,
+              889.475,
+              886.85,
+              888.2,
+              891.125
+            ]
+          },
+          "paired_delta": {
+            "mean": -26.654999999999994,
+            "sd": 2.5552274849805188,
+            "minimum": -30.424999999999955,
+            "maximum": -23.350000000000023,
+            "samples": [
+              -26.950000000000045,
+              -25.725000000000023,
+              -30.424999999999955,
+              -26.824999999999932,
+              -23.350000000000023
+            ]
+          },
+          "change_percent": -2.9113806530536452
+        },
+        "Bi": {
+          "baseline": {
+            "mean": 1204.01,
+            "sd": 0.03791437722027574,
+            "minimum": 1203.975,
+            "maximum": 1204.05,
+            "samples": [
+              1204.05,
+              1204.05,
+              1203.975,
+              1203.975,
+              1204.0
+            ]
+          },
+          "candidate": {
+            "mean": 1204.0149999999999,
+            "sd": 0.033541019662500234,
+            "minimum": 1203.975,
+            "maximum": 1204.05,
+            "samples": [
+              1204.05,
+              1204.0,
+              1204.0,
+              1204.05,
+              1203.975
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.0050000000000181895,
+            "sd": 0.04808846015420555,
+            "minimum": -0.049999999999954525,
+            "maximum": 0.07500000000004547,
+            "samples": [
+              0.0,
+              -0.049999999999954525,
+              0.02500000000009095,
+              0.07500000000004547,
+              -0.02500000000009095
+            ]
+          },
+          "change_percent": 0.0004152789428674338
+        },
+        "Bim": {
+          "baseline": {
+            "mean": 389.965,
+            "sd": 0.045414755311466444,
+            "minimum": 389.9,
+            "maximum": 390.025,
+            "samples": [
+              389.975,
+              390.025,
+              389.95,
+              389.9,
+              389.975
+            ]
+          },
+          "candidate": {
+            "mean": 376.96,
+            "sd": 0.02236067977500298,
+            "minimum": 376.95,
+            "maximum": 377.0,
+            "samples": [
+              377.0,
+              376.95,
+              376.95,
+              376.95,
+              376.95
+            ]
+          },
+          "paired_delta": {
+            "mean": -13.005000000000006,
+            "sd": 0.048088460154177476,
+            "minimum": -13.074999999999989,
+            "maximum": -12.949999999999989,
+            "samples": [
+              -12.975000000000023,
+              -13.074999999999989,
+              -13.0,
+              -12.949999999999989,
+              -13.025000000000034
+            ]
+          },
+          "change_percent": -3.3349146718295253
+        },
+        "D1mr": {
+          "baseline": {
+            "mean": 800.695,
+            "sd": 2.775191434838336,
+            "minimum": 798.025,
+            "maximum": 804.725,
+            "samples": [
+              798.225,
+              800.65,
+              798.025,
+              801.85,
+              804.725
+            ]
+          },
+          "candidate": {
+            "mean": 762.685,
+            "sd": 2.118785029208933,
+            "minimum": 760.375,
+            "maximum": 765.8,
+            "samples": [
+              760.375,
+              765.8,
+              762.85,
+              761.1,
+              763.3
+            ]
+          },
+          "paired_delta": {
+            "mean": -38.01000000000001,
+            "sd": 3.0503380960149555,
+            "minimum": -41.42500000000007,
+            "maximum": -34.85000000000002,
+            "samples": [
+              -37.85000000000002,
+              -34.85000000000002,
+              -35.174999999999955,
+              -40.75,
+              -41.42500000000007
+            ]
+          },
+          "change_percent": -4.74712593434454
+        },
+        "D1mw": {
+          "baseline": {
+            "mean": 752.735,
+            "sd": 1.205274864916705,
+            "minimum": 750.625,
+            "maximum": 753.55,
+            "samples": [
+              753.25,
+              753.375,
+              750.625,
+              753.55,
+              752.875
+            ]
+          },
+          "candidate": {
+            "mean": 746.405,
+            "sd": 3.535418999213551,
+            "minimum": 743.025,
+            "maximum": 750.85,
+            "samples": [
+              743.425,
+              750.85,
+              745.35,
+              743.025,
+              749.375
+            ]
+          },
+          "paired_delta": {
+            "mean": -6.329999999999996,
+            "sd": 3.654209900922508,
+            "minimum": -10.524999999999977,
+            "maximum": -2.5249999999999773,
+            "samples": [
+              -9.825000000000045,
+              -2.5249999999999773,
+              -5.274999999999977,
+              -10.524999999999977,
+              -3.5
+            ]
+          },
+          "change_percent": -0.8409333962151349
+        },
+        "DLmr": {
+          "baseline": {
+            "mean": 0.02,
+            "sd": 0.02091650066335189,
+            "minimum": 0.0,
+            "maximum": 0.05,
+            "samples": [
+              0.025,
+              0.05,
+              0.025,
+              0.0,
+              0.0
+            ]
+          },
+          "candidate": {
+            "mean": -0.015,
+            "sd": 0.037914377220257756,
+            "minimum": -0.075,
+            "maximum": 0.025,
+            "samples": [
+              -0.075,
+              0.0,
+              -0.025,
+              0.0,
+              0.025
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.035,
+            "sd": 0.048733971724044825,
+            "minimum": -0.1,
+            "maximum": 0.025,
+            "samples": [
+              -0.1,
+              -0.05,
+              -0.05,
+              0.0,
+              0.025
+            ]
+          },
+          "change_percent": -175.00000000000003
+        },
+        "DLmw": {
+          "baseline": {
+            "mean": 0.7,
+            "sd": 0.04999999999999999,
+            "minimum": 0.625,
+            "maximum": 0.75,
+            "samples": [
+              0.725,
+              0.725,
+              0.625,
+              0.675,
+              0.75
+            ]
+          },
+          "candidate": {
+            "mean": 0.6849999999999999,
+            "sd": 0.06754628043053149,
+            "minimum": 0.6,
+            "maximum": 0.75,
+            "samples": [
+              0.75,
+              0.625,
+              0.725,
+              0.725,
+              0.6
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.015000000000000013,
+            "sd": 0.10547511554864492,
+            "minimum": -0.15000000000000002,
+            "maximum": 0.09999999999999998,
+            "samples": [
+              0.025000000000000022,
+              -0.09999999999999998,
+              0.09999999999999998,
+              0.04999999999999993,
+              -0.15000000000000002
+            ]
+          },
+          "change_percent": -2.142857142857145
+        },
+        "Dr": {
+          "baseline": {
+            "mean": 30968.79,
+            "sd": 4.0213725890540895,
+            "minimum": 30965.025,
+            "maximum": 30975.25,
+            "samples": [
+              30975.25,
+              30966.825,
+              30969.95,
+              30965.025,
+              30966.9
+            ]
+          },
+          "candidate": {
+            "mean": 30968.405000000002,
+            "sd": 8.466171655476998,
+            "minimum": 30954.825,
+            "maximum": 30976.275,
+            "samples": [
+              30954.825,
+              30970.45,
+              30974.075,
+              30966.4,
+              30976.275
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.38499999999985446,
+            "sd": 11.579907167157806,
+            "minimum": -20.424999999999272,
+            "maximum": 9.375,
+            "samples": [
+              -20.424999999999272,
+              3.625,
+              4.125,
+              1.375,
+              9.375
+            ]
+          },
+          "change_percent": -0.0012431870925530331
+        },
+        "Dw": {
+          "baseline": {
+            "mean": 23448.2,
+            "sd": 2.0700241544491,
+            "minimum": 23446.875,
+            "maximum": 23451.775,
+            "samples": [
+              23451.775,
+              23448.225,
+              23447.15,
+              23446.875,
+              23446.975
+            ]
+          },
+          "candidate": {
+            "mean": 23446.86,
+            "sd": 3.385336024679801,
+            "minimum": 23441.025,
+            "maximum": 23449.425,
+            "samples": [
+              23441.025,
+              23447.175,
+              23449.425,
+              23447.725,
+              23448.95
+            ]
+          },
+          "paired_delta": {
+            "mean": -1.3400000000001455,
+            "sd": 5.419542185461626,
+            "minimum": -10.75,
+            "maximum": 2.274999999997817,
+            "samples": [
+              -10.75,
+              -1.0499999999992724,
+              2.274999999997817,
+              0.8499999999985448,
+              1.9750000000021828
+            ]
+          },
+          "change_percent": -0.005714724371167703
+        },
+        "I1mr": {
+          "baseline": {
+            "mean": 7049.23,
+            "sd": 0.09905806378069605,
+            "minimum": 7049.15,
+            "maximum": 7049.4,
+            "samples": [
+              7049.175,
+              7049.2,
+              7049.4,
+              7049.225,
+              7049.15
+            ]
+          },
+          "candidate": {
+            "mean": 7029.03,
+            "sd": 0.4385344912319415,
+            "minimum": 7028.7,
+            "maximum": 7029.8,
+            "samples": [
+              7028.925,
+              7029.8,
+              7028.7,
+              7028.875,
+              7028.85
+            ]
+          },
+          "paired_delta": {
+            "mean": -20.199999999999818,
+            "sd": 0.4808846015418782,
+            "minimum": -20.699999999999818,
+            "maximum": -19.399999999999636,
+            "samples": [
+              -20.25,
+              -19.399999999999636,
+              -20.699999999999818,
+              -20.350000000000364,
+              -20.299999999999272
+            ]
+          },
+          "change_percent": -0.2865561203138473
+        },
+        "ILmr": {
+          "baseline": {
+            "mean": -0.025,
+            "sd": 0.06846531968814577,
+            "minimum": -0.1,
+            "maximum": 0.025,
+            "samples": [
+              -0.1,
+              -0.1,
+              0.025,
+              0.025,
+              0.025
+            ]
+          },
+          "candidate": {
+            "mean": 0.009999999999999998,
+            "sd": 0.06519202405202648,
+            "minimum": -0.075,
+            "maximum": 0.075,
+            "samples": [
+              -0.025,
+              0.075,
+              0.0,
+              -0.075,
+              0.075
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.034999999999999996,
+            "sd": 0.1039831717154271,
+            "minimum": -0.1,
+            "maximum": 0.175,
+            "samples": [
+              0.07500000000000001,
+              0.175,
+              -0.025,
+              -0.1,
+              0.049999999999999996
+            ]
+          },
+          "change_percent": -139.99999999999997
+        },
+        "Ir": {
+          "baseline": {
+            "mean": 117777.815,
+            "sd": 27.855871239288884,
+            "minimum": 117754.475,
+            "maximum": 117818.275,
+            "samples": [
+              117818.275,
+              117761.75,
+              117795.5,
+              117754.475,
+              117759.075
+            ]
+          },
+          "candidate": {
+            "mean": 117770.205,
+            "sd": 64.59003260953078,
+            "minimum": 117665.45,
+            "maximum": 117829.725,
+            "samples": [
+              117665.45,
+              117775.675,
+              117816.075,
+              117764.1,
+              117829.725
+            ]
+          },
+          "paired_delta": {
+            "mean": -7.6099999999976715,
+            "sd": 84.80450975626309,
+            "minimum": -152.8249999999971,
+            "maximum": 70.65000000000873,
+            "samples": [
+              -152.8249999999971,
+              13.92500000000291,
+              20.57499999999709,
+              9.625,
+              70.65000000000873
+            ]
+          },
+          "change_percent": -0.006461318712694467
+        }
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "Bc": {
+          "baseline": {
+            "mean": 11072.155,
+            "sd": 2.7609667690868287,
+            "minimum": 11069.5,
+            "maximum": 11076.325,
+            "samples": [
+              11076.325,
+              11069.5,
+              11070.625,
+              11070.8,
+              11073.525
+            ]
+          },
+          "candidate": {
+            "mean": 11070.565,
+            "sd": 0.7747176905169738,
+            "minimum": 11069.35,
+            "maximum": 11071.225,
+            "samples": [
+              11070.925,
+              11070.25,
+              11071.225,
+              11069.35,
+              11071.075
+            ]
+          },
+          "paired_delta": {
+            "mean": -1.5899999999997818,
+            "sd": 2.527202010129538,
+            "minimum": -5.400000000001455,
+            "maximum": 0.75,
+            "samples": [
+              -5.400000000001455,
+              0.75,
+              0.6000000000003638,
+              -1.4499999999989086,
+              -2.4499999999989086
+            ]
+          },
+          "change_percent": -0.0143603480984486
+        },
+        "Bcm": {
+          "baseline": {
+            "mean": 758.835,
+            "sd": 2.912022493045003,
+            "minimum": 755.35,
+            "maximum": 761.95,
+            "samples": [
+              760.8,
+              756.175,
+              755.35,
+              759.9,
+              761.95
+            ]
+          },
+          "candidate": {
+            "mean": 763.5550000000001,
+            "sd": 0.8465739778660845,
+            "minimum": 762.875,
+            "maximum": 764.85,
+            "samples": [
+              762.95,
+              764.85,
+              762.875,
+              763.975,
+              763.125
+            ]
+          },
+          "paired_delta": {
+            "mean": 4.720000000000027,
+            "sd": 3.2824533507728715,
+            "minimum": 1.1749999999999545,
+            "maximum": 8.675000000000068,
+            "samples": [
+              2.150000000000091,
+              8.675000000000068,
+              7.524999999999977,
+              4.0750000000000455,
+              1.1749999999999545
+            ]
+          },
+          "change_percent": 0.6220061014581598
+        },
+        "Bi": {
+          "baseline": {
+            "mean": 914.025,
+            "sd": 0.01767766952964761,
+            "minimum": 914.0,
+            "maximum": 914.05,
+            "samples": [
+              914.025,
+              914.025,
+              914.05,
+              914.025,
+              914.0
+            ]
+          },
+          "candidate": {
+            "mean": 914.0,
+            "sd": 0.01767766952964761,
+            "minimum": 913.975,
+            "maximum": 914.025,
+            "samples": [
+              914.0,
+              914.025,
+              914.0,
+              913.975,
+              914.0
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.024999999999977263,
+            "sd": 0.024999999999977263,
+            "minimum": -0.049999999999954525,
+            "maximum": 0.0,
+            "samples": [
+              -0.024999999999977263,
+              0.0,
+              -0.049999999999954525,
+              -0.049999999999954525,
+              0.0
+            ]
+          },
+          "change_percent": -0.0027351549465252332
+        },
+        "Bim": {
+          "baseline": {
+            "mean": 319.03499999999997,
+            "sd": 0.08403868156986702,
+            "minimum": 318.9,
+            "maximum": 319.125,
+            "samples": [
+              319.075,
+              319.05,
+              318.9,
+              319.025,
+              319.125
+            ]
+          },
+          "candidate": {
+            "mean": 323.995,
+            "sd": 0.07158910531639011,
+            "minimum": 323.9,
+            "maximum": 324.075,
+            "samples": [
+              324.075,
+              324.0,
+              323.9,
+              324.05,
+              323.95
+            ]
+          },
+          "paired_delta": {
+            "mean": 4.960000000000003,
+            "sd": 0.0802340326794181,
+            "minimum": 4.824999999999989,
+            "maximum": 5.025000000000034,
+            "samples": [
+              5.0,
+              4.949999999999989,
+              5.0,
+              5.025000000000034,
+              4.824999999999989
+            ]
+          },
+          "change_percent": 1.5546883570768109
+        },
+        "D1mr": {
+          "baseline": {
+            "mean": 623.72,
+            "sd": 0.7926222303215977,
+            "minimum": 622.95,
+            "maximum": 624.9,
+            "samples": [
+              622.95,
+              623.05,
+              624.9,
+              624.0,
+              623.7
+            ]
+          },
+          "candidate": {
+            "mean": 606.745,
+            "sd": 3.610462228025681,
+            "minimum": 602.775,
+            "maximum": 611.975,
+            "samples": [
+              611.975,
+              602.775,
+              605.0,
+              605.275,
+              608.7
+            ]
+          },
+          "paired_delta": {
+            "mean": -16.975,
+            "sd": 3.949960442839888,
+            "minimum": -20.274999999999977,
+            "maximum": -10.975000000000023,
+            "samples": [
+              -10.975000000000023,
+              -20.274999999999977,
+              -19.899999999999977,
+              -18.725000000000023,
+              -15.0
+            ]
+          },
+          "change_percent": -2.721573783107805
+        },
+        "D1mw": {
+          "baseline": {
+            "mean": 607.975,
+            "sd": 1.0288039171775871,
+            "minimum": 606.95,
+            "maximum": 609.05,
+            "samples": [
+              609.025,
+              607.025,
+              607.825,
+              606.95,
+              609.05
+            ]
+          },
+          "candidate": {
+            "mean": 609.23,
+            "sd": 1.4543469324752067,
+            "minimum": 607.025,
+            "maximum": 610.725,
+            "samples": [
+              609.875,
+              609.95,
+              608.575,
+              607.025,
+              610.725
+            ]
+          },
+          "paired_delta": {
+            "mean": 1.255000000000018,
+            "sd": 1.0927888634132885,
+            "minimum": 0.07499999999993179,
+            "maximum": 2.925000000000068,
+            "samples": [
+              0.8500000000000227,
+              2.925000000000068,
+              0.75,
+              0.07499999999993179,
+              1.6750000000000682
+            ]
+          },
+          "change_percent": 0.20642296147045816
+        },
+        "DLmr": {
+          "baseline": {
+            "mean": -0.005,
+            "sd": 0.02091650066335189,
+            "minimum": -0.025,
+            "maximum": 0.025,
+            "samples": [
+              0.0,
+              -0.025,
+              0.0,
+              0.025,
+              -0.025
+            ]
+          },
+          "candidate": {
+            "mean": 0.025,
+            "sd": 0.03061862178478973,
+            "minimum": -0.025,
+            "maximum": 0.05,
+            "samples": [
+              0.025,
+              0.05,
+              -0.025,
+              0.025,
+              0.05
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.030000000000000006,
+            "sd": 0.0447213595499958,
+            "minimum": -0.025,
+            "maximum": 0.07500000000000001,
+            "samples": [
+              0.025,
+              0.07500000000000001,
+              -0.025,
+              0.0,
+              0.07500000000000001
+            ]
+          },
+          "change_percent": -600.0000000000001
+        },
+        "DLmw": {
+          "baseline": {
+            "mean": 0.675,
+            "sd": 0.030618621784789708,
+            "minimum": 0.65,
+            "maximum": 0.725,
+            "samples": [
+              0.675,
+              0.65,
+              0.725,
+              0.675,
+              0.65
+            ]
+          },
+          "candidate": {
+            "mean": 0.645,
+            "sd": 0.037080992435478306,
+            "minimum": 0.6,
+            "maximum": 0.7,
+            "samples": [
+              0.65,
+              0.65,
+              0.7,
+              0.6,
+              0.625
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.030000000000000027,
+            "sd": 0.02738612787525833,
+            "minimum": -0.07500000000000007,
+            "maximum": 0.0,
+            "samples": [
+              -0.025000000000000022,
+              0.0,
+              -0.025000000000000022,
+              -0.07500000000000007,
+              -0.025000000000000022
+            ]
+          },
+          "change_percent": -4.444444444444448
+        },
+        "Dr": {
+          "baseline": {
+            "mean": 25240.52,
+            "sd": 5.291071488838378,
+            "minimum": 25233.65,
+            "maximum": 25245.275,
+            "samples": [
+              25236.15,
+              25244.775,
+              25242.75,
+              25245.275,
+              25233.65
+            ]
+          },
+          "candidate": {
+            "mean": 25244.835,
+            "sd": 5.870439719475325,
+            "minimum": 25239.075,
+            "maximum": 25252.925,
+            "samples": [
+              25241.425,
+              25252.925,
+              25249.05,
+              25239.075,
+              25241.7
+            ]
+          },
+          "paired_delta": {
+            "mean": 4.31499999999869,
+            "sd": 6.001760158486551,
+            "minimum": -6.200000000000728,
+            "maximum": 8.149999999997817,
+            "samples": [
+              5.274999999997817,
+              8.149999999997817,
+              6.299999999999272,
+              -6.200000000000728,
+              8.049999999999272
+            ]
+          },
+          "change_percent": 0.01709552735046144
+        },
+        "Dw": {
+          "baseline": {
+            "mean": 19129.635,
+            "sd": 2.5334388684164897,
+            "minimum": 19125.425,
+            "maximum": 19131.525,
+            "samples": [
+              19129.1,
+              19131.15,
+              19131.525,
+              19130.975,
+              19125.425
+            ]
+          },
+          "candidate": {
+            "mean": 19131.87,
+            "sd": 2.6383825537631465,
+            "minimum": 19128.475,
+            "maximum": 19134.95,
+            "samples": [
+              19130.8,
+              19134.95,
+              19134.1,
+              19128.475,
+              19131.025
+            ]
+          },
+          "paired_delta": {
+            "mean": 2.2349999999998547,
+            "sd": 3.0246694034228625,
+            "minimum": -2.5,
+            "maximum": 5.600000000002183,
+            "samples": [
+              1.7000000000007276,
+              3.7999999999992724,
+              2.5749999999970896,
+              -2.5,
+              5.600000000002183
+            ]
+          },
+          "change_percent": 0.011683442993030735
+        },
+        "I1mr": {
+          "baseline": {
+            "mean": 5293.075,
+            "sd": 0.6633249580711794,
+            "minimum": 5292.65,
+            "maximum": 5294.25,
+            "samples": [
+              5292.75,
+              5294.25,
+              5292.65,
+              5292.9,
+              5292.825
+            ]
+          },
+          "candidate": {
+            "mean": 5275.1050000000005,
+            "sd": 0.7131356813394889,
+            "minimum": 5274.475,
+            "maximum": 5276.075,
+            "samples": [
+              5274.725,
+              5276.075,
+              5274.475,
+              5275.65,
+              5274.6
+            ]
+          },
+          "paired_delta": {
+            "mean": -17.969999999999708,
+            "sd": 0.4094203219185199,
+            "minimum": -18.224999999999454,
+            "maximum": -17.25,
+            "samples": [
+              -18.024999999999636,
+              -18.175000000000182,
+              -18.174999999999272,
+              -17.25,
+              -18.224999999999454
+            ]
+          },
+          "change_percent": -0.33950019601081993
+        },
+        "ILmr": {
+          "baseline": {
+            "mean": 0.030000000000000002,
+            "sd": 0.0670820393249937,
+            "minimum": -0.075,
+            "maximum": 0.1,
+            "samples": [
+              -0.075,
+              0.1,
+              0.025,
+              0.025,
+              0.075
+            ]
+          },
+          "candidate": {
+            "mean": 0.049999999999999996,
+            "sd": 0.035355339059327376,
+            "minimum": 0.0,
+            "maximum": 0.075,
+            "samples": [
+              0.075,
+              0.0,
+              0.075,
+              0.075,
+              0.025
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.019999999999999997,
+            "sd": 0.09746794344808964,
+            "minimum": -0.1,
+            "maximum": 0.15,
+            "samples": [
+              0.15,
+              -0.1,
+              0.049999999999999996,
+              0.049999999999999996,
+              -0.049999999999999996
+            ]
+          },
+          "change_percent": 66.66666666666666
+        },
+        "Ir": {
+          "baseline": {
+            "mean": 96770.16,
+            "sd": 34.518281388270715,
+            "minimum": 96713.475,
+            "maximum": 96798.275,
+            "samples": [
+              96761.725,
+              96790.475,
+              96786.85,
+              96798.275,
+              96713.475
+            ]
+          },
+          "candidate": {
+            "mean": 96806.585,
+            "sd": 34.144452331237886,
+            "minimum": 96773.9,
+            "maximum": 96845.85,
+            "samples": [
+              96785.225,
+              96845.85,
+              96841.25,
+              96773.9,
+              96786.7
+            ]
+          },
+          "paired_delta": {
+            "mean": 36.42499999999709,
+            "sd": 38.406180329470246,
+            "minimum": -24.375,
+            "maximum": 73.22499999999127,
+            "samples": [
+              23.5,
+              55.375,
+              54.39999999999418,
+              -24.375,
+              73.22499999999127
+            ]
+          },
+          "change_percent": 0.037640735532520654
+        }
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "Bc": {
+          "baseline": {
+            "mean": 78997.175,
+            "sd": 3.025154954708601,
+            "minimum": 78994.6,
+            "maximum": 79000.95,
+            "samples": [
+              78994.775,
+              79000.95,
+              78999.925,
+              78995.625,
+              78994.6
+            ]
+          },
+          "candidate": {
+            "mean": 78994.81999999999,
+            "sd": 5.782419476307093,
+            "minimum": 78988.975,
+            "maximum": 79000.875,
+            "samples": [
+              79000.525,
+              78994.4,
+              78988.975,
+              79000.875,
+              78989.325
+            ]
+          },
+          "paired_delta": {
+            "mean": -2.355000000001746,
+            "sd": 7.475384605490633,
+            "minimum": -10.94999999999709,
+            "maximum": 5.75,
+            "samples": [
+              5.75,
+              -6.55000000000291,
+              -10.94999999999709,
+              5.25,
+              -5.275000000008731
+            ]
+          },
+          "change_percent": -0.0029811192615454237
+        },
+        "Bcm": {
+          "baseline": {
+            "mean": 2012.47,
+            "sd": 0.6258494227847696,
+            "minimum": 2011.95,
+            "maximum": 2013.45,
+            "samples": [
+              2012.275,
+              2011.975,
+              2011.95,
+              2012.7,
+              2013.45
+            ]
+          },
+          "candidate": {
+            "mean": 1890.075,
+            "sd": 0.9929438554117879,
+            "minimum": 1889.0,
+            "maximum": 1891.3,
+            "samples": [
+              1890.025,
+              1889.0,
+              1891.3,
+              1889.225,
+              1890.825
+            ]
+          },
+          "paired_delta": {
+            "mean": -122.39500000000002,
+            "sd": 1.0749127871599482,
+            "minimum": -123.47500000000014,
+            "maximum": -120.65000000000009,
+            "samples": [
+              -122.25,
+              -122.97499999999991,
+              -120.65000000000009,
+              -123.47500000000014,
+              -122.625
+            ]
+          },
+          "change_percent": -6.081829791251548
+        },
+        "Bi": {
+          "baseline": {
+            "mean": 6330.01,
+            "sd": 0.013693063937429893,
+            "minimum": 6330.0,
+            "maximum": 6330.025,
+            "samples": [
+              6330.0,
+              6330.025,
+              6330.025,
+              6330.0,
+              6330.0
+            ]
+          },
+          "candidate": {
+            "mean": 6330.0,
+            "sd": 0.024999999999636202,
+            "minimum": 6329.975,
+            "maximum": 6330.025,
+            "samples": [
+              6330.025,
+              6330.0,
+              6329.975,
+              6330.025,
+              6329.975
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.009999999999854481,
+            "sd": 0.03354101966200876,
+            "minimum": -0.049999999999272404,
+            "maximum": 0.024999999999636202,
+            "samples": [
+              0.024999999999636202,
+              -0.024999999999636202,
+              -0.049999999999272404,
+              0.024999999999636202,
+              -0.024999999999636202
+            ]
+          },
+          "change_percent": -0.0001579776335243464
+        },
+        "Bim": {
+          "baseline": {
+            "mean": 856.01,
+            "sd": 0.06754628043053316,
+            "minimum": 855.925,
+            "maximum": 856.075,
+            "samples": [
+              856.075,
+              855.925,
+              856.05,
+              855.95,
+              856.05
+            ]
+          },
+          "candidate": {
+            "mean": 787.01,
+            "sd": 0.05755432216609879,
+            "minimum": 786.95,
+            "maximum": 787.1,
+            "samples": [
+              787.025,
+              787.1,
+              787.0,
+              786.975,
+              786.95
+            ]
+          },
+          "paired_delta": {
+            "mean": -68.99999999999997,
+            "sd": 0.10752906583804077,
+            "minimum": -69.09999999999991,
+            "maximum": -68.82499999999993,
+            "samples": [
+              -69.05000000000007,
+              -68.82499999999993,
+              -69.04999999999995,
+              -68.97500000000002,
+              -69.09999999999991
+            ]
+          },
+          "change_percent": -8.060653497038583
+        },
+        "D1mr": {
+          "baseline": {
+            "mean": 2711.095,
+            "sd": 8.275781685134069,
+            "minimum": 2696.45,
+            "maximum": 2716.825,
+            "samples": [
+              2714.325,
+              2714.1,
+              2716.825,
+              2713.775,
+              2696.45
+            ]
+          },
+          "candidate": {
+            "mean": 2743.255,
+            "sd": 18.984470627331177,
+            "minimum": 2722.25,
+            "maximum": 2759.5,
+            "samples": [
+              2758.35,
+              2753.175,
+              2722.25,
+              2759.5,
+              2723.0
+            ]
+          },
+          "paired_delta": {
+            "mean": 32.160000000000124,
+            "sd": 16.724510456213597,
+            "minimum": 5.425000000000182,
+            "maximum": 45.72499999999991,
+            "samples": [
+              44.02500000000009,
+              39.07500000000027,
+              5.425000000000182,
+              45.72499999999991,
+              26.550000000000182
+            ]
+          },
+          "change_percent": 1.186236557553318
+        },
+        "D1mw": {
+          "baseline": {
+            "mean": 2257.78,
+            "sd": 2.6742639174171825,
+            "minimum": 2253.05,
+            "maximum": 2259.45,
+            "samples": [
+              2259.45,
+              2258.35,
+              2258.925,
+              2259.125,
+              2253.05
+            ]
+          },
+          "candidate": {
+            "mean": 2256.95,
+            "sd": 8.873186434421436,
+            "minimum": 2247.15,
+            "maximum": 2264.775,
+            "samples": [
+              2263.575,
+              2261.8,
+              2247.15,
+              2264.775,
+              2247.45
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.8300000000000182,
+            "sd": 7.540005802385184,
+            "minimum": -11.775000000000091,
+            "maximum": 5.650000000000091,
+            "samples": [
+              4.125,
+              3.450000000000273,
+              -11.775000000000091,
+              5.650000000000091,
+              -5.600000000000364
+            ]
+          },
+          "change_percent": -0.036761774840773594
+        },
+        "DLmr": {
+          "baseline": {
+            "mean": -0.015000000000000001,
+            "sd": 0.013693063937629153,
+            "minimum": -0.025,
+            "maximum": 0.0,
+            "samples": [
+              -0.025,
+              0.0,
+              -0.025,
+              -0.025,
+              0.0
+            ]
+          },
+          "candidate": {
+            "mean": -0.015000000000000001,
+            "sd": 0.05477225575051661,
+            "minimum": -0.1,
+            "maximum": 0.05,
+            "samples": [
+              -0.1,
+              0.0,
+              0.0,
+              -0.025,
+              0.05
+            ]
+          },
+          "paired_delta": {
+            "mean": -1.3877787807814458e-18,
+            "sd": 0.04677071733467427,
+            "minimum": -0.07500000000000001,
+            "maximum": 0.05,
+            "samples": [
+              -0.07500000000000001,
+              0.0,
+              0.025,
+              0.0,
+              0.05
+            ]
+          },
+          "change_percent": 9.25185853854297e-15
+        },
+        "DLmw": {
+          "baseline": {
+            "mean": -0.215,
+            "sd": 0.03354101966249685,
+            "minimum": -0.25,
+            "maximum": -0.175,
+            "samples": [
+              -0.2,
+              -0.2,
+              -0.175,
+              -0.25,
+              -0.25
+            ]
+          },
+          "candidate": {
+            "mean": -0.23500000000000001,
+            "sd": 0.04183300132670379,
+            "minimum": -0.275,
+            "maximum": -0.175,
+            "samples": [
+              -0.225,
+              -0.225,
+              -0.275,
+              -0.175,
+              -0.275
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.020000000000000007,
+            "sd": 0.062249497989943677,
+            "minimum": -0.10000000000000003,
+            "maximum": 0.07500000000000001,
+            "samples": [
+              -0.024999999999999994,
+              -0.024999999999999994,
+              -0.10000000000000003,
+              0.07500000000000001,
+              -0.025000000000000022
+            ]
+          },
+          "change_percent": 9.302325581395353
+        },
+        "Dr": {
+          "baseline": {
+            "mean": 184737.015,
+            "sd": 7.876718066562977,
+            "minimum": 184724.3,
+            "maximum": 184743.575,
+            "samples": [
+              184734.6,
+              184740.625,
+              184724.3,
+              184741.975,
+              184743.575
+            ]
+          },
+          "candidate": {
+            "mean": 184741.125,
+            "sd": 7.992085929210559,
+            "minimum": 184728.575,
+            "maximum": 184748.125,
+            "samples": [
+              184728.575,
+              184748.05,
+              184748.125,
+              184740.225,
+              184740.65
+            ]
+          },
+          "paired_delta": {
+            "mean": 4.1099999999976715,
+            "sd": 12.105985090034077,
+            "minimum": -6.024999999994179,
+            "maximum": 23.82500000001164,
+            "samples": [
+              -6.024999999994179,
+              7.4249999999883585,
+              23.82500000001164,
+              -1.75,
+              -2.9250000000174623
+            ]
+          },
+          "change_percent": 0.002224784242615196
+        },
+        "Dw": {
+          "baseline": {
+            "mean": 145549.135,
+            "sd": 3.1655666949278625,
+            "minimum": 145545.8,
+            "maximum": 145554.225,
+            "samples": [
+              145545.8,
+              145554.225,
+              145547.675,
+              145548.325,
+              145549.65
+            ]
+          },
+          "candidate": {
+            "mean": 145548.165,
+            "sd": 5.2211289488066726,
+            "minimum": 145541.175,
+            "maximum": 145554.0,
+            "samples": [
+              145550.325,
+              145550.9,
+              145544.425,
+              145554.0,
+              145541.175
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.9700000000011642,
+            "sd": 5.946017574819372,
+            "minimum": -8.47500000000582,
+            "maximum": 5.6749999999883585,
+            "samples": [
+              4.525000000023283,
+              -3.3250000000116415,
+              -3.25,
+              5.6749999999883585,
+              -8.47500000000582
+            ]
+          },
+          "change_percent": -0.0006664416109385769
+        },
+        "I1mr": {
+          "baseline": {
+            "mean": 26358.19,
+            "sd": 0.9083983157183376,
+            "minimum": 26357.625,
+            "maximum": 26359.8,
+            "samples": [
+              26357.95,
+              26357.725,
+              26357.625,
+              26357.85,
+              26359.8
+            ]
+          },
+          "candidate": {
+            "mean": 25893.105,
+            "sd": 1.2309041392410838,
+            "minimum": 25892.125,
+            "maximum": 25894.45,
+            "samples": [
+              25892.15,
+              25892.35,
+              25894.45,
+              25892.125,
+              25894.45
+            ]
+          },
+          "paired_delta": {
+            "mean": -465.0849999999991,
+            "sd": 1.0866519682031484,
+            "minimum": -465.7999999999993,
+            "maximum": -463.1749999999993,
+            "samples": [
+              -465.7999999999993,
+              -465.375,
+              -463.1749999999993,
+              -465.72499999999854,
+              -465.34999999999854
+            ]
+          },
+          "change_percent": -1.7644800344788438
+        },
+        "ILmr": {
+          "baseline": {
+            "mean": 0.045000000000000005,
+            "sd": 0.011180339887498949,
+            "minimum": 0.025,
+            "maximum": 0.05,
+            "samples": [
+              0.05,
+              0.025,
+              0.05,
+              0.05,
+              0.05
+            ]
+          },
+          "candidate": {
+            "mean": -0.005,
+            "sd": 0.02091650066335189,
+            "minimum": -0.025,
+            "maximum": 0.025,
+            "samples": [
+              -0.025,
+              0.025,
+              -0.025,
+              0.0,
+              0.0
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.05,
+            "sd": 0.030618621784789732,
+            "minimum": -0.07500000000000001,
+            "maximum": 0.0,
+            "samples": [
+              -0.07500000000000001,
+              0.0,
+              -0.07500000000000001,
+              -0.05,
+              -0.05
+            ]
+          },
+          "change_percent": -111.1111111111111
+        },
+        "Ir": {
+          "baseline": {
+            "mean": 670509.965,
+            "sd": 51.10685680512045,
+            "minimum": 670429.025,
+            "maximum": 670545.2,
+            "samples": [
+              670489.075,
+              670542.55,
+              670429.025,
+              670543.975,
+              670545.2
+            ]
+          },
+          "candidate": {
+            "mean": 670538.63,
+            "sd": 58.701361249112374,
+            "minimum": 670444.25,
+            "maximum": 670590.2,
+            "samples": [
+              670444.25,
+              670590.2,
+              670585.125,
+              670541.675,
+              670531.9
+            ]
+          },
+          "paired_delta": {
+            "mean": 28.66500000001397,
+            "sd": 78.61421945165756,
+            "minimum": -44.824999999953434,
+            "maximum": 156.09999999997672,
+            "samples": [
+              -44.824999999953434,
+              47.64999999990687,
+              156.09999999997672,
+              -2.299999999930151,
+              -13.29999999993015
+            ]
+          },
+          "change_percent": 0.0042751042484527385
+        }
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "Bc": {
+          "baseline": {
+            "mean": 13656.895,
+            "sd": 0.7274527476061595,
+            "minimum": 13655.825,
+            "maximum": 13657.85,
+            "samples": [
+              13657.85,
+              13657.125,
+              13656.825,
+              13655.825,
+              13656.85
+            ]
+          },
+          "candidate": {
+            "mean": 13656.175000000001,
+            "sd": 0.49307707308328785,
+            "minimum": 13655.4,
+            "maximum": 13656.6,
+            "samples": [
+              13655.975,
+              13656.45,
+              13656.6,
+              13655.4,
+              13656.45
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.7200000000000728,
+            "sd": 0.665300683901515,
+            "minimum": -1.875,
+            "maximum": -0.2250000000003638,
+            "samples": [
+              -1.875,
+              -0.6749999999992724,
+              -0.2250000000003638,
+              -0.4250000000010914,
+              -0.3999999999996362
+            ]
+          },
+          "change_percent": -0.005272062207405656
+        },
+        "Bcm": {
+          "baseline": {
+            "mean": 861.36,
+            "sd": 0.39075247919878525,
+            "minimum": 860.925,
+            "maximum": 861.725,
+            "samples": [
+              860.925,
+              860.95,
+              861.65,
+              861.55,
+              861.725
+            ]
+          },
+          "candidate": {
+            "mean": 803.76,
+            "sd": 1.0399218720654102,
+            "minimum": 802.275,
+            "maximum": 805.1,
+            "samples": [
+              805.1,
+              804.25,
+              803.475,
+              802.275,
+              803.7
+            ]
+          },
+          "paired_delta": {
+            "mean": -57.59999999999998,
+            "sd": 1.3488420960216223,
+            "minimum": -59.27499999999998,
+            "maximum": -55.82499999999993,
+            "samples": [
+              -55.82499999999993,
+              -56.700000000000045,
+              -58.174999999999955,
+              -59.27499999999998,
+              -58.02499999999998
+            ]
+          },
+          "change_percent": -6.687099470604623
+        },
+        "Bi": {
+          "baseline": {
+            "mean": 1262.015,
+            "sd": 0.02236067977499027,
+            "minimum": 1262.0,
+            "maximum": 1262.05,
+            "samples": [
+              1262.05,
+              1262.0,
+              1262.0,
+              1262.025,
+              1262.0
+            ]
+          },
+          "candidate": {
+            "mean": 1262.0,
+            "sd": 0.017677669529727998,
+            "minimum": 1261.975,
+            "maximum": 1262.025,
+            "samples": [
+              1262.025,
+              1262.0,
+              1262.0,
+              1261.975,
+              1262.0
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.015000000000009095,
+            "sd": 0.022360679775053825,
+            "minimum": -0.0500000000001819,
+            "maximum": 0.0,
+            "samples": [
+              -0.024999999999863576,
+              0.0,
+              0.0,
+              -0.0500000000001819,
+              0.0
+            ]
+          },
+          "change_percent": -0.0011885754131297245
+        },
+        "Bim": {
+          "baseline": {
+            "mean": 450.99,
+            "sd": 0.03354101966248329,
+            "minimum": 450.95,
+            "maximum": 451.025,
+            "samples": [
+              450.975,
+              450.95,
+              451.025,
+              450.975,
+              451.025
+            ]
+          },
+          "candidate": {
+            "mean": 425.01,
+            "sd": 0.04183300132668781,
+            "minimum": 424.975,
+            "maximum": 425.075,
+            "samples": [
+              425.025,
+              424.975,
+              425.0,
+              424.975,
+              425.075
+            ]
+          },
+          "paired_delta": {
+            "mean": -25.979999999999997,
+            "sd": 0.032596012025998856,
+            "minimum": -26.024999999999977,
+            "maximum": -25.94999999999999,
+            "samples": [
+              -25.950000000000045,
+              -25.974999999999966,
+              -26.024999999999977,
+              -26.0,
+              -25.94999999999999
+            ]
+          },
+          "change_percent": -5.760659881593826
+        },
+        "D1mr": {
+          "baseline": {
+            "mean": 549.04,
+            "sd": 1.9881366904717204,
+            "minimum": 546.075,
+            "maximum": 551.175,
+            "samples": [
+              548.2,
+              550.3,
+              549.45,
+              546.075,
+              551.175
+            ]
+          },
+          "candidate": {
+            "mean": 526.3199999999999,
+            "sd": 3.4076843310377023,
+            "minimum": 523.0,
+            "maximum": 531.425,
+            "samples": [
+              531.425,
+              523.0,
+              526.8,
+              527.0,
+              523.375
+            ]
+          },
+          "paired_delta": {
+            "mean": -22.720000000000027,
+            "sd": 4.884074886813205,
+            "minimum": -27.799999999999955,
+            "maximum": -16.77500000000009,
+            "samples": [
+              -16.77500000000009,
+              -27.299999999999955,
+              -22.65000000000009,
+              -19.075000000000045,
+              -27.799999999999955
+            ]
+          },
+          "change_percent": -4.13813201223955
+        },
+        "D1mw": {
+          "baseline": {
+            "mean": 429.16,
+            "sd": 1.033592037508023,
+            "minimum": 427.725,
+            "maximum": 430.15,
+            "samples": [
+              427.725,
+              430.15,
+              428.575,
+              430.1,
+              429.25
+            ]
+          },
+          "candidate": {
+            "mean": 425.435,
+            "sd": 5.54167731828551,
+            "minimum": 420.175,
+            "maximum": 433.55,
+            "samples": [
+              433.55,
+              420.175,
+              426.45,
+              426.725,
+              420.275
+            ]
+          },
+          "paired_delta": {
+            "mean": -3.725,
+            "sd": 6.3346270608458,
+            "minimum": -9.974999999999966,
+            "maximum": 5.824999999999989,
+            "samples": [
+              5.824999999999989,
+              -9.974999999999966,
+              -2.125,
+              -3.375,
+              -8.975000000000023
+            ]
+          },
+          "change_percent": -0.8679746481498741
+        },
+        "DLmr": {
+          "baseline": {
+            "mean": 0.025,
+            "sd": 0.025,
+            "minimum": 0.0,
+            "maximum": 0.05,
+            "samples": [
+              0.025,
+              0.05,
+              0.05,
+              0.0,
+              0.0
+            ]
+          },
+          "candidate": {
+            "mean": 0.010000000000000002,
+            "sd": 0.0518411033833193,
+            "minimum": -0.075,
+            "maximum": 0.05,
+            "samples": [
+              0.05,
+              -0.075,
+              0.05,
+              0.0,
+              0.025
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.015,
+            "sd": 0.06274950199005566,
+            "minimum": -0.125,
+            "maximum": 0.025,
+            "samples": [
+              0.025,
+              -0.125,
+              0.0,
+              0.0,
+              0.025
+            ]
+          },
+          "change_percent": -60.0
+        },
+        "DLmw": {
+          "baseline": {
+            "mean": 0.555,
+            "sd": 0.03259601202601322,
+            "minimum": 0.525,
+            "maximum": 0.6,
+            "samples": [
+              0.525,
+              0.575,
+              0.6,
+              0.525,
+              0.55
+            ]
+          },
+          "candidate": {
+            "mean": 0.53,
+            "sd": 0.032596012026013234,
+            "minimum": 0.5,
+            "maximum": 0.575,
+            "samples": [
+              0.5,
+              0.575,
+              0.5,
+              0.525,
+              0.55
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.025,
+            "sd": 0.043301270189221926,
+            "minimum": -0.09999999999999998,
+            "maximum": 0.0,
+            "samples": [
+              -0.025000000000000022,
+              0.0,
+              -0.09999999999999998,
+              0.0,
+              0.0
+            ]
+          },
+          "change_percent": -4.504504504504504
+        },
+        "Dr": {
+          "baseline": {
+            "mean": 28307.25,
+            "sd": 5.945113539705114,
+            "minimum": 28301.15,
+            "maximum": 28315.725,
+            "samples": [
+              28307.975,
+              28315.725,
+              28309.375,
+              28302.025,
+              28301.15
+            ]
+          },
+          "candidate": {
+            "mean": 28306.25,
+            "sd": 3.4535308019482813,
+            "minimum": 28300.225,
+            "maximum": 28308.95,
+            "samples": [
+              28307.675,
+              28300.225,
+              28308.95,
+              28307.575,
+              28306.825
+            ]
+          },
+          "paired_delta": {
+            "mean": -1.0,
+            "sd": 8.638992273407567,
+            "minimum": -15.5,
+            "maximum": 5.674999999999272,
+            "samples": [
+              -0.2999999999992724,
+              -15.5,
+              -0.4249999999992724,
+              5.549999999999272,
+              5.674999999999272
+            ]
+          },
+          "change_percent": -0.00353266389352551
+        },
+        "Dw": {
+          "baseline": {
+            "mean": 21941.45,
+            "sd": 2.5540409158831587,
+            "minimum": 21938.475,
+            "maximum": 21944.775,
+            "samples": [
+              21941.975,
+              21944.775,
+              21942.675,
+              21938.475,
+              21939.35
+            ]
+          },
+          "candidate": {
+            "mean": 21940.81,
+            "sd": 1.3916716566772245,
+            "minimum": 21938.65,
+            "maximum": 21942.45,
+            "samples": [
+              21940.55,
+              21938.65,
+              21942.45,
+              21941.3,
+              21941.1
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.6399999999994179,
+            "sd": 3.4853981121245354,
+            "minimum": -6.125,
+            "maximum": 2.8250000000007276,
+            "samples": [
+              -1.4249999999992724,
+              -6.125,
+              -0.2249999999985448,
+              2.8250000000007276,
+              1.75
+            ]
+          },
+          "change_percent": -0.002916853717504622
+        },
+        "I1mr": {
+          "baseline": {
+            "mean": 6947.085,
+            "sd": 0.11805718953120099,
+            "minimum": 6946.975,
+            "maximum": 6947.225,
+            "samples": [
+              6947.0,
+              6947.225,
+              6946.975,
+              6947.025,
+              6947.2
+            ]
+          },
+          "candidate": {
+            "mean": 6937.99,
+            "sd": 0.14958275301649007,
+            "minimum": 6937.825,
+            "maximum": 6938.175,
+            "samples": [
+              6937.825,
+              6938.025,
+              6938.175,
+              6938.075,
+              6937.85
+            ]
+          },
+          "paired_delta": {
+            "mean": -9.095000000000073,
+            "sd": 0.21823152842786547,
+            "minimum": -9.349999999999454,
+            "maximum": -8.800000000000182,
+            "samples": [
+              -9.175000000000182,
+              -9.200000000000728,
+              -8.800000000000182,
+              -8.949999999999818,
+              -9.349999999999454
+            ]
+          },
+          "change_percent": -0.13091821965615902
+        },
+        "ILmr": {
+          "baseline": {
+            "mean": 0.03,
+            "sd": 0.04107919181288746,
+            "minimum": -0.025,
+            "maximum": 0.075,
+            "samples": [
+              -0.025,
+              0.05,
+              0.0,
+              0.075,
+              0.05
+            ]
+          },
+          "candidate": {
+            "mean": 0.035,
+            "sd": 0.03354101966249685,
+            "minimum": 0.0,
+            "maximum": 0.075,
+            "samples": [
+              0.075,
+              0.05,
+              0.05,
+              0.0,
+              0.0
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.005000000000000002,
+            "sd": 0.07158910531638177,
+            "minimum": -0.075,
+            "maximum": 0.1,
+            "samples": [
+              0.1,
+              0.0,
+              0.05,
+              -0.075,
+              -0.05
+            ]
+          },
+          "change_percent": 16.666666666666675
+        },
+        "Ir": {
+          "baseline": {
+            "mean": 103868.06,
+            "sd": 44.37760766986349,
+            "minimum": 103825.025,
+            "maximum": 103931.3,
+            "samples": [
+              103877.075,
+              103931.3,
+              103881.0,
+              103825.9,
+              103825.025
+            ]
+          },
+          "candidate": {
+            "mean": 103863.705,
+            "sd": 24.267116382050247,
+            "minimum": 103820.6,
+            "maximum": 103879.225,
+            "samples": [
+              103874.175,
+              103820.6,
+              103879.225,
+              103872.8,
+              103871.725
+            ]
+          },
+          "paired_delta": {
+            "mean": -4.354999999993015,
+            "sd": 64.32674502102822,
+            "minimum": -110.69999999999709,
+            "maximum": 46.90000000000873,
+            "samples": [
+              -2.8999999999941792,
+              -110.69999999999709,
+              -1.7749999999941792,
+              46.90000000000873,
+              46.70000000001164
+            ]
+          },
+          "change_percent": -0.004192819236243572
+        }
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "Bc": {
+          "baseline": {
+            "mean": 655416.145,
+            "sd": 3.472004104276794,
+            "minimum": 655412.575,
+            "maximum": 655421.75,
+            "samples": [
+              655416.8,
+              655421.75,
+              655414.875,
+              655414.725,
+              655412.575
+            ]
+          },
+          "candidate": {
+            "mean": 655484.225,
+            "sd": 2.574575207683687,
+            "minimum": 655481.1,
+            "maximum": 655486.7,
+            "samples": [
+              655486.075,
+              655481.1,
+              655486.7,
+              655485.425,
+              655481.825
+            ]
+          },
+          "paired_delta": {
+            "mean": 68.07999999998137,
+            "sd": 4.99748061527509,
+            "minimum": 59.34999999997672,
+            "maximum": 71.82499999995343,
+            "samples": [
+              69.27499999990687,
+              59.34999999997672,
+              71.82499999995343,
+              70.70000000006985,
+              69.25
+            ]
+          },
+          "change_percent": 0.010387293709400669
+        },
+        "Bcm": {
+          "baseline": {
+            "mean": 3048.38,
+            "sd": 0.447702468163812,
+            "minimum": 3047.85,
+            "maximum": 3048.95,
+            "samples": [
+              3048.95,
+              3048.675,
+              3048.05,
+              3048.375,
+              3047.85
+            ]
+          },
+          "candidate": {
+            "mean": 2880.95,
+            "sd": 0.8398288516120372,
+            "minimum": 2880.025,
+            "maximum": 2882.25,
+            "samples": [
+              2880.475,
+              2880.025,
+              2882.25,
+              2880.85,
+              2881.15
+            ]
+          },
+          "paired_delta": {
+            "mean": -167.43,
+            "sd": 1.2020035357684813,
+            "minimum": -168.6500000000001,
+            "maximum": -165.80000000000018,
+            "samples": [
+              -168.4749999999999,
+              -168.6500000000001,
+              -165.80000000000018,
+              -167.5250000000001,
+              -166.69999999999982
+            ]
+          },
+          "change_percent": -5.492425485011711
+        },
+        "Bi": {
+          "baseline": {
+            "mean": 29499.995,
+            "sd": 0.02091650066456939,
+            "minimum": 29499.975,
+            "maximum": 29500.025,
+            "samples": [
+              29500.0,
+              29500.025,
+              29500.0,
+              29499.975,
+              29499.975
+            ]
+          },
+          "candidate": {
+            "mean": 29500.015,
+            "sd": 0.013693063938426195,
+            "minimum": 29500.0,
+            "maximum": 29500.025,
+            "samples": [
+              29500.025,
+              29500.0,
+              29500.025,
+              29500.025,
+              29500.0
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.020000000001164153,
+            "sd": 0.02738612787685239,
+            "minimum": -0.02500000000145519,
+            "maximum": 0.05000000000291038,
+            "samples": [
+              0.02500000000145519,
+              -0.02500000000145519,
+              0.02500000000145519,
+              0.05000000000291038,
+              0.02500000000145519
+            ]
+          },
+          "change_percent": 6.779662166439063e-05
+        },
+        "Bim": {
+          "baseline": {
+            "mean": 2916.965,
+            "sd": 0.03791437722027574,
+            "minimum": 2916.925,
+            "maximum": 2917.025,
+            "samples": [
+              2916.925,
+              2916.95,
+              2916.95,
+              2916.975,
+              2917.025
+            ]
+          },
+          "candidate": {
+            "mean": 2825.015,
+            "sd": 0.06274950199001218,
+            "minimum": 2824.925,
+            "maximum": 2825.075,
+            "samples": [
+              2825.075,
+              2825.05,
+              2824.925,
+              2824.975,
+              2825.05
+            ]
+          },
+          "paired_delta": {
+            "mean": -91.9499999999999,
+            "sd": 0.07288689868540248,
+            "minimum": -92.02499999999964,
+            "maximum": -91.85000000000036,
+            "samples": [
+              -91.85000000000036,
+              -91.89999999999964,
+              -92.02499999999964,
+              -92.0,
+              -91.97499999999991
+            ]
+          },
+          "change_percent": -3.1522489985310043
+        },
+        "D1mr": {
+          "baseline": {
+            "mean": 13413.05,
+            "sd": 82.22635488394236,
+            "minimum": 13345.025,
+            "maximum": 13525.125,
+            "samples": [
+              13475.6,
+              13525.125,
+              13371.2,
+              13348.3,
+              13345.025
+            ]
+          },
+          "candidate": {
+            "mean": 13503.885,
+            "sd": 34.54710823643593,
+            "minimum": 13447.375,
+            "maximum": 13540.825,
+            "samples": [
+              13513.325,
+              13447.375,
+              13515.1,
+              13540.825,
+              13502.8
+            ]
+          },
+          "paired_delta": {
+            "mean": 90.83500000000022,
+            "sd": 110.54330401476176,
+            "minimum": -77.75,
+            "maximum": 192.52500000000146,
+            "samples": [
+              37.725000000000364,
+              -77.75,
+              143.89999999999964,
+              192.52500000000146,
+              157.77499999999964
+            ]
+          },
+          "change_percent": 0.6772136091343894
+        },
+        "D1mw": {
+          "baseline": {
+            "mean": 16989.73,
+            "sd": 94.46243863303503,
+            "minimum": 16868.9,
+            "maximum": 17065.1,
+            "samples": [
+              16906.25,
+              16868.9,
+              17046.125,
+              17062.275,
+              17065.1
+            ]
+          },
+          "candidate": {
+            "mean": 16959.765,
+            "sd": 107.92563643546377,
+            "minimum": 16889.775,
+            "maximum": 17149.425,
+            "samples": [
+              16889.775,
+              17149.425,
+              16910.475,
+              16904.375,
+              16944.775
+            ]
+          },
+          "paired_delta": {
+            "mean": -29.965000000000146,
+            "sd": 181.85683465984914,
+            "minimum": -157.90000000000146,
+            "maximum": 280.5249999999978,
+            "samples": [
+              -16.474999999998545,
+              280.5249999999978,
+              -135.65000000000146,
+              -157.90000000000146,
+              -120.32499999999709
+            ]
+          },
+          "change_percent": -0.17637125486985458
+        },
+        "DLmr": {
+          "baseline": {
+            "mean": 0.015000000000000001,
+            "sd": 0.06020797289396148,
+            "minimum": -0.05,
+            "maximum": 0.1,
+            "samples": [
+              -0.025,
+              0.05,
+              0.1,
+              0.0,
+              -0.05
+            ]
+          },
+          "candidate": {
+            "mean": -0.009999999999999998,
+            "sd": 0.03791437722025775,
+            "minimum": -0.075,
+            "maximum": 0.025,
+            "samples": [
+              0.0,
+              -0.075,
+              0.0,
+              0.0,
+              0.025
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.024999999999999998,
+            "sd": 0.08477912478906585,
+            "minimum": -0.125,
+            "maximum": 0.07500000000000001,
+            "samples": [
+              0.025,
+              -0.125,
+              -0.1,
+              0.0,
+              0.07500000000000001
+            ]
+          },
+          "change_percent": -166.66666666666666
+        },
+        "DLmw": {
+          "baseline": {
+            "mean": -0.195,
+            "sd": 0.04107919181288747,
+            "minimum": -0.25,
+            "maximum": -0.15,
+            "samples": [
+              -0.225,
+              -0.25,
+              -0.175,
+              -0.175,
+              -0.15
+            ]
+          },
+          "candidate": {
+            "mean": -0.23,
+            "sd": 0.0273861278752583,
+            "minimum": -0.25,
+            "maximum": -0.2,
+            "samples": [
+              -0.25,
+              -0.2,
+              -0.25,
+              -0.25,
+              -0.2
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.03500000000000001,
+            "sd": 0.051841103383319306,
+            "minimum": -0.07500000000000001,
+            "maximum": 0.04999999999999999,
+            "samples": [
+              -0.024999999999999994,
+              0.04999999999999999,
+              -0.07500000000000001,
+              -0.07500000000000001,
+              -0.05000000000000002
+            ]
+          },
+          "change_percent": 17.948717948717952
+        },
+        "Dr": {
+          "baseline": {
+            "mean": 1195760.035,
+            "sd": 5.191898737467458,
+            "minimum": 1195753.575,
+            "maximum": 1195765.775,
+            "samples": [
+              1195761.475,
+              1195763.6,
+              1195753.575,
+              1195765.775,
+              1195755.75
+            ]
+          },
+          "candidate": {
+            "mean": 1195822.855,
+            "sd": 3.293146291917498,
+            "minimum": 1195819.325,
+            "maximum": 1195827.575,
+            "samples": [
+              1195820.125,
+              1195823.6,
+              1195819.325,
+              1195823.65,
+              1195827.575
+            ]
+          },
+          "paired_delta": {
+            "mean": 62.81999999997206,
+            "sd": 5.9048549939845705,
+            "minimum": 57.875,
+            "maximum": 71.82499999995343,
+            "samples": [
+              58.64999999990687,
+              60.0,
+              65.75,
+              57.875,
+              71.82499999995343
+            ]
+          },
+          "change_percent": 0.0052535624340356935
+        },
+        "Dw": {
+          "baseline": {
+            "mean": 903335.26,
+            "sd": 5.834423707607593,
+            "minimum": 903328.675,
+            "maximum": 903344.375,
+            "samples": [
+              903336.65,
+              903344.375,
+              903333.525,
+              903333.075,
+              903328.675
+            ]
+          },
+          "candidate": {
+            "mean": 903403.635,
+            "sd": 2.605139151753434,
+            "minimum": 903399.65,
+            "maximum": 903405.75,
+            "samples": [
+              903405.5,
+              903399.65,
+              903404.925,
+              903405.75,
+              903402.35
+            ]
+          },
+          "paired_delta": {
+            "mean": 68.375,
+            "sd": 7.542649567611649,
+            "minimum": 55.27500000002328,
+            "maximum": 73.67499999993015,
+            "samples": [
+              68.84999999997672,
+              55.27500000002328,
+              71.40000000002328,
+              72.67500000004657,
+              73.67499999993015
+            ]
+          },
+          "change_percent": 0.007569172048038953
+        },
+        "I1mr": {
+          "baseline": {
+            "mean": 28790.035,
+            "sd": 0.9240873876424015,
+            "minimum": 28788.675,
+            "maximum": 28791.225,
+            "samples": [
+              28789.85,
+              28790.05,
+              28788.675,
+              28791.225,
+              28790.375
+            ]
+          },
+          "candidate": {
+            "mean": 28444.34,
+            "sd": 0.670027984490997,
+            "minimum": 28443.225,
+            "maximum": 28444.95,
+            "samples": [
+              28444.45,
+              28444.325,
+              28444.75,
+              28443.225,
+              28444.95
+            ]
+          },
+          "paired_delta": {
+            "mean": -345.69499999999897,
+            "sd": 1.4668631497181468,
+            "minimum": -348.0,
+            "maximum": -343.9249999999993,
+            "samples": [
+              -345.3999999999978,
+              -345.72499999999854,
+              -343.9249999999993,
+              -348.0,
+              -345.4249999999993
+            ]
+          },
+          "change_percent": -1.2007453273328739
+        },
+        "ILmr": {
+          "baseline": {
+            "mean": 0.025,
+            "sd": 0.03952847075210474,
+            "minimum": -0.025,
+            "maximum": 0.075,
+            "samples": [
+              0.05,
+              -0.025,
+              0.025,
+              0.0,
+              0.075
+            ]
+          },
+          "candidate": {
+            "mean": -0.045,
+            "sd": 0.02091650066335189,
+            "minimum": -0.075,
+            "maximum": -0.025,
+            "samples": [
+              -0.05,
+              -0.025,
+              -0.05,
+              -0.075,
+              -0.025
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.07,
+            "sd": 0.04107919181288746,
+            "minimum": -0.1,
+            "maximum": 0.0,
+            "samples": [
+              -0.1,
+              0.0,
+              -0.07500000000000001,
+              -0.075,
+              -0.1
+            ]
+          },
+          "change_percent": -280.0
+        },
+        "Ir": {
+          "baseline": {
+            "mean": 3542662.545,
+            "sd": 35.992635531360726,
+            "minimum": 3542619.325,
+            "maximum": 3542695.025,
+            "samples": [
+              3542679.2,
+              3542690.925,
+              3542619.325,
+              3542695.025,
+              3542628.25
+            ]
+          },
+          "candidate": {
+            "mean": 3542725.705,
+            "sd": 23.678084540385257,
+            "minimum": 3542699.85,
+            "maximum": 3542751.475,
+            "samples": [
+              3542701.175,
+              3542736.375,
+              3542699.85,
+              3542739.65,
+              3542751.475
+            ]
+          },
+          "paired_delta": {
+            "mean": 63.15999999996275,
+            "sd": 39.56874397814531,
+            "minimum": 21.97499999962747,
+            "maximum": 123.22500000009313,
+            "samples": [
+              21.97499999962747,
+              45.450000000186265,
+              80.52499999990687,
+              44.625,
+              123.22500000009313
+            ]
+          },
+          "change_percent": 0.0017828398611971874
+        }
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "blocks": {
+          "baseline": {
+            "mean": 7.0,
+            "sd": 0.0,
+            "minimum": 7.0,
+            "maximum": 7.0,
+            "samples": [
+              7.0,
+              7.0,
+              7.0,
+              7.0,
+              7.0
+            ]
+          },
+          "candidate": {
+            "mean": 7.0,
+            "sd": 0.0,
+            "minimum": 7.0,
+            "maximum": 7.0,
+            "samples": [
+              7.0,
+              7.0,
+              7.0,
+              7.0,
+              7.0
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.0,
+            "sd": 0.0,
+            "minimum": 0.0,
+            "maximum": 0.0,
+            "samples": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "change_percent": 0.0
+        },
+        "bytes": {
+          "baseline": {
+            "mean": 912.02,
+            "sd": 0.10954451150105814,
+            "minimum": 911.9,
+            "maximum": 912.1,
+            "samples": [
+              912.1,
+              912.1,
+              912.1,
+              911.9,
+              911.9
+            ]
+          },
+          "candidate": {
+            "mean": 912.04,
+            "sd": 0.08944271910001192,
+            "minimum": 911.9,
+            "maximum": 912.1,
+            "samples": [
+              912.1,
+              912.0,
+              912.1,
+              912.1,
+              911.9
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.02000000000000455,
+            "sd": 0.10954451150105814,
+            "minimum": -0.10000000000002274,
+            "maximum": 0.20000000000004547,
+            "samples": [
+              0.0,
+              -0.10000000000002274,
+              0.0,
+              0.20000000000004547,
+              0.0
+            ]
+          },
+          "change_percent": 0.00219293436547494
+        }
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "blocks": {
+          "baseline": {
+            "mean": 57.0,
+            "sd": 0.0,
+            "minimum": 57.0,
+            "maximum": 57.0,
+            "samples": [
+              57.0,
+              57.0,
+              57.0,
+              57.0,
+              57.0
+            ]
+          },
+          "candidate": {
+            "mean": 57.0,
+            "sd": 0.0,
+            "minimum": 57.0,
+            "maximum": 57.0,
+            "samples": [
+              57.0,
+              57.0,
+              57.0,
+              57.0,
+              57.0
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.0,
+            "sd": 0.0,
+            "minimum": 0.0,
+            "maximum": 0.0,
+            "samples": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "change_percent": 0.0
+        },
+        "bytes": {
+          "baseline": {
+            "mean": 7392.02,
+            "sd": 0.08366600265371194,
+            "minimum": 7391.9,
+            "maximum": 7392.1,
+            "samples": [
+              7392.1,
+              7392.0,
+              7392.0,
+              7392.1,
+              7391.9
+            ]
+          },
+          "candidate": {
+            "mean": 7392.0,
+            "sd": 0.1000000000003638,
+            "minimum": 7391.9,
+            "maximum": 7392.1,
+            "samples": [
+              7391.9,
+              7392.1,
+              7392.1,
+              7391.9,
+              7392.0
+            ]
+          },
+          "paired_delta": {
+            "mean": -0.020000000000072758,
+            "sd": 0.1643167672521476,
+            "minimum": -0.2000000000007276,
+            "maximum": 0.1000000000003638,
+            "samples": [
+              -0.2000000000007276,
+              0.1000000000003638,
+              0.1000000000003638,
+              -0.2000000000007276,
+              0.1000000000003638
+            ]
+          },
+          "change_percent": -0.00027056203852360733
+        }
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "blocks": {
+          "baseline": {
+            "mean": 202.0,
+            "sd": 0.0,
+            "minimum": 202.0,
+            "maximum": 202.0,
+            "samples": [
+              202.0,
+              202.0,
+              202.0,
+              202.0,
+              202.0
+            ]
+          },
+          "candidate": {
+            "mean": 202.0,
+            "sd": 0.0,
+            "minimum": 202.0,
+            "maximum": 202.0,
+            "samples": [
+              202.0,
+              202.0,
+              202.0,
+              202.0,
+              202.0
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.0,
+            "sd": 0.0,
+            "minimum": 0.0,
+            "maximum": 0.0,
+            "samples": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "change_percent": 0.0
+        },
+        "bytes": {
+          "baseline": {
+            "mean": 40520.0,
+            "sd": 0.12247448713737667,
+            "minimum": 40519.9,
+            "maximum": 40520.2,
+            "samples": [
+              40520.0,
+              40520.0,
+              40519.9,
+              40520.2,
+              40519.9
+            ]
+          },
+          "candidate": {
+            "mean": 40520.0,
+            "sd": 0.07071067811762578,
+            "minimum": 40519.9,
+            "maximum": 40520.1,
+            "samples": [
+              40520.0,
+              40519.9,
+              40520.1,
+              40520.0,
+              40520.0
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.0,
+            "sd": 0.15811388300611812,
+            "minimum": -0.19999999999708962,
+            "maximum": 0.19999999999708962,
+            "samples": [
+              0.0,
+              -0.09999999999854481,
+              0.19999999999708962,
+              -0.19999999999708962,
+              0.09999999999854481
+            ]
+          },
+          "change_percent": 0.0
+        }
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "blocks": {
+          "baseline": {
+            "mean": 21.7,
+            "sd": 0.23913908087136262,
+            "minimum": 21.375,
+            "maximum": 22.05,
+            "samples": [
+              21.7,
+              22.05,
+              21.7,
+              21.675,
+              21.375
+            ]
+          },
+          "candidate": {
+            "mean": 21.705000000000002,
+            "sd": 0.0209165006633524,
+            "minimum": 21.675,
+            "maximum": 21.725,
+            "samples": [
+              21.675,
+              21.7,
+              21.7,
+              21.725,
+              21.725
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.005000000000000426,
+            "sd": 0.24899799195977562,
+            "minimum": -0.3500000000000014,
+            "maximum": 0.3500000000000014,
+            "samples": [
+              -0.02499999999999858,
+              -0.3500000000000014,
+              0.0,
+              0.05000000000000071,
+              0.3500000000000014
+            ]
+          },
+          "change_percent": 0.023041474654379845
+        },
+        "bytes": {
+          "baseline": {
+            "mean": 2296.4,
+            "sd": 24.443870652987837,
+            "minimum": 2262.275,
+            "maximum": 2331.4,
+            "samples": [
+              2296.2,
+              2331.4,
+              2296.4,
+              2295.725,
+              2262.275
+            ]
+          },
+          "candidate": {
+            "mean": 2296.495,
+            "sd": 0.6003644726329949,
+            "minimum": 2295.525,
+            "maximum": 2297.075,
+            "samples": [
+              2295.525,
+              2296.6,
+              2296.4,
+              2296.875,
+              2297.075
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.09499999999998181,
+            "sd": 24.61611768740145,
+            "minimum": -34.80000000000018,
+            "maximum": 34.79999999999973,
+            "samples": [
+              -0.6749999999997272,
+              -34.80000000000018,
+              0.0,
+              1.150000000000091,
+              34.79999999999973
+            ]
+          },
+          "change_percent": 0.004136909946001646
+        }
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "blocks": {
+          "baseline": {
+            "mean": 71.7,
+            "sd": 0.24811791551599102,
+            "minimum": 71.35,
+            "maximum": 72.05,
+            "samples": [
+              72.05,
+              71.725,
+              71.7,
+              71.35,
+              71.675
+            ]
+          },
+          "candidate": {
+            "mean": 71.705,
+            "sd": 0.23940029239748117,
+            "minimum": 71.375,
+            "maximum": 72.05,
+            "samples": [
+              71.375,
+              71.675,
+              71.7,
+              72.05,
+              71.725
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.005000000000001137,
+            "sd": 0.487467947664254,
+            "minimum": -0.6749999999999972,
+            "maximum": 0.7000000000000028,
+            "samples": [
+              -0.6749999999999972,
+              -0.04999999999999716,
+              0.0,
+              0.7000000000000028,
+              0.04999999999999716
+            ]
+          },
+          "change_percent": 0.006973500697351655
+        },
+        "bytes": {
+          "baseline": {
+            "mean": 11016.2,
+            "sd": 24.61194450871378,
+            "minimum": 10981.4,
+            "maximum": 11051.0,
+            "samples": [
+              11051.0,
+              11016.875,
+              11016.2,
+              10981.4,
+              11015.525
+            ]
+          },
+          "candidate": {
+            "mean": 11016.615,
+            "sd": 24.303630130085637,
+            "minimum": 10982.475,
+            "maximum": 11051.2,
+            "samples": [
+              10982.475,
+              11015.725,
+              11016.6,
+              11051.2,
+              11017.075
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.4150000000005093,
+            "sd": 48.91507819680989,
+            "minimum": -68.52499999999964,
+            "maximum": 69.80000000000109,
+            "samples": [
+              -68.52499999999964,
+              -1.1499999999996362,
+              0.3999999999996362,
+              69.80000000000109,
+              1.5500000000010914
+            ]
+          },
+          "change_percent": 0.0037671792451163676
+        }
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "baseline": "factored",
+      "candidate": "candidate",
+      "repetitions": 5,
+      "metrics": {
+        "blocks": {
+          "baseline": {
+            "mean": 218.94,
+            "sd": 0.19653244007033352,
+            "minimum": 218.725,
+            "maximum": 219.1,
+            "samples": [
+              219.075,
+              218.725,
+              219.075,
+              218.725,
+              219.1
+            ]
+          },
+          "candidate": {
+            "mean": 219.085,
+            "sd": 0.24786589115891466,
+            "minimum": 218.725,
+            "maximum": 219.425,
+            "samples": [
+              219.425,
+              219.075,
+              218.725,
+              219.1,
+              219.1
+            ]
+          },
+          "paired_delta": {
+            "mean": 0.14500000000000454,
+            "sd": 0.3174114049620781,
+            "minimum": -0.3499999999999943,
+            "maximum": 0.375,
+            "samples": [
+              0.35000000000002274,
+              0.3499999999999943,
+              -0.3499999999999943,
+              0.375,
+              0.0
+            ]
+          },
+          "change_percent": 0.06622819037179344
+        },
+        "bytes": {
+          "baseline": {
+            "mean": 52698.135,
+            "sd": 19.203349317242033,
+            "minimum": 52677.0,
+            "maximum": 52712.475,
+            "samples": [
+              52712.0,
+              52677.2,
+              52712.0,
+              52677.0,
+              52712.475
+            ]
+          },
+          "candidate": {
+            "mean": 52712.31,
+            "sd": 24.611078552150083,
+            "minimum": 52677.2,
+            "maximum": 52746.8,
+            "samples": [
+              52746.8,
+              52712.0,
+              52677.2,
+              52712.675,
+              52712.875
+            ]
+          },
+          "paired_delta": {
+            "mean": 14.175000000001456,
+            "sd": 31.2303238055604,
+            "minimum": -34.80000000000291,
+            "maximum": 35.67500000000291,
+            "samples": [
+              34.80000000000291,
+              34.80000000000291,
+              -34.80000000000291,
+              35.67500000000291,
+              0.4000000000014552
+            ]
+          },
+          "change_percent": 0.026898485117170568
+        }
+      }
+    }
+  ]
+}

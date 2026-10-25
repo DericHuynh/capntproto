@@ -467,7 +467,8 @@ impl<P, R, H> Request<P, R, H> {
     {
         self.hook.try_init(None)
     }
-    #[inline(always)]
+    // Leave aggregate-return lowering to the optimizer. Forcing this wrapper
+    // into the caller's MIR adds copies before awaiting only the response.
     pub fn send(self) -> H::Sent
     where
         H: RequestStorage<R>,

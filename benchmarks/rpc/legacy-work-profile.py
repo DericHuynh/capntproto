@@ -30,6 +30,8 @@ def assembly(path, output):
                 'task_set::queue', 'capntproto_rpc_engine::admission',
                 'sender_queue::', 'capntproto_rpc_engine::pending', 'capnp_rpc::system::registry',
                 'capntproto_rpc_engine::tasks', 'capntproto_rpc_engine::scheduler', 'capntproto_task',
+                'capnp::capability::', 'capntproto_rpc_bench::topology::access',
+                'capntproto_rpc_bench::workflows::capability::',
                 'ReturnGuard', 'answer_has_sent_return',
                 'aes_gcm::aeshwclmulmovbe::seal', '::poll_prepare_frame')
     with output.open('w') as target:
