@@ -29,7 +29,6 @@ def assembly(path, output):
                 'task_set::ready_set::Notify', 'capntproto_rpc_engine::readiness',
                 'task_set::queue', 'capntproto_rpc_engine::admission',
                 'sender_queue::', 'capntproto_rpc_engine::pending',
-                'capnp::capability::Params', 'capnp::capability::Response', 'capnp::private::capability::',
                 'capntproto_rpc_engine::tasks', 'capntproto_rpc_engine::scheduler', 'capntproto_task',
                 'ReturnGuard', 'answer_has_sent_return',
                 'aes_gcm::aeshwclmulmovbe::seal', '::poll_prepare_frame')
@@ -39,7 +38,8 @@ def assembly(path, output):
         keep = False
         for line in process.stdout:
             if re.match(r'^[0-9a-f]+ <', line):
-                keep = any(name in line for name in selected)
+                function = line.split(' <', 1)[1].rsplit('>:', 1)[0]
+                keep = any(name in function for name in selected) or function.lstrip('<').startswith(('capnp::capability::Params<', 'capnp::capability::Response<', 'capnp::capability::ResponsePromise<')) or any(name in function for name in (' as capnp::private::capability::ParamsHook>', ' as capnp::private::capability::ResponseHook>'))
             if keep:
                 target.write(line)
         assert process.wait() == 0

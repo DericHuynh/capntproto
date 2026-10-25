@@ -30,3 +30,5 @@ pub mod publication;
 pub mod reception;
 
 mod resources;
+#[cfg(test)]
+mod result_owners;

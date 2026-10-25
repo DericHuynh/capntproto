@@ -45,6 +45,8 @@ use crate::{Error, MessageSize};
 
 #[cfg(test)]
 mod owner_views;
+mod result_storage;
+pub use result_storage::ResultStorage;
 
 #[cfg(feature = "alloc")]
 mod reply;
@@ -245,6 +247,18 @@ impl<Results, H: ResponseHook> Response<Results, H> {
         Results: Owned,
     {
         self.hook.get()?.get_as()
+    }
+    /// Borrow the generated field-operation view with the original read budget.
+    pub fn view(
+        &self,
+    ) -> crate::Result<
+        <<Results as crate::field_api::FixedSchema>::Schema as crate::field_api::Schema>::Ref<'_>,
+    >
+    where
+        Results: crate::field_api::FixedSchema,
+    {
+        let raw = self.hook.get()?.get_as::<crate::any_struct::Reader<'_>>()?;
+        Ok(crate::traits::IntoInternalStructReader::into_internal_struct_reader(raw).into())
     }
     /// Retain the same owner while selecting a generated schema. Reading still
     /// validates the wire type and normal traversal/nesting limits.
@@ -514,6 +528,18 @@ impl<T, H: ParamsHook> Params<T, H> {
     {
         self.hook.get()?.get_as()
     }
+    /// Borrow the generated field-operation view with the original read budget.
+    pub fn view(
+        &self,
+    ) -> crate::Result<
+        <<T as crate::field_api::FixedSchema>::Schema as crate::field_api::Schema>::Ref<'_>,
+    >
+    where
+        T: crate::field_api::FixedSchema,
+    {
+        let raw = self.hook.get()?.get_as::<crate::any_struct::Reader<'_>>()?;
+        Ok(crate::traits::IntoInternalStructReader::into_internal_struct_reader(raw).into())
+    }
     pub fn into_typed<U>(self) -> Params<U, H> {
         Params {
             marker: PhantomData,
@@ -524,9 +550,42 @@ impl<T, H: ParamsHook> Params<T, H> {
 
 /// The return values of a method, written in-place by the method body.
 #[cfg(feature = "alloc")]
-pub struct Results<T> {
+pub struct Results<T, H = alloc::boxed::Box<dyn ResultsHook>> {
     pub marker: PhantomData<T>,
-    pub hook: alloc::boxed::Box<dyn ResultsHook>,
+    pub hook: H,
+}
+#[cfg(not(feature = "alloc"))]
+pub struct Results<T, H> {
+    pub marker: PhantomData<T>,
+    pub hook: H,
+}
+impl<T, H: ResultStorage<T>> Results<T, H> {
+    pub fn from_owner(hook: H) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
+    /// Borrow a typed editor; a fixed provider has no heap fallback.
+    #[inline(always)]
+    pub fn try_get(&mut self) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_get(None)
+    }
+    pub fn try_get_with_size_hint(
+        &mut self,
+        hint: Option<crate::MessageSize>,
+    ) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_get(hint)
+    }
+    pub fn try_init(&mut self) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_init(None)
+    }
+    pub fn try_init_with_size_hint(
+        &mut self,
+        hint: Option<crate::MessageSize>,
+    ) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_init(hint)
+    }
 }
 
 #[cfg(feature = "alloc")]
