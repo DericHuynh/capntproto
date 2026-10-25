@@ -1,7 +1,7 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "d5186aef8cff4bfdf991afee7f58a2785cab233d",
+    "commit": "d57692ae2c6cf3e01be20aa3e752d3323f38f600",
     "conclusion": "failure",
     "data": {
       "charts": [],
@@ -10,17 +10,17 @@
       "note": "No measurement evidence was produced.",
       "origin": {
         "attempt": 1,
-        "commit": "d5186aef8cff4bfdf991afee7f58a2785cab233d",
+        "commit": "d57692ae2c6cf3e01be20aa3e752d3323f38f600",
         "repository": "DericHuynh/capntproto",
-        "run_id": 40228260511
+        "run_id": 40240714431
       },
       "source_id": null,
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-25T19:54:42Z",
-    "run_id": 40228260511,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40228260511"
+    "date": "2026-10-25T22:32:59Z",
+    "run_id": 40240714431,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40240714431"
   },
   "cargo": [
     {
@@ -1031,6 +1031,24 @@
       "date": "2026-10-25T19:54:42Z",
       "run_id": 40228260511,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40228260511"
+    },
+    {
+      "attempt": 1,
+      "commit": "d57692ae2c6cf3e01be20aa3e752d3323f38f600",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-25T22:32:59Z",
+      "run_id": 40240714431,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40240714431"
     }
   ],
   "format": 1,
@@ -1899,6 +1917,24 @@
       "date": "2026-10-25T19:54:42Z",
       "run_id": 40228260511,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40228260511"
+    },
+    {
+      "attempt": 1,
+      "commit": "d57692ae2c6cf3e01be20aa3e752d3323f38f600",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-25T22:32:59Z",
+      "run_id": 40240714431,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40240714431"
     }
   ],
   "models": [
@@ -2697,6 +2733,24 @@
       "date": "2026-10-25T19:54:42Z",
       "run_id": 40228260511,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40228260511"
+    },
+    {
+      "attempt": 1,
+      "commit": "d57692ae2c6cf3e01be20aa3e752d3323f38f600",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-25T22:32:59Z",
+      "run_id": 40240714431,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40240714431"
     }
   ]
 }
