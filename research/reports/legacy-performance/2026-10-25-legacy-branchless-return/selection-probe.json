@@ -1,0 +1,22 @@
+{
+  "scope": "Exact ReturnOwnership implementations in local standalone x86_64 release wrappers. Not full callers, event counts or latency.",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "candidate_source_sha256": "e0a4307fa1298047d507c5aae1f95f294b7ad427619738f547e2093e8f8d7af7",
+  "counts": {
+    "baseline": {
+      "instructions_including_panic_path": 17,
+      "conditional_jumps": [
+        "je\t.LBB0_3",
+        "je\t.LBB0_4"
+      ],
+      "conditional_moves": []
+    },
+    "candidate": {
+      "instructions_including_panic_path": 18,
+      "conditional_jumps": [
+        "je\t.LBB1_2"
+      ],
+      "conditional_moves": []
+    }
+  }
+}
