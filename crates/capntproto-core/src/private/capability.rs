@@ -19,12 +19,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#![cfg(feature = "alloc")]
-
 use crate::any_pointer;
+#[cfg(feature = "alloc")]
 use crate::capability::{Params, Promise, RemotePromise, Request, Results};
+#[cfg(feature = "alloc")]
 use crate::MessageSize;
+#[cfg(feature = "alloc")]
 mod metadata;
+#[cfg(feature = "alloc")]
 pub use metadata::{MetadataChanges, MetadataWatch};
 
 /// A single promise receiver over an existing shared completion allocation.
@@ -32,6 +34,7 @@ pub use metadata::{MetadataChanges, MetadataWatch};
 /// Pending. The promise calls cancel exactly once on drop, including after
 /// successful polling; cancel must distinguish observation from abandonment.
 /// Sharing producer state does not clone the promise's receiver ownership.
+#[cfg(feature = "alloc")]
 pub trait SharedPromise<T, E> {
     fn poll(&self, cx: &mut core::task::Context<'_>) -> core::task::Poll<Result<T, E>>;
     fn cancel(self: alloc::rc::Rc<Self>);
@@ -41,6 +44,36 @@ pub trait ResponseHook {
     fn get(&self) -> crate::Result<any_pointer::Reader<'_>>;
 }
 
+impl<S: crate::message::ReaderSegments, B: core::borrow::Borrow<crate::message::ReadBudget>>
+    ParamsHook for crate::message::Reader<S, B>
+{
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        self.get_root()
+    }
+}
+impl<S: crate::message::ReaderSegments, B: core::borrow::Borrow<crate::message::ReadBudget>>
+    ResponseHook for crate::message::Reader<S, B>
+{
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        self.get_root()
+    }
+}
+impl<S: crate::message::ReaderSegments> ParamsHook for crate::message::CheckedPointerReader<S> {
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        Ok(self.root())
+    }
+}
+impl<S: crate::message::ReaderSegments> ResponseHook for crate::message::CheckedPointerReader<S> {
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        Ok(self.root())
+    }
+}
+
+#[cfg(feature = "alloc")]
 pub trait RequestHook {
     /// Private runtime connection context for third-party tail calls. Wrappers
     /// default to ordinary forwarding to preserve their interception policy.
@@ -75,6 +108,7 @@ pub trait RequestHook {
 
 /// A joined capability and network-owned context retained until its caller has
 /// acquired the capability (or, for a relay, until all upstream Finishes).
+#[cfg(feature = "alloc")]
 pub struct JoinedCapability {
     pub cap: Option<alloc::boxed::Box<dyn ClientHook>>,
     pub guard: alloc::boxed::Box<dyn core::any::Any>,
@@ -83,6 +117,7 @@ pub struct JoinedCapability {
 /// An explicitly authorized opaque-boundary Join. The runtime joins `caps`
 /// using its existing network context, then passes the pending operation to
 /// `complete`, which must preserve boundary policy and downstream retention.
+#[cfg(feature = "alloc")]
 pub struct JoinDelegation {
     pub caps: alloc::vec::Vec<alloc::boxed::Box<dyn ClientHook>>,
     pub complete: alloc::boxed::Box<
@@ -97,10 +132,12 @@ pub struct JoinDelegation {
 /// diagnostics terminate for cyclic or unexpectedly deep wrapper graphs.
 /// Labels are for humans, not a stable serialization or capability identity.
 #[derive(Default)]
+#[cfg(feature = "alloc")]
 pub struct DebugInfo {
     chain: alloc::vec::Vec<alloc::string::String>,
     depth: usize,
 }
+#[cfg(feature = "alloc")]
 impl DebugInfo {
     pub fn push(&mut self, label: impl Into<alloc::string::String>) {
         self.chain.push(label.into());
@@ -122,6 +159,7 @@ impl DebugInfo {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub trait ClientHook {
     /// Changes to this hook's FD or diagnostics, independently of promise
     /// resolution. None declares metadata immutable while the route is stable.
@@ -289,6 +327,7 @@ pub trait ClientHook {
     fn when_resolved(&self) -> Promise<(), crate::Error>;
 }
 
+#[cfg(feature = "alloc")]
 impl Clone for alloc::boxed::Box<dyn ClientHook> {
     fn clone(&self) -> Self {
         self.add_ref()
@@ -297,6 +336,7 @@ impl Clone for alloc::boxed::Box<dyn ClientHook> {
 
 /// A context retained until protected execution completes. Shared contexts
 /// retain their existing allocation; owned adapters preserve their exact guard.
+#[cfg(feature = "alloc")]
 pub enum CancellationGuard {
     Owned(alloc::boxed::Box<dyn core::any::Any>),
     Shared(alloc::rc::Rc<dyn core::any::Any>),
@@ -305,6 +345,7 @@ pub enum CancellationGuard {
 /// Storage behind a single dispatch invocation. Taking ownership consumes both
 /// hooks exactly once; subsequent access is a programming error. Implementations
 /// must preserve the original result producer and its cancellation context.
+#[cfg(feature = "alloc")]
 pub trait CallContextHook {
     fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook);
     fn results(&self) -> &dyn ResultsHook;
@@ -317,10 +358,12 @@ pub trait CallContextHook {
 }
 
 /// An already-owned invocation, used by queued calls and policy adapters.
+#[cfg(feature = "alloc")]
 pub struct OwnedCall {
     params: Option<alloc::boxed::Box<dyn ParamsHook>>,
     results: Option<alloc::boxed::Box<dyn ResultsHook>>,
 }
+#[cfg(feature = "alloc")]
 impl OwnedCall {
     pub fn new(
         params: alloc::boxed::Box<dyn ParamsHook>,
@@ -332,6 +375,7 @@ impl OwnedCall {
         }
     }
 }
+#[cfg(feature = "alloc")]
 impl CallContextHook for OwnedCall {
     fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook) {
         (
@@ -355,6 +399,7 @@ impl CallContextHook for OwnedCall {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub trait ResultsHook {
     /// Identify this exact result sink. Transforming/policy wrappers should use
     /// the default rather than exposing an inner sink through this method.
@@ -444,6 +489,7 @@ pub trait ParamsHook {
 }
 
 // Where should this live?
+#[cfg(feature = "alloc")]
 pub fn internal_get_typed_params<T>(typeless: Params<any_pointer::Owned>) -> Params<T> {
     Params {
         hook: typeless.hook,
@@ -451,6 +497,7 @@ pub fn internal_get_typed_params<T>(typeless: Params<any_pointer::Owned>) -> Par
     }
 }
 
+#[cfg(feature = "alloc")]
 pub fn internal_get_typed_results<T>(typeless: Results<any_pointer::Owned>) -> Results<T> {
     Results {
         hook: typeless.hook,
@@ -461,12 +508,14 @@ pub fn internal_get_typed_results<T>(typeless: Results<any_pointer::Owned>) -> R
 /// Generated dispatcher boundary. Runtime implementors must supply a fresh,
 /// unpublished results context, just as for internal_get_typed_results().
 #[doc(hidden)]
+#[cfg(feature = "alloc")]
 pub fn internal_get_typed_reply<T>(
     typeless: Results<any_pointer::Owned>,
 ) -> crate::capability::Reply<T> {
     crate::capability::Reply::new(typeless.hook)
 }
 
+#[cfg(feature = "alloc")]
 pub fn internal_get_untyped_results<T>(typeful: Results<T>) -> Results<any_pointer::Owned> {
     Results {
         hook: typeful.hook,
@@ -474,6 +523,7 @@ pub fn internal_get_untyped_results<T>(typeful: Results<T>) -> Results<any_point
     }
 }
 
+#[cfg(feature = "alloc")]
 pub trait PipelineHook {
     fn add_ref(&self) -> alloc::boxed::Box<dyn PipelineHook>;
     fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> alloc::boxed::Box<dyn ClientHook>;
@@ -488,6 +538,7 @@ pub trait PipelineHook {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl Clone for alloc::boxed::Box<dyn PipelineHook> {
     fn clone(&self) -> Self {
         self.add_ref()
@@ -495,7 +546,45 @@ impl Clone for alloc::boxed::Box<dyn PipelineHook> {
 }
 
 #[derive(Clone, Copy)]
+#[cfg(feature = "alloc")]
 pub enum PipelineOp {
     Noop,
     GetPointerField(u16),
+}
+
+// Ownership adapters keep read contracts independent of allocation. Forward
+// optional parameter identity exactly, retaining wrapper policy boundaries.
+impl<P: ParamsHook + ?Sized> ParamsHook for &P {
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        (**self).get()
+    }
+    #[inline(always)]
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
+        (**self).as_any()
+    }
+}
+impl<P: ResponseHook + ?Sized> ResponseHook for &P {
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        (**self).get()
+    }
+}
+#[cfg(feature = "alloc")]
+impl<P: ParamsHook + ?Sized> ParamsHook for alloc::boxed::Box<P> {
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        (**self).get()
+    }
+    #[inline(always)]
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
+        (**self).as_any()
+    }
+}
+#[cfg(feature = "alloc")]
+impl<P: ResponseHook + ?Sized> ResponseHook for alloc::boxed::Box<P> {
+    #[inline(always)]
+    fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+        (**self).get()
+    }
 }

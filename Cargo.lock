@@ -417,6 +417,7 @@ dependencies = [
 name = "capntproto-core"
 version = "0.25.6"
 dependencies = [
+ "allocation-counter",
  "embedded-io",
  "quickcheck",
 ]
@@ -513,6 +514,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "capntproto-task"
+version = "0.1.0"
+dependencies = [
+ "allocation-counter",
+]
+
+[[package]]
 name = "capntproto-test-support"
 version = "0.1.0"
 dependencies = [
@@ -529,13 +537,6 @@ dependencies = [
  "signal-hook",
  "tar",
  "tempfile",
-]
-
-[[package]]
-name = "capntproto-task"
-version = "0.1.0"
-dependencies = [
- "allocation-counter",
 ]
 
 [[package]]

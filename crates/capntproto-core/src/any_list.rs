@@ -2,12 +2,15 @@
 //! unknown fields and capabilities. Copies use `any_pointer::Owned` as receiver.
 //!
 //! ```
+//! # #[cfg(feature = "alloc")]
+//! # {
 //! use capnp::{any_list, any_pointer, message, primitive_list};
 //! let mut message = message::Builder::new_default();
 //! let mut list = message.init_root::<any_pointer::Builder>()
 //!     .init_as_any_list(any_list::ElementSize::TwoBytes, 3)?;
 //! list.reborrow().get_as::<primitive_list::Owned<u16>>()?.set(1, 42);
 //! assert_eq!(list.as_reader().get_as::<primitive_list::Owned<u16>>()?.get(1), 42);
+//! # }
 //! # Ok::<(), capnp::Error>(())
 //! ```
 

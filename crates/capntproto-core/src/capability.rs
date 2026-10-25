@@ -22,10 +22,11 @@
 //! Hooks for the RPC system.
 //!
 //! Roughly corresponds to capability.h in the C++ implementation.
+//! Parameters and responses can retain concrete frame owners in every profile.
+//! Allocating request, client and dispatch hooks are enabled by `alloc`.
 
 #[cfg(feature = "alloc")]
 use core::future::Future;
-#[cfg(feature = "alloc")]
 use core::marker::PhantomData;
 #[cfg(feature = "alloc")]
 use core::pin::Pin;
@@ -34,11 +35,16 @@ use core::task::Poll;
 
 use crate::any_pointer;
 #[cfg(feature = "alloc")]
-use crate::private::capability::{ClientHook, ParamsHook, RequestHook, ResponseHook, ResultsHook};
+use crate::private::capability::{ClientHook, RequestHook, ResultsHook};
+pub use crate::private::capability::{ParamsHook, ResponseHook};
+use crate::traits::Owned;
 #[cfg(feature = "alloc")]
-use crate::traits::{Owned, Pipelined};
+use crate::traits::Pipelined;
 #[cfg(feature = "alloc")]
 use crate::{Error, MessageSize};
+
+#[cfg(test)]
+mod owner_views;
 
 #[cfg(feature = "alloc")]
 mod reply;
@@ -203,27 +209,50 @@ impl<T: Pipelined + Owned + 'static> RemotePromise<T> {
     }
 }
 
-/// A response from a method call, as seen by the client.
+/// A response retaining its concrete owner until all borrowed readers end.
+/// Hosted callers default to an owned boxed hook; caller-backed profiles supply
+/// their frame guard directly with `from_owner`.
 #[cfg(feature = "alloc")]
-pub struct Response<Results> {
+pub struct Response<Results, H = alloc::boxed::Box<dyn ResponseHook>> {
     pub marker: PhantomData<Results>,
-    pub hook: alloc::boxed::Box<dyn ResponseHook>,
+    pub hook: H,
 }
-
+#[cfg(not(feature = "alloc"))]
+pub struct Response<Results, H> {
+    pub marker: PhantomData<Results>,
+    pub hook: H,
+}
 #[cfg(feature = "alloc")]
-impl<Results> Response<Results>
-where
-    Results: Pipelined + Owned,
-{
+impl<Results: Pipelined + Owned> Response<Results> {
     pub fn new(hook: alloc::boxed::Box<dyn ResponseHook>) -> Self {
         Self {
             marker: PhantomData,
             hook,
         }
     }
+}
+impl<Results, H: ResponseHook> Response<Results, H> {
+    /// Transfer the caller's owner without boxing or changing its lifetime.
+    pub fn from_owner(hook: H) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
     #[inline(always)]
-    pub fn get(&self) -> crate::Result<Results::Reader<'_>> {
+    pub fn get(&self) -> crate::Result<Results::Reader<'_>>
+    where
+        Results: Owned,
+    {
         self.hook.get()?.get_as()
+    }
+    /// Retain the same owner while selecting a generated schema. Reading still
+    /// validates the wire type and normal traversal/nesting limits.
+    pub fn into_typed<T>(self) -> Response<T, H> {
+        Response {
+            marker: PhantomData,
+            hook: self.hook,
+        }
     }
 }
 
@@ -438,16 +467,41 @@ where
     }
 }
 
-/// The values of the parameters passed to a method call, as seen by the server.
+/// The parameters of a method call, retaining the caller's concrete owner.
 #[cfg(feature = "alloc")]
-pub struct Params<T> {
+pub struct Params<T, H = alloc::boxed::Box<dyn ParamsHook>> {
     pub marker: PhantomData<T>,
-    pub hook: alloc::boxed::Box<dyn ParamsHook>,
+    pub hook: H,
 }
-
+#[cfg(not(feature = "alloc"))]
+pub struct Params<T, H> {
+    pub marker: PhantomData<T>,
+    pub hook: H,
+}
 #[cfg(feature = "alloc")]
 impl<T> Params<T> {
     pub fn new(hook: alloc::boxed::Box<dyn ParamsHook>) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
+}
+impl<T, H: ParamsHook> Params<T, H> {
+    /// Retain a borrowed frame guard or another concrete owner without boxing.
+    ///
+    /// ```compile_fail,E0597
+    /// use capnp::{capability::Params, message, text};
+    /// let params;
+    /// {
+    ///     let words = [capnp::word(0,0,0,0,0,0,0,0)];
+    ///     let segments = [capnp::Word::words_to_bytes(&words)];
+    ///     let reader = message::Reader::new(&segments[..], Default::default());
+    ///     params = Params::<text::Owned, _>::from_owner(reader);
+    /// }
+    /// let _ = params.get();
+    /// ```
+    pub fn from_owner(hook: H) -> Self {
         Self {
             marker: PhantomData,
             hook,
@@ -459,6 +513,12 @@ impl<T> Params<T> {
         T: Owned,
     {
         self.hook.get()?.get_as()
+    }
+    pub fn into_typed<U>(self) -> Params<U, H> {
+        Params {
+            marker: PhantomData,
+            hook: self.hook,
+        }
     }
 }
 
