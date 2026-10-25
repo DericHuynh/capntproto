@@ -1,0 +1,111 @@
+name: Legacy no-alloc ownership batch qualification
+on:
+  push:
+    branches: [codex/legacy-ownership-batch-20261025]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  correctness:
+    name: Borrowed task ownership and hosted legacy correctness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CC: clang
+      CXX: clang++
+      CAPNTPROTO_REFERENCE_CXX: clang++
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: legacy-factoring
+          workspaces: . -> target
+      - name: Install compiler and diagnostic tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang cmake ninja-build capnproto libcapnp-dev libssl-dev protobuf-compiler default-jre-headless
+          rustup component add rustfmt clippy
+          rustup target add thumbv7em-none-eabi thumbv6m-none-eabi
+          git submodule update --init --depth 1 -- vendor/capnproto
+          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$RUNNER_TEMP/tla2tools.jar"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
+      - name: Validate counters and droplet lifecycle
+        run: |
+          python3 -m unittest discover -s benchmarks/rpc -p test_work_profile.py
+          cargo test --locked -p capntproto-dev --lib cloud::
+          cargo clippy --locked -p capntproto-dev -p capntproto-quality --all-targets -- -D warnings
+      - name: Exercise fixed and hosted ownership
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: |
+          cargo test --locked -p capntproto-rpc-engine --no-default-features --lib
+          cargo test --locked -p capntproto-rpc-engine --features alloc --lib
+          cargo test --locked -p capntproto-rpc-engine --no-default-features --doc
+          cargo test --locked --manifest-path verification/legacy-fixed/Cargo.toml --lib
+          cargo test --locked --manifest-path verification/legacy-fixed/Cargo.toml --features alloc --lib
+          cargo run --locked --manifest-path verification/legacy-fixed/Cargo.toml --bin legacy-fixed-link
+          cargo test --locked --manifest-path verification/legacy-alloc/Cargo.toml --lib
+          cargo test --locked -p capntproto-rpc --lib
+          cargo test --locked --no-default-features --features tls --test ignore_result
+          cargo test --locked --features quic --test secure_rpc
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path verification/legacy-fixed/Cargo.toml --all-targets -- -D warnings
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path verification/legacy-fixed/Cargo.toml -- --check
+      - name: Prove allocator-free bare-metal linkage
+        env:
+          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
+        run: |
+          cargo check --locked -p capntproto-rpc-engine --no-default-features --target thumbv6m-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --features alloc --target thumbv7em-none-eabi
+          cargo build --locked --manifest-path verification/legacy-fixed/Cargo.toml --lib --target thumbv7em-none-eabi
+          rustc --edition=2021 --target thumbv7em-none-eabi -C panic=abort -C opt-level=2 -L dependency=verification/legacy-fixed/target/thumbv7em-none-eabi/debug/deps --extern capntproto_legacy_fixed_check=verification/legacy-fixed/target/thumbv7em-none-eabi/debug/libcapntproto_legacy_fixed_check.rlib verification/legacy-fixed/src/main.rs -o "$RUNNER_TEMP/legacy-ownership.elf"
+          python3 verification/portable/verify-core-link.py --source verification/legacy-fixed/src/imported.rs --scope 'Link-only borrowed import retirement and cancellation ownership through generated legacy dispatch. Not a complete allocation-free RPC connection or board execution.' --elf "$RUNNER_TEMP/legacy-ownership.elf" > "$RUNNER_TEMP/legacy-ownership-link.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: legacy-ownership-link
+          path: ${{ runner.temp }}/legacy-ownership-link.json
+          if-no-files-found: warn
+  miri:
+    name: Import retirement and cancellation ownership under Miri
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      MIRIFLAGS: -Zmiri-strict-provenance
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install schema compiler and pinned memory checker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - name: Check both pointer widths and feature profiles
+        run: |
+          for width in x86_64-unknown-linux-gnu i686-unknown-linux-gnu; do
+            cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --lib --target "$width" references::
+            cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --lib --target "$width" completion::cancellation::
+            cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/legacy-fixed/Cargo.toml --lib --target "$width"
+            cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/legacy-fixed/Cargo.toml --features alloc --lib --target "$width"
+            cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/legacy-alloc/Cargo.toml --lib --target "$width"
+          done
+  counters:
+    name: Require Ir, Bcm and Bim within 1% on CI droplets
+    # Build/profile while the independent Miri lane runs. Both lanes must pass
+    # before accepting the candidate; avoid serializing their compile time.
+    needs: [correctness]
+    uses: ./.github/workflows/performance.yml # zizmor: ignore[self-repository]
+    with:
+      campaign: run-legacy-work
+      legacy_base: 16228c6779b75efa181469c9d833379f1cb4d35d
+    secrets: inherit
