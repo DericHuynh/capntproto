@@ -112,7 +112,7 @@ jobs:
           ref: ${{ inputs.portable_base }}
           path: target/portable-baseline-source
           persist-credentials: false
-      - name: Build the frozen portable control with the same compiler and release profile
+      - name: Build the frozen portable control with the same compiler
         if: inputs.portable_base != ''
         env:
           PORTABLE_BASE: ${{ inputs.portable_base }}
@@ -120,10 +120,10 @@ jobs:
           CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path target/portable-baseline-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
           cp benchmarks/rpc/target/release/capntproto-rpc-bench target/benchmark-build/bundle/driver-baseline
           python3 - <<'PYTHON'
-          import hashlib, json, os
+          import hashlib, json, os, tomllib
           from pathlib import Path
           bundle = Path('target/benchmark-build/bundle')
-          data = dict(commit=os.environ['PORTABLE_BASE'], sha256=hashlib.sha256((bundle/'driver-baseline').read_bytes()).hexdigest(), profile='release, fat LTO, one codegen unit, debug=1, overflow checks enabled')
+          data = dict(commit=os.environ['PORTABLE_BASE'], sha256=hashlib.sha256((bundle/'driver-baseline').read_bytes()).hexdigest(), profile='release; settings from pinned Cargo manifests and compiler defaults', benchmark_manifest_release=tomllib.loads(Path('target/portable-baseline-source/benchmarks/rpc/Cargo.toml').read_text()).get('profile', {}).get('release', {}), profile_environment={key: os.environ[key] for key in ('CARGO_PROFILE_RELEASE_LTO', 'CARGO_PROFILE_RELEASE_CODEGEN_UNITS', 'CARGO_PROFILE_RELEASE_OPT_LEVEL', 'CARGO_PROFILE_RELEASE_DEBUG', 'CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS') if key in os.environ})
           (bundle/'portable-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
           PYTHON
       - name: Validate the optional frozen legacy revision
@@ -137,7 +137,7 @@ jobs:
           ref: ${{ inputs.legacy_base }}
           path: target/legacy-baseline-source
           persist-credentials: false
-      - name: Build the frozen legacy control with the same compiler and release profile
+      - name: Build the frozen legacy control with the same compiler
         if: inputs.legacy_base != ''
         env:
           LEGACY_BASE: ${{ inputs.legacy_base }}
@@ -145,10 +145,10 @@ jobs:
           CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path target/legacy-baseline-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
           cp benchmarks/rpc/target/release/capntproto-rpc-bench target/benchmark-build/bundle/driver-legacy-baseline
           python3 - <<'PYTHON'
-          import hashlib, json, os
+          import hashlib, json, os, tomllib
           from pathlib import Path
           bundle = Path('target/benchmark-build/bundle')
-          data = dict(commit=os.environ['LEGACY_BASE'], sha256=hashlib.sha256((bundle/'driver-legacy-baseline').read_bytes()).hexdigest(), profile='release, fat LTO, one codegen unit, debug=1, overflow checks enabled')
+          data = dict(commit=os.environ['LEGACY_BASE'], sha256=hashlib.sha256((bundle/'driver-legacy-baseline').read_bytes()).hexdigest(), profile='release; settings from pinned Cargo manifests and compiler defaults', benchmark_manifest_release=tomllib.loads(Path('target/legacy-baseline-source/benchmarks/rpc/Cargo.toml').read_text()).get('profile', {}).get('release', {}), profile_environment={key: os.environ[key] for key in ('CARGO_PROFILE_RELEASE_LTO', 'CARGO_PROFILE_RELEASE_CODEGEN_UNITS', 'CARGO_PROFILE_RELEASE_OPT_LEVEL', 'CARGO_PROFILE_RELEASE_DEBUG', 'CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS') if key in os.environ})
           (bundle/'legacy-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
           PYTHON
       - name: Archive executable bundle with permissions intact

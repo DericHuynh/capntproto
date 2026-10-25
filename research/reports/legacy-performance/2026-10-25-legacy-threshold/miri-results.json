@@ -1,0 +1,33 @@
+{
+  "run": 40211796330,
+  "job": 121224396123,
+  "toolchain": "nightly-2026-08-29",
+  "flags": "-Zmiri-strict-provenance",
+  "targets": [
+    "x86_64-unknown-linux-gnu",
+    "i686-unknown-linux-gnu"
+  ],
+  "results": [
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "passed_executions": 20
+}
