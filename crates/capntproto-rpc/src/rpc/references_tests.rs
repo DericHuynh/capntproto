@@ -394,7 +394,7 @@ fn response_completion_keeps_question_alive_across_forwarding_and_cancellation()
         let (reference, response, _) =
             Request::send_internal(&fixture.state, message, &[], false, permit, false).unwrap();
         let weak = Rc::downgrade(&reference);
-        let id = *reference.borrow().record().id();
+        let id = reference.borrow().id;
         let (sender, receiver) = oneshot::channel::<()>();
         if stage != 0 {
             QuestionRef::fulfill(
@@ -618,7 +618,7 @@ fn direct_pipeline_settles_before_application_poll_and_survives_response_cancell
         let permit = fixture.state.admission.reserve().unwrap();
         let (reference, response, pipeline) =
             Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
-        let id = *reference.borrow().record().id();
+        let id = reference.borrow().id;
         let weak = Rc::downgrade(&reference);
         let pipeline = pipeline.unwrap();
         let projected = pipeline.get_pipelined_cap(&[]);

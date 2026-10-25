@@ -1,10 +1,9 @@
 //! Caller-polled execution of incoming Calls. The portable answer ledger is the
 //! only protocol authority; these slots own accepted application work, not IDs.
 use super::*;
-use alloc::vec::Vec;
 use capntproto_rpc_engine::{answers, clients};
 use capntproto_rpc_wire::clients::{Endpoint, Route};
-use core::num::NonZeroUsize;
+use std::num::NonZeroUsize;
 
 use super::super::ready;
 
@@ -99,7 +98,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     pub(in crate::scoped::wire) fn results(
         &self,
         charge: Option<coordinator::policy::Charge>,
-        pool: Option<crate::MessagePool>,
+        pool: Option<capnp::message::SegmentPool>,
     ) -> Producer {
         self.results_cache.acquire(charge, pool).into_producer()
     }

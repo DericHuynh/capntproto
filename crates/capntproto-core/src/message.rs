@@ -203,32 +203,6 @@ where
     }
 }
 
-/// Retain an immutable pool loan for the entire reader lifetime.
-impl<S: ReaderSegments + ?Sized> ReaderSegments for core::cell::Ref<'_, S> {
-    fn get_segment(&self, idx: u32) -> Option<&[u8]> {
-        (**self).get_segment(idx)
-    }
-    fn len(&self) -> usize {
-        (**self).len()
-    }
-    fn is_empty(&self) -> bool {
-        (**self).is_empty()
-    }
-}
-/// An exclusive loan can also remain owned by a suspended reader. Exposing
-/// segments borrows this guard and does not permit concurrent buffer mutation.
-impl<S: ReaderSegments + ?Sized> ReaderSegments for core::cell::RefMut<'_, S> {
-    fn get_segment(&self, idx: u32) -> Option<&[u8]> {
-        (**self).get_segment(idx)
-    }
-    fn len(&self) -> usize {
-        (**self).len()
-    }
-    fn is_empty(&self) -> bool {
-        (**self).is_empty()
-    }
-}
-
 /// An array of segments.
 pub struct SegmentArray<'a> {
     segments: &'a [&'a [u8]],

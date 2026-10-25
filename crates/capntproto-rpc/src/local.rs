@@ -18,7 +18,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use alloc::{boxed::Box, string::ToString, vec::Vec};
 mod protected;
 
 use capnp::capability::CallHints;
@@ -34,17 +33,15 @@ use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::FutureExt;
 use futures::TryFutureExt;
 
-use crate::collections::HashMap;
-use crate::collections::VecDeque;
-use alloc::rc::{Rc, Weak};
-use core::any::{Any, TypeId};
-use core::cell::{Cell, OnceCell, RefCell};
-use core::future::Future;
-use core::pin::Pin;
-use core::task::Context;
-use core::task::Poll;
+use std::any::{Any, TypeId};
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::{HashMap, VecDeque};
+use std::future::Future;
+use std::pin::Pin;
+use std::rc::{Rc, Weak};
+use std::task::{Context, Poll};
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod allocation_tests;
 #[cfg(test)]
 mod owned_results_tests;
@@ -172,7 +169,7 @@ impl Params {
 }
 
 impl ParamsHook for Params {
-    fn as_any(&self) -> Option<&dyn core::any::Any> {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
     fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
@@ -194,7 +191,7 @@ impl ParamsHook for Params {
 }
 
 pub(crate) struct Results {
-    context: Option<Rc<dyn core::any::Any>>,
+    context: Option<Rc<dyn std::any::Any>>,
     retained_results: OnceCell<Rc<RefCell<Option<Box<dyn ResultsDoneHook>>>>>,
     only_pipeline: bool,
     is_streaming: bool,
@@ -313,7 +310,7 @@ impl Drop for Results {
         let Some(fulfiller) = self.results_done_fulfiller.take() else {
             return;
         };
-        let cap_table = ::core::mem::take(&mut self.cap_table);
+        let cap_table = ::std::mem::take(&mut self.cap_table);
         let result: Box<dyn ResultsDoneHook> = match self.response.take() {
             Some(response) => Box::new(SharedResponse {
                 response,
@@ -347,7 +344,7 @@ impl ResultsHook for Results {
     fn retain_response_context(&mut self, context: Rc<dyn Any>) {
         crate::admission::retain_context(&mut self.context, context);
     }
-    fn cancellation_guard(&self) -> Option<Box<dyn core::any::Any>> {
+    fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
         Some(Box::new(
             self.retained_results
                 .get_or_init(|| Rc::new(RefCell::new(None)))
@@ -485,7 +482,7 @@ pub(crate) fn result_allocator(size_hint: Option<capnp::MessageSize>) -> message
 }
 
 struct ResultsDoneInner {
-    _context: Option<Rc<dyn core::any::Any>>,
+    _context: Option<Rc<dyn std::any::Any>>,
     message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
 }
@@ -523,7 +520,7 @@ impl ResultsDone {
             }),
         }
     }
-    pub(crate) fn with_context(mut self, context: Option<Rc<dyn core::any::Any>>) -> Self {
+    pub(crate) fn with_context(mut self, context: Option<Rc<dyn std::any::Any>>) -> Self {
         Rc::get_mut(&mut self.inner)
             .expect("unpublished results")
             ._context = context;
@@ -570,7 +567,7 @@ impl RequestMessage {
             return;
         }
         let RequestMessage::Envelope(message) =
-            core::mem::replace(self, RequestMessage::Root(message::Builder::new_default()))
+            std::mem::replace(self, RequestMessage::Root(message::Builder::new_default()))
         else {
             unreachable!()
         };
@@ -587,7 +584,7 @@ enum RequestClient {
     // parent pipeline in this same slot until ordered wire publication.
     Publishing(crate::scoped::wire::PipelineRef),
 }
-impl core::ops::Deref for RequestClient {
+impl std::ops::Deref for RequestClient {
     type Target = dyn ClientHook;
     fn deref(&self) -> &Self::Target {
         match self {
@@ -600,7 +597,7 @@ impl core::ops::Deref for RequestClient {
 
 pub(crate) struct Request {
     third_party: Option<Rc<message::Builder<message::HeapAllocator>>>,
-    context: Option<Rc<dyn core::any::Any>>,
+    context: Option<Rc<dyn std::any::Any>>,
     message: RequestMessage,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
     interface_id: u64,
@@ -704,7 +701,7 @@ impl Request {
 }
 
 impl RequestHook for Request {
-    fn third_party_tail_target(&self) -> Option<Box<dyn core::any::Any>> {
+    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
         crate::scoped::tail_target(self.client.as_deref().expect("unsent request"))
     }
     fn set_third_party_tail_target(
@@ -982,13 +979,12 @@ type LocalKey = (TypeId, usize);
 trait RegisteredState: Any {
     fn is_live(&self) -> bool;
 }
-/// Liveness is readable without borrowing the application's mutable state.
-/// Both facts share one allocation; the registry retains only a weak owner.
+/// Liveness does not borrow the application's mutable state or allocate a second owner.
 struct LocalState<S: capability::Server + Clone> {
     live: Cell<bool>,
     inner: RefCell<ClientState<S>>,
 }
-impl<S: capability::Server + Clone> core::ops::Deref for LocalState<S> {
+impl<S: capability::Server + Clone> std::ops::Deref for LocalState<S> {
     type Target = RefCell<ClientState<S>>;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -1010,53 +1006,10 @@ impl LocalRegistration {
         self.state.upgrade().is_some_and(|state| state.is_live())
     }
 }
-#[cfg(feature = "std")]
 thread_local! {
     // Weak entries do not keep application servers alive. Different generated
     // interface views of a Rust server have distinct dispatch implementations.
     static LOCAL_CLIENTS: RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>> = RefCell::default();
-}
-
-/// Explicit identity domain for local clients without thread-local storage.
-/// Keep this registry shared by every client view of the same server. Registries
-/// retain only weak registrations; they do not keep application servers alive.
-#[cfg(not(feature = "std"))]
-#[derive(Clone, Default)]
-pub struct ClientRegistry(Rc<RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>>>);
-#[cfg(not(feature = "std"))]
-impl ClientRegistry {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn new_client<C, S>(&self, server: S) -> C
-    where
-        C: capability::FromServer<S>,
-        S: 'static,
-    {
-        self.new_client_from_rc(Rc::new(server))
-    }
-    pub fn new_client_from_rc<C, S>(&self, server: Rc<S>) -> C
-    where
-        C: capability::FromServer<S>,
-        S: 'static,
-    {
-        C::new(Client::new_in(C::from_server(server), self.clone()).into_hook())
-    }
-    pub fn new_client_with_executor<C, S>(
-        &self,
-        server: Rc<S>,
-        executor: Rc<dyn capability::CallExecutor>,
-    ) -> C
-    where
-        C: capability::FromServer<S>,
-        S: 'static,
-    {
-        C::new(
-            Client::new_in(C::from_server(server), self.clone())
-                .with_executor(executor)
-                .into_hook(),
-        )
-    }
 }
 
 struct ClientState<S>
@@ -1066,15 +1019,13 @@ where
     inner: Option<S>,
     identity: usize,
     registration: Option<LocalKey>,
-    #[cfg(not(feature = "std"))]
-    registry: ClientRegistry,
     resolved: Option<Box<dyn ClientHook>>,
     resolve_task: Option<futures::future::Shared<Promise<(), Error>>>,
     resolve_canceler: Option<Rc<crate::revocable::Canceler>>,
     revocation: Option<Rc<crate::revocable::Canceler>>,
     executor: Option<Rc<dyn capability::CallExecutor>>,
-    #[cfg(all(feature = "std", unix))]
-    fd: Option<alloc::rc::Rc<std::os::fd::OwnedFd>>,
+    #[cfg(unix)]
+    fd: Option<std::rc::Rc<std::os::fd::OwnedFd>>,
 
     /// If a streaming call on this capability has returned an error,
     /// this contains a copy of that error.
@@ -1089,34 +1040,24 @@ where
 impl<S: capability::Server + Clone> Drop for ClientState<S> {
     fn drop(&mut self) {
         if let Some(key) = self.registration {
-            #[cfg(feature = "std")]
-            let _ = LOCAL_CLIENTS.try_with(|clients| Self::unregister(clients, key));
-            #[cfg(not(feature = "std"))]
-            Self::unregister(&self.registry.0, key);
+            let _ = LOCAL_CLIENTS.try_with(|clients| {
+                if let Ok(mut clients) = clients.try_borrow_mut() {
+                    if let Some(views) = clients.get_mut(&key.1) {
+                        if views
+                            .get(&key.0)
+                            .is_some_and(|entry| entry.state.strong_count() == 0)
+                        {
+                            views.remove(&key.0);
+                        }
+                        if views.is_empty() {
+                            clients.remove(&key.1);
+                        }
+                    }
+                }
+            });
         }
         if let Some(canceler) = &self.resolve_canceler {
             canceler.cancel(Error::failed("local client dropped".into()));
-        }
-    }
-}
-impl<S: capability::Server + Clone> ClientState<S> {
-    #[inline]
-    fn unregister(
-        clients: &RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>>,
-        key: LocalKey,
-    ) {
-        if let Ok(mut clients) = clients.try_borrow_mut() {
-            if let Some(views) = clients.get_mut(&key.1) {
-                if views
-                    .get(&key.0)
-                    .is_some_and(|entry| entry.state.strong_count() == 0)
-                {
-                    views.remove(&key.0);
-                }
-                if views.is_empty() {
-                    clients.remove(&key.1);
-                }
-            }
         }
     }
 }
@@ -1229,7 +1170,7 @@ where
             live.set(false);
             state.broken_error = Some(error.clone());
             state.blocked = false;
-            #[cfg(all(feature = "std", unix))]
+            #[cfg(unix)]
             {
                 state.fd = None;
             }
@@ -1237,7 +1178,7 @@ where
                 server,
                 state.revocation.clone(),
                 state.resolve_canceler.clone(),
-                core::mem::take(&mut state.blocked_calls),
+                std::mem::take(&mut state.blocked_calls),
             )
         };
         if let Some(revocation) = revocation {
@@ -1445,7 +1386,6 @@ impl<S> Client<S>
 where
     S: capability::Server + Clone,
 {
-    #[cfg(feature = "std")]
     pub(crate) fn is_registered(server: usize, identity: usize) -> bool
     where
         S: 'static,
@@ -1478,7 +1418,7 @@ where
             self.state.borrow().inner.as_ref().unwrap().as_ptr(),
         );
         let revocable = self.state.borrow().revocation.is_some();
-        let (existing, conflict) = self.with_registry(|clients| {
+        let (existing, conflict) = LOCAL_CLIENTS.with(|clients| {
             let clients = clients.borrow();
             match clients.get(&key.1) {
                 Some(views) => (
@@ -1508,7 +1448,7 @@ where
         }
         self.state.borrow_mut().registration = Some(key);
         let erased: Rc<dyn RegisteredState> = self.state.clone();
-        self.with_registry(|clients| {
+        LOCAL_CLIENTS.with(|clients| {
             clients.borrow_mut().entry(key.1).or_default().insert(
                 key.0,
                 LocalRegistration {
@@ -1614,7 +1554,6 @@ where
         (self, revoker)
     }
 
-    #[cfg(feature = "std")]
     pub(crate) fn new_with_executor(server: S, executor: Rc<dyn capability::CallExecutor>) -> Self {
         Self::new(server).with_executor(executor)
     }
@@ -1624,52 +1563,27 @@ where
         self
     }
 
-    #[cfg(all(feature = "std", unix))]
-    pub(crate) fn new_with_fd(server: S, fd: alloc::rc::Rc<std::os::fd::OwnedFd>) -> Self {
+    #[cfg(unix)]
+    pub(crate) fn new_with_fd(server: S, fd: std::rc::Rc<std::os::fd::OwnedFd>) -> Self {
         let client = Self::new(server);
         client.state.borrow_mut().fd = Some(fd);
         client
     }
 
-    #[inline]
-    fn with_registry<R>(
-        &self,
-        f: impl FnOnce(&RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>>) -> R,
-    ) -> R {
-        #[cfg(feature = "std")]
-        {
-            LOCAL_CLIENTS.with(f)
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            f(&self.state.borrow().registry.0)
-        }
-    }
-    #[cfg(feature = "std")]
     pub(crate) fn new(server: S) -> Self {
-        Self::construct(server)
-    }
-    #[cfg(not(feature = "std"))]
-    pub(crate) fn new_in(server: S, registry: ClientRegistry) -> Self {
-        Self::construct(server, registry)
-    }
-    #[inline]
-    fn construct(server: S, #[cfg(not(feature = "std"))] registry: ClientRegistry) -> Self {
         let client = Self {
             state: Rc::new(LocalState {
                 live: Cell::new(true),
                 inner: RefCell::new(ClientState {
                     identity: 0,
                     registration: None,
-                    #[cfg(not(feature = "std"))]
-                    registry,
                     resolved: None,
                     resolve_task: None,
                     resolve_canceler: None,
                     inner: Some(server),
                     revocation: None,
                     executor: None,
-                    #[cfg(all(feature = "std", unix))]
+                    #[cfg(unix)]
                     fd: None,
                     broken_error: None,
                     blocked: false,
@@ -1722,7 +1636,7 @@ where
             chain.follow(&*resolved);
         } else if state.inner.is_some() {
             chain.push("local");
-            chain.push(core::any::type_name::<S>());
+            chain.push(std::any::type_name::<S>());
         } else {
             chain.push("revoked");
         }
@@ -1751,8 +1665,8 @@ where
             result
         })
     }
-    #[cfg(all(feature = "std", unix))]
-    fn get_fd(&self) -> Option<alloc::rc::Rc<std::os::fd::OwnedFd>> {
+    #[cfg(unix)]
+    fn get_fd(&self) -> Option<std::rc::Rc<std::os::fd::OwnedFd>> {
         self.state.borrow().fd.clone()
     }
     fn add_ref(&self) -> Box<dyn ClientHook> {

@@ -2,11 +2,10 @@
 //! cross-thread mutex or atomic reference count. Waiter slots are recycled when
 //! calls finish, and every callback runs after releasing the state borrow.
 use super::{completion, Cell, Context, Error, Future, Pin, Poll, Rc, RefCell, Waker};
-use alloc::vec::Vec;
 
 enum Notification {
     Task(Waker),
-    Response(alloc::rc::Weak<super::response::State>),
+    Response(std::rc::Weak<super::response::State>),
 }
 impl Notification {
     fn wake(self) {
@@ -98,7 +97,7 @@ impl Receiver {
             state.reason = Some(error);
             self.state.closed.set(true);
             state.free = None;
-            core::mem::take(&mut state.waiters)
+            std::mem::take(&mut state.waiters)
         };
         for wake in waiters.into_iter().filter_map(|waiter| waiter.wake) {
             wake.wake();

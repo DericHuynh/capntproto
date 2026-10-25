@@ -1,10 +1,5 @@
 //! Owned application results; protocol ownership stays in the portable driver.
 use super::*;
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
 use capnp::private::capability::RequestHook;
 use coordinator::multiparty::{tail, Handle};
 #[cfg(test)]
@@ -14,13 +9,13 @@ mod tests;
 struct State {
     revision: Cell<u64>,
     protocol_wake: RefCell<Option<Waker>>,
-    message_pool: Option<crate::MessagePool>,
+    message_pool: Option<capnp::message::SegmentPool>,
     tail_origin: RefCell<Option<Handle>>,
     network: RefCell<Option<Box<NetworkState>>>,
     transferred: Cell<bool>,
-    context: RefCell<Option<Rc<dyn core::any::Any>>>,
+    context: RefCell<Option<Rc<dyn std::any::Any>>>,
     method: Cell<Option<DynamicCall>>,
-    payload: core::cell::OnceCell<CompletedPayload>,
+    payload: std::cell::OnceCell<CompletedPayload>,
     pipeline: RefCell<Option<Rc<dyn PipelineHook>>>,
     completion: RefCell<Option<capnp::Result<()>>>,
     wake: RefCell<Waiters>,
@@ -122,7 +117,7 @@ struct NetworkState {
     destination: Option<tail::Destination>,
     guard: Option<(
         Option<Rc<crate::third_party::ThirdPartyExchange>>,
-        Box<dyn core::any::Any>,
+        Box<dyn std::any::Any>,
     )>,
 }
 impl State {
@@ -133,7 +128,7 @@ impl State {
                 .checked_add(1)
                 .expect("results revision exhausted"),
         );
-        let wakes = core::mem::take(&mut *self.wake.borrow_mut());
+        let wakes = std::mem::take(&mut *self.wake.borrow_mut());
         for wake in wakes.first.into_iter().chain(wakes.overflow) {
             wake.wake();
         }
@@ -160,7 +155,7 @@ impl Cache {
     pub(super) fn acquire(
         &self,
         charge: Option<coordinator::policy::Charge>,
-        pool: Option<crate::MessagePool>,
+        pool: Option<capnp::message::SegmentPool>,
     ) -> Results {
         let cached = self.0.take();
         match cached {
@@ -208,7 +203,7 @@ impl Cache {
 /// running operation to release its protocol interest.
 #[derive(Default)]
 pub struct Producer(Results);
-impl core::ops::Deref for Producer {
+impl std::ops::Deref for Producer {
     type Target = Results;
     fn deref(&self) -> &Results {
         &self.0
@@ -334,7 +329,7 @@ impl Results {
     pub(crate) fn retain_network(
         &self,
         exchange: Option<Rc<crate::third_party::ThirdPartyExchange>>,
-        guard: Box<dyn core::any::Any>,
+        guard: Box<dyn std::any::Any>,
     ) {
         let previous = self
             .0
@@ -361,7 +356,7 @@ impl Results {
     }
     pub(in crate::scoped::wire) fn with_charge(
         charge: Option<coordinator::policy::Charge>,
-        message_pool: Option<crate::MessagePool>,
+        message_pool: Option<capnp::message::SegmentPool>,
     ) -> Self {
         Self(Rc::new(State {
             revision: Cell::new(0),
@@ -373,7 +368,7 @@ impl Results {
             network: RefCell::new(None),
             context: RefCell::new(None),
             method: Cell::new(None),
-            payload: core::cell::OnceCell::new(),
+            payload: std::cell::OnceCell::new(),
             pipeline: RefCell::new(None),
             completion: RefCell::new(None),
             wake: RefCell::new(Waiters::default()),
@@ -685,7 +680,7 @@ struct Hook {
 }
 impl Drop for Hook {
     fn drop(&mut self) {
-        let caps = core::mem::take(&mut self.caps);
+        let caps = std::mem::take(&mut self.caps);
         let payload = match self.message.take().map(connection::PreparedReturn::freeze) {
             Some(message) if caps.is_empty() => {
                 if message.segment_count() == 1 {
@@ -716,10 +711,10 @@ impl ResultsHook for Hook {
         // local dispatch establishes streaming barriers before polling those.
         true
     }
-    fn retain_response_context(&mut self, context: Rc<dyn core::any::Any>) {
+    fn retain_response_context(&mut self, context: Rc<dyn std::any::Any>) {
         crate::admission::retain_context(&mut self.results.0.context.borrow_mut(), context);
     }
-    fn cancellation_guard(&self) -> Option<Box<dyn core::any::Any>> {
+    fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
         Some(Box::new(self.results.clone()))
     }
     fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
@@ -742,27 +737,14 @@ impl ResultsHook for Hook {
                 size
             });
             let allocator = crate::local::result_allocator(hint);
-            #[cfg(feature = "std")]
             let allocator = match &self.results.0.message_pool {
                 Some(pool) => allocator.segment_pool(pool.clone()),
                 None => allocator,
             };
-            #[cfg(feature = "std")]
             thread_local! {
                 static TEMPLATE: connection::PreparedReturnTemplate = Default::default();
             }
-            #[cfg(feature = "std")]
-            {
-                TEMPLATE
-                    .with(|template| connection::PreparedReturn::from_template(template, allocator))
-            }
-            #[cfg(not(feature = "std"))]
-            {
-                connection::PreparedReturn::from_template(
-                    &connection::PreparedReturnTemplate::default(),
-                    allocator,
-                )
-            }
+            TEMPLATE.with(|template| connection::PreparedReturn::from_template(template, allocator))
         });
         let mut root = message.results();
         root.imbue_mut(&mut self.caps);

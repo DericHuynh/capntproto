@@ -1,6 +1,5 @@
 //! Connection entry points, cancellation and terminal ownership cleanup.
 use super::*;
-use alloc::boxed::Box;
 
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
@@ -55,8 +54,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
         stop: impl Future<Output = capnp::Result<()>>,
     ) -> Result<(), RunError<R::Error, W::Error>> {
-        let stop = core::pin::pin!(stop);
-        let mut stop = core::pin::pin!(notified::Notified::new(stop));
+        let stop = std::pin::pin!(stop);
+        let mut stop = std::pin::pin!(notified::Notified::new(stop));
         let mut pending = None;
         let outcome = self
             .drive(
@@ -136,13 +135,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         shutdown: impl Future<Output = capnp::Result<()>>,
         abort: impl Future<Output = Error>,
     ) -> Result<(), RunError<R::Error, W::Error>> {
-        let abort = core::pin::pin!(abort);
-        let mut abort = core::pin::pin!(notified::Notified::new(abort));
-        let shutdown = core::pin::pin!(shutdown);
-        let mut shutdown = core::pin::pin!(notified::Notified::new(shutdown));
+        let abort = std::pin::pin!(abort);
+        let mut abort = std::pin::pin!(notified::Notified::new(abort));
+        let shutdown = std::pin::pin!(shutdown);
+        let mut shutdown = std::pin::pin!(notified::Notified::new(shutdown));
         let mut pending = None;
         let outcome = {
-            let stop = core::future::poll_fn(|cx| {
+            let stop = std::future::poll_fn(|cx| {
                 if let Poll::Ready(error) = abort.as_mut().poll(cx) {
                     return Poll::Ready(Err(error));
                 }
@@ -156,7 +155,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 scratch,
                 output,
                 controls,
-                core::pin::pin!(stop),
+                std::pin::pin!(stop),
                 &mut pending,
             )
             .await
@@ -179,7 +178,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             Err(error) => Err(error),
             Ok(()) => {
                 let mut drained = false;
-                core::future::poll_fn(|cx| {
+                std::future::poll_fn(|cx| {
                     if let Poll::Ready(error) = abort.as_mut().poll(cx) {
                         return Poll::Ready(Err(Cause::Protocol(error)));
                     }
@@ -231,7 +230,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         self.hooks.close(&mut self.driver.capabilities(), reason);
         let mut closing = self.driver.terminate(queue);
         let cleanup =
-            core::future::poll_fn(|cx| match closing.poll(messages, self.options.budget) {
+            std::future::poll_fn(|cx| match closing.poll(messages, self.options.budget) {
                 Ok(connection::Termination::Done) => Poll::Ready(Ok(())),
                 Err(error) => Poll::Ready(Err(error)),
                 Ok(_) => {
@@ -293,7 +292,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             // Buffered transports can admit and prepare their next frame in
             // one polling state. Keep the same yields and budgets as byte IO,
             // without suspending a separate future at each envelope boundary.
-            let prepared = core::future::poll_fn(|cx| {
+            let prepared = std::future::poll_fn(|cx| {
                 let result = self.poll_prepared(
                     messages,
                     queue,
@@ -329,9 +328,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     self.options.budget,
                     |_| cancel.get().map_or(Poll::Pending, Poll::Ready),
                 );
-                let mut receive = core::pin::pin!(receive);
+                let mut receive = std::pin::pin!(receive);
                 let mut first_read = true;
-                core::future::poll_fn(|cx| {
+                std::future::poll_fn(|cx| {
                     let result = (|| {
                         let end = match self.poll_stop(stop.as_mut(), cx) {
                             Poll::Ready(result) => {

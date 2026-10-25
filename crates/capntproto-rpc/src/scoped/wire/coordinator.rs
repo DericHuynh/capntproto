@@ -4,7 +4,7 @@
 use super::*;
 use capntproto_rpc_engine::{ids::ImportId, io};
 use capntproto_rpc_wire::owned::{pipelines, tasks, Frame};
-use core::num::NonZeroUsize;
+use std::num::NonZeroUsize;
 mod bootstrap;
 pub(crate) mod multiparty;
 mod notified;
@@ -54,8 +54,8 @@ pub struct RunError<R, W> {
     pub cause: Option<Cause<R, W>>,
     pub cleanup: Option<connection::Error>,
 }
-impl<R: core::fmt::Debug, W: core::fmt::Debug> core::fmt::Display for RunError<R, W> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl<R: std::fmt::Debug, W: std::fmt::Debug> std::fmt::Display for RunError<R, W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "connection stopped: {:?}; cleanup: {:?}",
@@ -63,7 +63,7 @@ impl<R: core::fmt::Debug, W: core::fmt::Debug> core::fmt::Display for RunError<R
         )
     }
 }
-impl<R: core::fmt::Debug, W: core::fmt::Debug> core::error::Error for RunError<R, W> {}
+impl<R: std::fmt::Debug, W: std::fmt::Debug> std::error::Error for RunError<R, W> {}
 
 #[derive(Default)]
 struct Pump<'id> {

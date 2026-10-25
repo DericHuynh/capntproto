@@ -1,6 +1,5 @@
 //! Hosted introduction policy and generation-owned forwarding vines.
 use super::*;
-use alloc::{boxed::Box, vec::Vec};
 use capntproto_rpc_engine::{
     clients::Location,
     ids::{ExportId, WireId},
@@ -14,8 +13,8 @@ pub(crate) trait Network {
         contact: any_pointer::Reader<'_>,
     ) -> capnp::Result<super::tail::Destination>;
     fn domain(&self) -> usize;
-    fn peer(&self) -> Box<dyn core::any::Any>;
-    fn introduce(&self, peer: Box<dyn core::any::Any>) -> capnp::Result<Option<(Body, Body)>>;
+    fn peer(&self) -> Box<dyn std::any::Any>;
+    fn introduce(&self, peer: Box<dyn std::any::Any>) -> capnp::Result<Option<(Body, Body)>>;
     fn accept(
         &self,
         contact: any_pointer::Reader<'_>,
@@ -127,7 +126,7 @@ impl ClientHook for Vine {
     fn get_failure(&self) -> Option<Error> {
         self.inner.get_failure()
     }
-    fn as_any(&self) -> Option<&dyn core::any::Any> {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
     fn add_ref(&self) -> Box<dyn ClientHook> {
@@ -195,7 +194,7 @@ impl ClientHook for Vine {
     fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
         self.inner.metadata_changes()
     }
-    #[cfg(all(feature = "std", unix))]
+    #[cfg(unix)]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.inner.get_fd()
     }

@@ -1,18 +1,13 @@
 //! Network registration and shutdown ownership shared by hosted RPC drivers.
 use crate::{rpc, Bootstrap, Connection, Error};
-use alloc::rc::Rc;
-use alloc::rc::Weak;
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
 use capntproto_rpc_engine::completion::shared;
-use core::cell::RefCell;
-use core::pin::Pin;
-use core::task::Context;
-use core::task::Poll;
 use futures::{future::Shared, Future};
+use std::{
+    cell::RefCell,
+    pin::Pin,
+    rc::{Rc, Weak},
+    task::{Context, Poll},
+};
 
 pub(crate) mod registry;
 use registry::{Acquired, Connections};
@@ -23,7 +18,7 @@ pub(crate) fn drive_network<V>(
     network: &mut dyn crate::VatNetwork<V>,
     tasks: &mut crate::task_set::TaskSetHandle<Error>,
 ) {
-    register_network(network, tasks, core::future::ready, true);
+    register_network(network, tasks, std::future::ready, true);
 }
 
 /// A network's writer can finish before a protocol task observes its close

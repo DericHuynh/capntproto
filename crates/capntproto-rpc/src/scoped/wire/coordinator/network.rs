@@ -3,7 +3,6 @@
 //! layer owns neither protocol tables nor a transport/executor.
 use super::*;
 use crate::system::registry::{self, Acquired, Connections};
-use alloc::boxed::Box;
 use futures::future::Shared;
 mod vat;
 pub use vat::VatConnection;
@@ -150,8 +149,8 @@ pub struct Rejected<C> {
     pub error: Error,
     pub coordinator: C,
 }
-impl<C> core::fmt::Debug for Rejected<C> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl<C> std::fmt::Debug for Rejected<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Rejected")
             .field("error", &self.error)
             .finish_non_exhaustive()

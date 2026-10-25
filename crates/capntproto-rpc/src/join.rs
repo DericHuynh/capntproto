@@ -1,11 +1,9 @@
 //! Standard Join at a bilateral network boundary (rpc-twoparty.capnp).
 //! Multiparty share authentication is deliberately a different network contract.
 use super::*;
-use crate::collections::BTreeMap;
-use crate::collections::HashSet;
 use crate::rpc_twoparty_capnp::{join_key_part, join_result};
-use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::private::capability::JoinedCapability as Outcome;
+use std::collections::{BTreeMap, HashSet};
 
 /// Capability equality through local resolution and bilateral RPC boundaries.
 ///

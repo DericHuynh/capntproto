@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! use capnp_rpc::{portable::{Options, RpcSystem}, rpc_twoparty_capnp::Side};
-//! use core::num::NonZeroUsize;
+//! use std::num::NonZeroUsize;
 //!
 //! # fn example(network: Box<dyn capnp_rpc::VatNetwork<Side>>) -> capnp::Result<()> {
 //! let options = Options::bounded(
@@ -40,18 +40,17 @@ use crate::{
     task_set::{TaskSet, TaskSetHandle},
     Bootstrap, BootstrapFactory, Error, VatNetwork,
 };
-use alloc::rc::Rc;
-use alloc::rc::Weak;
-use alloc::{boxed::Box, string::String, vec::Vec};
 use capnp::capability::{self, Promise};
 use capntproto_rpc_engine::completion::shared;
-use core::cell::RefCell;
-use core::future::Future;
-use core::num::NonZeroUsize;
-use core::pin::Pin;
-use core::task::Context;
-use core::task::Poll;
 use futures::future::Shared;
+use std::{
+    cell::RefCell,
+    future::Future,
+    num::NonZeroUsize,
+    pin::Pin,
+    rc::{Rc, Weak},
+    task::{Context, Poll},
+};
 
 mod connection;
 mod introduction;
@@ -255,8 +254,8 @@ impl<V: 'static> RpcSystem<V> {
                 if remaining == 0 {
                     remaining = context.options.poll_budget.get();
                     let mut yielded = false;
-                    core::future::poll_fn(|cx| {
-                        if core::mem::replace(&mut yielded, true) {
+                    std::future::poll_fn(|cx| {
+                        if std::mem::replace(&mut yielded, true) {
                             Poll::Ready(())
                         } else {
                             cx.waker().wake_by_ref();

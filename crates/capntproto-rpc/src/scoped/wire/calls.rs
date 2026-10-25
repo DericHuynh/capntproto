@@ -1,9 +1,8 @@
 //! Outgoing owned calls and local execution over one portable invocation ledger.
 use super::*;
-use alloc::{boxed::Box, vec::Vec};
 use capntproto_rpc_engine::clients::{Destination, Location};
 use capntproto_rpc_wire::clients::{Endpoint, Route};
-use core::num::NonZeroUsize;
+use std::num::NonZeroUsize;
 
 type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
@@ -108,7 +107,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     published: usize,
     pending: Option<Box<Call>>,
     maximum: usize,
-    admission_wait: Option<alloc::sync::Arc<super::ready::Signal>>,
+    admission_wait: Option<std::sync::Arc<super::ready::Signal>>,
     admission_parked: bool,
     ready: super::ready::Queue,
     lane: u8,

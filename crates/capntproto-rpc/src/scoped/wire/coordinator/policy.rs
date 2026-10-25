@@ -1,6 +1,5 @@
 //! Hosted policy handles. The incoming counter itself is allocation-free.
 use super::*;
-use alloc::string::String;
 use capntproto_rpc_engine::flow_control::incoming::{Incoming, OwnedCharge};
 
 type TraceEncoder = Rc<dyn Fn(&Error) -> String>;

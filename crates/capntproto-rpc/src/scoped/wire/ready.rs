@@ -1,20 +1,16 @@
 //! Bounded FIFO of operation identities. Wakers carry no driver references.
 //! Slot generations reject notifications retained by an earlier operation.
-use crate::collections::VecDeque;
-use crate::sync::Mutex;
-use alloc::sync::Arc;
-use alloc::sync::Weak;
-use alloc::task::Wake;
-use alloc::vec::Vec;
-use core::cell::RefCell;
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use core::task::Waker;
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, Mutex, Weak};
+use std::task::{Wake, Waker};
 
 /// A single parked admission. Each new owner receives a fresh signal, so an
 /// escaped notification cannot reactivate a later request in the same lane.
 #[derive(Default)]
 pub(crate) struct Signal {
-    ready: core::sync::atomic::AtomicBool,
+    ready: std::sync::atomic::AtomicBool,
     parent: futures::task::AtomicWaker,
 }
 impl Signal {
@@ -22,11 +18,11 @@ impl Signal {
         self.parent.register(wake);
     }
     pub(crate) fn is_ready(&self) -> bool {
-        self.ready.load(core::sync::atomic::Ordering::Acquire)
+        self.ready.load(std::sync::atomic::Ordering::Acquire)
     }
     pub(crate) fn clear(&self) {
         self.ready
-            .store(false, core::sync::atomic::Ordering::Release);
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 }
 impl Wake for Signal {
@@ -34,7 +30,7 @@ impl Wake for Signal {
         self.wake_by_ref();
     }
     fn wake_by_ref(self: &Arc<Self>) {
-        if !self.ready.swap(true, core::sync::atomic::Ordering::AcqRel) {
+        if !self.ready.swap(true, std::sync::atomic::Ordering::AcqRel) {
             self.parent.wake();
         }
     }

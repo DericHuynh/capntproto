@@ -19,7 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::any_pointer;
 use capnp::private::capability::{
     ClientHook, ParamsHook, PipelineHook, PipelineOp, RequestHook, ResultsHook,
@@ -29,7 +28,7 @@ use capnp::Error;
 use capnp::capability::{Promise, RemotePromise};
 use capnp::traits::ImbueMut;
 
-use alloc::rc::Rc;
+use std::rc::Rc;
 
 pub(crate) struct Pipeline {
     error: Error,
@@ -133,7 +132,7 @@ impl ClientHook for Client {
     fn get_failure(&self) -> Option<Error> {
         Some(self.inner.error.clone())
     }
-    fn as_any(&self) -> Option<&dyn core::any::Any> {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {

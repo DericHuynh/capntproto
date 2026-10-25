@@ -1,15 +1,14 @@
 //! Hosted connection ownership, independent of a protocol driver or transport.
 //! Registrations cover construction, live lookup and final transport shutdown.
-use crate::collections::HashMap;
-use alloc::rc::Rc;
-use alloc::rc::Weak;
-use alloc::vec::Vec;
 use capnp::{capability::Promise, Error};
 use capntproto_rpc_engine::completion::shared;
-use core::cell::Cell;
-use core::cell::RefCell;
-use core::num::NonZeroU64;
 use futures::{future::Shared, FutureExt};
+use std::num::NonZeroU64;
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    rc::{Rc, Weak},
+};
 
 pub(crate) trait Connection {
     fn disconnect(&self, error: Error);
@@ -164,7 +163,7 @@ impl<S: Connection> Connections<S> {
             if entries
                 .get(&id)
                 .and_then(|entry| entry.state.as_ref())
-                .is_some_and(|current| core::ptr::eq(&**current, state))
+                .is_some_and(|current| std::ptr::eq(&**current, state))
             {
                 entries.remove(&id)
             } else {

@@ -1,6 +1,6 @@
 //! Hash only trusted, runtime-generated keys. Full key equality (including the
 //! generation) remains the authority check; wire IDs never enter this index.
-use core::hash::{BuildHasherDefault, Hasher};
+use std::hash::{BuildHasherDefault, Hasher};
 #[derive(Default)]
 pub(super) struct KeyHasher(u64);
 impl Hasher for KeyHasher {
@@ -19,7 +19,7 @@ impl Hasher for KeyHasher {
         self.0 = (self.0.rotate_left(5) ^ value).wrapping_mul(0x517cc1b727220a95);
     }
 }
-pub(super) type Bindings<'id> = crate::collections::HashMap<
+pub(super) type Bindings<'id> = std::collections::HashMap<
     capntproto_rpc_engine::clients::Key<'id>,
     usize,
     BuildHasherDefault<KeyHasher>,

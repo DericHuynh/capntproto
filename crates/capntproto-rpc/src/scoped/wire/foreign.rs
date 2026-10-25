@@ -3,10 +3,9 @@
 //! after settlement, so resolving a promise never bypasses policy or overtakes
 //! calls that were already admitted through its original proxy.
 use super::*;
-use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capntproto_rpc_engine::clients::{self, Destination, Location};
 use capntproto_rpc_wire::clients::{Endpoint, Route};
-use core::num::NonZeroUsize;
+use std::num::NonZeroUsize;
 
 struct Entry<'id> {
     // A weak, generational graph identity, not a retained capability. Abandoned
@@ -360,7 +359,7 @@ pub fn local_metadata(hook: &Rc<dyn ClientHook>) -> EndpointMetadata {
             .as_any()
             .and_then(|any| any.downcast_ref::<crate::broken::Client>())
             .map(|hook| hook.error().clone()),
-        #[cfg(all(feature = "std", unix))]
+        #[cfg(unix)]
         fd: hook.get_fd(),
     }
 }

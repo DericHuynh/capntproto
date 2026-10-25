@@ -22,49 +22,33 @@
 //! Hooks for the RPC system.
 //!
 //! Roughly corresponds to capability.h in the C++ implementation.
-//! Parameters and responses can retain concrete frame owners in every profile.
-//! Requests can retain concrete parameter/publication owners in every profile.
-//! Clients can retain borrowed capability contexts and create concrete requests.
-//! Dynamic client and dispatch hooks are enabled by `alloc`.
 
+#[cfg(feature = "alloc")]
 use core::future::Future;
+#[cfg(feature = "alloc")]
 use core::marker::PhantomData;
+#[cfg(feature = "alloc")]
 use core::pin::Pin;
+#[cfg(feature = "alloc")]
 use core::task::Poll;
 
 use crate::any_pointer;
 #[cfg(feature = "alloc")]
-use crate::private::capability::{ClientHook, RequestHook, ResultsHook};
-pub use crate::private::capability::{ParamsHook, ResponseHook};
-use crate::traits::Owned;
+use crate::private::capability::{ClientHook, ParamsHook, RequestHook, ResponseHook, ResultsHook};
 #[cfg(feature = "alloc")]
-use crate::traits::Pipelined;
+use crate::traits::{Owned, Pipelined};
 #[cfg(feature = "alloc")]
 use crate::{Error, MessageSize};
-
-mod client_storage;
-#[cfg(test)]
-mod owner_views;
-mod payload_storage;
-#[cfg(test)]
-mod promise_owners;
-mod request_storage;
-pub use client_storage::ClientStorage;
-pub use payload_storage::PayloadStorage;
-pub use request_storage::{PreparedRequest, RequestStorage};
 
 #[cfg(feature = "alloc")]
 mod reply;
 #[cfg(feature = "alloc")]
 pub use reply::{PublishedReply, Reply, ReplyBuilder};
 
+#[cfg(feature = "alloc")]
 mod call;
 #[cfg(feature = "alloc")]
-pub use call::ReplyContext;
-pub use call::{
-    dispatch_call, dispatch_call_with_context, CallContext, CallStorage, DispatchResults,
-    PreparedCall,
-};
+pub use call::{CallContext, ReplyContext};
 
 /// Type alias for `dyn ClientHook`. We define this here because so that generated code
 /// can avoid needing to refer to `dyn` types directly; in Rust 2015 the syntax for
@@ -72,13 +56,8 @@ pub use call::{
 #[cfg(feature = "alloc")]
 pub type DynClientHook = dyn ClientHook;
 
-/// A computation that might eventually resolve to a value of type `T` or an error
-/// of type `E`. Dropping the promise drops its future owner.
-///
-/// `from_owner` retains an unpinned owner or a caller-pinned future reference
-/// without allocation or a `'static` bound. Under `alloc`, the default future
-/// owner remains boxed and `from_future` allocates it. Synchronous errors are
-/// boxed only in that profile to retain the hosted representation.
+/// A computation that might eventually resolve to a value of type `T` or to an error
+///  of type `E`. Dropping the promise cancels the computation.
 ///
 /// The nightly-only `rpc_try` feature allows `?` on a `Result` inside a function
 /// returning `Promise<T, Error>`, converting the error with `Error::from`.
@@ -86,70 +65,24 @@ pub type DynClientHook = dyn ClientHook;
 /// in async code. `Promise` itself does not implement `Try`.
 #[cfg(feature = "alloc")]
 #[must_use = "futures do nothing unless polled"]
-pub struct Promise<
-    T,
-    E,
-    F = Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>,
-> {
-    inner: PromiseInner<T, E, F>,
-}
-#[cfg(not(feature = "alloc"))]
-#[must_use = "futures do nothing unless polled"]
-pub struct Promise<T, E, F = core::future::Ready<core::result::Result<T, E>>> {
-    inner: PromiseInner<T, E, F>,
+pub struct Promise<T, E> {
+    inner: PromiseInner<T, E>,
 }
 
 #[cfg(feature = "alloc")]
-type ImmediateError<E> = alloc::boxed::Box<E>;
-#[cfg(not(feature = "alloc"))]
-type ImmediateError<E> = E;
-
-enum PromiseInner<T, E, F> {
-    // Keep potentially large error context off every hosted deferred promise.
-    // Fixed profiles retain their error inline without a fallback allocator.
-    Immediate(Result<T, ImmediateError<E>>),
-    Deferred(F),
+enum PromiseInner<T, E> {
+    // Keep potentially large error context off every deferred promise. Success
+    // stays inline; only a synchronously rejected promise allocates its error.
+    Immediate(Result<T, alloc::boxed::Box<E>>),
+    Deferred(Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>),
     Empty,
 }
 
-// Only the deferred owner is projected for polling. Immediate results are moved,
-// never pinned, so their output/error types need not implement Unpin.
-impl<T, E, F: Unpin> Unpin for PromiseInner<T, E, F> {}
+// Allow Promise<T,E> to be Unpin, regardless of whether T and E are.
+#[cfg(feature = "alloc")]
+impl<T, E> Unpin for PromiseInner<T, E> {}
 
-impl<T, E, F> Promise<T, E, F> {
-    /// Retain the original future owner. For a !Unpin future, pass the
-    /// `Pin<&mut F>` returned by `core::pin::pin!` instead of moving the future.
-    /// The returned promise cannot outlive that borrow. A borrowed Pin does not
-    /// own destruction of the original future; use a task-place owner when
-    /// dropping the promise must destroy the stored operation immediately.
-    ///
-    /// ```
-    /// use capnp::capability::Promise;
-    /// let value = 17;
-    /// let future = core::pin::pin!(async { Ok::<_, ()>(&value) });
-    /// let _promise = Promise::from_owner(future);
-    /// ```
-    ///
-    /// ```compile_fail,E0597
-    /// use capnp::capability::Promise;
-    /// let promise;
-    /// {
-    ///     let value = 17;
-    ///     let future = core::pin::pin!(async { Ok::<_, ()>(&value) });
-    ///     promise = Promise::from_owner(future);
-    /// }
-    /// drop(promise);
-    /// ```
-    pub fn from_owner(future: F) -> Self
-    where
-        F: Future<Output = core::result::Result<T, E>> + Unpin,
-    {
-        Self {
-            inner: PromiseInner::Deferred(future),
-        }
-    }
-}
-
+#[cfg(feature = "alloc")]
 impl<T, E> Promise<T, E> {
     pub fn ok(value: T) -> Self {
         Self {
@@ -158,14 +91,11 @@ impl<T, E> Promise<T, E> {
     }
 
     pub fn err(error: E) -> Self {
-        #[cfg(feature = "alloc")]
-        let error = alloc::boxed::Box::new(error);
         Self {
-            inner: PromiseInner::Immediate(Err(error)),
+            inner: PromiseInner::Immediate(Err(alloc::boxed::Box::new(error))),
         }
     }
 
-    #[cfg(feature = "alloc")]
     pub fn from_future<F>(f: F) -> Self
     where
         F: Future<Output = core::result::Result<T, E>> + 'static,
@@ -176,10 +106,8 @@ impl<T, E> Promise<T, E> {
     }
 }
 
-impl<T, E, F> Future for Promise<T, E, F>
-where
-    F: Future<Output = core::result::Result<T, E>> + Unpin,
-{
+#[cfg(feature = "alloc")]
+impl<T, E> Future for Promise<T, E> {
     type Output = core::result::Result<T, E>;
 
     #[inline(always)]
@@ -188,25 +116,20 @@ where
             PromiseInner::Empty => panic!("Promise polled after done."),
             ref mut imm @ PromiseInner::Immediate(_) => {
                 match core::mem::replace(imm, PromiseInner::Empty) {
-                    PromiseInner::Immediate(r) => {
-                        #[cfg(feature = "alloc")]
-                        let r = r.map_err(|error| *error);
-                        Poll::Ready(r)
-                    }
+                    PromiseInner::Immediate(r) => Poll::Ready(r.map_err(|error| *error)),
                     _ => unreachable!(),
                 }
             }
-            PromiseInner::Deferred(ref mut f) => Pin::new(f).poll(cx),
+            PromiseInner::Deferred(ref mut f) => f.as_mut().poll(cx),
         }
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, E> From<Result<T, E>> for Promise<T, E> {
     fn from(value: Result<T, E>) -> Self {
-        #[cfg(feature = "alloc")]
-        let value = value.map_err(alloc::boxed::Box::new);
         Self {
-            inner: PromiseInner::Immediate(value),
+            inner: PromiseInner::Immediate(value.map_err(alloc::boxed::Box::new)),
         }
     }
 }
@@ -280,62 +203,27 @@ impl<T: Pipelined + Owned + 'static> RemotePromise<T> {
     }
 }
 
-/// A response retaining its concrete owner until all borrowed readers end.
-/// Hosted callers default to an owned boxed hook; caller-backed profiles supply
-/// their frame guard directly with `from_owner`.
+/// A response from a method call, as seen by the client.
 #[cfg(feature = "alloc")]
-pub struct Response<Results, H = alloc::boxed::Box<dyn ResponseHook>> {
+pub struct Response<Results> {
     pub marker: PhantomData<Results>,
-    pub hook: H,
+    pub hook: alloc::boxed::Box<dyn ResponseHook>,
 }
-#[cfg(not(feature = "alloc"))]
-pub struct Response<Results, H> {
-    pub marker: PhantomData<Results>,
-    pub hook: H,
-}
+
 #[cfg(feature = "alloc")]
-impl<Results: Pipelined + Owned> Response<Results> {
+impl<Results> Response<Results>
+where
+    Results: Pipelined + Owned,
+{
     pub fn new(hook: alloc::boxed::Box<dyn ResponseHook>) -> Self {
         Self {
             marker: PhantomData,
             hook,
         }
     }
-}
-impl<Results, H: ResponseHook> Response<Results, H> {
-    /// Transfer the caller's owner without boxing or changing its lifetime.
-    pub fn from_owner(hook: H) -> Self {
-        Self {
-            marker: PhantomData,
-            hook,
-        }
-    }
     #[inline(always)]
-    pub fn get(&self) -> crate::Result<Results::Reader<'_>>
-    where
-        Results: Owned,
-    {
+    pub fn get(&self) -> crate::Result<Results::Reader<'_>> {
         self.hook.get()?.get_as()
-    }
-    /// Borrow the generated field-operation view with the original read budget.
-    pub fn view(
-        &self,
-    ) -> crate::Result<
-        <<Results as crate::field_api::FixedSchema>::Schema as crate::field_api::Schema>::Ref<'_>,
-    >
-    where
-        Results: crate::field_api::FixedSchema,
-    {
-        let raw = self.hook.get()?.get_as::<crate::any_struct::Reader<'_>>()?;
-        Ok(crate::traits::IntoInternalStructReader::into_internal_struct_reader(raw).into())
-    }
-    /// Retain the same owner while selecting a generated schema. Reading still
-    /// validates the wire type and normal traversal/nesting limits.
-    pub fn into_typed<T>(self) -> Response<T, H> {
-        Response {
-            marker: PhantomData,
-            hook: self.hook,
-        }
     }
 }
 
@@ -443,44 +331,9 @@ impl<R: Pipelined + Owned, E> Future for ResponsePromise<R, E> {
 /// A method call that has not been sent yet.
 #[cfg(feature = "alloc")]
 #[must_use = "an unsent request does nothing; send or forward it"]
-pub struct Request<Params, Results, H = alloc::boxed::Box<dyn RequestHook>> {
+pub struct Request<Params, Results> {
     pub marker: PhantomData<(Params, Results)>,
-    pub hook: H,
-}
-#[cfg(not(feature = "alloc"))]
-#[must_use = "an unsent request does nothing; send or forward it"]
-pub struct Request<Params, Results, H> {
-    pub marker: PhantomData<(Params, Results)>,
-    pub hook: H,
-}
-impl<P, R, H> Request<P, R, H> {
-    /// Keep the concrete owner, including its borrow and cancellation guards.
-    pub fn from_owner(hook: H) -> Self {
-        Self {
-            marker: PhantomData,
-            hook,
-        }
-    }
-    pub fn try_get(&mut self) -> crate::Result<H::Builder<'_>>
-    where
-        H: PayloadStorage<P>,
-    {
-        self.hook.try_get(None)
-    }
-    pub fn try_init(&mut self) -> crate::Result<H::Builder<'_>>
-    where
-        H: PayloadStorage<P>,
-    {
-        self.hook.try_init(None)
-    }
-    // Leave aggregate-return lowering to the optimizer. Forcing this wrapper
-    // into the caller's MIR adds copies before awaiting only the response.
-    pub fn send(self) -> H::Sent
-    where
-        H: RequestStorage<R>,
-    {
-        RequestStorage::<R>::publish(self.hook)
-    }
+    pub hook: alloc::boxed::Box<dyn RequestHook>,
 }
 
 #[cfg(feature = "alloc")]
@@ -540,6 +393,17 @@ where
     pub fn send_for_pipeline(self) -> Results::Pipeline {
         FromTypelessPipeline::new(self.hook.send_for_pipeline())
     }
+
+    pub fn send(self) -> RemotePromise<Results> {
+        let RemotePromise {
+            promise, pipeline, ..
+        } = self.hook.send();
+        let typed_promise = promise.into_typed_response();
+        RemotePromise {
+            promise: typed_promise,
+            pipeline: FromTypelessPipeline::new(pipeline),
+        }
+    }
 }
 
 /// A method call that has not been sent yet.
@@ -574,41 +438,16 @@ where
     }
 }
 
-/// The parameters of a method call, retaining the caller's concrete owner.
+/// The values of the parameters passed to a method call, as seen by the server.
 #[cfg(feature = "alloc")]
-pub struct Params<T, H = alloc::boxed::Box<dyn ParamsHook>> {
+pub struct Params<T> {
     pub marker: PhantomData<T>,
-    pub hook: H,
+    pub hook: alloc::boxed::Box<dyn ParamsHook>,
 }
-#[cfg(not(feature = "alloc"))]
-pub struct Params<T, H> {
-    pub marker: PhantomData<T>,
-    pub hook: H,
-}
+
 #[cfg(feature = "alloc")]
 impl<T> Params<T> {
     pub fn new(hook: alloc::boxed::Box<dyn ParamsHook>) -> Self {
-        Self {
-            marker: PhantomData,
-            hook,
-        }
-    }
-}
-impl<T, H: ParamsHook> Params<T, H> {
-    /// Retain a borrowed frame guard or another concrete owner without boxing.
-    ///
-    /// ```compile_fail,E0597
-    /// use capnp::{capability::Params, message, text};
-    /// let params;
-    /// {
-    ///     let words = [capnp::word(0,0,0,0,0,0,0,0)];
-    ///     let segments = [capnp::Word::words_to_bytes(&words)];
-    ///     let reader = message::Reader::new(&segments[..], Default::default());
-    ///     params = Params::<text::Owned, _>::from_owner(reader);
-    /// }
-    /// let _ = params.get();
-    /// ```
-    pub fn from_owner(hook: H) -> Self {
         Self {
             marker: PhantomData,
             hook,
@@ -621,64 +460,13 @@ impl<T, H: ParamsHook> Params<T, H> {
     {
         self.hook.get()?.get_as()
     }
-    /// Borrow the generated field-operation view with the original read budget.
-    pub fn view(
-        &self,
-    ) -> crate::Result<
-        <<T as crate::field_api::FixedSchema>::Schema as crate::field_api::Schema>::Ref<'_>,
-    >
-    where
-        T: crate::field_api::FixedSchema,
-    {
-        let raw = self.hook.get()?.get_as::<crate::any_struct::Reader<'_>>()?;
-        Ok(crate::traits::IntoInternalStructReader::into_internal_struct_reader(raw).into())
-    }
-    pub fn into_typed<U>(self) -> Params<U, H> {
-        Params {
-            marker: PhantomData,
-            hook: self.hook,
-        }
-    }
 }
 
 /// The return values of a method, written in-place by the method body.
 #[cfg(feature = "alloc")]
-pub struct Results<T, H = alloc::boxed::Box<dyn ResultsHook>> {
+pub struct Results<T> {
     pub marker: PhantomData<T>,
-    pub hook: H,
-}
-#[cfg(not(feature = "alloc"))]
-pub struct Results<T, H> {
-    pub marker: PhantomData<T>,
-    pub hook: H,
-}
-impl<T, H: PayloadStorage<T>> Results<T, H> {
-    pub fn from_owner(hook: H) -> Self {
-        Self {
-            marker: PhantomData,
-            hook,
-        }
-    }
-    /// Borrow a typed editor; a fixed provider has no heap fallback.
-    #[inline(always)]
-    pub fn try_get(&mut self) -> crate::Result<H::Builder<'_>> {
-        self.hook.try_get(None)
-    }
-    pub fn try_get_with_size_hint(
-        &mut self,
-        hint: Option<crate::MessageSize>,
-    ) -> crate::Result<H::Builder<'_>> {
-        self.hook.try_get(hint)
-    }
-    pub fn try_init(&mut self) -> crate::Result<H::Builder<'_>> {
-        self.hook.try_init(None)
-    }
-    pub fn try_init_with_size_hint(
-        &mut self,
-        hint: Option<crate::MessageSize>,
-    ) -> crate::Result<H::Builder<'_>> {
-        self.hook.try_init(hint)
-    }
+    pub hook: alloc::boxed::Box<dyn ResultsHook>,
 }
 
 #[cfg(feature = "alloc")]
@@ -867,42 +655,10 @@ pub struct CallHints {
     pub only_promise_pipeline: bool,
 }
 
-/// An untyped client retaining its concrete capability owner.
+/// An untyped client.
 #[cfg(feature = "alloc")]
-pub struct Client<H = alloc::boxed::Box<dyn ClientHook>> {
-    pub hook: H,
-}
-#[cfg(not(feature = "alloc"))]
-pub struct Client<H> {
-    pub hook: H,
-}
-
-impl<H> Client<H> {
-    /// Retain the caller's original context/capability lease. This does not
-    /// register a capability, allocate storage or extend the owner's lifetime.
-    pub fn from_owner(hook: H) -> Self {
-        Self { hook }
-    }
-    pub fn into_owner(self) -> H {
-        self.hook
-    }
-    /// Reserve concrete request storage through this capability's provider.
-    /// Rejection must leave the capability usable and retain the provider's
-    /// capacity and protocol-ID invariants. Sending uses RequestStorage.
-    pub fn try_new_call<P, R>(
-        &self,
-        interface_id: u64,
-        method_id: u16,
-        size_hint: Option<crate::MessageSize>,
-        hints: CallHints,
-    ) -> crate::Result<Request<P, R, H::Request<'_>>>
-    where
-        H: ClientStorage<P, R>,
-    {
-        self.hook
-            .try_new_call(interface_id, method_id, size_hint, hints)
-            .map(Request::from_owner)
-    }
+pub struct Client {
+    pub hook: alloc::boxed::Box<dyn ClientHook>,
 }
 
 #[cfg(feature = "alloc")]
@@ -1022,10 +778,11 @@ impl FromClientHook for Client {
     }
 }
 
-impl<H: Clone> Clone for Client<H> {
+#[cfg(feature = "alloc")]
+impl Clone for Client {
     fn clone(&self) -> Self {
         Self {
-            hook: self.hook.clone(),
+            hook: self.hook.add_ref(),
         }
     }
 }
