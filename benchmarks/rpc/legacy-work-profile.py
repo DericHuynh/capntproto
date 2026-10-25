@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repeat the legacy work comparison with an identical-binary control."""
+"""Repeat the legacy work comparison, optionally with frozen and identical controls."""
 import argparse
 from collections import Counter, defaultdict
 import hashlib
@@ -42,6 +42,7 @@ def assembly(path, output):
 
 def summarize(output):
     scope = json.loads((output / 'scope.json').read_text())
+    pairs = scope.get('pairs', PAIRS)
     assert not scope['failures'], scope['failures']
     expected = scope['repetitions'] * len(scope['binaries']) * 24
     assert len(scope['trials']) == expected, (len(scope['trials']), expected)
@@ -80,11 +81,11 @@ def summarize(output):
             per_function[key[2], key[3], key[4]] = delta
     result = dict(scope='All peers; five fresh-process pairs per variant; (50-10)/40 with two warmups. '
                         'Sample SD describes paired slopes, including startup variation. Simulated branches; no latency claim.',
-                  rows=rows, comparisons=comparisons(rows, PAIRS))
+                  rows=rows, comparisons=comparisons(rows, pairs))
     save(output / 'comparison.json', result)
     attribution = []
     for case in CASES:
-        for left, right in PAIRS:
+        for left, right in pairs:
             before = [per_function[case, left, r] for r in range(scope['repetitions'])]
             after = [per_function[case, right, r] for r in range(scope['repetitions'])]
             names = set().union(*(row.keys() for row in [*before, *after]))
@@ -103,8 +104,10 @@ def summarize(output):
     save(output / 'functions.json', attribution)
     lines = ['# Repeated legacy work comparison', '',
              'Five repetitions, mean ± sample SD. Paired 50−10 slopes retain startup noise; branch events are simulated. '
-             'The repeat control uses the exact factored executable and path. No latency claim.', '']
-    for left, right in PAIRS:
+             'No latency claim.', '']
+    if 'repeat' in scope['binaries']:
+        lines += ['The repeat control uses the exact factored executable and path.', '']
+    for left, right in pairs:
         lines += [f'## {right} versus {left}', '',
                   '| Transport | Case | Metric | Before | After | Change | Paired delta SD |',
                   '| --- | --- | --- | ---: | ---: | ---: | ---: |']
@@ -129,27 +132,32 @@ def main():
         parser.add_argument('--' + name, type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--summarize-only', action='store_true')
+    parser.add_argument('--pair-only', action='store_true',
+                        help='Compare factored and candidate only, after separate control calibration.')
     args = parser.parse_args()
     output = args.output.resolve()
     if args.summarize_only:
         summarize(output)
         return
-    assert all(getattr(args, label) for label in ['frozen', 'factored', 'candidate'])
+    labels = ['factored', 'candidate'] if args.pair_only else ['frozen', 'factored', 'repeat', 'candidate']
+    assert all(getattr(args, label) for label in labels if label != 'repeat')
     spec = importlib.util.spec_from_file_location('secure_profile', HERE / 'secure-profile.py')
     profile = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(profile)
     profile.r.idle_host()
     output.mkdir(parents=True, exist_ok=False)
-    paths = {label: getattr(args, label).resolve(strict=True) for label in ['frozen', 'factored', 'candidate']}
-    paths['repeat'] = paths['factored']
+    paths = {label: getattr(args, label).resolve(strict=True) for label in labels if label != 'repeat'}
+    if not args.pair_only:
+        paths['repeat'] = paths['factored']
     certs = profile.r.certificates.generate(output / 'certificates')
     cpus, topology = profile.r.physical_cpus()
     diagnostic = profile.Diagnostic({'legacy': paths['factored']}, output, certs, cpus[:4])
     scope = dict(repetitions=5, points=[10, 50], warmup=2, trials=[], failures=[],
+                 pairs=[('factored', 'candidate')] if args.pair_only else PAIRS,
                  cpus=cpus[:4], cpu_topology=topology, binaries={},
                  workflow_sha=os.environ.get('GITHUB_SHA'),
                  method='Rotate variant order each repetition and reverse short/long order on alternate repetitions. '
-                        'All peers use legacy; repeat and factored use an identical executable path. '
+                        'All peers use legacy; when present, repeat and factored use an identical executable path. '
                         'Cryptographic randomness is not replaced or seeded.')
     for label, path in paths.items():
         scope['binaries'][label] = dict(path=str(path), sha256=hashlib.file_digest(path.open('rb'), 'sha256').hexdigest(),
@@ -158,14 +166,13 @@ def main():
             (output / (label + '.symbols')).write_text(subprocess.check_output(['nm', '-nSC', str(path)], text=True))
             assembly(path, output / (label + '.assembly'))
     save(output / 'scope.json', scope)
-    labels = ['frozen', 'factored', 'repeat', 'candidate']
     for mode in ['callgrind', 'dhat']:
         diagnostic.mode = mode
         for transport in (['tls'] if mode == 'callgrind' else ['tls', 'quic']):
             for name in (CASES if mode == 'callgrind' else ['unary-small', 'pipelined-read', 'concurrent-32']):
                 case = next(c for c in profile.r.catalog() if c['name'] == name)
                 for repetition in range(5):
-                    order = labels[repetition % 4:] + labels[:repetition % 4]
+                    order = labels[repetition % len(labels):] + labels[:repetition % len(labels)]
                     for label in order:
                         diagnostic.binaries['legacy'] = paths[label]
                         for iterations in ([10, 50] if repetition % 2 == 0 else [50, 10]):

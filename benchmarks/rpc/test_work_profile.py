@@ -8,13 +8,21 @@ from work_profile import callgrind, comparisons, slope
 
 class WorkProfile(unittest.TestCase):
     def test_full_summary_keeps_all_repetitions_peers_and_identical_control(self):
+        self.check_full_summary(pair_only=False)
+
+    def test_pair_only_summary_keeps_all_repetitions_and_peers(self):
+        self.check_full_summary(pair_only=True)
+
+    def check_full_summary(self, pair_only):
         spec = importlib.util.spec_from_file_location('legacy_work_profile', Path(__file__).with_name('legacy-work-profile.py'))
         profile = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(profile)
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            labels = ['frozen', 'factored', 'repeat', 'candidate']
+            labels = ['factored', 'candidate'] if pair_only else ['frozen', 'factored', 'repeat', 'candidate']
             scope = dict(repetitions=5, points=[10, 50], binaries=dict.fromkeys(labels), trials=[], failures=[])
+            if pair_only:
+                scope['pairs'] = [('factored', 'candidate')]
             for mode in ['callgrind', 'dhat']:
                 for transport in (['tls'] if mode == 'callgrind' else ['tls', 'quic']):
                     for case in (profile.CASES if mode == 'callgrind' else profile.CASES[:3]):
@@ -42,8 +50,8 @@ class WorkProfile(unittest.TestCase):
             (root / 'scope.json').write_text(json.dumps(scope))
             profile.summarize(root)
             result = json.loads((root / 'comparison.json').read_text())
-            self.assertEqual(len(result['rows']), 240)
-            self.assertEqual(len(result['comparisons']), 36)
+            self.assertEqual(len(result['rows']), 120 if pair_only else 240)
+            self.assertEqual(len(result['comparisons']), 12 if pair_only else 36)
             for row in result['comparisons']:
                 self.assertEqual(row['repetitions'], 5)
                 metric = row['metrics']['Ir' if row['mode'] == 'callgrind' else 'blocks']
@@ -52,7 +60,8 @@ class WorkProfile(unittest.TestCase):
                 if row['mode'] == 'callgrind':
                     self.assertEqual(metric['baseline']['samples'], [30, 33, 36, 39, 42])
                     self.assertEqual(metric['baseline']['mean'], 36)
-            self.assertEqual(len(json.loads((root / 'functions.json').read_text())), 90)
+            self.assertEqual(len(json.loads((root / 'functions.json').read_text())), 30 if pair_only else 90)
+            self.assertEqual('exact factored executable' in (root / 'comparison.md').read_text(), not pair_only)
 
     def test_callgrind_excludes_call_arcs_and_fills_missing_zero_events(self):
         text = '''positions: line
