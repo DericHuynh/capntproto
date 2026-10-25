@@ -1,0 +1,87 @@
+name: Legacy hosted rollback qualification
+on:
+  push:
+    branches: [codex/legacy-port-revert-qualification-20261025]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  correctness:
+    name: Hosted RPC, generated API and retained allocation improvements
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CC: clang
+      CXX: clang++
+      CAPNTPROTO_REFERENCE_CXX: clang++
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: legacy-factoring
+          workspaces: . -> target
+      - name: Install compilers and pinned model checker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang cmake ninja-build capnproto libcapnp-dev libssl-dev protobuf-compiler default-jre-headless
+          rustup component add rustfmt clippy
+          rustup target add thumbv7em-none-eabi
+          git submodule update --init --depth 1 -- vendor/capnproto
+          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$RUNNER_TEMP/tla2tools.jar"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
+      - name: Verify restored libraries and independent optimizations
+        run: |
+          cargo test --locked -p capntproto-rpc --lib
+          cargo test --locked -p capntproto-core --lib
+          cargo test --locked -p capntproto-rpc-engine --no-default-features --lib
+          cargo test --locked -p capntproto-rpc-engine --features alloc --lib
+          cargo test --locked -p capntproto-rpc-wire --features std --lib
+          cargo test --locked -p capntproto-core --doc
+          cargo test --locked -p capntproto-rpc --doc
+      - name: Verify generated API, protocol ownership and encrypted transports
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: |
+          cargo test --locked --no-default-features --features tls --test rpc_ownership --test rpc_tables --test api_contracts --test ignore_result
+          cargo test --locked --features quic --test secure_rpc
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo run --locked -p capntproto-dev -- check-unsafe
+          cargo run --locked -p capntproto-dev -- check-repository
+          cargo run --locked -p capntproto-dev -- wiki check
+          cargo fmt --all -- --check
+      - name: Preserve the existing bounded portable profile
+        env:
+          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
+        run: |
+          cargo check --locked -p capntproto-core --no-default-features --target thumbv7em-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --features alloc --target thumbv7em-none-eabi
+          cargo build --locked --release --manifest-path verification/portable/Cargo.toml --target thumbv7em-none-eabi
+  miri:
+    name: Retained hosted ownership improvements under Miri
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      MIRIFLAGS: -Zmiri-strict-provenance
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install schema compiler and pinned memory checker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - name: Exercise retained liveness, registration and wake safety on both widths
+        run: |
+          for width in x86_64-unknown-linux-gnu i686-unknown-linux-gnu; do
+            cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc --lib --target "$width" local::allocation_tests
+            cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc --lib --target "$width" system::registry::tests
+            cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc --lib --target "$width" task_set::tests::retained_connection_and_deferred_wakers_are_safe_after_task_set_drop
+          done
