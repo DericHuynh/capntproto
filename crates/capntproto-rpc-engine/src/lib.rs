@@ -36,6 +36,7 @@ pub mod messages;
 #[cfg(feature = "alloc")]
 pub mod observation;
 pub mod peer_table;
+pub mod pending;
 pub mod promise;
 pub mod provision;
 pub mod question;

@@ -19,7 +19,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use capntproto_rpc_engine::completion::shared as oneshot;
+use capntproto_rpc_engine::{completion::shared as oneshot, pending};
 use futures::{FutureExt, TryFutureExt};
 
 use std::cell::RefCell;
@@ -30,15 +30,7 @@ use capnp::Error;
 
 use std::collections::BTreeMap;
 
-struct Inner<In, Out>
-where
-    In: 'static,
-    Out: 'static,
-{
-    next_id: Option<u64>,
-    first: Option<(u64, In, Sender<Out>)>,
-    map: BTreeMap<u64, (In, Sender<Out>)>,
-}
+type Inner<In, Out> = pending::State<In, Sender<Out>, BTreeMap<u64, (In, Sender<Out>)>>;
 
 /// A queue representing tasks that consume input of type `In` and produce output of
 /// type `Out`.
@@ -50,38 +42,7 @@ where
     inner: Option<Rc<RefCell<Inner<In, Out>>>>,
 }
 
-pub(crate) struct Remover<In, Out>
-where
-    In: 'static,
-    Out: 'static,
-{
-    id: u64,
-    inner: Weak<RefCell<Inner<In, Out>>>,
-}
-
-impl<In, Out> Drop for Remover<In, Out>
-where
-    In: 'static,
-    Out: 'static,
-{
-    fn drop(&mut self) {
-        if let Some(inner) = self.inner.upgrade() {
-            let removed = {
-                let mut inner = inner.borrow_mut();
-                if inner
-                    .first
-                    .as_ref()
-                    .is_some_and(|(id, _, _)| *id == self.id)
-                {
-                    inner.first.take().map(|(_, value, sender)| (value, sender))
-                } else {
-                    inner.map.remove(&self.id)
-                }
-            };
-            drop(removed);
-        }
-    }
-}
+type Remover<In, Out> = pending::Remover<Weak<RefCell<Inner<In, Out>>>>;
 
 impl<In, Out> SenderQueue<In, Out>
 where
@@ -124,10 +85,10 @@ where
                 )));
             }
         };
-        let remover = Remover {
+        let remover = Remover::new(
             id,
-            inner: Rc::downgrade(self.inner.as_ref().expect("admitted queue")),
-        };
+            Rc::downgrade(self.inner.as_ref().expect("admitted queue")),
+        );
 
         futures::future::Either::Right(
             rx.expect("observed queue entry")
@@ -150,9 +111,9 @@ where
         observed: bool,
     ) -> Result<(u64, Option<oneshot::Receiver<Out>>), In> {
         let mut inner = self.inner().borrow_mut();
-        let Some(id) = inner.next_id else {
+        if inner.next_id.is_none() {
             return Err(value);
-        };
+        }
         // Detached pipeline publication has no receiver. Preserve the same
         // rejected-value behavior without allocating a canceled channel.
         let (sender, receiver) = if observed {
@@ -161,14 +122,9 @@ where
         } else {
             (Sender(None), None)
         };
-        inner.next_id = id.checked_add(1);
-        // Most promise clients have a single pending call. Keep that entry in
-        // the queue owner; larger bursts retain the ordered tree.
-        if inner.first.is_none() && inner.map.is_empty() {
-            inner.first = Some((id, value, sender));
-        } else {
-            inner.map.insert(id, (value, sender));
-        }
+        let id = inner
+            .try_insert(value, sender)
+            .map_err(|(value, _)| value)?;
         Ok((id, receiver))
     }
 
@@ -178,41 +134,16 @@ where
         let (first, map) = match &self.inner {
             Some(inner) => {
                 let mut inner = inner.borrow_mut();
-                (
-                    inner.first.take().map(|(_, value, sender)| (value, sender)),
-                    std::mem::take(&mut inner.map),
-                )
+                inner.take()
             }
             None => (None, BTreeMap::new()),
         };
-        Drain {
-            first,
-            iter: map.into_iter(),
-        }
+        Drain::new(first, map.into_iter())
     }
 }
 
-pub(crate) struct Drain<In, Out>
-where
-    In: 'static,
-    Out: 'static,
-{
-    first: Option<(In, Sender<Out>)>,
-    iter: ::std::collections::btree_map::IntoIter<u64, (In, Sender<Out>)>,
-}
-
-impl<In, Out> ::std::iter::Iterator for Drain<In, Out>
-where
-    In: 'static,
-    Out: 'static,
-{
-    type Item = (In, Sender<Out>);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.first
-            .take()
-            .or_else(|| self.iter.next().map(|(_k, v)| v))
-    }
-}
+pub(crate) type Drain<In, Out> =
+    pending::Drain<In, Sender<Out>, std::collections::btree_map::IntoIter<u64, (In, Sender<Out>)>>;
 
 pub(crate) struct Sender<T>(Option<oneshot::Sender<T>>);
 impl<T> Sender<T> {

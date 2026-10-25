@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/home/runner/work/_temp/legacy-tasks.elf",
+  "bytes": 713596,
+  "sha256": "0ce48b49674d335509ee2d25e658ee2ad9dc3d235dd172b42296c56fa9e6ba85",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "3e4a4adbde9d8750a24aff66696942f34daaaa6701d1c531cf4e6a9eb5fcdea4",
+  "scope": "Link-only owned pinned tasks, bounded admission, immediate completion destruction and escaping static wakers; not executed on a board."
+}
