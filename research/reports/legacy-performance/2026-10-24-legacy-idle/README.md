@@ -81,7 +81,7 @@ Native timing for the rejected scheduler experiment was not qualified. The prior
 
 ## Follow-up
 
-Runtime `43bab8a` retains the sentinel and instead removes the two stored `Waker` fields, borrowing temporary wakers from concrete `Arc<Activity>` owners. This targets virtual clone/drop calls without changing admission, drain or deferred-write scheduling. A new lifetime test covers registrations retained across polls and awakened from another thread after the task set is destroyed. The [separate five-repeat comparison](https://github.com/DericHuynh/capntproto/actions/runs/40146245206) is pending; it compares the factored baseline directly with the candidate, reusing the completed control calibration above. No gain is claimed yet.
+Runtime `43bab8a` retains the sentinel and instead removes the two stored `Waker` fields, borrowing temporary wakers from concrete `Arc<Activity>` owners. The [completed follow-up](../2026-10-24-legacy-waker/README.md) reports 58–132 fewer scheduler/waker instructions and 28–64 fewer indirect branches per operation, with identical TLS block counts. It is retained on the feature branch. Simulated misses remain mixed: concurrent-32 and deep-concurrent indirect misses regress versus the factored baseline. Native latency is unqualified. The report preserves all samples, spreads, failed-test-lint history and artifact provenance.
 
 ## Reproduction
 
