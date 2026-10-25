@@ -17,6 +17,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod admission;
 pub mod answers;
 pub mod clients;
 pub mod completion;

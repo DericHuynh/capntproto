@@ -1,130 +1,22 @@
-//! Single-thread task admission. No user future, destructor or waker runs while
-//! the queue is borrowed. TaskSet already owns non-Send futures and a local reaper.
+//! Hosted ownership for the shared core admission algorithm.
 #![forbid(unsafe_code)]
-
-use std::{
-    cell::RefCell,
-    collections::VecDeque,
-    rc::Rc,
-    task::{Context, Poll, Waker},
-};
-
-struct State<T> {
-    pending: Option<VecDeque<T>>,
-    senders: usize,
-    waker: Option<Waker>,
-}
-pub(super) struct Sender<T>(Rc<RefCell<State<T>>>);
-pub(super) struct Receiver<T>(Rc<RefCell<State<T>>>);
-
+use capntproto_rpc_engine::admission;
+pub(super) type Sender<T> = admission::Sender<admission::Shared<T>>;
+pub(super) type Receiver<T> = admission::Receiver<admission::Shared<T>>;
 pub(super) fn channel<T>() -> (Sender<T>, Receiver<T>) {
-    let state = Rc::new(RefCell::new(State {
-        pending: Some(VecDeque::new()),
-        senders: 1,
-        waker: None,
-    }));
-    (Sender(state.clone()), Receiver(state))
-}
-
-impl<T> Sender<T> {
-    pub(super) fn send(&self, value: T) -> Result<(), T> {
-        let wake = {
-            let mut state = self.0.borrow_mut();
-            let Some(pending) = &mut state.pending else {
-                return Err(value);
-            };
-            pending.push_back(value);
-            state.waker.take()
-        };
-        if let Some(wake) = wake {
-            wake.wake();
-        }
-        Ok(())
-    }
-}
-impl<T> Clone for Sender<T> {
-    fn clone(&self) -> Self {
-        self.0.borrow_mut().senders += 1;
-        Self(self.0.clone())
-    }
-}
-impl<T> Drop for Sender<T> {
-    fn drop(&mut self) {
-        let wake = {
-            let mut state = self.0.borrow_mut();
-            state.senders -= 1;
-            if state.senders == 0 {
-                state.waker.take()
-            } else {
-                None
-            }
-        };
-        if let Some(wake) = wake {
-            wake.wake();
-        }
-    }
-}
-impl<T> Receiver<T> {
-    pub(super) fn is_empty(&self) -> bool {
-        self.0
-            .borrow()
-            .pending
-            .as_ref()
-            .is_none_or(|queue| queue.is_empty())
-    }
-
-    pub(super) fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
-        // Clone a replacement outside the borrow: custom wakers may reenter.
-        let same_waker = {
-            let state = self.0.borrow();
-            let same = state
-                .waker
-                .as_ref()
-                .is_some_and(|wake| wake.will_wake(cx.waker()));
-            if same && state.senders != 0 && state.pending.as_ref().is_some_and(VecDeque::is_empty)
-            {
-                return Poll::Pending;
-            }
-            same
-        };
-        let mut replacement = (!same_waker).then(|| cx.waker().clone());
-        let (result, retired) = {
-            let mut state = self.0.borrow_mut();
-            let pending = state.pending.as_mut().expect("live receiver");
-            let next = pending.pop_front();
-            // Retain ordinary admission capacity, but release exceptional peaks.
-            let retired =
-                (pending.is_empty() && pending.capacity() > 1024).then(|| std::mem::take(pending));
-            let result = if next.is_some() || state.senders == 0 {
-                Poll::Ready(next)
-            } else {
-                if replacement.is_some() {
-                    std::mem::swap(&mut replacement, &mut state.waker);
-                }
-                Poll::Pending
-            };
-            (result, retired)
-        };
-        drop(replacement);
-        drop(retired);
-        result
-    }
-}
-impl<T> Drop for Receiver<T> {
-    fn drop(&mut self) {
-        let (pending, waker) = {
-            let mut state = self.0.borrow_mut();
-            (state.pending.take(), state.waker.take())
-        };
-        drop(waker);
-        drop(pending);
-    }
+    admission::shared()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{cell::Cell, sync::Arc, task::Wake};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        task::{Context, Poll, Waker},
+        vec::Vec,
+    };
 
     thread_local! {
         static ON_WAKE: RefCell<Option<Rc<dyn Fn()>>> = RefCell::new(None);
@@ -208,9 +100,9 @@ mod tests {
     }
 
     #[test]
-    fn fifo_survives_wraparound_and_releases_large_idle_capacity() {
+    fn fifo_survives_wraparound() {
         let (sender, mut receiver) = channel();
-        let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+        let mut cx = Context::from_waker(Waker::noop());
         for round in 0..3 {
             for n in 0..1100 {
                 sender.send((round, n)).unwrap();
@@ -218,7 +110,6 @@ mod tests {
             for n in 0..1100 {
                 assert_eq!(receiver.poll_next(&mut cx), Poll::Ready(Some((round, n))));
             }
-            assert!(receiver.0.borrow().pending.as_ref().unwrap().capacity() <= 1024);
             assert!(receiver.poll_next(&mut cx).is_pending());
         }
     }

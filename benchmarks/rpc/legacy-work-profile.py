@@ -27,6 +27,7 @@ def assembly(path, output):
     # guard/TLS hot paths; this diagnoses layout changes without huge binaries.
     selected = ('task_set::TaskSet', 'task_set::ready_set::Ready',
                 'task_set::ready_set::Notify', 'capntproto_rpc_engine::readiness',
+                'task_set::queue', 'capntproto_rpc_engine::admission',
                 'ReturnGuard', 'answer_has_sent_return',
                 'aes_gcm::aeshwclmulmovbe::seal', '::poll_prepare_frame')
     with output.open('w') as target:
