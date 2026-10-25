@@ -38,3 +38,11 @@ has default features disabled; no allocating RpcSystem or bounded driver is
 instantiated. The alloc feature separately checks that same ownership path with
 hosted dependencies available. Whole-frame read budgets and transport caches
 remain the original owner's responsibility.
+
+
+A sixth test puts both input and output pool guards inside the caller-pinned
+future. DispatchResults lends the generated method's result field only after
+polling. The intact PreparedCall enforces input-before-result cleanup; completion,
+pending cancellation, output-capacity rejection and unpolled drop all release
+both pool slots with zero allocations. The test checks actual RefCell borrow
+availability during result destruction, not only a synthetic drop counter.

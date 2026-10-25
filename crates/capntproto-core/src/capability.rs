@@ -61,7 +61,10 @@ pub use reply::{PublishedReply, Reply, ReplyBuilder};
 mod call;
 #[cfg(feature = "alloc")]
 pub use call::ReplyContext;
-pub use call::{dispatch_call, dispatch_call_with_context, CallContext, CallStorage, PreparedCall};
+pub use call::{
+    dispatch_call, dispatch_call_with_context, CallContext, CallStorage, DispatchResults,
+    PreparedCall,
+};
 
 /// Type alias for `dyn ClientHook`. We define this here because so that generated code
 /// can avoid needing to refer to `dyn` types directly; in Rust 2015 the syntax for

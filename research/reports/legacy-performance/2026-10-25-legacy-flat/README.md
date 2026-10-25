@@ -26,3 +26,24 @@ in the immutable hosted qualification. No native timing is taken locally.
 This is a field-layout correction, not completion of the full allocation-free
 legacy connection. Protocol/hook/capability/pipeline/message integration and the
 full fixed conversation matrix remain pending.
+
+
+Qualification 3a96b622243d040edb96366c4e9949f4971add26,
+run 40195152868, passes 26 strict-provenance Miri executions, complete hosted
+verification and all 240 profile trials. It recovers exactly 17 Ir/one Bc per
+question in all five samples: -17/-1 unary, -34/-2 dependent/pipelined/callback,
+and -544/-32 concurrent/deep, all with paired SD zero and unchanged indirect
+instruction counts. The nested-reference destructor symbols disappear and the
+original fields remain flat; 663 of 715 common normalized bodies match.
+
+TLS allocation counts remain 7/57/202 with full byte/QUIC spreads retained.
+Whole Ir improves five cases, while dependent adds 0.235 with paired SD 83.137.
+Concurrent whole Ir falls 556.480 (SD 25.250), deep falls 485.475 (SD 39.147).
+Conditional misses improve 7.580% concurrent and 29.152% deep, but regress in the
+other four cases. Indirect misses regress in unary/dependent/pipelined/concurrent
+and improve callback/deep. Deep whole conditional branches still add 28.450
+(SD 6.653), despite the scoped 32-branch saving; libc/memory/system work and linked
+predictor effects remain part of the report. No complete native parity is claimed.
+
+Artifact 12600348459 is 83,057,643 bytes, SHA-256
+24e31192a90abb0b1d47d237f26b7e42e709e47cc37cdb0f88cf3bc13f79481e.

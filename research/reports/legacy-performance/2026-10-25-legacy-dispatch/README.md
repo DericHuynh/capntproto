@@ -54,3 +54,15 @@ run 40194606842, keeps auditable hosted/library builds and uses the established
 direct-rustc bare-metal probe link. Miri is not repeated for that identical source;
 its earlier 38 executions remain the memory-safety evidence. Hosted/work checks
 continue in the new run. No failed hosted/profile qualification is called a pass.
+
+
+Workflow-only retry run 40194606842 passes the complete verify job and all 240
+profile trials against source 15dd3d7. All 717 common normalized assembly bodies
+match. Question/scheduler self Ir/Bc/Bi deltas are zero in all five samples; TLS
+allocation blocks remain 7/57/202. Whole Ir varies -0.0032% to +0.0321%, with deep
++65.730 and paired SD 56.416, so helper equality is not a whole-program/native
+latency guarantee. Simulated conditional misses rise slightly in four cases
+(max +0.1233%); indirect misses remain nearly unchanged (all samples retained).
+The artifact is 12600312701, 82,974,007 bytes, SHA-256
+1d7d30ec1621248318d21c9c99eac1f63ff32781d1d333d91f7b4fe09fc5c724.
+The initial 38 Miri executions remain tied to identical implementation source 2902e3f.

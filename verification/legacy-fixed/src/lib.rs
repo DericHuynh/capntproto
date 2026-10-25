@@ -529,9 +529,165 @@ pub fn concurrent_generated_invocations() -> Result<()> {
     }
     Ok(())
 }
+struct GuardedOutput<'loan, 'input, 'output> {
+    builder: core::cell::RefMut<'loan, message::FixedBuilder<'output>>,
+    input: &'loan core::cell::RefCell<message::FixedBuilder<'input>>,
+    params: &'loan Cell<usize>,
+    released: &'loan Cell<usize>,
+}
+impl capnp::capability::DispatchResults for GuardedOutput<'_, '_, '_> {
+    fn content(&mut self) -> Result<FixedField<'_, Generic<any_pointer::Owned>>> {
+        let root = self.builder.try_init_root::<api::Message>()?;
+        let mut returned = root.into_field(api::Message::RETURN).init()?;
+        returned.scalar(api::Return::ANSWER_ID).set(37);
+        Ok(returned
+            .into_field(api::Return::RESULTS)
+            .init()?
+            .into_field(api::Payload::CONTENT))
+    }
+}
+impl Drop for GuardedOutput<'_, '_, '_> {
+    fn drop(&mut self) {
+        assert_eq!(
+            self.params.get(),
+            1,
+            "result cleanup ran before the input owner"
+        );
+        assert!(
+            self.input.try_borrow_mut().is_ok(),
+            "input pool loan still held during result cleanup"
+        );
+        self.released.set(self.released.get() + 1);
+    }
+}
+/// Both input and output pool guards are owned inside the pinned task. The
+/// result view is created only after polling and cannot outlive that guard.
+pub fn guarded_generated_invocations() -> Result<()> {
+    for mode in 0..4 {
+        let mut input_words = [ZERO; 32];
+        let input = core::cell::RefCell::new(source(&mut input_words, false)?);
+        let mut output_words = [ZERO; 32];
+        let capacity = if mode == 2 { 1 } else { 32 };
+        let output =
+            core::cell::RefCell::new(message::FixedBuilder::new(&mut output_words[..capacity])?);
+        let params = Cell::new(0);
+        let released = Cell::new(0);
+        let retired = Cell::new(0);
+        let started = Cell::new(0);
+        let mut gate = completion::Slot::new();
+        let (ready, wait) = gate.pair().unwrap();
+        let mut service = node::ServerDispatch::new(Server {
+            gate: Some(wait),
+            params: &params,
+            retired: &retired,
+            started: &started,
+        });
+        {
+            let input_owner = Input {
+                reader: message::Reader::new(input.borrow(), Default::default()),
+                drops: &params,
+            };
+            let result_owner = GuardedOutput {
+                builder: output.borrow_mut(),
+                input: &input,
+                params: &params,
+                released: &released,
+            };
+            let call = CallContext::<'_, any_pointer::Owned, any_pointer::Owned, _>::from_owner(
+                PreparedCall::new(
+                    capnp_rpc::incoming::Params::new(input_owner, ()),
+                    result_owner,
+                ),
+            );
+            let mut places = core::pin::pin!(tasks::PinnedSlots::<_, 1>::new());
+            let [place] = places.as_mut().places();
+            let mut task = Promise::from_owner(
+                place
+                    .insert_erased(dispatch_call(
+                        call,
+                        &mut service,
+                        base::Owned::READ.interface_id(),
+                        0,
+                    ))
+                    .ok()
+                    .unwrap(),
+            );
+            assert!(input.try_borrow_mut().is_err());
+            assert!(output.try_borrow_mut().is_err());
+            let mut cx = Context::from_waker(Waker::noop());
+            if mode == 3 {
+                // Dropping before the first poll must not enter application code.
+                drop(task);
+                assert_eq!(started.get(), 0);
+            } else if mode == 2 {
+                assert!(matches!(
+                    Pin::new(&mut task).poll(&mut cx),
+                    Poll::Ready(Err(_))
+                ));
+                assert_eq!(started.get(), 0);
+                assert_eq!(released.get(), 1);
+                drop(task);
+            } else {
+                assert!(Pin::new(&mut task).poll(&mut cx).is_pending());
+                assert_eq!(started.get(), 1);
+                assert_eq!(released.get(), 0);
+                if mode == 0 {
+                    assert!(ready.send(()).is_ok());
+                    assert!(matches!(
+                        Pin::new(&mut task).poll(&mut cx),
+                        Poll::Ready(Ok(()))
+                    ));
+                    assert_eq!(
+                        released.get(),
+                        1,
+                        "completed task retained its result guard"
+                    );
+                }
+                drop(task);
+                assert_eq!(retired.get(), 1);
+            }
+            assert!(places.is_empty());
+        }
+        assert_eq!(params.get(), 1);
+        assert_eq!(released.get(), 1);
+        assert!(input.try_borrow_mut().is_ok());
+        assert!(output.try_borrow_mut().is_ok());
+        if mode == 0 {
+            let output = output.borrow();
+            let root = output.get_root_as_reader::<rpc_capnp::message::Reader<'_>>()?;
+            let rpc_capnp::message::Return(returned) = root.which()? else {
+                panic!("Return lost")
+            };
+            let returned = returned?;
+            assert_eq!(returned.get_answer_id(), 37);
+            let rpc_capnp::return_::Results(payload) = returned.which()? else {
+                panic!("results lost")
+            };
+            assert_eq!(
+                payload?
+                    .get_content()
+                    .get_as::<legacy_capnp::base::read_results::Reader<'_>>()?
+                    .get_value(),
+                42
+            );
+        }
+        if mode == 2 {
+            assert!(output
+                .borrow()
+                .get_root_as_reader::<any_pointer::Reader<'_>>()?
+                .is_null());
+        }
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pooled_input_and_result_guards_release_in_order_on_all_task_exits() {
+        let m = allocation_counter::measure(|| guarded_generated_invocations().unwrap());
+        assert_eq!((m.count_total, m.bytes_total), (0, 0));
+    }
     #[test]
     fn thirty_two_generated_calls_share_one_service_without_allocating() {
         let m = allocation_counter::measure(|| concurrent_generated_invocations().unwrap());

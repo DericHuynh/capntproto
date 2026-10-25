@@ -34,6 +34,11 @@ impl<PH, RH> PreparedCall<PH, RH> {
     pub fn into_owners(self) -> (PH, RH) {
         (self.params, self.results)
     }
+    /// Borrow disjoint views while retaining the original input-before-output
+    /// destruction order, including across a suspended generated method.
+    pub fn borrow_owners(&mut self) -> (&PH, &mut RH) {
+        (&self.params, &mut self.results)
+    }
 }
 impl<P: Owned, R, PH: ParamsHook, RH: PayloadStorage<R>> CallStorage<P, R>
     for PreparedCall<PH, RH>

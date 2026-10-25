@@ -11,7 +11,7 @@ use core::marker::PhantomData;
 mod storage;
 pub use storage::{CallStorage, PreparedCall};
 mod dispatch;
-pub use dispatch::{dispatch_call, dispatch_call_with_context};
+pub use dispatch::{dispatch_call, dispatch_call_with_context, DispatchResults};
 
 /// One admitted method invocation. Synchronous handlers borrow the original
 /// parameter and result storage. A handler that suspends must take ownership

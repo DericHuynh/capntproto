@@ -8,12 +8,32 @@ use crate::{
     Error, ErrorKind, Result,
 };
 
-type Invocation<'call, PH> = CallContext<
-    'call,
-    any_pointer::Owned,
-    any_pointer::Owned,
-    PreparedCall<PH, FixedField<'call, Generic<any_pointer::Owned>>>,
->;
+/// The result owner can retain a pooled buffer guard, rather than requiring an
+/// already borrowed field outside the dispatch future. Its fallible view cannot
+/// escape the owner. Preparing this view neither sends Return nor changes call
+/// cancellation/protection policy.
+pub trait DispatchResults {
+    fn content(&mut self) -> Result<FixedField<'_, Generic<any_pointer::Owned>>>;
+}
+impl DispatchResults for FixedField<'_, Generic<any_pointer::Owned>> {
+    #[inline(always)]
+    fn content(&mut self) -> Result<FixedField<'_, Generic<any_pointer::Owned>>> {
+        Ok(self.reborrow())
+    }
+}
+impl<R: DispatchResults + ?Sized> DispatchResults for &mut R {
+    fn content(&mut self) -> Result<FixedField<'_, Generic<any_pointer::Owned>>> {
+        (**self).content()
+    }
+}
+impl<R: DispatchResults + ?Sized> DispatchResults for core::cell::RefMut<'_, R> {
+    fn content(&mut self) -> Result<FixedField<'_, Generic<any_pointer::Owned>>> {
+        (**self).content()
+    }
+}
+
+type Invocation<'call, PH, RH> =
+    CallContext<'call, any_pointer::Owned, any_pointer::Owned, PreparedCall<PH, RH>>;
 
 /// The returned future owns the original invocation and its generated service
 /// adapter. S may borrow a dispatcher or own a small per-call dispatcher over
@@ -26,8 +46,13 @@ type Invocation<'call, PH> = CallContext<
 /// nor detaches protected calls; dropping it destroys its owned invocation.
 /// Service metadata and application entry occur only when it is polled. Unknown
 /// methods reject before parameters are accessed or result storage is edited.
-pub async fn dispatch_call<'call, PH: ParamsHook + 'call, S: Service + 'call>(
-    invocation: Invocation<'call, PH>,
+pub async fn dispatch_call<
+    'call,
+    PH: ParamsHook + 'call,
+    RH: DispatchResults + 'call,
+    S: Service + 'call,
+>(
+    invocation: Invocation<'call, PH, RH>,
     mut service: S,
     interface_id: u64,
     method_id: u16,
@@ -35,9 +60,10 @@ pub async fn dispatch_call<'call, PH: ParamsHook + 'call, S: Service + 'call>(
     if service.method_info(interface_id, method_id).is_none() {
         return Err(Error::from_kind(ErrorKind::Unimplemented));
     }
-    let (params, mut results) = invocation.into_owner().into_owners();
+    let mut storage = invocation.into_owner();
+    let (params, results) = storage.borrow_owners();
     service
-        .dispatch(interface_id, method_id, params.get()?, results.reborrow())
+        .dispatch(interface_id, method_id, params.get()?, results.content()?)
         .await
 }
 
@@ -47,10 +73,11 @@ pub async fn dispatch_call<'call, PH: ParamsHook + 'call, S: Service + 'call>(
 pub async fn dispatch_call_with_context<
     'call,
     PH: ParamsHook + 'call,
+    RH: DispatchResults + 'call,
     S: ContextService<C> + 'call,
     C,
 >(
-    invocation: Invocation<'call, PH>,
+    invocation: Invocation<'call, PH, RH>,
     mut service: S,
     interface_id: u64,
     method_id: u16,
@@ -59,13 +86,14 @@ pub async fn dispatch_call_with_context<
     if service.method_info(interface_id, method_id).is_none() {
         return Err(Error::from_kind(ErrorKind::Unimplemented));
     }
-    let (params, mut results) = invocation.into_owner().into_owners();
+    let mut storage = invocation.into_owner();
+    let (params, results) = storage.borrow_owners();
     service
         .dispatch_with_context(
             interface_id,
             method_id,
             params.get()?,
-            results.reborrow(),
+            results.content()?,
             context,
         )
         .await
