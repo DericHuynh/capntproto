@@ -5,7 +5,7 @@ import re
 import statistics
 import sys
 
-PREFIX = re.compile(r'capnp::capability::(?:Promise(?:Inner)?|Client)<|capntproto_rpc_engine::completion::direct::receiver::Receiver<')
+PREFIX = re.compile(r'capnp::capability::(?:Promise(?:Inner)?|Client)<|capnp_rpc::incoming::Params<|capntproto_rpc_engine::completion::direct::receiver::Receiver<')
 
 def arguments(text, start):
     depth, begin, parts = 1, start, []
@@ -43,6 +43,11 @@ def canonical(text):
                 args = args[:2]
         elif name == 'capnp::capability::Client' and args == ['alloc::boxed::Box<dyn capnp::private::capability::ClientHook>']:
             args = []
+        elif name == 'capnp_rpc::incoming::Params' and len(args) == 2:
+            boxed = 'alloc::boxed::Box<'
+            caps = 'alloc::vec::Vec<core::option::Option<alloc::boxed::Box<dyn capnp::private::capability::ClientHook>>>'
+            if args[0].startswith(boxed) and args[0].endswith('>') and args[1] == caps:
+                name, args = 'capnp_rpc::rpc::Params', [args[0][len(boxed):-1]]
         elif name.endswith('::receiver::Receiver') and len(args) == 2:
             prefix = 'alloc::rc::Rc<capnp_rpc::rpc::QuestionCell<'
             if args[0].startswith(prefix) and args[0].endswith('>>'):
@@ -108,8 +113,8 @@ def main(root):
         rows.append(dict(case=row['case'], metric=row['metric'], source_function_count=len(original_functions),
                          canonical_function_count=len(functions), attributed_delta=after, top_changes=functions[:20]))
     method = ('Only exact default Box<dyn ClientHook>, default boxed Promise futures and the exact hosted '
-              'QuestionReply = Receiver<Rc<QuestionCell<Vat>>,Promise<Response<Vat>,Error>> alias are equated. '
-              'Other concrete/borrowed owners remain distinct. Sum each of five samples before statistics; '
+              'QuestionReply = Receiver<Rc<QuestionCell<Vat>>,Promise<Response<Vat>,Error>> and the hosted '
+              'rpc::Params<M> = incoming::Params<Box<M>,Vec<Option<Box<dyn ClientHook>>>> aliases are equated. Other concrete/borrowed owners remain distinct. Sum each of five samples before statistics; '
               'conserve source attribution. Selected input covers selected paths only; it is not whole-program attribution.')
     (root/'owner-name-analysis.json').write_text(json.dumps(dict(method=method, source=source, aliases=aliases, rows=rows), indent=2)+'\n')
     print('Reconciled',len(aliases),'exact owner spellings across',len(rows),'case/metric rows from',source)

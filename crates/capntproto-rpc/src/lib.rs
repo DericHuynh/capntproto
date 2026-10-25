@@ -91,6 +91,8 @@ enum MessagePool {}
 /// Portable protocol transitions and caller-owned resources. The optional
 /// `alloc` profile also enables shared completion owners without requiring std.
 pub use capntproto_rpc_engine as engine;
+/// Concrete legacy whole-frame parameter and response owners.
+pub mod incoming;
 /// Allocation-free wire ownership, generated call bindings and caller-polled drivers.
 /// Available in every profile; all storage, IO and execution remain caller supplied.
 pub use capntproto_rpc_wire as bounded;
@@ -348,12 +350,13 @@ pub fn is_short_lived_rpc_message(body: capnp::any_pointer::Reader<'_>) -> capnp
     ))
 }
 
-/// A message received from a [`VatNetwork`].
-#[cfg(feature = "alloc")]
+/// A whole incoming transport frame. Available without std or an allocator.
+/// The owned VatNetwork adapter is provided by the alloc profile.
 pub trait IncomingMessage {
     /// Transfer this message directly into an application parameter owner.
     /// Transports may reuse the message allocation; opaque implementations keep
     /// their normal ownership and capability-imbuing adapter.
+    #[cfg(feature = "alloc")]
     fn into_params(
         self: Box<Self>,
         caps: Vec<Option<Box<dyn ClientHook>>>,
@@ -376,7 +379,10 @@ pub trait IncomingMessage {
             .get_body()?
             .get_as::<crate::rpc_capnp::message::Reader>()?;
         let crate::rpc_capnp::message::Call(call) = root.which()? else {
-            return Err(Error::failed("request does not contain Call".into()));
+            #[cfg(feature = "alloc")]
+            return Err(capnp::Error::failed("request does not contain Call".into()));
+            #[cfg(not(feature = "alloc"))]
+            return Err(capnp::Error::from_kind(capnp::ErrorKind::Failed));
         };
         Ok(call?.get_params()?.get_content())
     }
@@ -394,10 +400,20 @@ pub trait IncomingMessage {
             .get_body()?
             .get_as::<crate::rpc_capnp::message::Reader>()?;
         let crate::rpc_capnp::message::Return(ret) = root.which()? else {
-            return Err(Error::failed("response does not contain Return".into()));
+            #[cfg(feature = "alloc")]
+            return Err(capnp::Error::failed(
+                "response does not contain Return".into(),
+            ));
+            #[cfg(not(feature = "alloc"))]
+            return Err(capnp::Error::from_kind(capnp::ErrorKind::Failed));
         };
         let crate::rpc_capnp::return_::Results(payload) = ret?.which()? else {
-            return Err(Error::failed("response does not contain Results".into()));
+            #[cfg(feature = "alloc")]
+            return Err(capnp::Error::failed(
+                "response does not contain Results".into(),
+            ));
+            #[cfg(not(feature = "alloc"))]
+            return Err(capnp::Error::from_kind(capnp::ErrorKind::Failed));
         };
         Ok(payload?.get_content())
     }

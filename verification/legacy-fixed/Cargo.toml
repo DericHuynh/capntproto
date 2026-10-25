@@ -9,9 +9,10 @@ license = "MIT"
 resolver = "2"
 
 [features]
-alloc = ["capnp/alloc", "capntproto-rpc-engine/alloc", "capntproto-rpc-wire/alloc"]
+alloc = ["capnp/alloc", "capntproto-rpc-engine/alloc", "capntproto-rpc-wire/alloc", "capnp-rpc/alloc"]
 
 [dependencies]
+capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc", default-features = false }
 capnp = { package = "capntproto-core", path = "../../crates/capntproto-core", default-features = false }
 capntproto-rpc-engine = { path = "../../crates/capntproto-rpc-engine", default-features = false }
 capntproto-rpc-wire = { path = "../../crates/capntproto-rpc-wire", default-features = false }

@@ -30,3 +30,11 @@ The host build compiler uses std; resolver2 keeps it out of target dependencies.
 Connections must still admit the call, select cancellation/streaming protection
 from generated metadata before polling, and publish/retain the resulting Return.
 The adapter does not supply protected-call execution or send protocol messages.
+
+
+The input owner now implements capnp_rpc::IncomingMessage and is retained by the
+production incoming::Params type. The isolated target dependency on capnp-rpc
+has default features disabled; no allocating RpcSystem or bounded driver is
+instantiated. The alloc feature separately checks that same ownership path with
+hosted dependencies available. Whole-frame read budgets and transport caches
+remain the original owner's responsibility.

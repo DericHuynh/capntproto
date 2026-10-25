@@ -1496,10 +1496,7 @@ impl<VatId> ResponseHook for Response<VatId> {
         match *self.variant {
             ResponseVariant::Empty => unreachable!("cached response is not exposed"),
             ResponseVariant::Rpc(ref state) => {
-                use capnp::traits::Imbue;
-                let mut content = state.message.get_results()?;
-                content.imbue(&state.cap_table);
-                Ok(content)
+                crate::incoming::results(&*state.message, &state.cap_table)
             }
             ResponseVariant::LocallyRedirected(ref results_done) => results_done.get(),
             ResponseVariant::Adopted(ref response, ref _guard) => response.get(),
@@ -2347,25 +2344,9 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
     }
 }
 
-pub(crate) struct Params<M: crate::IncomingMessage + ?Sized = dyn crate::IncomingMessage> {
-    request: Box<M>,
-    cap_table: Vec<Option<Box<dyn ClientHook>>>,
-}
-
-impl<M: crate::IncomingMessage + ?Sized> Params<M> {
-    pub(crate) fn new(request: Box<M>, cap_table: Vec<Option<Box<dyn ClientHook>>>) -> Self {
-        Self { request, cap_table }
-    }
-}
-
-impl<M: crate::IncomingMessage + ?Sized> ParamsHook for Params<M> {
-    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
-        use ::capnp::traits::Imbue;
-        let mut content = self.request.get_params()?;
-        content.imbue(&self.cap_table);
-        Ok(content)
-    }
-}
+type OwnedIncomingCaps = Vec<Option<Box<dyn ClientHook>>>;
+pub(crate) type Params<M = dyn crate::IncomingMessage> =
+    crate::incoming::Params<Box<M>, OwnedIncomingCaps>;
 
 enum ResultsVariant {
     Transferred(Box<dyn PipelineHook>),

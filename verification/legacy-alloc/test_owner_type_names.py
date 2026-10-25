@@ -18,6 +18,12 @@ class OwnerNames(unittest.TestCase):
         borrowed = "capnp::capability::Client<&dyn capnp::private::capability::ClientHook>"
         self.assertEqual(owner_names.canonical(borrowed), borrowed)
 
+    def test_only_hosted_boxed_frame_alias_is_equated(self):
+        caps = "alloc::vec::Vec<core::option::Option<alloc::boxed::Box<dyn capnp::private::capability::ClientHook>>>"
+        self.assertEqual(owner_names.canonical("capnp_rpc::incoming::Params<alloc::boxed::Box<Frame>, " + caps + ">"), "capnp_rpc::rpc::Params<Frame>")
+        borrowed = "capnp_rpc::incoming::Params<&Frame, ()>"
+        self.assertEqual(owner_names.canonical(borrowed), borrowed)
+
     def test_custom_future_stays_distinct(self):
         borrowed = "capnp::capability::Promise<T, E, core::pin::Pin<&mut F>>"
         self.assertEqual(owner_names.canonical(borrowed), borrowed)

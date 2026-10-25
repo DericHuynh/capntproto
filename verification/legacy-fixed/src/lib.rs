@@ -8,7 +8,6 @@ use capnp::{
     capability::{dispatch_call, dispatch_call_with_context, CallContext, PreparedCall, Promise},
     field_api::{FixedField, FixedStruct, Generic},
     message,
-    private::capability::ParamsHook,
     wire_capability::Service,
     Error, ErrorKind, Result,
 };
@@ -39,13 +38,12 @@ struct Input<'a, S: message::ReaderSegments> {
     reader: message::Reader<S>,
     drops: &'a Cell<usize>,
 }
-impl<S: message::ReaderSegments> ParamsHook for Input<'_, S> {
-    fn get(&self) -> Result<any_pointer::Reader<'_>> {
-        let root = self.reader.get_root::<rpc_capnp::message::Reader<'_>>()?;
-        let rpc_capnp::message::Call(call) = root.which()? else {
-            return Err(Error::from_kind(ErrorKind::Failed));
-        };
-        Ok(call?.get_params()?.get_content())
+impl<S: message::ReaderSegments> capnp_rpc::IncomingMessage for Input<'_, S> {
+    fn size_in_words(&self) -> usize {
+        capnp_rpc::IncomingMessage::size_in_words(&self.reader)
+    }
+    fn get_body(&self) -> Result<any_pointer::Reader<'_>> {
+        self.reader.get_root()
     }
 }
 impl<S: message::ReaderSegments> Drop for Input<'_, S> {
@@ -119,9 +117,9 @@ type Invocation<'a, P> = CallContext<
     'a,
     any_pointer::Owned,
     any_pointer::Owned,
-    PreparedCall<P, FixedField<'a, Generic<any_pointer::Owned>>>,
+    PreparedCall<capnp_rpc::incoming::Params<P>, FixedField<'a, Generic<any_pointer::Owned>>>,
 >;
-fn invocation<'a, P>(
+fn invocation<'a, P: capnp_rpc::IncomingMessage>(
     params: P,
     output: &'a mut message::FixedBuilder<'_>,
 ) -> Result<Invocation<'a, P>> {
@@ -132,7 +130,10 @@ fn invocation<'a, P>(
         .into_field(api::Return::RESULTS)
         .init()?
         .into_field(api::Payload::CONTENT);
-    Ok(CallContext::from_owner(PreparedCall::new(params, content)))
+    Ok(CallContext::from_owner(PreparedCall::new(
+        capnp_rpc::incoming::Params::new(params, ()),
+        content,
+    )))
 }
 fn source<'a>(words: &'a mut [capnp::Word], hold: bool) -> Result<message::FixedBuilder<'a>> {
     use capntproto_rpc_engine::ids::{ImportId, QuestionId, WireId};
@@ -348,8 +349,11 @@ pub fn contextual_generated_invocation() -> Result<()> {
     Ok(())
 }
 struct Invalid<'a>(&'a Cell<usize>);
-impl ParamsHook for Invalid<'_> {
-    fn get(&self) -> Result<any_pointer::Reader<'_>> {
+impl capnp_rpc::IncomingMessage for Invalid<'_> {
+    fn size_in_words(&self) -> usize {
+        0
+    }
+    fn get_body(&self) -> Result<any_pointer::Reader<'_>> {
         self.0.set(self.0.get() + 1);
         Err(Error::from_kind(ErrorKind::Failed))
     }
