@@ -52,10 +52,7 @@ impl RequestHook for Hook {
     fn send(self: Box<Self>) -> RemotePromise<any_pointer::Owned> {
         let Hook { counts, gate } = *self;
         counts.sends.set(counts.sends.get() + 1);
-        let response = Response {
-            hook: Box::new(ResponseGuard(counts.clone())),
-            marker: PhantomData,
-        };
+        let response = Response::<any_pointer::Owned>::new(Box::new(ResponseGuard(counts.clone())));
         RemotePromise {
             promise: capnp::capability::ResponsePromise::new(Promise::from_future(async move {
                 gate.await.unwrap()?;
