@@ -1,0 +1,60 @@
+name: Verification / Actual no_std legacy wakes and fragmented frames
+on:
+  push:
+    branches: [codex/legacy-wakes-qualification-20261025]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/legacy-wakes
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup
+        with:
+          cache-key: legacy-wakes
+          workspaces: |
+            verification/legacy-alloc -> target/legacy-wakes
+      - name: Install schema compiler and embedded target
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          rustup target add thumbv7em-none-eabi
+      - name: Check actual legacy conversations, wakeups, framing and fixed result owners
+        run: |
+          cargo test --locked --manifest-path verification/legacy-alloc/Cargo.toml
+          cargo clippy --locked --manifest-path verification/legacy-alloc/Cargo.toml --all-targets -- -D warnings
+          cargo check --locked --manifest-path verification/legacy-alloc/Cargo.toml --target thumbv7em-none-eabi
+          cargo test --locked -p capntproto-rpc-wire --features alloc --lib result_owners
+          cargo fmt --manifest-path verification/legacy-alloc/Cargo.toml -- --check
+
+  miri:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      MIRIFLAGS: -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install schema compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+      - name: Install pinned memory checker
+        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - name: Exercise actual alloc-only legacy and explicit alloc fixed-results on both widths
+        run: |
+          cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/legacy-alloc/Cargo.toml --lib
+          cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/legacy-alloc/Cargo.toml --lib --target i686-unknown-linux-gnu
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-wire --features alloc --lib result_owners
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-wire --features alloc --lib --target i686-unknown-linux-gnu result_owners
