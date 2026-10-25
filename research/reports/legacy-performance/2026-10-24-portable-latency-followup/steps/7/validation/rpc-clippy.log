@@ -1,9 +1,0 @@
-   Compiling capntproto-codegen v0.25.3 (/workspace/capntproto/crates/capntproto-codegen)
-    Checking futures-util v0.3.34
-   Compiling capntproto-compiler v0.1.0 (/workspace/capntproto/crates/capntproto-compiler)
-   Compiling capntproto-rpc-wire v0.1.0 (/workspace/capntproto/crates/capntproto-rpc-wire)
-    Checking futures-executor v0.3.34
-   Compiling capntproto-rpc v0.25.1 (/workspace/capntproto/crates/capntproto-rpc)
-    Checking futures v0.3.34
-    Checking capntproto-futures v0.25.2 (/workspace/capntproto/crates/capntproto-futures)
-    Finished `dev` profile [unoptimized] target(s) in 23.16s

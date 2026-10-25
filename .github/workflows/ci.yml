@@ -38,8 +38,11 @@ jobs:
           workspaces: |
             . -> target
             verification/portable -> target
-      - name: Install bare-metal target
-        run: rustup target add thumbv7em-none-eabi --toolchain 1.97.0
+      - name: Install schema compiler and bare-metal target
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          rustup target add thumbv7em-none-eabi --toolchain 1.97.0
       - name: Check isolated core and RPC profiles
         # cargo-auditable detects a direct linker only when it is explicit;
         # otherwise it gives ARM's rust-lld a C-driver-only -Wl argument.

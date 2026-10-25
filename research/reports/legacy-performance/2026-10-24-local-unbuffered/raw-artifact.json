@@ -1,8 +1,0 @@
-{
-  "path": "/tmp/capntproto-local-unbuffered-20261024-raw.tar.gz",
-  "sha256": "b26ebfed9a872ec428fd777119d10edfefa5ea831f13921625d2938d21d77682",
-  "bytes": 67676451,
-  "archive_entries": 5799,
-  "regular_files": 5076,
-  "contents": "Raw timing samples, all syscall traces, process logs, scopes, outer-host counters, build logs and analysis scripts. Executables, generated C++ build files and benchmark private keys are excluded."
-}
