@@ -201,7 +201,24 @@ where
 
 /// For a specific kind of task, `TaskReaper` defines the procedure that should
 /// be invoked when it succeeds or fails.
-pub(crate) use scheduler::Reaper as TaskReaper;
+pub(crate) trait TaskReaper<E: 'static> {
+    fn task_succeeded(&mut self) {}
+    fn task_failed(&mut self, error: E);
+}
+
+// Keep the private hosted vtable at its allocation boundary. This statically
+// dispatched provider adds no second virtual call to the engine's policy loop.
+struct Reaper<'a, E: 'static>(&'a mut dyn TaskReaper<E>);
+impl<E: 'static> scheduler::Reaper<E> for Reaper<'_, E> {
+    #[inline(always)]
+    fn task_succeeded(&mut self) {
+        self.0.task_succeeded();
+    }
+    #[inline(always)]
+    fn task_failed(&mut self, error: E) {
+        self.0.task_failed(error);
+    }
+}
 
 impl<E> Future for TaskSet<E>
 where
@@ -228,7 +245,7 @@ where
             busy_turns: &mut this.busy_turns,
             defer: this.defer,
             on_empty_fulfillers: &mut Empty(&mut this.on_empty_fulfillers),
-            reaper: &mut *this.reaper,
+            reaper: &mut Reaper(&mut *this.reaper),
             idle_regular: 1,
         }
         .poll(cx)
@@ -242,19 +259,18 @@ impl<E> scheduler::Source for Source<'_, E> {
     type Empty = oneshot::Sender<()>;
     #[inline(always)]
     fn poll_next(&mut self, cx: &mut Context<'_>, _: scheduler::Capacity) -> scheduler::Next<Self> {
-        self.0
-            .as_mut()
-            .expect("live source")
-            .poll_next(cx)
-            .map(|next| {
-                next.map(|item| match item {
-                    EnqueuedTask::Task(f) => scheduler::Command::Task(f),
-                    EnqueuedTask::Last(f) => scheduler::Command::Last(f),
-                    EnqueuedTask::Connection(f) => scheduler::Command::Connection(f),
-                    EnqueuedTask::Terminate(r) => scheduler::Command::Terminate(r),
-                    EnqueuedTask::OnEmpty(f) => scheduler::Command::OnEmpty(f),
-                })
+        let Some(source) = self.0.as_mut() else {
+            return Poll::Ready(None);
+        };
+        source.poll_next(cx).map(|next| {
+            next.map(|item| match item {
+                EnqueuedTask::Task(f) => scheduler::Command::Task(f),
+                EnqueuedTask::Last(f) => scheduler::Command::Last(f),
+                EnqueuedTask::Connection(f) => scheduler::Command::Connection(f),
+                EnqueuedTask::Terminate(r) => scheduler::Command::Terminate(r),
+                EnqueuedTask::OnEmpty(f) => scheduler::Command::OnEmpty(f),
             })
+        })
     }
     #[inline(always)]
     fn is_empty(&self) -> bool {

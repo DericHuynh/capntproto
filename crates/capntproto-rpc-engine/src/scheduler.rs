@@ -40,6 +40,7 @@ pub trait Source {
     type Error;
     type Task: Future<Output = Result<(), Self::Error>> + Unpin;
     type Empty;
+    /// A closed source returns Ready(None), without polling released input.
     fn poll_next(&mut self, cx: &mut Context<'_>, capacity: Capacity) -> Next<Self>;
     fn is_empty(&self) -> bool;
     fn is_closed(&self) -> bool;
@@ -200,13 +201,10 @@ where
             Poll::Pending
         }
     }
-    #[inline]
+    #[inline(always)]
     fn poll_regular(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), A::Error>> {
         let mut enqueued_stream_complete = false;
         for admission in 0..32 {
-            if self.enqueued.is_closed() {
-                break;
-            }
             match self.enqueued.poll_next(cx, self.capacity()) {
                 Poll::Pending => break,
                 Poll::Ready(None) => {
