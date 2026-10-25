@@ -46,3 +46,24 @@ Qualification `9292a818a6b8c24b5fd171035c142c8bbe0cf0f2`,
 passes all 20 strict-provenance invocation Miri executions (five tests across
 both widths and no-default/explicit-alloc profiles). Full hosted tests pass;
 repeated work/allocation profiling remains running.
+
+
+## Hosted qualification
+
+Run 40181910314 passes both jobs and all 240 repeated work/allocation trials.
+The selected capability-owner/scheduler Ir/Bc/Bi slopes are exact in all cases;
+337/337 normalized common captured assembly bodies match. TLS blocks stay
+7/57/202 and all bytes/QUIC samples and spreads remain in comparison.json.
+Whole Ir ranges -0.031% to +0.058%. These helpers exclude some inlined caller
+work, as demonstrated separately by the request code-generation regression.
+
+Simulated Bim regresses in every case: unary +29.994%, dependent +14.338%,
+pipeline +11.117%, concurrent +19.949%, callback +11.759%, deep +6.124%.
+Bcm also regresses unary +1.554%, callback +2.673% and deep +1.255%, while
+improving in the remaining cases. These substantial predictor regressions are
+retained; unchanged helper instructions do not establish native performance.
+
+Verified artifact 12594729708: 82,017,079 bytes, SHA-256
+`79fa9ad6eefc62faab65784418709e4558a5348dbeaa02921fe17a6f8ae4ab69`.
+Raw profiles/captured assembly/symbols remain in that archive. Selected function
+attribution reconciles every whole-program delta.

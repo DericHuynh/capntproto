@@ -311,39 +311,53 @@ impl<VatId> Drop for QuestionRef<VatId> {
         let Some(connection_state) = self.connection_state.take() else {
             return;
         };
-        let release = {
-            let mut questions = connection_state.questions.borrow_mut();
-            let q = questions.find(self.id).expect("live question reference");
-            q.self_ref = None;
-            q.lifecycle.release()
-        };
-        if let Some(finish) = release.finish {
-            let message =
-                connection_state
-                    .connection
-                    .borrow_mut()
-                    .as_mut()
-                    .ok()
-                    .map(|connection| {
-                        connection
-                            .new_outgoing_finish(self.id.to_wire(), finish.release_result_caps)
-                            .expect("standard Finish envelope")
-                    });
-            if let Some(message) = message {
-                message.send_detached_and_drive();
-            }
-        }
+        capntproto_rpc_engine::question::release::run(&*connection_state, self.id);
+    }
+}
 
-        if release.reclaim {
-            // Keep the ID occupied until Finish has been enqueued. Transport
-            // callbacks may reenter or disconnect, but cannot reuse this slot
-            // ahead of its Finish. A late Return retires canceled questions.
-            let mut questions = connection_state.questions.borrow_mut();
-            if questions.find(self.id).is_some() {
-                questions.erase(self.id);
-            }
+impl<VatId> capntproto_rpc_engine::question::release::Owner for ConnectionState<VatId> {
+    type Key = QuestionId;
+    #[inline(always)]
+    fn release(&self, id: &QuestionId) -> Option<capntproto_rpc_engine::question::Release> {
+        let mut questions = self.questions.borrow_mut();
+        let q = questions.find(*id).expect("live question reference");
+        q.self_ref = None;
+        Some(q.lifecycle.release())
+    }
+    #[inline(always)]
+    fn finish(
+        &self,
+        id: &QuestionId,
+        finish: capntproto_rpc_engine::question::Finish,
+        _reclaim: bool,
+    ) -> capntproto_rpc_engine::question::release::Publication {
+        let message = self
+            .connection
+            .borrow_mut()
+            .as_mut()
+            .ok()
+            .map(|connection| {
+                connection
+                    .new_outgoing_finish(id.to_wire(), finish.release_result_caps)
+                    .expect("standard Finish envelope")
+            });
+        if let Some(message) = message {
+            message.send_detached_and_drive();
         }
-        connection_state.schedule_idle_check();
+        capntproto_rpc_engine::question::release::Publication::Accepted
+    }
+    #[inline(always)]
+    fn reclaim(&self, id: &QuestionId) {
+        // Keep the ID occupied until Finish has been enqueued. Transport
+        // callbacks may disconnect; never assume the old record still exists.
+        // One removal handles an already-retired record; its owner leaves
+        // the table borrow before destruction.
+        let removed = self.questions.borrow_mut().remove(*id);
+        drop(removed);
+    }
+    #[inline(always)]
+    fn idle(&self) {
+        self.schedule_idle_check();
     }
 }
 

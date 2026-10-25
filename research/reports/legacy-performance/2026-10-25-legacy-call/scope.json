@@ -1,0 +1,4116 @@
+{
+  "repetitions": 5,
+  "points": [
+    10,
+    50
+  ],
+  "warmup": 2,
+  "trials": [
+    {
+      "path": "callgrind-tls-unary-small-factored-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:32873"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38413"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40485"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42373"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36397"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44723"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43609"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34467"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40885"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39411"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35655"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40579"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33291"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44931"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38981"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45403"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40559"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-factored-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45467"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45049"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-unary-small-candidate-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40877"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42181"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38073"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34565"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40513"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41927"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40809"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39669"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46169"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36025"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45337"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36685"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46233"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43575"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:32919"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40395"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37493"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38341"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-factored-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35251"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39801"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-dependent-read-candidate-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35379"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42001"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34737"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44483"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34995"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40345"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43673"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35147"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45185"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39279"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37367"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43325"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34221"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35205"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43861"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46629"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46253"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46123"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-factored-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46295"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38525"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-pipelined-read-candidate-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33247"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37739"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43115"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34691"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46657"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34113"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34445"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44181"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38645"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38113"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38149"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36919"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37877"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39531"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33821"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43305"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33937"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45037"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-factored-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37171"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41459"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-concurrent-32-candidate-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40677"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33785"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36825"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43907"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45401"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45863"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46319"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37777"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35339"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35845"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46083"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44205"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39103"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37813"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43625"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44579"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39989"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36005"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-factored-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37249"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38413"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-callback-candidate-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41103"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41839"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37177"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-0-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38301"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-0-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40743"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40517"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40959"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-1-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45767"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-1-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44589"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43199"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46293"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-2-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37467"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-2-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45725"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33841"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41727"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-3-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40219"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-3-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43909"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40749"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-factored-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35835"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-4-10",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46787"
+        }
+      ]
+    },
+    {
+      "path": "callgrind-tls-deep-32-concurrent-32-candidate-4-50",
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37267"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-0-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46745"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-0-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38325"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-0-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41257"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-0-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37841"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-1-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41621"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-1-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46605"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-1-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33619"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-1-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42515"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-2-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40457"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-2-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34267"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-2-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42141"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-2-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43571"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-3-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45287"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-3-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46751"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-3-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36903"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-3-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33761"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-4-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45749"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-factored-4-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42409"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-4-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46293"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-candidate-4-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40535"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-0-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34741"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-0-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:32929"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-0-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34157"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-0-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37639"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-1-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45769"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-1-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40163"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-1-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42949"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-1-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35091"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-2-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36095"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-2-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43909"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-2-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35095"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-2-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46505"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-3-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36919"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-3-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36913"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-3-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46761"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-3-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41853"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-4-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36693"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-factored-4-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40307"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-4-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35153"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-candidate-4-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44459"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-0-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34827"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-0-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33409"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-0-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36911"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-0-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35217"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-1-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38221"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-1-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39501"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-1-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44185"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-1-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37785"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-2-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36499"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-2-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39027"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-2-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39293"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-2-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46509"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-3-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44915"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-3-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33861"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-3-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44867"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-3-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37467"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-4-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42113"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-factored-4-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44897"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-4-10",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33349"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-candidate-4-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39351"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-0-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:50181"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-0-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:56426"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-0-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36940"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-0-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:53522"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-1-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46846"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-1-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43096"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-1-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:49509"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-1-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:55408"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-2-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:50360"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-2-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:57442"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-2-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34417"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-2-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46900"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-3-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:51456"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-3-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:54639"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-3-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45469"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-3-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44740"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-4-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34844"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-factored-4-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:36445"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-4-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35434"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-candidate-4-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39810"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-0-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:59367"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-0-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33954"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-0-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46432"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-0-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:49178"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-1-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44590"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-1-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:53677"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-1-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45244"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-1-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41135"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-2-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:57614"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-2-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:57673"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-2-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43805"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-2-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43365"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-3-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:51502"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-3-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:55553"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-3-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44356"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-3-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:52239"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-4-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41597"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-factored-4-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:51320"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-4-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41129"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-candidate-4-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37259"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-0-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:55062"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-0-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:55200"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-0-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40116"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-0-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 0,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34706"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-1-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:60129"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-1-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:38094"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-1-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41062"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-1-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 1,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35434"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-2-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:57060"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-2-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:60030"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-2-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:39204"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-2-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 2,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42837"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-3-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:55712"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-3-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:50803"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-3-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:49185"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-3-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 3,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43666"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-4-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34492"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-factored-4-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "factored",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:56361"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-4-10",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 10,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33052"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-candidate-4-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "candidate",
+      "repetition": 4,
+      "iterations": 50,
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:54573"
+        }
+      ]
+    }
+  ],
+  "failures": [],
+  "pairs": [
+    [
+      "factored",
+      "candidate"
+    ]
+  ],
+  "cpus": [
+    0,
+    2
+  ],
+  "cpu_topology": "# The following is the parsable format, which can be fed to other\n# programs. Each different item in every column has an unique ID\n# starting usually from zero.\n# CPU,Core,Socket\n0,0,0\n1,0,0\n2,1,0\n3,1,0\n",
+  "binaries": {
+    "factored": {
+      "path": "/home/runner/work/_temp/legacy-factored",
+      "sha256": "707b0e51801589a5b9ac49da758f3630dd334ac62ae3ce8d9e547fea27469a63",
+      "sections": "/home/runner/work/_temp/legacy-factored  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370896       8672\n.rela.plt                1296     379568\n.rodata                828005     380928\n.gcc_except_table      457480    1208936\n.debug_gdb_scripts         34    1666416\n.eh_frame_hdr          103996    1666452\n.eh_frame              843076    1770448\n.text                 9877351    2617664\n.init                      27   12495016\n.fini                      13   12495044\n.plt                      880   12495072\n.tdata                    112   12500048\n.tbss                     456   12500160\n.fini_array                 8   12500160\n.init_array                16   12500168\n.data.rel.ro           263152   12500192\n.dynamic                  464   12763344\n.got                     2648   12763808\n.got.plt                  456   12766456\n.relro_padding            320   12766912\n.tm_clone_table             0   12771008\n.data                    3272   12771008\n.bss                     4684   12774288\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21718498          0\n.debug_aranges         167312          0\n.debug_ranges         6711456          0\n.debug_str           35136708          0\n.debug_line           6896136          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2943          0\nTotal                86794901\n\n\n"
+    },
+    "candidate": {
+      "path": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench",
+      "sha256": "8be251d668479f216da9295940a423656ad7e5520f4d19e70e3273a9cb93b9f7",
+      "sections": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370896       8672\n.rela.plt                1296     379568\n.rodata                828005     380928\n.gcc_except_table      457476    1208936\n.debug_gdb_scripts         34    1666412\n.eh_frame_hdr          103996    1666448\n.eh_frame              843068    1770448\n.text                 9877351    2617664\n.init                      27   12495016\n.fini                      13   12495044\n.plt                      880   12495072\n.tdata                    112   12500048\n.tbss                     456   12500160\n.fini_array                 8   12500160\n.init_array                16   12500168\n.data.rel.ro           263152   12500192\n.dynamic                  464   12763344\n.got                     2648   12763808\n.got.plt                  456   12766456\n.relro_padding            320   12766912\n.tm_clone_table             0   12771008\n.data                    3272   12771008\n.bss                     4684   12774288\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21718487          0\n.debug_aranges         167312          0\n.debug_ranges         6712800          0\n.debug_str           35138571          0\n.debug_line           6896314          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2943          0\nTotal                86798263\n\n\n"
+    }
+  },
+  "workflow_sha": "9292a818a6b8c24b5fd171035c142c8bbe0cf0f2",
+  "method": "Rotate variant order each repetition and reverse short/long order on alternate repetitions. All peers use legacy; when present, repeat and factored use an identical executable path. Cryptographic randomness is not replaced or seeded."
+}

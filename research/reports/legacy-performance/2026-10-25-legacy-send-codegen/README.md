@@ -43,3 +43,35 @@ counts and all predictor regressions. Assembly capture is expanded to include
 application async access and capability workflow callers; unchanged helper
 assembly is insufficient to establish caller parity. Native latency remains
 restricted to dedicated droplets. Whole no-alloc legacy integration is pending.
+
+
+## Repeated hosted qualification
+
+Source `1148bb445d597f8a5702cdecedb3c7bba57f5828`, control
+`ddeffe7e66aede9bfc614c966b9dc24f0f508c71`, qualification
+`1a0d0625f0b6ab6ee06c9d59135cd03caba16931`,
+[run 40183702611](https://github.com/DericHuynh/capntproto/actions/runs/40183702611)
+passes full hosted verification, encrypted behavior and all 240 trials. This
+annotation-only change adds no new Miri run; the preceding request/future/call
+ownership changes have separate two-width qualifications. CI reproduces the
+212-to-204 static caller result and normalized reference equivalence.
+
+The real benchmark removes eight Ir per affected call (SD zero), including
+-256 Ir per concurrent/deep batch (SD zero). Expanded disassembly confirms the
+actual topology access poll shrinks 1717 to 1709 instructions. Across the six
+cases, whole Ir improves 0.005%–0.055% and Bim improves 1.895%–8.580%.
+Whole concurrent Ir falls 267.575 ± 91.014 and deep 208.885 ± 16.677 (paired
+sample SD). Selected capability/scheduler Ir/Bc/Bi remains exact; 667/690 common
+captured bodies match after normalization, with the caller changes retained.
+
+TLS blocks remain 7/57/202. Every byte/QUIC mean, spread and paired sample is
+preserved. Bcm regresses dependent +0.096%, pipeline +1.209%, concurrent
++0.615% and callback +0.467%; deep whole Bc increases 60.380 despite unchanged
+selected helpers/caller branch counts. Those deltas are not erased by lower Ir
+or Bim. This remains simulated/compiled-work evidence, not droplet native timing.
+
+Verified artifact 12595317945: 82,639,809 bytes, SHA-256
+`bb49db864aba69c22d8fa536b0add2b297e8d9b00a6f8f84848e5c83e225fce8`.
+The archive retains raw profiles, full selected caller assembly, symbols and
+both CI codegen reproducer assemblies. Local and CI reproducer hashes differ
+with source paths; their recorded instruction results and normalization agree.

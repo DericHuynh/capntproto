@@ -83,3 +83,13 @@ Verified artifact 12594059851: 81,839,819 bytes, SHA-256
 `c660c5a1f83dccbbc412ef227f8a58125324319a590dbed0a5cb730a6522a3d0`.
 Raw profiles and captured assembly/symbols remain in that archive. Selected
 function attribution reconciles every whole-program delta.
+
+
+function-name-analysis.json performs that narrow default-type spelling grouping
+on every raw function sample, conserving each whole delta. It identifies deep
+Ir +63.080 and Bc +63.600 in memcpy, plus +5.120 in memset for both metrics;
+these dominate the residual +63.160 Ir / +68.080 Bc after rename pairs cancel.
+This is attribution of work, not proof about native latency or copy volume.
+Reproduce by running canonicalize-promises.py on the unpacked verified archive,
+which contains the complete functions.json; the smaller selected-functions
+file is insufficient when large rename pairs displace other top changes.

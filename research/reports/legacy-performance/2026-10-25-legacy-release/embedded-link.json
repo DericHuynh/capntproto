@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-release.elf",
+  "bytes": 853288,
+  "sha256": "cd4cc81e2734017dd6ae70176aa91e84fa7111a154689404e996fd683dee1cce",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "97da31003fc5b314eb00ddd6b7cc24ed929e4d3da5fbcf4b1c20edbd6905ea18",
+  "scope": "Link-only borrowed legacy last-question cleanup retaining a deferred Finish in fixed storage and encoding it before ID reclamation. Not a complete RPC connection/conversation matrix, not executed on a board."
+}
