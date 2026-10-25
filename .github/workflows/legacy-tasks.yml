@@ -1,0 +1,104 @@
+name: Performance / Legacy pinned task extraction
+on:
+  push:
+    branches: [codex/legacy-tasks-qualification-20261025]
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Verify caller-owned pinned tasks and repeat work profiles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/legacy-factoring
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup
+        with:
+          cache-key: legacy-factoring
+          workspaces: |
+            . -> target/legacy-factoring
+      - name: Install build and diagnostic tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang cmake ninja-build capnproto libcapnp-dev protobuf-compiler libssl-dev valgrind binutils
+          rustup target add thumbv7em-none-eabi thumbv6m-none-eabi
+      - name: Test shared completion and hosted RPC
+        run: |
+          python3 -m unittest discover -s benchmarks/rpc -p test_work_profile.py
+          cargo test --locked -p capntproto-task
+          cargo test --locked -p capntproto-rpc-engine --features alloc --lib
+          cargo test --locked -p capntproto-rpc-engine --no-default-features --lib
+          cargo clippy --locked -p capntproto-task -p capntproto-rpc-engine --features alloc --all-targets -- -D warnings
+          cargo build --locked -p capntproto-rpc-engine --no-default-features --target thumbv7em-none-eabi
+          rustc --edition=2021 --target thumbv7em-none-eabi -C panic=abort -C opt-level=2 -L dependency="$CARGO_TARGET_DIR/thumbv7em-none-eabi/debug/deps" --extern capntproto_rpc_engine="$CARGO_TARGET_DIR/thumbv7em-none-eabi/debug/libcapntproto_rpc_engine.rlib" verification/portable/legacy-tasks-link.rs -o "$RUNNER_TEMP/legacy-tasks.elf"
+          python3 verification/portable/verify-core-link.py --source verification/portable/legacy-tasks-link.rs --scope "Link-only owned pinned tasks, bounded admission, immediate completion destruction and escaping static wakers; not executed on a board." --elf "$RUNNER_TEMP/legacy-tasks.elf" > "$RUNNER_TEMP/legacy-tasks-link.json"
+          cargo check --locked -p capntproto-rpc-engine --no-default-features --target thumbv6m-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi
+          cargo test --locked -p capntproto-rpc --lib
+          cargo clippy --locked -p capntproto-rpc --all-targets -- -D warnings
+          cargo fmt --all -- --check
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 18755f2e57a4157839d1390e03e2ec9fe823b521
+          path: target/legacy-profile-source
+          persist-credentials: false
+      - name: Build current factored control
+        run: |
+          cargo build --locked --release --manifest-path target/legacy-profile-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cp target/legacy-factoring/release/capntproto-rpc-bench "$RUNNER_TEMP/legacy-factored"
+      # Build both revisions at the same path so package IDs and embedded
+      # source locations do not confound instruction and section comparisons.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: target/legacy-profile-source
+          persist-credentials: false
+      - name: Build candidate and check encrypted behavior
+        run: |
+          cargo build --locked --release --manifest-path target/legacy-profile-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cargo test --locked -p capntproto --features quic --test secure_rpc
+      - name: Repeat instructions, branches and allocations against factored control
+        run: |
+          python3 benchmarks/rpc/legacy-work-profile.py --pair-only --candidate target/legacy-factoring/release/capntproto-rpc-bench --factored "$RUNNER_TEMP/legacy-factored" --output "$RUNNER_TEMP/legacy-work-diagnostics"
+          cp "$RUNNER_TEMP/legacy-tasks-link.json" "$RUNNER_TEMP/legacy-work-diagnostics/embedded-link.json"
+      - name: Publish comparison
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/legacy-work-diagnostics/comparison.md"; then
+            cat "$RUNNER_TEMP/legacy-work-diagnostics/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: legacy-work-diagnostics
+          path: ${{ runner.temp }}/legacy-work-diagnostics
+          if-no-files-found: warn
+
+  miri:
+    name: Pinned ownership and static wakers under strict-provenance Miri
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      MIRIFLAGS: -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install pinned memory checker
+        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - name: Check raw wakers and pinned destruction on both pointer widths
+        run: |
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-task --lib
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --lib tasks::tests
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-task --lib --target i686-unknown-linux-gnu
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --lib --target i686-unknown-linux-gnu tasks::tests
