@@ -1,0 +1,132 @@
+name: Performance / Legacy concrete response receiver
+on:
+  push:
+    branches: [codex/legacy-receiver-qualification-20261025]
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Verify reply receiver ownership and repeat hosted profiles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/legacy-factoring
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 8
+      - uses: ./.github/actions/auditable-setup
+        with:
+          cache-key: legacy-factoring
+          workspaces: |
+            . -> target/legacy-factoring
+      - name: Install build and diagnostic tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang cmake ninja-build capnproto libcapnp-dev protobuf-compiler libssl-dev valgrind binutils
+          rustup target add thumbv7em-none-eabi thumbv6m-none-eabi
+      - name: Test shared completion and hosted RPC
+        run: |
+          python3 -m unittest discover -s benchmarks/rpc -p test_work_profile.py
+          cargo test --locked -p capntproto-codegen --lib
+          cargo check --locked -p capntproto-rpc --no-default-features --features alloc --target thumbv7em-none-eabi
+          cargo clippy --locked -p capntproto-rpc --no-default-features --features alloc --lib -- -D warnings
+          cargo test --locked --manifest-path verification/legacy-alloc/Cargo.toml 2>&1 | tee "$RUNNER_TEMP/legacy-alloc-fixture.txt"
+          cargo check --locked --manifest-path verification/legacy-alloc/Cargo.toml --target thumbv7em-none-eabi
+          cargo clippy --locked --manifest-path verification/legacy-alloc/Cargo.toml --all-targets -- -D warnings
+          cargo fmt --manifest-path verification/legacy-alloc/Cargo.toml -- --check
+          cargo test --locked -p capntproto-core --lib
+          cargo test --locked -p capntproto-core --no-default-features --lib
+          cargo test --locked -p capntproto-core --doc
+          cargo test --locked -p capntproto-core --no-default-features --doc
+          cargo clippy --locked -p capntproto-core --all-targets -- -D warnings
+          cargo clippy --locked -p capntproto-core --no-default-features --lib -- -D warnings
+          cargo test --locked -p capntproto-rpc-wire --no-default-features --lib
+          cargo test --locked -p capntproto-rpc-wire --no-default-features --features alloc --lib
+          cargo clippy --locked -p capntproto-rpc-wire --no-default-features --all-targets -- -D warnings
+          cargo test --locked -p capntproto-task
+          cargo test --locked -p capntproto-rpc-engine --features alloc --lib
+          cargo test --locked -p capntproto-rpc-engine --no-default-features --lib
+          cargo test --locked -p capntproto-rpc-engine --no-default-features --doc
+          cargo clippy --locked -p capntproto-task -p capntproto-rpc-engine --features alloc --all-targets -- -D warnings
+          cargo build --locked -p capntproto-core -p capntproto-rpc-wire -p capntproto-rpc-engine --no-default-features
+          rustc --edition=2021 -L dependency="$CARGO_TARGET_DIR/debug/deps" --extern capnp="$CARGO_TARGET_DIR/debug/libcapnp.rlib" --extern capntproto_rpc_wire="$CARGO_TARGET_DIR/debug/libcapntproto_rpc_wire.rlib" --extern capntproto_rpc_engine="$CARGO_TARGET_DIR/debug/libcapntproto_rpc_engine.rlib" verification/portable/legacy-receiver-link.rs -o "$RUNNER_TEMP/legacy-receiver-host"
+          "$RUNNER_TEMP/legacy-receiver-host"
+          cargo build --locked -p capntproto-core -p capntproto-rpc-wire -p capntproto-rpc-engine --no-default-features --target thumbv7em-none-eabi
+          rustc --edition=2021 --target thumbv7em-none-eabi -C panic=abort -C opt-level=2 -L dependency="$CARGO_TARGET_DIR/thumbv7em-none-eabi/debug/deps" --extern capnp="$CARGO_TARGET_DIR/thumbv7em-none-eabi/debug/libcapnp.rlib" --extern capntproto_rpc_wire="$CARGO_TARGET_DIR/thumbv7em-none-eabi/debug/libcapntproto_rpc_wire.rlib" --extern capntproto_rpc_engine="$CARGO_TARGET_DIR/thumbv7em-none-eabi/debug/libcapntproto_rpc_engine.rlib" verification/portable/legacy-receiver-link.rs -o "$RUNNER_TEMP/legacy-receiver.elf"
+          python3 verification/portable/verify-core-link.py --source verification/portable/legacy-receiver-link.rs --scope "Link-only borrowed legacy response receiver, retained external response bytes and deferred fixed Finish before ID reclamation. Not a complete RPC connection/conversation matrix, not executed on a board." --elf "$RUNNER_TEMP/legacy-receiver.elf" > "$RUNNER_TEMP/legacy-receiver-link.json"
+          cargo check --locked -p capntproto-rpc-engine --no-default-features --target thumbv6m-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi
+          cargo test --locked -p capntproto-rpc --lib
+          cargo clippy --locked -p capntproto-rpc --all-targets -- -D warnings
+          cargo fmt --all -- --check
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 3aff5ec2da3e3bd0bced45189e7b1441ef2f3617
+          path: target/legacy-profile-source
+          persist-credentials: false
+      - name: Build current factored control
+        run: |
+          cargo build --locked --release --manifest-path target/legacy-profile-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cp target/legacy-factoring/release/capntproto-rpc-bench "$RUNNER_TEMP/legacy-factored"
+      # Build both revisions at the same path so package IDs and embedded
+      # source locations do not confound instruction and section comparisons.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: target/legacy-profile-source
+          persist-credentials: false
+      - name: Build candidate and check encrypted behavior
+        run: |
+          cargo build --locked --release --manifest-path target/legacy-profile-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cargo test --locked -p capntproto --features quic --test secure_rpc
+      - name: Repeat instructions, branches and allocations against factored control
+        run: |
+          python3 benchmarks/rpc/legacy-work-profile.py --pair-only --candidate target/legacy-factoring/release/capntproto-rpc-bench --factored "$RUNNER_TEMP/legacy-factored" --output "$RUNNER_TEMP/legacy-work-diagnostics"
+          cp "$RUNNER_TEMP/legacy-receiver-link.json" "$RUNNER_TEMP/legacy-work-diagnostics/embedded-link.json"
+          cp "$RUNNER_TEMP/legacy-alloc-fixture.txt" "$RUNNER_TEMP/legacy-work-diagnostics/legacy-alloc-fixture.txt"
+      - name: Publish comparison
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/legacy-work-diagnostics/comparison.md"; then
+            cat "$RUNNER_TEMP/legacy-work-diagnostics/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: legacy-work-diagnostics
+          path: ${{ runner.temp }}/legacy-work-diagnostics
+          if-no-files-found: warn
+
+  miri:
+    name: Concrete response receiver and actual legacy conversations under Miri
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      MIRIFLAGS: -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install schema compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+      - name: Install pinned memory checker
+        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - name: Check both widths, fixed/alloc receivers and actual legacy conversations
+        run: |
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --lib completion::direct::receiver
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --lib --target i686-unknown-linux-gnu completion::direct::receiver
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --features alloc --lib completion::direct::receiver
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc-engine --no-default-features --features alloc --lib --target i686-unknown-linux-gnu completion::direct::receiver
+          cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/legacy-alloc/Cargo.toml --lib
+          cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/legacy-alloc/Cargo.toml --lib --target i686-unknown-linux-gnu
