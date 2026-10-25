@@ -1,6 +1,10 @@
 //! Borrowed import cleanup owned by the actual legacy parameter adapter.
 use super::*;
-use capntproto_rpc_engine::references::{import, ImportRefs};
+use capntproto_rpc_engine::{
+    completion::cancellation,
+    references::{import, ImportRefs},
+};
+use core::cell::RefCell;
 
 struct Connection<'a> {
     input_drops: &'a Cell<usize>,
@@ -9,6 +13,13 @@ struct Connection<'a> {
     active: Cell<bool>,
     pending: Cell<u32>,
     idle: Cell<usize>,
+    canceled: Cell<bool>,
+    task_waker: RefCell<Option<Waker>>,
+}
+impl cancellation::Owner for Connection<'_> {
+    fn cancellation(&self) -> cancellation::Cancellation<'_> {
+        cancellation::Cancellation::new(&self.canceled, &self.task_waker)
+    }
 }
 impl import::Owner for Connection<'_> {
     type Key = u32;
@@ -44,7 +55,7 @@ impl capnp_rpc::incoming::Capabilities for Bindings<'_> {
 pub fn imported_generated_invocations() -> Result<()> {
     static WAKES: AtomicUsize = AtomicUsize::new(0);
     static NOTICE: Static<Notice> = Static::new(Notice(&WAKES));
-    for mode in 0..4 {
+    for mode in 0..5 {
         let mut words = [ZERO; 32];
         let input = source(&mut words, false)?;
         let mut output_words = [ZERO; 32];
@@ -59,6 +70,8 @@ pub fn imported_generated_invocations() -> Result<()> {
             active: Cell::new(true),
             pending: Cell::new(0),
             idle: Cell::new(0),
+            canceled: Cell::new(false),
+            task_waker: RefCell::new(None),
         };
         let mut references = ImportRefs::new();
         references.receive(9).unwrap();
@@ -85,6 +98,14 @@ pub fn imported_generated_invocations() -> Result<()> {
             retired: &retired,
             started: &started,
         });
+        if mode == 4 {
+            assert!(
+                service
+                    .method_info(base::Owned::READ.interface_id(), 0)
+                    .unwrap()
+                    .allow_cancellation
+            );
+        }
         let mut places = core::pin::pin!(tasks::PinnedSlots::<_, 1>::new());
         let [place] = places.as_mut().places();
         let mut task = Promise::from_owner(
@@ -104,28 +125,51 @@ pub fn imported_generated_invocations() -> Result<()> {
         );
         let waker = NOTICE.waker();
         let mut cx = Context::from_waker(&waker);
-        if mode == 3 {
+        if mode == 4 {
+            let mut driver = cancellation::Task::new(&connection, task);
+            let interest = cancellation::Cancel::new(&connection);
+            assert!(Pin::new(&mut driver).poll(&mut cx).is_pending());
+            assert_eq!(started.get(), 1);
+            let wakes = WAKES.load(Ordering::Relaxed);
+            drop(interest);
+            assert!(WAKES.load(Ordering::Relaxed) > wakes);
+            assert!(connection.canceled.get());
             assert!(matches!(
-                Pin::new(&mut task).poll(&mut cx),
-                Poll::Ready(Err(Error {
-                    kind: ErrorKind::Unimplemented,
-                    ..
-                }))
+                Pin::new(&mut driver).poll(&mut cx),
+                Poll::Ready(Ok(()))
             ));
-        } else if mode != 2 {
-            assert!(Pin::new(&mut task).poll(&mut cx).is_pending());
-            assert!(connection.active.get());
-            assert_eq!(connection.pending.get(), 0);
+            // Cancellation reports completion without polling or prematurely
+            // destroying the suspended method. The task still owns its input,
+            // import finalizer and original future until driver destruction.
             assert_eq!(input_drops.get(), 0);
-            if mode == 0 {
-                assert!(ready.send(()).is_ok());
+            assert_eq!(retired.get(), 0);
+            assert!(connection.active.get());
+            drop(driver);
+            assert!(connection.task_waker.borrow().is_none());
+        } else {
+            if mode == 3 {
                 assert!(matches!(
                     Pin::new(&mut task).poll(&mut cx),
-                    Poll::Ready(Ok(()))
+                    Poll::Ready(Err(Error {
+                        kind: ErrorKind::Unimplemented,
+                        ..
+                    }))
                 ));
+            } else if mode != 2 {
+                assert!(Pin::new(&mut task).poll(&mut cx).is_pending());
+                assert!(connection.active.get());
+                assert_eq!(connection.pending.get(), 0);
+                assert_eq!(input_drops.get(), 0);
+                if mode == 0 {
+                    assert!(ready.send(()).is_ok());
+                    assert!(matches!(
+                        Pin::new(&mut task).poll(&mut cx),
+                        Poll::Ready(Ok(()))
+                    ));
+                }
             }
+            drop(task);
         }
-        drop(task);
         assert!(places.is_empty());
         assert_eq!(input_drops.get(), 1);
         assert!(!connection.active.get());

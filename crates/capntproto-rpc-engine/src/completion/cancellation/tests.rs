@@ -20,6 +20,96 @@ impl Storage {
         Cancellation::new(&self.canceled, &self.waker)
     }
 }
+impl Owner for Storage {
+    fn cancellation(&self) -> Cancellation<'_> {
+        Storage::cancellation(self)
+    }
+}
+
+#[test]
+fn owned_task_and_borrowed_cancel_interest_do_not_allocate_or_repoll_canceled_work() {
+    let measured = allocation_counter::measure(|| {
+        let storage = Storage::default();
+        let polls = Cell::new(0);
+        let work = core::future::poll_fn(|_| {
+            polls.set(polls.get() + 1);
+            Poll::<Result<(), ()>>::Pending
+        });
+        let mut task = Task::new(&storage, work);
+        let interest = Cancel::new(&storage);
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(Pin::new(&mut task).poll(&mut cx).is_pending());
+        assert!(storage.waker.borrow().is_some());
+        drop(interest);
+        assert!(storage.canceled.get());
+        assert_eq!(Pin::new(&mut task).poll(&mut cx), Poll::Ready(Ok(())));
+        assert_eq!(polls.get(), 1);
+        drop(task);
+        assert!(storage.waker.borrow().is_none());
+    });
+    assert_eq!((measured.count_total, measured.bytes_total), (0, 0));
+}
+
+#[test]
+fn owned_task_clears_before_status_and_future_destruction_even_unpolled() {
+    struct Status<'a>(&'a Storage, &'a Cell<u8>);
+    impl Owner for Status<'_> {
+        fn cancellation(&self) -> Cancellation<'_> {
+            self.0.cancellation()
+        }
+    }
+    impl Drop for Status<'_> {
+        fn drop(&mut self) {
+            assert!(self.0.waker.try_borrow_mut().unwrap().is_none());
+            assert_eq!(self.1.replace(1), 0);
+        }
+    }
+    struct Work<'a>(&'a Storage, &'a Cell<u8>);
+    impl Future for Work<'_> {
+        type Output = Result<(), ()>;
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            Poll::Pending
+        }
+    }
+    impl Drop for Work<'_> {
+        fn drop(&mut self) {
+            assert!(self.0.waker.try_borrow_mut().unwrap().is_none());
+            assert_eq!(self.1.replace(2), 1);
+        }
+    }
+    for polled in [false, true] {
+        let storage = Storage::default();
+        let events = Cell::new(0);
+        let mut task = Task::new(Status(&storage, &events), Work(&storage, &events));
+        if polled {
+            assert!(Pin::new(&mut task)
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending());
+            assert!(storage.waker.borrow().is_some());
+        }
+        drop(task);
+        assert_eq!(events.get(), 2);
+    }
+}
+
+#[test]
+fn owned_task_discards_inner_error_after_publication_and_clears_registration() {
+    struct Error<'a>(&'a Cell<usize>);
+    impl Drop for Error<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let storage = Storage::default();
+    let dropped = Cell::new(0);
+    let mut task = Task::new(&storage, core::future::ready(Err::<(), _>(Error(&dropped))));
+    assert!(matches!(
+        Pin::new(&mut task).poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Ready(Ok(()))
+    ));
+    assert_eq!(dropped.get(), 1);
+    assert!(storage.waker.borrow().is_none());
+}
 
 #[test]
 fn borrowed_task_registration_cancellation_and_reuse_do_not_allocate() {

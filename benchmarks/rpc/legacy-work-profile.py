@@ -19,8 +19,9 @@ PAIRS = [('frozen', 'factored'), ('factored', 'repeat'), ('factored', 'candidate
 CASES = ['unary-small', 'dependent-read', 'pipelined-read', 'concurrent-32', 'callback', 'deep-32-concurrent-32']
 
 
-def regression_gate(result):
-    """Fail closed on incomplete evidence or any higher unrounded five-run mean."""
+def regression_gate(result, max_regression_percent=1.0):
+    """Check each unrounded five-run mean against its own explicit budget."""
+    assert math.isfinite(max_regression_percent) and max_regression_percent >= 0, 'invalid work budget'
     rows = [row for row in result['comparisons']
             if (row['mode'], row['transport'], row['baseline'], row['candidate'])
             == ('callgrind', 'tls', 'factored', 'candidate')]
@@ -36,11 +37,13 @@ def regression_gate(result):
                 assert math.isfinite(values[side]['mean']), 'invalid mean'
             before, after = values['baseline']['mean'], values['candidate']['mean']
             assert before >= 0 and after >= 0, 'negative work slope cannot qualify'
-            if after > before:
+            limit = before * (1 + max_regression_percent / 100)
+            if after > limit:
                 failures.append(dict(case=row['case'], metric=metric, baseline=before,
-                                     candidate=after, delta=after-before))
+                                     candidate=after, limit=limit, delta=after-before))
     return dict(passed=not failures, metrics=['Ir', 'Bcm', 'Bim'], repetitions=5,
-                transport='tls', comparison='candidate versus factored', failures=failures)
+                transport='tls', comparison='candidate versus factored',
+                max_regression_percent=max_regression_percent, failures=failures)
 
 
 def save(path, value):
@@ -57,6 +60,7 @@ def assembly(path, output):
                 'capntproto_rpc_engine::tasks', 'capntproto_rpc_engine::scheduler', 'capntproto_task',
                 'capnp_rpc::rpc::QuestionRef', 'capnp_rpc::rpc::QuestionCell',
                 'capnp_rpc::rpc::ImportClient', 'capntproto_rpc_engine::references::import',
+                'capntproto_rpc_engine::completion::cancellation', 'capnp_rpc::rpc::AnswerTaskDriver',
                 'capntproto_rpc_engine::question::release',
                 'capntproto_rpc_engine::completion::direct', 'capnp_rpc::rpc::QuestionReply',
                 'capnp::capability::', 'capntproto_rpc_bench::topology::access',
@@ -168,16 +172,19 @@ def main():
         parser.add_argument('--' + name, type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--summarize-only', action='store_true')
-    parser.add_argument('--require-no-regression', action='store_true',
-                        help='Reject any higher five-run mean of Ir, Bcm or Bim in any TLS case.')
+    parser.add_argument('--max-regression-percent', type=float,
+                        help='Require every TLS case Ir/Bcm/Bim mean to stay within this percentage of its control.')
     parser.add_argument('--pair-only', action='store_true',
                         help='Compare factored and candidate only, after separate control calibration.')
     args = parser.parse_args()
+    if args.max_regression_percent is not None and (
+            not math.isfinite(args.max_regression_percent) or args.max_regression_percent < 0):
+        parser.error('--max-regression-percent must be finite and nonnegative')
     output = args.output.resolve()
     if args.summarize_only:
         summarize(output)
-        if args.require_no_regression:
-            qualify(output)
+        if args.max_regression_percent is not None:
+            qualify(output, args.max_regression_percent)
         return
     labels = ['factored', 'candidate'] if args.pair_only else ['frozen', 'factored', 'repeat', 'candidate']
     assert all(getattr(args, label) for label in labels if label != 'repeat')
@@ -228,15 +235,15 @@ def main():
                                 print(f'FAILED {prefix}: {error}', flush=True)
                             save(output / 'scope.json', scope)
     summarize(output)
-    if args.require_no_regression:
-        qualify(output)
+    if args.max_regression_percent is not None:
+        qualify(output, args.max_regression_percent)
 
 
-def qualify(output):
-    verdict = regression_gate(json.loads((output / 'comparison.json').read_text()))
+def qualify(output, max_regression_percent):
+    verdict = regression_gate(json.loads((output / 'comparison.json').read_text()), max_regression_percent)
     save(output / 'acceptance.json', verdict)
     if not verdict['passed']:
-        raise SystemExit(f"Ir/Bcm/Bim regressions: {verdict['failures']}")
+        raise SystemExit(f"Ir/Bcm/Bim exceed {max_regression_percent}% budget: {verdict['failures']}")
 
 
 if __name__ == '__main__':

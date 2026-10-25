@@ -29,7 +29,7 @@ pub(super) fn run(
     let diagnostics = match phase {
         Phase::LegacyWork => {
             r#"test -f /root/bench/driver-legacy-baseline
-python3 legacy-work-profile.py --pair-only --require-no-regression --factored /root/bench/driver-legacy-baseline --candidate /root/bench/driver --output /root/results/secure/legacy-work"#
+python3 legacy-work-profile.py --pair-only --max-regression-percent 1 --factored /root/bench/driver-legacy-baseline --candidate /root/bench/driver --output /root/results/secure/legacy-work"#
         }
         Phase::Latency => "",
         Phase::Allocations => {

@@ -8,6 +8,9 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
+mod task;
+pub use task::{Cancel, Owner, Task};
+
 /// Single-threaded cancellation and task-wake registration in caller storage.
 ///
 /// The caller owns the operation's lifetime. Before reusing the cells, end all

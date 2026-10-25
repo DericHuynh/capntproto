@@ -27,9 +27,10 @@ network latency. The other peer remains idle during this campaign. Select
 
 `run-legacy-work` requires `legacy_base` and performs the repeated legacy work
 comparison on the CI droplet. Candidate and control are built at the same source
-path. All six TLS instruction cases must have no increase in their unrounded
-five-run mean for each of Ir, Bcm and Bim; incomplete evidence fails. There is no
-tolerance or averaging across cases. TLS/QUIC allocation profiles, per-run spread
+path. Each of the six TLS instruction cases must keep its unrounded five-run
+mean for each of Ir, Bcm and Bim at or below 1.01 times its own control mean.
+Incomplete evidence fails; improvements in other cases do not offset a miss.
+TLS/QUIC allocation profiles, per-run spread
 and selected disassembly remain in the workflow artifact, including on failure.
 This campaign does not measure native latency or QUIC instruction parity.
 

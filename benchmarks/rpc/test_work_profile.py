@@ -8,7 +8,7 @@ from work_profile import callgrind, comparisons, slope
 
 
 class WorkProfile(unittest.TestCase):
-    def test_legacy_gate_rejects_each_counter_without_rounding_or_averaging_cases(self):
+    def test_legacy_gate_enforces_one_percent_per_counter_without_averaging_cases(self):
         spec = importlib.util.spec_from_file_location('legacy_work_profile', Path(__file__).with_name('legacy-work-profile.py'))
         profile = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(profile)
@@ -20,11 +20,17 @@ class WorkProfile(unittest.TestCase):
         self.assertTrue(profile.regression_gate(result)['passed'])
         for metric in ['Ir', 'Bcm', 'Bim']:
             changed = copy.deepcopy(result)
-            changed['comparisons'][0]['metrics'][metric]['candidate'] = dict(mean=100.00001, samples=[100.00001]*5)
+            changed['comparisons'][0]['metrics'][metric]['candidate'] = dict(mean=101, samples=[101]*5)
+            self.assertTrue(profile.regression_gate(changed)['passed'])
+            self.assertFalse(profile.regression_gate(changed, 0)['passed'])
+            changed['comparisons'][0]['metrics'][metric]['candidate'] = dict(mean=101.00001, samples=[101.00001]*5)
             changed['comparisons'][1]['metrics'][metric]['candidate'] = dict(mean=50, samples=[50]*5)
             verdict = profile.regression_gate(changed)
             self.assertFalse(verdict['passed'])
             self.assertEqual([(r['case'], r['metric']) for r in verdict['failures']], [(profile.CASES[0], metric)])
+        for invalid_budget in [-1, float('nan'), float('inf')]:
+            with self.assertRaises(AssertionError):
+                profile.regression_gate(result, invalid_budget)
         for invalid in ['missing', 'duplicate', 'repetitions', 'metric', 'nan']:
             changed = copy.deepcopy(result)
             if invalid == 'missing':

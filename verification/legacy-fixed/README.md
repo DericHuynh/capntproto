@@ -13,6 +13,10 @@ the input before retiring its import bindings. A blocked output retains the exac
 Release count in caller-owned connection storage after the task is destroyed.
 Both profiles count zero allocated blocks/bytes. This tests cleanup ownership;
 the scalar method does not resolve callable capabilities or admit descriptors.
+The same case also uses the production generic cancellation driver and a
+borrowed cancellation interest. Cancellation wakes the parked task and reports
+completion without polling the suspended method. Only destroying that driver
+releases the original input/import owners and retains their pending Release.
 
 Run `cargo test --locked --manifest-path verification/legacy-fixed/Cargo.toml --lib`
 and repeat with `--features alloc`. Five tests count both blocks and bytes:

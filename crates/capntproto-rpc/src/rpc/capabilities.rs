@@ -751,3 +751,52 @@ impl<VatId: 'static> ConnectionState<VatId> {
         Ok(result)
     }
 }
+
+// A borrowed projection keeps the hosted fields flat. In particular, retaining
+// the original ID address avoids materializing a copied key across map cleanup.
+pub(super) struct RetiringImport<'a, VatId: 'static> {
+    pub(super) state: &'a ConnectionState<VatId>,
+    pub(super) id: &'a ImportId,
+}
+impl<VatId> capntproto_rpc_engine::references::import::Owner for RetiringImport<'_, VatId> {
+    type Key = usize;
+    #[inline(always)]
+    fn retire(&self, key: &usize) {
+        assert!(self
+            .state
+            .client_downcast_map
+            .borrow_mut()
+            .remove(key)
+            .is_some());
+        self.state.imports.borrow_mut().slots.remove(self.id);
+    }
+    #[inline(always)]
+    fn release(&self, _: &usize, references: &mut ImportRefs) {
+        let mut connection = self.state.connection.borrow_mut();
+        if let (Some(release_refs), Ok(connection)) =
+            (references.pending_release(), connection.as_mut())
+        {
+            let mut message = connection.new_outgoing_message(10);
+            {
+                let root: message::Builder = message.get_body().unwrap().init_as();
+                let mut release = root.init_release();
+                release.set_id(self.id.to_wire());
+                release.set_reference_count(release_refs.count());
+            }
+            let _ = message.send_detached();
+            release_refs.commit();
+        }
+        drop(connection);
+    }
+    #[inline(always)]
+    fn idle(&self) {
+        self.state.schedule_idle_check();
+    }
+}
+
+impl capntproto_rpc_engine::completion::cancellation::Owner for AnswerStatusRef {
+    #[inline(always)]
+    fn cancellation(&self) -> Cancellation<'_> {
+        self.0.as_ref().cancellation()
+    }
+}

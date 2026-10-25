@@ -442,10 +442,13 @@ impl From<Promise<(), Error>> for AnswerTask {
         Self::Continuation(promise)
     }
 }
+// Retain hosted task identities and flat fields: changing their erased future
+// types perturbs code layout. Caller-backed tasks use the same cancellation
+// kernel and owner projection through engine::completion::cancellation::Task.
 struct CancelAnswerTask(AnswerStatusRef);
 impl Drop for CancelAnswerTask {
     fn drop(&mut self) {
-        self.0.cancellation().cancel();
+        capntproto_rpc_engine::completion::cancellation::Owner::cancellation(&self.0).cancel();
     }
 }
 struct AnswerTaskDriver<F> {
@@ -456,16 +459,14 @@ impl<F: Future<Output = Result<(), Error>> + Unpin> Future for AnswerTaskDriver<
     type Output = Result<(), Error>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        this.status
-            .cancellation()
+        capntproto_rpc_engine::completion::cancellation::Owner::cancellation(&this.status)
             .poll_task(Pin::new(&mut this.future), cx)
             .map(Ok)
     }
 }
 impl<F> Drop for AnswerTaskDriver<F> {
     fn drop(&mut self) {
-        // Driver shutdown can drop suspended work without another poll.
-        self.status.cancellation().clear();
+        capntproto_rpc_engine::completion::cancellation::Owner::cancellation(&self.status).clear();
     }
 }
 
@@ -3345,51 +3346,14 @@ where
 impl<VatId> Drop for ImportClient<VatId> {
     fn drop(&mut self) {
         let connection_state = self.connection_state.clone();
-        let key = (self.import_id, self as *const _ as usize);
-        capntproto_rpc_engine::references::import::run(
-            connection_state.as_ref(),
-            &key,
-            &mut self.remote_references,
-        );
-    }
-}
-
-impl<VatId> capntproto_rpc_engine::references::import::Owner for ConnectionState<VatId> {
-    type Key = (ImportId, usize);
-    #[inline(always)]
-    fn retire(&self, key: &Self::Key) {
-        assert!(self
-            .client_downcast_map
-            .borrow_mut()
-            .remove(&key.1)
-            .is_some());
-
-        // Remove the corresponding entry of the imports table.
-        // Note: the C++ implementation checks here pointer equality between self and
-        // the entry in the imports table, but as far as I can tell the check should
-        // always pass because of how we construct ImportClient in import().
-        self.imports.borrow_mut().slots.remove(&key.0);
-    }
-    #[inline(always)]
-    fn release(&self, key: &Self::Key, references: &mut ImportRefs) {
-        // Send a message releasing our remote references.
-        let mut tmp = self.connection.borrow_mut();
-        if let (Some(release_refs), Ok(c)) = (references.pending_release(), tmp.as_mut()) {
-            let mut message = c.new_outgoing_message(10);
-            {
-                let root: message::Builder = message.get_body().unwrap().init_as();
-                let mut release = root.init_release();
-                release.set_id(key.0.to_wire());
-                release.set_reference_count(release_refs.count());
-            }
-            let _ = message.send_detached();
-            release_refs.commit();
-        }
-        drop(tmp);
-    }
-    #[inline(always)]
-    fn idle(&self) {
-        self.schedule_idle_check();
+        let key = self as *const _ as usize;
+        // Preserve hosted ownership while borrowing the ID: copying it into a
+        // key kept it live across map cleanup and introduced destructor spills.
+        let owner = capabilities::RetiringImport {
+            state: connection_state.as_ref(),
+            id: &self.import_id,
+        };
+        capntproto_rpc_engine::references::import::run(&owner, &key, &mut self.remote_references);
     }
 }
 
