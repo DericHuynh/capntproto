@@ -1,7 +1,7 @@
 #![no_std]
 //! Actual allocating legacy RPC without std, driven by application-owned transport.
 extern crate alloc;
-use alloc::{boxed::Box, collections::VecDeque, rc::Rc};
+use alloc::{boxed::Box, collections::VecDeque, rc::Rc, sync::Arc, task::Wake};
 use capnp::{
     capability::{FromClientHook, Promise},
     message, Error,
@@ -13,6 +13,7 @@ use core::{
     cell::{Cell, RefCell},
     future::{poll_fn, Future},
     pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll, Waker},
 };
 pub mod legacy_capnp {
@@ -27,15 +28,78 @@ struct Inbox {
     wake: Option<Waker>,
     closed: bool,
     sent: usize,
+    fragmented: bool,
+    bytes: VecDeque<u8>,
+    error: Option<capnp::ErrorKind>,
 }
 type Mailbox = Rc<RefCell<Inbox>>;
-struct Incoming(Message);
+struct Frame {
+    words: Box<[capnp::Word]>,
+    len: usize,
+}
+impl AsRef<[u8]> for Frame {
+    fn as_ref(&self) -> &[u8] {
+        &capnp::Word::words_to_bytes(&self.words)[..self.len]
+    }
+}
+enum Incoming {
+    Direct(Message),
+    Framed(message::Reader<capnp::serialize::NoAllocBufferSegments<Frame>>),
+}
 impl IncomingMessage for Incoming {
     fn size_in_words(&self) -> usize {
-        self.0.size_in_words()
+        match self {
+            Self::Direct(message) => message.size_in_words(),
+            Self::Framed(message) => {
+                use capnp::message::ReaderSegments;
+                let segments = message.get_segments();
+                (0..segments.len())
+                    .map(|index| segments.get_segment(index as u32).unwrap().len() / 8)
+                    .sum()
+            }
+        }
     }
     fn get_body(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        self.0.get_root_as_reader()
+        match self {
+            Self::Direct(message) => message.get_root_as_reader(),
+            Self::Framed(message) => message.get_root(),
+        }
+    }
+}
+/// Three-byte reads, Interrupted and real Pending turns exercise the shared
+/// core framing state machine. No complete frame is exposed until validated.
+struct Fragmented {
+    input: Mailbox,
+    attempts: usize,
+}
+impl capnp_rpc::engine::io::Read for Fragmented {
+    type Error = Error;
+    fn poll_read(
+        &mut self,
+        cx: &mut Context<'_>,
+        destination: &mut [u8],
+    ) -> Poll<Result<usize, capnp_rpc::engine::io::IoError<Error>>> {
+        self.attempts += 1;
+        if self.attempts.is_multiple_of(5) {
+            return Poll::Ready(Err(capnp_rpc::engine::io::IoError::Interrupted));
+        }
+        if self.attempts.is_multiple_of(3) {
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
+        let mut input = self.input.borrow_mut();
+        if input.bytes.is_empty() {
+            if input.closed {
+                return Poll::Ready(Ok(0));
+            }
+            input.wake = Some(cx.waker().clone());
+            return Poll::Pending;
+        }
+        let count = destination.len().min(input.bytes.len()).min(3);
+        for byte in &mut destination[..count] {
+            *byte = input.bytes.pop_front().unwrap();
+        }
+        Poll::Ready(Ok(count))
     }
 }
 struct Outgoing {
@@ -53,7 +117,13 @@ impl OutgoingMessage for Outgoing {
         let message = Rc::new(self.message);
         let wake = {
             let mut output = self.output.borrow_mut();
-            output.messages.push_back(message.clone());
+            if output.fragmented {
+                output
+                    .bytes
+                    .extend(capnp::serialize::write_message_to_words(&message));
+            } else {
+                output.messages.push_back(message.clone());
+            }
             output.sent += 1;
             output.wake.take()
         };
@@ -97,11 +167,50 @@ impl Connection<bool> for Link {
     }
     fn receive_incoming_message(&mut self) -> Promise<Option<Box<dyn IncomingMessage>>, Error> {
         let input = self.input.clone();
+        if input.borrow().fragmented {
+            return Promise::from_future(async move {
+                let mut words = capnp::Word::allocate_zeroed_vec(256).into_boxed_slice();
+                let mut receiver = capnp::serialize::FrameReceiver::new(
+                    capnp::Word::words_to_bytes_mut(&mut words),
+                    Default::default(),
+                )?;
+                let mut reader = Fragmented { input, attempts: 0 };
+                let complete = poll_fn(|cx| {
+                    capnp_rpc::bounded::io::poll_receive(
+                        &mut reader,
+                        &mut receiver,
+                        cx,
+                        core::num::NonZeroUsize::new(1).unwrap(),
+                    )
+                })
+                .await;
+                let complete = complete.map_err(|error| {
+                    let error = match error {
+                        capnp_rpc::bounded::io::ReceiveError::Io(error) => error,
+                        capnp_rpc::bounded::io::ReceiveError::Wire(kind) => Error::from_kind(kind),
+                    };
+                    reader.input.borrow_mut().error = Some(error.kind);
+                    error
+                })?;
+                if !complete {
+                    return Ok(None);
+                }
+                let len = receiver.received_bytes();
+                let segments = capnp::serialize::NoAllocBufferSegments::from_buffer_exact(
+                    Frame { words, len },
+                    Default::default(),
+                )?;
+                let message = message::Reader::new(segments, Default::default());
+                Ok(Some(
+                    Box::new(Incoming::Framed(message)) as Box<dyn IncomingMessage>
+                ))
+            });
+        }
         Promise::from_future(poll_fn(move |cx| {
             let mut input = input.borrow_mut();
             if let Some(message) = input.messages.pop_front() {
                 Poll::Ready(Ok(Some(
-                    Box::new(Incoming(message)) as Box<dyn IncomingMessage>
+                    Box::new(Incoming::Direct(message)) as Box<dyn IncomingMessage>
                 )))
             } else if input.closed {
                 Poll::Ready(Ok(None))
@@ -197,6 +306,23 @@ impl node::Server for Service {
         })
     }
 }
+struct Ready(AtomicBool);
+impl Ready {
+    fn new() -> Arc<Self> {
+        Arc::new(Self(AtomicBool::new(true)))
+    }
+    fn take(&self) -> bool {
+        self.0.swap(false, Ordering::AcqRel)
+    }
+}
+impl Wake for Ready {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.store(true, Ordering::Release);
+    }
+}
 /// Host tests and embedded cargo-check instantiate this same legacy runtime.
 pub struct Fixture {
     client_system: RpcSystem<bool>,
@@ -205,6 +331,8 @@ pub struct Fixture {
     registry: ClientRegistry,
     canceled: Rc<Cell<usize>>,
     queues: [Mailbox; 2],
+    ready: [Arc<Ready>; 2],
+    wakes: [Waker; 2],
 }
 impl Default for Fixture {
     fn default() -> Self {
@@ -213,7 +341,16 @@ impl Default for Fixture {
 }
 impl Fixture {
     pub fn new() -> Self {
+        Self::with_fragmented(false)
+    }
+    pub fn new_fragmented() -> Self {
+        Self::with_fragmented(true)
+    }
+    fn with_fragmented(fragmented: bool) -> Self {
         let queues = [Mailbox::default(), Mailbox::default()];
+        for queue in &queues {
+            queue.borrow_mut().fragmented = fragmented;
+        }
         let registry = ClientRegistry::new();
         let canceled = Rc::new(Cell::new(0));
         let server: node::Client = registry.new_client(Service {
@@ -244,7 +381,11 @@ impl Fixture {
             Some(capnp::capability::Client::new(server.into_client_hook())),
         );
         let client = client_system.bootstrap(true);
+        let ready = [Ready::new(), Ready::new()];
+        let wakes = [Waker::from(ready[0].clone()), Waker::from(ready[1].clone())];
         Self {
+            ready,
+            wakes,
             client_system,
             server_system,
             client,
@@ -253,20 +394,47 @@ impl Fixture {
             queues,
         }
     }
-    pub fn turn(&mut self, cx: &mut Context<'_>) {
-        assert!(Pin::new(&mut self.client_system).poll(cx).is_pending());
-        assert!(Pin::new(&mut self.server_system).poll(cx).is_pending());
+    /// Poll a system only after its own wake notification. This fixture must not
+    /// hide a lost wake by repeatedly polling a suspended system.
+    pub fn turn(&mut self) -> bool {
+        let mut polled = false;
+        if self.ready[0].take() {
+            let mut cx = Context::from_waker(&self.wakes[0]);
+            assert!(Pin::new(&mut self.client_system).poll(&mut cx).is_pending());
+            polled = true;
+        }
+        if self.ready[1].take() {
+            let mut cx = Context::from_waker(&self.wakes[1]);
+            assert!(Pin::new(&mut self.server_system).poll(&mut cx).is_pending());
+            polled = true;
+        }
+        polled
+    }
+    pub fn settle(&mut self) {
+        for _ in 0..20_000 {
+            if !self.turn() {
+                return;
+            }
+        }
+        panic!("legacy systems did not become idle");
     }
     pub fn drive<F: Future>(&mut self, future: F) -> F::Output {
         let mut future = core::pin::pin!(future);
-        let mut cx = Context::from_waker(Waker::noop());
+        let ready = Ready::new();
+        let wake = Waker::from(ready.clone());
+        let mut cx = Context::from_waker(&wake);
         for _ in 0..20_000 {
-            if let Poll::Ready(result) = future.as_mut().poll(&mut cx) {
-                return result;
+            let mut polled = false;
+            if ready.take() {
+                polled = true;
+                if let Poll::Ready(result) = future.as_mut().poll(&mut cx) {
+                    return result;
+                }
             }
-            self.turn(&mut cx);
+            polled |= self.turn();
+            assert!(polled, "legacy conversation stalled without a wake");
         }
-        panic!("legacy conversation stalled");
+        panic!("legacy conversation exceeded turn bound");
     }
     pub fn canceled(&self) -> usize {
         self.canceled.get()
@@ -371,15 +539,10 @@ mod tests {
     fn cancellation_retires_suspended_method_and_connection_stays_live() {
         let mut f = Fixture::new();
         let pending = f.client.hold_request().send();
-        let mut cx = Context::from_waker(Waker::noop());
-        for _ in 0..64 {
-            f.turn(&mut cx);
-        }
+        f.settle();
         assert_eq!(f.canceled(), 0);
         drop(pending);
-        for _ in 0..64 {
-            f.turn(&mut cx);
-        }
+        f.settle();
         assert_eq!(f.canceled(), 1);
         let mut r = f.client.read_request();
         r.get().set_value(42);
@@ -391,6 +554,93 @@ mod tests {
                 .get_value(),
             42
         );
+    }
+    #[test]
+    fn fragmented_frames_preserve_pipeline_callback_results_and_cancellation() {
+        let mut f = Fixture::new_fragmented();
+        let mut read = f.client.read_request();
+        read.get().set_value(42);
+        let retained = f.drive(read.send().promise).unwrap();
+        let mut child = f.client.clone();
+        let mut owners = Vec::new();
+        for _ in 0..32 {
+            let next = child.next_request().send();
+            child = next.pipeline.get_child();
+            owners.push(next.promise);
+        }
+        let mut calls = Vec::new();
+        for value in 0..32 {
+            let mut r = child.read_request();
+            r.get().set_value(value);
+            calls.push((value, r.send().promise));
+        }
+        for (value, promise) in calls {
+            assert_eq!(
+                f.drive(promise).unwrap().get().unwrap().get_value(),
+                value + 32
+            );
+        }
+        let target = f.callback_target(7);
+        let mut callback = f.client.callback_request();
+        callback.get().set_target(target);
+        callback.get().set_value(35);
+        assert_eq!(
+            f.drive(callback.send().promise)
+                .unwrap()
+                .get()
+                .unwrap()
+                .get_value(),
+            42
+        );
+        let pending = f.client.hold_request().send();
+        f.settle();
+        assert_eq!(f.canceled(), 0);
+        drop(pending);
+        f.settle();
+        assert_eq!(f.canceled(), 1);
+        assert_eq!(retained.get().unwrap().get_value(), 42);
+        drop(owners);
+    }
+    #[test]
+    fn fragmented_capacity_failure_does_not_expose_partial_message() {
+        let mut f = Fixture::new_fragmented();
+        let pending = f.client.read_request().send();
+        // A 256-word segment plus its table exceeds the 256-word frame buffer.
+        let wake = {
+            let mut input = f.queues[0].borrow_mut();
+            input.bytes.extend([0, 0, 0, 0, 0, 1, 0, 0]);
+            input.wake.take()
+        };
+        if let Some(wake) = wake {
+            wake.wake();
+        }
+        let error = match f.drive(pending.promise) {
+            Ok(_) => panic!("oversized frame accepted"),
+            Err(error) => error,
+        };
+        // RPC normalizes transport failures to Disconnected; the transport
+        // retains the underlying framing cause for an exact assertion.
+        assert_eq!(error.kind, capnp::ErrorKind::Disconnected);
+        assert_eq!(
+            f.queues[0].borrow().error,
+            Some(capnp::ErrorKind::BufferNotLargeEnough)
+        );
+    }
+    #[test]
+    fn fragmented_truncated_frame_fails_pending_calls() {
+        let mut f = Fixture::new_fragmented();
+        let pending = f.client.read_request().send();
+        // A partial segment header followed by EOF must not expose a message.
+        let wake = {
+            let mut input = f.queues[0].borrow_mut();
+            input.bytes.extend([0u8; 3]);
+            input.closed = true;
+            input.wake.take()
+        };
+        if let Some(wake) = wake {
+            wake.wake();
+        }
+        assert!(f.drive(pending.promise).is_err());
     }
     #[test]
     fn identity_and_revocation_use_explicit_domain() {

@@ -13,16 +13,24 @@ profile uses hashbrown and futures' existing spin support; scoped wake mailboxes
 the same spin backend and release it before invoking a Waker. Platforms require
 pointer-width atomics. Segment caching is absent, including its portable public options.
 
-Local checks: five isolated no_std service/conversation tests pass, covering unary,
+Local checks: eight isolated no_std service/conversation tests pass, covering unary,
 retained responses, depth-32 dependent access and pipelining, 32 simultaneous requests,
 reverse callbacks, early cancellation and continued connection use, identity deduplication
-and revocable alias rejection. The same fixture checks on thumbv7em-none-eabi. An earlier hosted
+and revocable alias rejection. Expanded tests only poll after a wake notification;
+three-byte framed reads with Interrupted/Pending exercise depth-32 pipelines and
+32 concurrent calls, callbacks, retained data, cancellation, truncated EOF and an
+oversized header. RPC normalizes framing failure to Disconnected; the fixture
+separately records and checks the precise transport cause. The same fixture checks
+on thumbv7em-none-eabi. An earlier hosted
 all-target Clippy pass and final alloc-only library/fixture Clippy pass with warnings denied;
 core-only M4 checks and code-generator unit tests pass. This is not board execution,
 an allocation-free link, encrypted transport testing, or native latency measurement.
 The final hosted all-target Clippy retry was killed by workspace memory exhaustion
 (cgroup OOM kill rose 14 to 15), so CI must recheck the final revision.
-Hosted repeated profiles and two-width Miri will qualify an immutable source revision.
+Run 40171165717 already passed hosted verification and two-width Miri of the initial
+five-case fixture; its repeated hosted profile is pending. The expanded eight-case
+wake/framing suite is qualified separately without another runtime performance run,
+since only verification code changes.
 
 The remaining no-alloc blockers are real ownership interfaces: Box<dyn ClientHook> and
 consuming boxed request/results hooks, Rc-backed connection/question/pipeline owners,
