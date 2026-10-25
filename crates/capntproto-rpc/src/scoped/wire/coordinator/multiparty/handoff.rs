@@ -2,7 +2,6 @@
 //! no completion can claim another connection's question by numeric ID.
 use super::*;
 use crate::third_party::{Answer, ThirdPartyExchange};
-use alloc::{boxed::Box, vec::Vec};
 
 pub(super) enum Job<'p, 'id> {
     Await {
@@ -15,7 +14,7 @@ pub(super) enum Job<'p, 'id> {
     },
 }
 pub(super) enum AwaitStage {
-    Authenticate(Promise<(Answer, Box<dyn core::any::Any>), Error>),
+    Authenticate(Promise<(Answer, Box<dyn std::any::Any>), Error>),
     Response(Promise<Box<dyn ResponseHook>, Error>),
 }
 impl<'p, 'id> Job<'p, 'id> {
@@ -282,7 +281,7 @@ pub(super) fn project<'p, 'id, const C: usize, const H: usize>(
     pipeline: &Rc<PipelineState>,
     coordinator: &mut Coordinator<'p, 'id, '_, resources::Import, (), C, H>,
 ) -> capnp::Result<bool> {
-    let waiting = core::mem::take(&mut *pipeline.waiting.borrow_mut());
+    let waiting = std::mem::take(&mut *pipeline.waiting.borrow_mut());
     let changed = !waiting.is_empty();
     for projection in waiting {
         let Some(client) = projection.client.upgrade() else {
@@ -463,7 +462,7 @@ impl ClientHook for Retained {
     fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
         self.inner.metadata_changes()
     }
-    #[cfg(all(feature = "std", unix))]
+    #[cfg(unix)]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.inner.get_fd()
     }

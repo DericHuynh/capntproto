@@ -4,7 +4,7 @@ use capntproto_rpc_engine::imports::Imports;
 use capntproto_rpc_wire::{attachments::ImportReceiver, clients::Route};
 pub mod vat;
 
-#[cfg(all(feature = "std", unix))]
+#[cfg(unix)]
 use capntproto_rpc_wire::{attachments::Sender, clients::Endpoint, Capacity};
 
 /// Reader of exactly one framed message at a time. Reads must never prefetch
@@ -158,11 +158,11 @@ impl<W: io::Write> io::WriteResources<()> for Writer<'_, W> {
 /// Unix descriptor policy; the original hook controls descriptor visibility.
 /// Inline capacity stays bounded even when alloc is enabled. Growing capacity
 /// must be explicitly selected and is additionally capped by the wire sentinel.
-#[cfg(all(feature = "std", unix))]
+#[cfg(unix)]
 pub struct FileDescriptors<const N: usize> {
     pub capacity: Capacity,
 }
-#[cfg(all(feature = "std", unix))]
+#[cfg(unix)]
 impl<const N: usize> Default for FileDescriptors<N> {
     fn default() -> Self {
         Self {
@@ -170,7 +170,7 @@ impl<const N: usize> Default for FileDescriptors<N> {
         }
     }
 }
-#[cfg(all(feature = "std", unix))]
+#[cfg(unix)]
 impl<T, const N: usize> Output<resources::Import<T>> for FileDescriptors<N> {
     type Bundle = Sender<Rc<std::os::fd::OwnedFd>, N>;
     fn bundle(&self) -> Self::Bundle {

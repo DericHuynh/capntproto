@@ -19,7 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use alloc::{boxed::Box, vec::Vec};
 use capnp::any_pointer;
 use capnp::capability::CallHints;
 use capnp::capability::Promise;
@@ -28,8 +27,8 @@ use capnp::Error;
 
 use futures::{Future, FutureExt, TryFutureExt};
 
-use alloc::rc::{Rc, Weak};
-use core::cell::RefCell;
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 
 use crate::attach::Attach;
 use crate::sender_queue::SenderQueue;
@@ -372,7 +371,7 @@ impl Client {
 }
 
 impl ClientHook for Client {
-    fn as_any(&self) -> Option<&dyn core::any::Any> {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
     fn debug_info(&self, chain: &mut capnp::private::capability::DebugInfo) {
@@ -487,14 +486,12 @@ impl ClientHook for Client {
         0
     }
 
-    fn metadata_changes(
-        &self,
-    ) -> Option<alloc::rc::Rc<capnp::private::capability::MetadataChanges>> {
+    fn metadata_changes(&self) -> Option<std::rc::Rc<capnp::private::capability::MetadataChanges>> {
         let redirect = self.inner.borrow().redirect.clone();
         redirect.and_then(|inner| inner.metadata_changes())
     }
-    #[cfg(all(feature = "std", unix))]
-    fn get_fd(&self) -> Option<alloc::rc::Rc<std::os::fd::OwnedFd>> {
+    #[cfg(unix)]
+    fn get_fd(&self) -> Option<std::rc::Rc<std::os::fd::OwnedFd>> {
         let redirect = self.inner.borrow().redirect.clone();
         redirect.and_then(|inner| inner.get_fd())
     }

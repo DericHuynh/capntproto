@@ -1,6 +1,6 @@
 fn main() {
-    // The persistent owned API is absent in the allocator-free profile.
-    if std::env::var_os("CARGO_FEATURE_ALLOC").is_none() {
+    // The persistent hosted API is absent in core-only/alloc-only profiles.
+    if std::env::var_os("CARGO_FEATURE_STD").is_none() {
         return;
     }
     // A fresh coverage run needs fresh build-script and code-generation counters.

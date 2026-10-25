@@ -1,86 +1,37 @@
 //! Borrowed dispatch with explicit ownership transfer for suspended methods.
-#[cfg(feature = "alloc")]
-use super::{Params, Promise, Reply};
-#[cfg(feature = "alloc")]
+use super::{Params, Promise, Reply, Results};
 use crate::{
     private::capability::{CallContextHook, OwnedCall},
     traits::Owned,
     Error,
 };
 use core::marker::PhantomData;
-mod storage;
-pub use storage::{CallStorage, PreparedCall};
-mod dispatch;
-pub use dispatch::{dispatch_call, dispatch_call_with_context, DispatchResults};
 
 /// One admitted method invocation. Synchronous handlers borrow the original
 /// parameter and result storage. A handler that suspends must take ownership
-/// before constructing its completion future. Concrete owners may borrow caller
-/// storage; the default hosted adapter keeps its owned static hooks.
+/// before constructing its `'static` completion future.
 ///
 /// There is one dispatch interface for both forms. Borrowing does not bypass
 /// cancellation policy, streaming barriers, membranes, or early pipelines.
-#[cfg(feature = "alloc")]
-pub struct CallContext<'call, P, R, H = &'call mut dyn CallContextHook> {
-    hook: H,
+pub struct CallContext<'call, P, R> {
+    hook: &'call mut dyn CallContextHook,
     immediate_protection: bool,
-    marker: PhantomData<(&'call mut (), P, R)>,
+    marker: PhantomData<(P, R)>,
 }
-#[cfg(not(feature = "alloc"))]
-pub struct CallContext<'call, P, R, H> {
-    hook: H,
-    immediate_protection: bool,
-    marker: PhantomData<(&'call mut (), P, R)>,
-}
-impl<'call, P, R, H> CallContext<'call, P, R, H> {
-    /// Retain the original invocation owner after the driver admits the call.
-    /// This constructor does not authorize cancellation or publish a Return.
-    pub fn from_owner(hook: H) -> Self {
-        Self {
-            hook,
-            immediate_protection: true,
-            marker: PhantomData,
-        }
-    }
-    /// Transfer the original invocation storage without changing its admission,
-    /// cancellation or Return-publication responsibilities.
-    pub fn into_owner(self) -> H {
-        self.hook
-    }
-    #[doc(hidden)]
-    pub fn into_typed<A, B>(self) -> CallContext<'call, A, B, H> {
-        CallContext {
-            hook: self.hook,
-            immediate_protection: self.immediate_protection,
-            marker: PhantomData,
-        }
-    }
-}
-impl<P, R, H: CallStorage<P, R>> CallContext<'_, P, R, H> {
-    /// Borrow typed views from the retained invocation without boxed adapters.
-    pub fn get(&mut self) -> crate::Result<(H::Params<'_>, H::Results<'_>)> {
-        self.hook.get()
-    }
-    /// Move the original parameter/result owners into a suspended handler.
-    pub fn into_owned(self) -> H::Taken {
-        self.hook.take()
-    }
-    /// Complete synchronously using the provider's completion representation.
-    /// The closure borrows the context and can call get() for both views.
-    /// Editors cannot escape this call; construction errors reach the driver.
-    pub fn try_complete(mut self, f: impl FnOnce(&mut Self) -> crate::Result<()>) -> H::Completion {
-        let result = f(&mut self);
-        self.hook.complete(result)
-    }
-}
-
-#[cfg(feature = "alloc")]
 impl<'call, P, R> CallContext<'call, P, R> {
     #[doc(hidden)]
     pub fn new(hook: &'call mut dyn CallContextHook) -> Self {
         Self {
             hook,
             immediate_protection: true,
+            marker: PhantomData,
+        }
+    }
+    #[doc(hidden)]
+    pub fn into_typed<A, B>(self) -> CallContext<'call, A, B> {
+        CallContext {
+            hook: self.hook,
+            immediate_protection: self.immediate_protection,
             marker: PhantomData,
         }
     }
@@ -135,6 +86,14 @@ impl<'call, P, R> CallContext<'call, P, R> {
             f(CallContext::new(&mut context)).await
         })
     }
+    /// Transfer the original hooks into an asynchronous execution owner.
+    pub fn into_owned(self) -> (Params<P>, Results<R>)
+    where
+        R: Owned,
+    {
+        let (params, results) = self.hook.take();
+        (Params::new(params), Results::new(results))
+    }
     /// Transfer the original result sink into the affine reply API.
     pub fn into_reply(self) -> (Params<P>, Reply<R>) {
         let (params, results) = self.hook.take();
@@ -144,15 +103,12 @@ impl<'call, P, R> CallContext<'call, P, R> {
 
 /// Borrowed entry to the structured reply API. Completing consumes the context;
 /// suspended handlers receive an affine `Reply`, never unrestricted `Results`.
-#[cfg(feature = "alloc")]
 pub struct ReplyContext<'call, P, R>(CallContext<'call, P, R>);
-#[cfg(feature = "alloc")]
 impl<P, R> ReplyContext<'_, P, R> {
     pub fn into_owned(self) -> (Params<P>, Reply<R>) {
         self.0.into_reply()
     }
 }
-#[cfg(feature = "alloc")]
 impl<P: Owned, R: Owned> ReplyContext<'_, P, R> {
     pub fn complete(
         self,
@@ -161,9 +117,12 @@ impl<P: Owned, R: Owned> ReplyContext<'_, P, R> {
         self.0.complete(f)
     }
 }
-
-#[cfg(feature = "alloc")]
 impl<P: Owned, R: Owned> CallContext<'_, P, R> {
+    /// Borrow both sides without allocating owned parameter/results adapters.
+    pub fn get(&mut self) -> crate::Result<(P::Reader<'_>, R::Builder<'_>)> {
+        let (params, results) = self.hook.borrow();
+        Ok((params.get()?.get_as()?, results.get()?.get_as()?))
+    }
     /// Complete synchronously. Borrowed readers/builders cannot escape the
     /// invocation, and construction errors become the method's completion.
     pub fn complete(

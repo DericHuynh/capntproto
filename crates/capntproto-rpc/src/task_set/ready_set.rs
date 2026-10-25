@@ -1,19 +1,15 @@
 //! Task sets reuse wake nodes with a bounded multi-producer atomic FIFO.
 //! Exceptional concurrency retains the FuturesUnordered fallback.
-use alloc::sync::Arc;
-use alloc::task::Wake;
-use alloc::vec::Vec;
-use capntproto_rpc_engine::readiness::Queue as Notifications;
-use capntproto_rpc_engine::tasks;
-use core::future::Future;
-use core::pin::Pin;
-use core::sync::atomic::AtomicBool;
-use core::sync::atomic::AtomicU8;
-use core::sync::atomic::AtomicUsize;
-use core::task::Context;
-use core::task::Poll;
-use core::task::Waker;
 use futures::{stream::FuturesUnordered, task::AtomicWaker, Stream};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
+        Arc,
+    },
+    task::{Context, Poll, Wake, Waker},
+};
 
 // Notification storage is bounded independently of task lifetimes. A larger
 // exceptional set uses FuturesUnordered rather than retaining an unbounded pool.
@@ -35,16 +31,31 @@ impl Ready {
         }
     }
     fn enqueue(&self, index: usize) {
-        Notifications::new(&self.next, &self.entries, &self.queued)
-            .enqueue(index, || self.parent.wake());
+        // Even a duplicate publishes producer data. The consumer clears this
+        // flag with acquire ordering before it polls the future.
+        if self.queued[index].swap(true, Ordering::AcqRel) {
+            return;
+        }
+        // Each slot owns at most one reservation, so at most REUSABLE_TASKS
+        // reservations can be outstanding. The consumer releases the entry
+        // before allowing another reservation for its slot. Thus wrapping this
+        // cursor cannot overwrite a live entry, even if a producer is suspended
+        // between reserving its position and publishing its notification.
+        let position = self.next.fetch_add(1, Ordering::Relaxed) % REUSABLE_TASKS;
+        let previous = self.entries[position].swap(index as u8 + 1, Ordering::AcqRel);
+        debug_assert_eq!(previous, 0);
+        self.parent.wake();
     }
-    #[cfg(test)]
     fn front(&self, position: usize) -> Option<usize> {
-        Notifications::new(&self.next, &self.entries, &self.queued).front(position)
+        let entry = self.entries[position % REUSABLE_TASKS].load(Ordering::Acquire);
+        (entry != 0).then(|| entry as usize - 1)
     }
-    #[cfg(test)]
     fn consume(&self, position: usize, index: usize) {
-        Notifications::new(&self.next, &self.entries, &self.queued).consume(position, index);
+        self.entries[position % REUSABLE_TASKS].store(0, Ordering::Release);
+        // A wake before this RMW is observed by the following poll; a wake
+        // after it reserves a new position. Never replace this with a store.
+        let was_queued = self.queued[index].swap(false, Ordering::AcqRel);
+        debug_assert!(was_queued);
     }
 }
 struct Notify {
@@ -64,21 +75,6 @@ struct Slot<F> {
     // A stale wake can only schedule a harmless extra poll of its replacement.
     future: Option<F>,
     waker: Waker,
-}
-struct TaskSlots<'a, F>(&'a mut [Slot<F>]);
-impl<F: Future + Unpin> tasks::Slots for TaskSlots<'_, F> {
-    type Future = F;
-    #[inline(always)]
-    fn get(&mut self, index: usize) -> Option<(Pin<&mut F>, &Waker)> {
-        let slot = &mut self.0[index];
-        slot.future
-            .as_mut()
-            .map(|future| (Pin::new(future), &slot.waker))
-    }
-    #[inline(always)]
-    fn retire(&mut self, index: usize) {
-        drop(self.0[index].future.take());
-    }
 }
 pub(super) struct ReadySet<F: Future + Unpin> {
     ready: Arc<Ready>,
@@ -111,7 +107,7 @@ impl<F: Future + Unpin> ReadySet<F> {
         }
         if self.live == REUSABLE_TASKS {
             let queued = FuturesUnordered::new();
-            for task in core::mem::take(&mut self.tasks) {
+            for task in std::mem::take(&mut self.tasks) {
                 if let Some(future) = task.future {
                     queued.push(future);
                 }
@@ -145,20 +141,44 @@ impl<F: Future + Unpin> ReadySet<F> {
 }
 impl<F: Future + Unpin> Stream for ReadySet<F> {
     type Item = F::Output;
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        if let Some(queued) = this.queued.as_mut() {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(queued) = self.queued.as_mut() {
             return Pin::new(queued).poll_next(cx);
         }
-        this.ready.parent.register(cx.waker());
-        tasks::poll_next(
-            &mut TaskSlots(&mut this.tasks),
-            &mut this.live,
-            &mut this.available,
-            &mut this.next_ready,
-            Notifications::new(&this.ready.next, &this.ready.entries, &this.ready.queued),
-            cx,
-        )
+        self.ready.parent.register(cx.waker());
+        if self.live == 0 {
+            return Poll::Ready(None);
+        }
+        // A single bounded rotation prevents self-waking or mutually waking
+        // tasks from monopolizing the executor. Their notifications schedule
+        // another rotation, including a wake during the final task's poll.
+        let mut visited = 0u128;
+        // An earlier producer can still be publishing the front position.
+        // It wakes the registered parent after publication; later notifications
+        // cannot pass it and change FIFO ordering.
+        while let Some(index) = self.ready.front(self.next_ready) {
+            let bit = 1u128 << index;
+            if visited & bit != 0 {
+                cx.waker().wake_by_ref();
+                break;
+            }
+            self.ready.consume(self.next_ready, index);
+            self.next_ready = self.next_ready.wrapping_add(1);
+            visited |= bit;
+            let slot = &mut self.tasks[index];
+            let Some(future) = slot.future.as_mut() else {
+                continue;
+            };
+            let mut task_cx = Context::from_waker(&slot.waker);
+            if let Poll::Ready(result) = Pin::new(future).poll(&mut task_cx) {
+                let finished = slot.future.take();
+                self.live -= 1;
+                self.available |= bit;
+                drop(finished);
+                return Poll::Ready(Some(result));
+            }
+        }
+        Poll::Pending
     }
 }
 impl<F: Future + Unpin> Drop for ReadySet<F> {
@@ -175,7 +195,7 @@ mod tests {
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::atomic::AtomicUsize,
     };
     #[derive(Default)]
     struct Counts(AtomicUsize);

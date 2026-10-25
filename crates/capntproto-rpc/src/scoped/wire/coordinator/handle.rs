@@ -1,6 +1,5 @@
 //! Owned commands contain no graph brands, question IDs or protocol tables.
 use super::*;
-use alloc::boxed::Box;
 
 pub(super) struct Completion(Weak<RefCell<crate::queued::ClientInner>>);
 impl Completion {
@@ -43,7 +42,7 @@ impl Commands {
             return;
         }
         *self.closed.borrow_mut() = Some(error.clone());
-        let queue = core::mem::take(&mut *self.queue.borrow_mut());
+        let queue = std::mem::take(&mut *self.queue.borrow_mut());
         let wake = self.wake.borrow_mut().take();
         drop(wake);
         // A completion may wake reentrant application code. All inbox borrows

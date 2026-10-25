@@ -1,6 +1,5 @@
 //! Automatic registration and managed IO for existing VatNetwork connections.
 use super::*;
-use alloc::boxed::Box;
 use transport::vat;
 
 /// A registered portable driver and its exclusive frame transport. Identity
@@ -72,9 +71,9 @@ impl<'p, 'id, 's, P: Copy + Eq, V, const C: usize, const H: usize>
                     .await
             }
         };
-        let mut failure = core::pin::pin!(failure);
-        let mut abort = core::pin::pin!(abort);
-        let aborted = core::future::poll_fn(|cx| {
+        let mut failure = std::pin::pin!(failure);
+        let mut abort = std::pin::pin!(abort);
+        let aborted = std::future::poll_fn(|cx| {
             // Explicit deadlines/cancellation retain priority over queue failure.
             if let Poll::Ready(error) = abort.as_mut().poll(cx) {
                 return Poll::Ready(error);

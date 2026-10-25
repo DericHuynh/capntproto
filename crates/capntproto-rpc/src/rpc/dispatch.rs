@@ -21,7 +21,6 @@
 
 //! Incoming RPC dispatch and peer message validation.
 use super::*;
-use alloc::{boxed::Box, string::ToString, vec::Vec};
 
 // Keep immediate invocations on the receive stack. Only taking ownership
 // creates the completion channel and the two type-erased application hooks.
@@ -826,7 +825,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             )?;
                         }
                         return_::AwaitFromThirdParty(token) => {
-                            let pipeline = reference.borrow().record().pipeline().cloned();
+                            let pipeline = reference.borrow().pipeline.clone();
                             let response =
                                 answer_adoption::await_answer(&connection_state, token, pipeline);
                             QuestionRef::fulfill(&reference, response);

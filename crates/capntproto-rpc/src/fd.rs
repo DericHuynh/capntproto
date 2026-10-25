@@ -3,14 +3,14 @@
 //! empty attachment list; dropping attachments must not break RPC capabilities.
 use capnp::private::capability::ClientHook;
 
-#[cfg(all(feature = "std", unix))]
-pub(crate) type AttachedFd = alloc::rc::Rc<std::os::fd::OwnedFd>;
-#[cfg(not(all(feature = "std", unix)))]
-pub(crate) type AttachedFd = core::convert::Infallible;
+#[cfg(unix)]
+pub(crate) type AttachedFd = std::rc::Rc<std::os::fd::OwnedFd>;
+#[cfg(not(unix))]
+pub(crate) type AttachedFd = std::convert::Infallible;
 
 #[derive(Default)]
 pub(crate) struct OutgoingFds {
-    #[cfg(all(feature = "std", unix))]
+    #[cfg(unix)]
     fds: Vec<AttachedFd>,
 }
 impl OutgoingFds {
@@ -19,7 +19,7 @@ impl OutgoingFds {
         _cap: &dyn ClientHook,
         mut _descriptor: crate::rpc_capnp::cap_descriptor::Builder<'_>,
     ) {
-        #[cfg(all(feature = "std", unix))]
+        #[cfg(unix)]
         if self.fds.len() < 253 && _descriptor.reborrow().get_attached_fd() == 255 {
             if let Some(fd) = _cap.get_fd() {
                 _descriptor.set_attached_fd(self.fds.len() as u8);
@@ -28,33 +28,33 @@ impl OutgoingFds {
         }
     }
     pub(crate) fn attach(self, _message: &mut dyn crate::OutgoingMessage) {
-        #[cfg(all(feature = "std", unix))]
+        #[cfg(unix)]
         _message.set_fds(self.fds);
     }
 }
 
 pub(crate) struct IncomingFds {
-    #[cfg(all(feature = "std", unix))]
+    #[cfg(unix)]
     fds: Vec<Option<AttachedFd>>,
 }
 impl IncomingFds {
     pub(crate) fn new(_message: &mut dyn crate::IncomingMessage) -> Self {
         Self {
-            #[cfg(all(feature = "std", unix))]
+            #[cfg(unix)]
             fds: _message
                 .take_fds()
                 .into_iter()
                 .take(253)
-                .map(|fd| Some(alloc::rc::Rc::new(fd)))
+                .map(|fd| Some(std::rc::Rc::new(fd)))
                 .collect(),
         }
     }
     pub(crate) fn take(&mut self, _index: u8) -> Option<AttachedFd> {
-        #[cfg(all(feature = "std", unix))]
+        #[cfg(unix)]
         {
             self.fds.get_mut(_index as usize).and_then(Option::take)
         }
-        #[cfg(not(all(feature = "std", unix)))]
+        #[cfg(not(unix))]
         {
             None
         }

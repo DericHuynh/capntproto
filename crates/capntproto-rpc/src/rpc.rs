@@ -1,9 +1,4 @@
 use crate::fd::{AttachedFd, IncomingFds, OutgoingFds};
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
 // Copyright (c) 2013-2015 Sandstorm Development Group, Inc. and contributors
 // Licensed under the MIT License:
 //
@@ -26,9 +21,9 @@ use alloc::{
 // THE SOFTWARE.
 
 use capnp::capability::CallHints;
-use core::pin::Pin;
-use core::task::Context;
-use core::task::Poll;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
 
 use capnp::any_pointer;
 use capnp::capability::Promise;
@@ -37,15 +32,13 @@ use capnp::private::capability::{
 };
 use capnp::Error;
 
-use capntproto_rpc_engine::completion::{
-    cancellation::Cancellation, direct, return_guard::ReturnOwnership, shared as oneshot,
-};
+use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::{future, Future, FutureExt, TryFutureExt};
 
-use crate::collections::hash_map::{self, HashMap};
-use alloc::rc::{Rc, Weak};
-use core::cell::{Cell, OnceCell, RefCell};
-use core::mem;
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::hash_map::{self, HashMap};
+use std::mem;
+use std::rc::{Rc, Weak};
 
 use crate::attach::Attach;
 use crate::local::ResultsDoneHook;
@@ -110,49 +103,15 @@ impl<VatId> Question<VatId> {
 
 /// A reference to an entry on the question table.  Used to detect when the `Finish` message
 /// can be sent.
-type QuestionRefView<'a, VatId> = capntproto_rpc_engine::question::reference::View<
-    'a,
-    Rc<ConnectionState<VatId>>,
-    QuestionId,
-    Promise<Response<VatId>, Error>,
-    Weak<RefCell<PipelineState<VatId>>>,
->;
-type QuestionRefParts<'a, VatId> = capntproto_rpc_engine::question::reference::Parts<
-    'a,
-    Rc<ConnectionState<VatId>>,
-    QuestionFulfiller<VatId>,
-    Promise<Response<VatId>, Error>,
-    Weak<RefCell<PipelineState<VatId>>>,
->;
-// Keep owning fields flat: nesting a separate record here outlines its generated
-// destructor and adds 17 instructions per question. Borrowed projections share
-// the fixed record's operations without changing this layout/drop boundary.
-struct QuestionRef<VatId: 'static> {
+struct QuestionRef<VatId>
+where
+    VatId: 'static,
+{
     connection_state: Option<Rc<ConnectionState<VatId>>>,
     id: QuestionId,
     fulfiller: Option<QuestionFulfiller<VatId>>,
     reply: DirectReply<VatId>,
     pipeline: Option<Weak<RefCell<PipelineState<VatId>>>>,
-}
-impl<VatId> QuestionRef<VatId> {
-    #[inline(always)]
-    fn record(&self) -> QuestionRefView<'_, VatId> {
-        capntproto_rpc_engine::question::reference::View {
-            context: &self.connection_state,
-            id: &self.id,
-            reply: &self.reply,
-            pipeline: &self.pipeline,
-        }
-    }
-    #[inline(always)]
-    fn record_mut(&mut self) -> QuestionRefParts<'_, VatId> {
-        capntproto_rpc_engine::question::reference::Parts {
-            context: &mut self.connection_state,
-            producer: &mut self.fulfiller,
-            reply: &mut self.reply,
-            pipeline: &mut self.pipeline,
-        }
-    }
 }
 
 // A local type lets the existing shared question implement the core response
@@ -163,7 +122,7 @@ impl<VatId> QuestionCell<VatId> {
         Self(RefCell::new(question))
     }
 }
-impl<VatId> core::ops::Deref for QuestionCell<VatId> {
+impl<VatId> std::ops::Deref for QuestionCell<VatId> {
     type Target = RefCell<QuestionRef<VatId>>;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -176,32 +135,108 @@ enum QuestionFulfiller<VatId: 'static> {
 }
 // Ordinary replies live in the already-owned question. External channels remain
 // available for Join/adoption, whose receiver has a separate protocol lifetime.
-type DirectReply<VatId> = direct::Reply<Promise<Response<VatId>, Error>>;
-impl<VatId> direct::Owner<Promise<Response<VatId>, Error>> for QuestionCell<VatId> {
-    #[inline]
-    fn reply(&self) -> core::cell::Ref<'_, DirectReply<VatId>> {
-        core::cell::Ref::map(self.borrow(), |question| question.record().reply())
-    }
-    #[inline]
-    fn reply_mut(&self) -> core::cell::RefMut<'_, DirectReply<VatId>> {
-        core::cell::RefMut::map(self.borrow_mut(), |question| {
-            question.record_mut().reply_mut()
-        })
+struct DirectReply<VatId: 'static> {
+    value: Option<Promise<Response<VatId>, Error>>,
+    waker: Option<std::task::Waker>,
+    observed: bool,
+}
+impl<VatId> Default for DirectReply<VatId> {
+    fn default() -> Self {
+        Self {
+            value: None,
+            waker: None,
+            observed: false,
+        }
     }
 }
-// The hosted alias retains the same Rc/Option/bool layout. Caller-backed
-// owners use the same receiver without a box or reference count.
-type QuestionReply<VatId> =
-    direct::Receiver<Rc<QuestionCell<VatId>>, Promise<Response<VatId>, Error>>;
+struct QuestionReply<VatId: 'static> {
+    reference: Option<Rc<QuestionCell<VatId>>>,
+    done: bool,
+}
+impl<VatId> QuestionReply<VatId> {
+    fn into_shared(mut self) -> Rc<QuestionCell<VatId>> {
+        assert!(!self.done, "completed question reply");
+        self.reference.take().expect("live reply")
+    }
+    fn poll_reference(
+        reference: &QuestionCell<VatId>,
+        cx: &mut Context<'_>,
+    ) -> Poll<capnp::Result<Response<VatId>>> {
+        let value = {
+            let mut reference = reference.borrow_mut();
+            debug_assert!(
+                !reference.reply.observed,
+                "question reply polled after completion"
+            );
+            reference.reply.value.take()
+        };
+        if let Some(mut value) = value {
+            // A redirected answer can suspend again. Poll outside the question
+            // borrow, including arbitrary custom waker operations.
+            match Pin::new(&mut value).poll(cx) {
+                Poll::Ready(result) => {
+                    reference.borrow_mut().reply.observed = true;
+                    return Poll::Ready(result);
+                }
+                Poll::Pending => reference.borrow_mut().reply.value = Some(value),
+            }
+        } else {
+            let registered = reference
+                .borrow()
+                .reply
+                .waker
+                .as_ref()
+                .is_some_and(|wake| wake.will_wake(cx.waker()));
+            if !registered {
+                let wake = cx.waker().clone();
+                let previous = reference.borrow_mut().reply.waker.replace(wake);
+                drop(previous);
+                // A custom waker can synchronously deliver a response.
+                if reference.borrow().reply.value.is_some() {
+                    cx.waker().wake_by_ref();
+                }
+            }
+        }
+        Poll::Pending
+    }
+    fn release(reference: &QuestionCell<VatId>) {
+        let (value, wake) = {
+            let mut reference = reference.borrow_mut();
+            reference.reply.observed = true;
+            (reference.reply.value.take(), reference.reply.waker.take())
+        };
+        drop(value);
+        drop(wake);
+    }
+}
+impl<VatId> Future for QuestionReply<VatId> {
+    type Output = capnp::Result<Response<VatId>>;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        assert!(!self.done, "question reply polled after completion");
+        let result = Self::poll_reference(self.reference.as_ref().expect("live reply"), cx);
+        if result.is_ready() {
+            self.done = true;
+            drop(self.reference.take());
+        }
+        result
+    }
+}
+impl<VatId> Drop for QuestionReply<VatId> {
+    fn drop(&mut self) {
+        if let Some(reference) = self.reference.take() {
+            Self::release(&reference);
+        }
+    }
+}
 impl<VatId> capnp::private::capability::SharedPromise<Box<dyn ResponseHook>, Error>
     for QuestionCell<VatId>
 {
     fn poll(&self, cx: &mut Context<'_>) -> Poll<capnp::Result<Box<dyn ResponseHook>>> {
-        direct::poll(self, cx)
+        QuestionReply::poll_reference(self, cx)
             .map(|result| result.map(|response| Box::new(response) as Box<dyn ResponseHook>))
     }
     fn cancel(self: Rc<Self>) {
-        direct::release(&*self);
+        QuestionReply::release(&self);
     }
 }
 
@@ -230,7 +265,10 @@ impl<VatId> QuestionRef<VatId> {
             reply: DirectReply::default(),
             pipeline: None,
         }));
-        let reply = direct::Receiver::new(reference.clone());
+        let reply = QuestionReply {
+            reference: Some(reference.clone()),
+            done: false,
+        };
         (reference, reply)
     }
     fn deliver(
@@ -243,7 +281,17 @@ impl<VatId> QuestionRef<VatId> {
                 let _ = sender.send(response);
             }
             QuestionFulfiller::Direct => {
-                drop(direct::deliver(&**reference, response));
+                let wake = {
+                    let mut reference = reference.borrow_mut();
+                    if reference.reply.observed {
+                        return;
+                    }
+                    reference.reply.value = Some(response);
+                    reference.reply.waker.take()
+                };
+                if let Some(wake) = wake {
+                    wake.wake();
+                }
             }
         }
     }
@@ -291,10 +339,10 @@ impl<VatId> QuestionRef<VatId> {
         Option<Rc<RefCell<PipelineState<VatId>>>>,
     ) {
         let mut reference = reference.borrow_mut();
-        let fulfiller = reference.record_mut().take_producer();
+        let fulfiller = reference.fulfiller.take();
         let pipeline = reference
-            .record()
-            .pipeline()
+            .pipeline
+            .as_ref()
             .and_then(Weak::upgrade)
             .filter(|state| state.borrow().resolves_on_return);
         (fulfiller, pipeline)
@@ -307,80 +355,54 @@ impl<VatId> QuestionRef<VatId> {
 
 impl<VatId> Drop for QuestionRef<VatId> {
     fn drop(&mut self) {
-        let Some(connection_state) = self.record_mut().take_context() else {
+        let Some(connection_state) = self.connection_state.take() else {
             return;
         };
-        capntproto_rpc_engine::question::release::run(&*connection_state, *self.record().id());
-    }
-}
-
-impl<VatId> capntproto_rpc_engine::question::release::Owner for ConnectionState<VatId> {
-    type Key = QuestionId;
-    #[inline(always)]
-    fn release(&self, id: &QuestionId) -> Option<capntproto_rpc_engine::question::Release> {
-        let mut questions = self.questions.borrow_mut();
-        let q = questions.find(*id).expect("live question reference");
-        q.self_ref = None;
-        Some(q.lifecycle.release())
-    }
-    #[inline(always)]
-    fn finish(
-        &self,
-        id: &QuestionId,
-        finish: capntproto_rpc_engine::question::Finish,
-        _reclaim: bool,
-    ) -> capntproto_rpc_engine::question::release::Publication {
-        let message = self
-            .connection
-            .borrow_mut()
-            .as_mut()
-            .ok()
-            .map(|connection| {
-                connection
-                    .new_outgoing_finish(id.to_wire(), finish.release_result_caps)
-                    .expect("standard Finish envelope")
-            });
-        if let Some(message) = message {
-            message.send_detached_and_drive();
+        let release = {
+            let mut questions = connection_state.questions.borrow_mut();
+            let q = questions.find(self.id).expect("live question reference");
+            q.self_ref = None;
+            q.lifecycle.release()
+        };
+        if let Some(finish) = release.finish {
+            let message =
+                connection_state
+                    .connection
+                    .borrow_mut()
+                    .as_mut()
+                    .ok()
+                    .map(|connection| {
+                        connection
+                            .new_outgoing_finish(self.id.to_wire(), finish.release_result_caps)
+                            .expect("standard Finish envelope")
+                    });
+            if let Some(message) = message {
+                message.send_detached_and_drive();
+            }
         }
-        capntproto_rpc_engine::question::release::Publication::Accepted
-    }
-    #[inline(always)]
-    fn reclaim(&self, id: &QuestionId) {
-        // Keep the ID occupied until Finish has been enqueued. Transport
-        // callbacks may disconnect; never assume the old record still exists.
-        // One removal handles an already-retired record; its owner leaves
-        // the table borrow before destruction.
-        let removed = self.questions.borrow_mut().remove(*id);
-        drop(removed);
-    }
-    #[inline(always)]
-    fn idle(&self) {
-        self.schedule_idle_check();
+
+        if release.reclaim {
+            // Keep the ID occupied until Finish has been enqueued. Transport
+            // callbacks may reenter or disconnect, but cannot reuse this slot
+            // ahead of its Finish. A late Return retires canceled questions.
+            let mut questions = connection_state.questions.borrow_mut();
+            if questions.find(self.id).is_some() {
+                questions.erase(self.id);
+            }
+        }
+        connection_state.schedule_idle_check();
     }
 }
 
 #[derive(Default)]
 struct AnswerStatus {
     cache: Weak<RefCell<Vec<Rc<AnswerStatus>>>>,
-    response_context: RefCell<Option<Rc<dyn core::any::Any>>>,
+    response_context: RefCell<Option<Rc<dyn std::any::Any>>>,
     return_has_been_sent: Cell<bool>,
     received_finish: Cell<bool>,
     return_guards: Cell<usize>,
     task_canceled: Cell<bool>,
-    task_waker: RefCell<Option<core::task::Waker>>,
-}
-
-impl AnswerStatus {
-    #[inline]
-    fn cancellation(&self) -> Cancellation<'_> {
-        Cancellation::new(&self.task_canceled, &self.task_waker)
-    }
-
-    #[inline]
-    fn return_ownership(&self) -> ReturnOwnership<'_> {
-        ReturnOwnership::new(&self.return_guards, &self.return_has_been_sent)
-    }
+    task_waker: RefCell<Option<std::task::Waker>>,
 }
 
 type AnswerStatusCache = Rc<RefCell<Vec<Rc<AnswerStatus>>>>;
@@ -390,7 +412,7 @@ type AnswerStatusCache = Rc<RefCell<Vec<Rc<AnswerStatus>>>>;
 // the status. Recycle on the last status owner, regardless of release order.
 #[derive(Clone, Default)]
 struct AnswerStatusRef(Rc<AnswerStatus>);
-impl core::ops::Deref for AnswerStatusRef {
+impl std::ops::Deref for AnswerStatusRef {
     type Target = AnswerStatus;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -421,7 +443,8 @@ impl Drop for AnswerStatusRef {
         self.return_has_been_sent.set(false);
         self.received_finish.set(false);
         self.task_canceled.set(false);
-        self.cancellation().clear();
+        let wake = self.task_waker.borrow_mut().take();
+        drop(wake);
         debug_assert_eq!(self.return_guards.get(), 0);
         let mut cache = cache.borrow_mut();
         if cache.len() < 64 {
@@ -445,7 +468,11 @@ impl From<Promise<(), Error>> for AnswerTask {
 struct CancelAnswerTask(AnswerStatusRef);
 impl Drop for CancelAnswerTask {
     fn drop(&mut self) {
-        self.0.cancellation().cancel();
+        self.0.task_canceled.set(true);
+        let wake = self.0.task_waker.borrow_mut().take();
+        if let Some(wake) = wake {
+            wake.wake();
+        }
     }
 }
 struct AnswerTaskDriver<F> {
@@ -456,16 +483,40 @@ impl<F: Future<Output = Result<(), Error>> + Unpin> Future for AnswerTaskDriver<
     type Output = Result<(), Error>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        this.status
-            .cancellation()
-            .poll_task(Pin::new(&mut this.future), cx)
-            .map(Ok)
+        if this.status.task_canceled.get() {
+            return Poll::Ready(Ok(()));
+        }
+        let registered = this
+            .status
+            .task_waker
+            .borrow()
+            .as_ref()
+            .is_some_and(|wake| wake.will_wake(cx.waker()));
+        if !registered {
+            let wake = cx.waker().clone();
+            let previous = this.status.task_waker.borrow_mut().replace(wake);
+            // Custom waker operations may reenter Finish. Hold no cell borrow.
+            drop(previous);
+        }
+        if this.status.task_canceled.get() {
+            return Poll::Ready(Ok(()));
+        }
+        if Pin::new(&mut this.future).poll(cx).is_ready() {
+            let wake = this.status.task_waker.borrow_mut().take();
+            drop(wake);
+            // The answer completion itself handles Return/Exception. As with
+            // the former unobserved receiver, no result goes to the task reaper.
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
     }
 }
 impl<F> Drop for AnswerTaskDriver<F> {
     fn drop(&mut self) {
         // Driver shutdown can drop suspended work without another poll.
-        self.status.cancellation().clear();
+        let wake = self.status.task_waker.borrow_mut().take();
+        drop(wake);
     }
 }
 
@@ -491,11 +542,11 @@ where
     result_exports: Vec<ExportId>,
     provision: Option<(
         Rc<crate::third_party::ThirdPartyExchange>,
-        Box<dyn core::any::Any>,
+        Box<dyn std::any::Any>,
     )>,
     join: Option<join::PartGuard<VatId>>,
     callee_allocated: bool,
-    join_response: Option<Box<dyn core::any::Any>>,
+    join_response: Option<Box<dyn std::any::Any>>,
 }
 
 impl<VatId> Answer<VatId> {
@@ -541,7 +592,7 @@ enum InboundTarget {
     Exported(Rc<dyn ClientHook>),
     Projected(Box<dyn ClientHook>),
 }
-impl core::ops::Deref for InboundTarget {
+impl std::ops::Deref for InboundTarget {
     type Target = dyn ClientHook;
     fn deref(&self) -> &Self::Target {
         match self {
@@ -779,8 +830,8 @@ where
     embargoes: RefCell<EmbargoTable>,
 
     tasks: RefCell<Option<crate::task_set::TaskSetHandle<capnp::Error>>>,
-    connection: RefCell<::core::result::Result<Box<dyn crate::Connection<VatId>>, ::capnp::Error>>,
-    metadata_changes: core::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
+    connection: RefCell<::std::result::Result<Box<dyn crate::Connection<VatId>>, ::capnp::Error>>,
+    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
     disconnect_fulfiller: RefCell<Option<oneshot::Sender<Promise<(), Error>>>>,
 
     client_downcast_map: RefCell<HashMap<usize, WeakClient<VatId>>>,
@@ -829,7 +880,7 @@ impl<VatId> ConnectionState<VatId> {
             embargoes: RefCell::new(new_embargoes()),
             tasks: RefCell::new(None),
             connection: RefCell::new(Ok(connection)),
-            metadata_changes: core::cell::OnceCell::new(),
+            metadata_changes: std::cell::OnceCell::new(),
             disconnect_fulfiller: RefCell::new(Some(disconnect_fulfiller)),
             client_downcast_map: RefCell::new(HashMap::new()),
             registry,
@@ -1048,7 +1099,7 @@ impl<VatId> ConnectionState<VatId> {
         let questions = mem::replace(&mut *self.questions.borrow_mut(), LocalTable::new());
         for question in questions.iter() {
             if let Some(reference) = question.self_ref.as_ref().and_then(Weak::upgrade) {
-                reference.borrow_mut().record_mut().take_context();
+                reference.borrow_mut().connection_state.take();
                 QuestionRef::reject(&reference, network_error.clone());
             }
         }
@@ -1292,7 +1343,7 @@ impl<VatId> ConnectionState<VatId> {
                     }
                 }
             };
-            let mut read = core::pin::pin!(read);
+            let mut read = std::pin::pin!(read);
             let read = future::poll_fn(|cx| {
                 // Bound uninterrupted work, not messages across IO waits.
                 // Returning Pending already gives other tasks a chance to run.
@@ -1335,7 +1386,7 @@ impl<VatId> ConnectionState<VatId> {
                 debug_assert!(self.connection.borrow().is_err());
                 return;
             };
-            answer.status.return_ownership().mark_sent();
+            answer.status.return_has_been_sent.set(true);
             let words = mem::take(&mut answer.request_words);
             if answer.status.received_finish.get() {
                 (answers.slots.remove(&id), words)
@@ -1416,7 +1467,7 @@ where
     Empty,
     Rpc(ResponseState<VatId>),
     LocallyRedirected(Box<dyn ResultsDoneHook>),
-    Adopted(Box<dyn ResponseHook>, Box<dyn core::any::Any>),
+    Adopted(Box<dyn ResponseHook>, Box<dyn std::any::Any>),
 }
 
 struct Response<VatId>
@@ -1496,7 +1547,10 @@ impl<VatId> ResponseHook for Response<VatId> {
         match *self.variant {
             ResponseVariant::Empty => unreachable!("cached response is not exposed"),
             ResponseVariant::Rpc(ref state) => {
-                crate::incoming::results(&*state.message, &state.cap_table)
+                use capnp::traits::Imbue;
+                let mut content = state.message.get_results()?;
+                content.imbue(&state.cap_table);
+                Ok(content)
             }
             ResponseVariant::LocallyRedirected(ref results_done) => results_done.get(),
             ResponseVariant::Adopted(ref response, ref _guard) => response.get(),
@@ -1512,7 +1566,7 @@ struct StreamingMessage<VatId: 'static> {
     permit: Rc<crate::admission::Permit>,
 }
 impl<VatId> crate::OutgoingMessage for StreamingMessage<VatId> {
-    #[cfg(all(feature = "std", unix))]
+    #[cfg(unix)]
     fn set_fds(&mut self, fds: Vec<Rc<std::os::fd::OwnedFd>>) {
         self.message.set_fds(fds);
     }
@@ -1559,13 +1613,13 @@ where
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
 }
 
-impl<VatId> core::ops::Deref for Request<VatId> {
+impl<VatId> std::ops::Deref for Request<VatId> {
     type Target = RequestData<VatId>;
     fn deref(&self) -> &Self::Target {
         self.data.as_ref().expect("live request")
     }
 }
-impl<VatId> core::ops::DerefMut for Request<VatId> {
+impl<VatId> std::ops::DerefMut for Request<VatId> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data.as_mut().expect("live request")
     }
@@ -1692,7 +1746,7 @@ where
             }
         };
         ::capnp::capability::RemotePromise {
-            promise: capnp::capability::ResponsePromise::from_shared(promise.into_owner()),
+            promise: capnp::capability::ResponsePromise::from_shared(promise.into_shared()),
             pipeline: any_pointer::Pipeline::new(match pipeline {
                 Some(pipeline) => Box::new(pipeline),
                 None => Box::new(broken::DisabledPipeline),
@@ -1849,7 +1903,7 @@ where
 }
 
 impl<VatId> RequestHook for Request<VatId> {
-    fn third_party_tail_target(&self) -> Option<Box<dyn core::any::Any>> {
+    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
         if self.get_brand() != 0 && answer_adoption::supported(&self.connection_state) {
             Some(Box::new(self.connection_state.clone()))
         } else {
@@ -2069,7 +2123,7 @@ impl<VatId> RequestHook for Request<VatId> {
 
         let promise = promise.map_ok(|_response| ());
 
-        let question_id = *question_ref.borrow().record().id();
+        let question_id = question_ref.borrow().id;
         let pipeline: Box<dyn PipelineHook> = if disabled {
             Box::new(broken::DisabledPipeline)
         } else {
@@ -2213,11 +2267,7 @@ impl<VatId> Pipeline<VatId> {
             promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
             resolution_waiters: crate::sender_queue::SenderQueue::new(),
         }));
-        let previous = reference
-            .borrow_mut()
-            .record_mut()
-            .replace_pipeline(Rc::downgrade(&state));
-        drop(previous);
+        reference.borrow_mut().pipeline = Some(Rc::downgrade(&state));
         if let Some(redirect_later_promise) = redirect_later {
             Self::drive(&state, redirect_later_promise);
         }
@@ -2344,9 +2394,25 @@ impl<VatId> PipelineHook for Pipeline<VatId> {
     }
 }
 
-type OwnedIncomingCaps = Vec<Option<Box<dyn ClientHook>>>;
-pub(crate) type Params<M = dyn crate::IncomingMessage> =
-    crate::incoming::Params<Box<M>, OwnedIncomingCaps>;
+pub(crate) struct Params<M: crate::IncomingMessage + ?Sized = dyn crate::IncomingMessage> {
+    request: Box<M>,
+    cap_table: Vec<Option<Box<dyn ClientHook>>>,
+}
+
+impl<M: crate::IncomingMessage + ?Sized> Params<M> {
+    pub(crate) fn new(request: Box<M>, cap_table: Vec<Option<Box<dyn ClientHook>>>) -> Self {
+        Self { request, cap_table }
+    }
+}
+
+impl<M: crate::IncomingMessage + ?Sized> ParamsHook for Params<M> {
+    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
+        use ::capnp::traits::Imbue;
+        let mut content = self.request.get_params()?;
+        content.imbue(&self.cap_table);
+        Ok(content)
+    }
+}
 
 enum ResultsVariant {
     Transferred(Box<dyn PipelineHook>),
@@ -2393,7 +2459,13 @@ impl<VatId> ReturnGuard<VatId> {
         status: AnswerStatusRef,
         redirect: bool,
     ) -> Self {
-        status.return_ownership().retain();
+        status.return_guards.set(
+            status
+                .return_guards
+                .get()
+                .checked_add(1)
+                .expect("return guard overflow"),
+        );
         Self {
             state: Rc::downgrade(state),
             id,
@@ -2405,7 +2477,13 @@ impl<VatId> ReturnGuard<VatId> {
 }
 impl<VatId> Clone for ReturnGuard<VatId> {
     fn clone(&self) -> Self {
-        self.status.return_ownership().retain();
+        self.status.return_guards.set(
+            self.status
+                .return_guards
+                .get()
+                .checked_add(1)
+                .expect("return guard overflow"),
+        );
         Self {
             state: self.state.clone(),
             id: self.id,
@@ -2417,7 +2495,9 @@ impl<VatId> Clone for ReturnGuard<VatId> {
 }
 impl<VatId> Drop for ReturnGuard<VatId> {
     fn drop(&mut self) {
-        if !self.status.return_ownership().release() {
+        let remaining = self.status.return_guards.get() - 1;
+        self.status.return_guards.set(remaining);
+        if remaining != 0 || self.status.return_has_been_sent.replace(true) {
             return;
         }
         let Some(state) = self.state.upgrade() else {
@@ -2611,7 +2691,7 @@ impl<VatId> Drop for Results<VatId> {
 }
 
 impl<VatId> ResultsHook for Results<VatId> {
-    fn retain_response_context(&mut self, context: Rc<dyn core::any::Any>) {
+    fn retain_response_context(&mut self, context: Rc<dyn std::any::Any>) {
         if let Some(inner) = &self.inner {
             crate::admission::retain_context(
                 &mut inner.return_guard.status.response_context.borrow_mut(),
@@ -2623,9 +2703,9 @@ impl<VatId> ResultsHook for Results<VatId> {
         self.permits_immediate_poll
     }
 
-    fn cancellation_guard(&self) -> Option<Box<dyn core::any::Any>> {
+    fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
         self.cancellation_context()
-            .map(|guard| Box::new(guard) as Box<dyn core::any::Any>)
+            .map(|guard| Box::new(guard) as Box<dyn std::any::Any>)
     }
     fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
         let inner = self.inner.as_ref()?;
@@ -2854,7 +2934,7 @@ enum ResultsDoneVariant {
 }
 
 struct ResultsDone {
-    context: Option<Rc<dyn core::any::Any>>,
+    context: Option<Rc<dyn std::any::Any>>,
     inner: Rc<ResultsDoneVariant>,
 }
 
@@ -3151,7 +3231,7 @@ impl<VatId> ThirdPartyClient<VatId> {
             if let ThirdPartyState::Accepted(cap) = &*state {
                 return cap.clone();
             }
-            core::mem::replace(
+            std::mem::replace(
                 &mut *state,
                 ThirdPartyState::Accepted(broken::new_cap(Error::failed(
                     "reentrant third-party acceptance".into(),
@@ -3266,7 +3346,7 @@ type FlowOwner = Rc<RefCell<Option<Box<dyn crate::FlowController>>>>;
 // send. The extra shared owner is then required to release the capability's
 // RefCell borrow before calling a custom FlowController or transport.
 #[derive(Default)]
-struct StreamingFlow(core::cell::OnceCell<FlowOwner>);
+struct StreamingFlow(std::cell::OnceCell<FlowOwner>);
 impl StreamingFlow {
     fn get(&self) -> FlowOwner {
         self.0.get_or_init(|| Rc::new(RefCell::new(None))).clone()
@@ -3339,7 +3419,7 @@ where
     /// Number of times we've received this import from the peer.
     remote_references: ImportRefs,
     fd: Option<AttachedFd>,
-    metadata_changes: core::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
+    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
 }
 
 impl<VatId> Drop for ImportClient<VatId> {
@@ -3395,7 +3475,7 @@ where
             import_id,
             streaming: StreamingFlow::default(),
             remote_references: ImportRefs::new(),
-            metadata_changes: core::cell::OnceCell::new(),
+            metadata_changes: std::cell::OnceCell::new(),
             fd: None,
         }))
     }
@@ -3729,7 +3809,7 @@ impl<VatId> Client<VatId> {
             ClientVariant::Pipeline(pipeline_client) => {
                 let mut builder = target.init_promised_answer();
                 let question_ref = &pipeline_client.borrow().question_ref;
-                builder.set_question_id(question_ref.borrow().record().id().to_wire());
+                builder.set_question_id(question_ref.borrow().id.to_wire());
                 let mut transform =
                     builder.init_transform(pipeline_client.borrow().ops.len() as u32);
                 for idx in 0..pipeline_client.borrow().ops.len() {
@@ -3771,7 +3851,7 @@ impl<VatId> Client<VatId> {
             ClientVariant::Pipeline(pipeline_client) => {
                 let mut promised_answer = descriptor.init_receiver_answer();
                 let question_ref = &pipeline_client.borrow().question_ref;
-                promised_answer.set_question_id(question_ref.borrow().record().id().to_wire());
+                promised_answer.set_question_id(question_ref.borrow().id.to_wire());
                 let mut transform =
                     promised_answer.init_transform(pipeline_client.borrow().ops.len() as u32);
                 for idx in 0..pipeline_client.borrow().ops.len() {
@@ -3920,7 +4000,7 @@ impl<VatId> ClientHook for Client<VatId> {
     ) -> Promise<capnp::private::capability::JoinedCapability, Error> {
         join::send(&self.connection_state, caps)
     }
-    #[cfg(all(feature = "std", unix))]
+    #[cfg(unix)]
     fn get_fd(&self) -> Option<AttachedFd> {
         match &self.variant {
             ClientVariant::Import(c) => c.borrow().fd.clone(),

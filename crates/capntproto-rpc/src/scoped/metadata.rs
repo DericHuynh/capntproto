@@ -1,6 +1,5 @@
 //! Change subscriptions carry no capability authority or graph lifetime.
 use super::*;
-use alloc::vec::Vec;
 
 #[derive(Default)]
 pub struct MetadataSource {
@@ -72,7 +71,7 @@ impl Endpoint {
             *self.failure.borrow_mut() = Some(failure);
             changed = true;
         }
-        #[cfg(all(feature = "std", unix))]
+        #[cfg(unix)]
         if metadata.fd.is_some() && self.fd.borrow().is_none() {
             *self.fd.borrow_mut() = metadata.fd;
             changed = true;

@@ -661,8 +661,6 @@ pub(super) fn generate_node(
             )));
 
             mod_interior.push(line("#![allow(unused_variables)]"));
-            mod_interior.push(line("extern crate alloc;"));
-            mod_interior.push(line("use self::alloc::{boxed::Box, string::ToString};"));
 
             let methods = interface.get_methods()?;
             for (ordinal, method) in methods.into_iter().enumerate() {

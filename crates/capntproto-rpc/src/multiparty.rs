@@ -1,11 +1,9 @@
 //! Network contracts for independently routed Join key shares.
 use crate::{third_party::ThirdPartyExchange, Connection};
-use alloc::boxed::Box;
-use alloc::rc::Rc;
 use capnp::{
     any_pointer, capability::Promise, message::Builder, private::capability::ResponseHook, Error,
 };
-use core::any::Any;
+use std::{any::Any, rc::Rc};
 
 /// A network owns the share format, authentication and destination discovery.
 /// A single routed share must not authorize the joined capability.

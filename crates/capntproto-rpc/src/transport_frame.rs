@@ -8,10 +8,10 @@ use capnp::{message::ReaderSegments, Error};
 ///
 /// Transport queues must retain this independent byte owner through writing.
 pub struct OutgoingFrame {
-    pub(crate) credit: Option<alloc::rc::Rc<crate::admission::Permit>>,
+    pub(crate) credit: Option<std::rc::Rc<crate::admission::Permit>>,
     body: Body,
-    #[cfg(all(feature = "std", unix))]
-    fds: Vec<alloc::rc::Rc<std::os::fd::OwnedFd>>,
+    #[cfg(unix)]
+    fds: Vec<std::rc::Rc<std::os::fd::OwnedFd>>,
 }
 enum Body {
     Copied(capnp::serialize::OwnedSegments),
@@ -63,7 +63,7 @@ impl OutgoingFrame {
         Ok(Self {
             credit: None,
             body: Body::Parts(PartsSegments(parts)),
-            #[cfg(all(feature = "std", unix))]
+            #[cfg(unix)]
             fds: Vec::new(),
         })
     }
@@ -79,7 +79,7 @@ impl OutgoingFrame {
         Ok(Self {
             credit: None,
             body: Body::Copied(capnp::serialize::read_message(bytes, options)?.into_segments()),
-            #[cfg(all(feature = "std", unix))]
+            #[cfg(unix)]
             fds: Vec::new(),
         })
     }
@@ -95,7 +95,7 @@ impl OutgoingFrame {
             body: Body::Shared(capnp::serialize::NoAllocBufferSegments::from_buffer_exact(
                 bytes, options,
             )?),
-            #[cfg(all(feature = "std", unix))]
+            #[cfg(unix)]
             fds: Vec::new(),
         })
     }
@@ -153,7 +153,6 @@ impl OutgoingFrame {
             .sum()
     }
     /// Already validated complete framing, retained through the write and flush.
-    #[cfg(feature = "std")]
     pub(crate) fn framed_bytes(&self) -> Option<&[u8]> {
         match &self.body {
             Body::Shared(segments) => Some(segments.buffer()),
@@ -162,13 +161,13 @@ impl OutgoingFrame {
     }
     /// Associate transport-owned descriptors with this exact frame. The wire's
     /// 255 sentinel is never a descriptor index; Unix transports may cap at 253.
-    #[cfg(all(feature = "std", unix))]
-    pub fn set_fds(&mut self, fds: Vec<alloc::rc::Rc<std::os::fd::OwnedFd>>) {
+    #[cfg(unix)]
+    pub fn set_fds(&mut self, fds: Vec<std::rc::Rc<std::os::fd::OwnedFd>>) {
         self.fds = fds.into_iter().take(255).collect();
     }
-    #[cfg(all(feature = "std", unix))]
-    pub fn take_fds(&mut self) -> Vec<alloc::rc::Rc<std::os::fd::OwnedFd>> {
-        core::mem::take(&mut self.fds)
+    #[cfg(unix)]
+    pub fn take_fds(&mut self) -> Vec<std::rc::Rc<std::os::fd::OwnedFd>> {
+        std::mem::take(&mut self.fds)
     }
 }
 

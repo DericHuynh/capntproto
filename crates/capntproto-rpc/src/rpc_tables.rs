@@ -25,8 +25,8 @@
 #![forbid(unsafe_code)]
 
 use super::rpc_ids::{LocalId, PeerId, QuestionId, WireId};
-use crate::collections::HashMap;
 use capntproto_rpc_engine::local_table::{self, GrowingSlots};
+use std::collections::HashMap;
 
 /// The peer chooses these keys. Zero and the entire u32 range remain legal at
 /// this storage boundary; individual message handlers enforce reserved ranges.
@@ -96,13 +96,13 @@ impl<I: PeerId, T> Default for PeerSlots<I, T> {
         }
     }
 }
-impl<I: PeerId, T> core::ops::Deref for PeerSlots<I, T> {
+impl<I: PeerId, T> std::ops::Deref for PeerSlots<I, T> {
     type Target = capntproto_rpc_engine::peer_table::PeerTable<I, T, HostedSparse<I, T>>;
     fn deref(&self) -> &Self::Target {
         &self.table
     }
 }
-impl<I: PeerId, T> core::ops::DerefMut for PeerSlots<I, T> {
+impl<I: PeerId, T> std::ops::DerefMut for PeerSlots<I, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.table
     }

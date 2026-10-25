@@ -4,14 +4,14 @@ use crate::admission::{Admission, Permit};
 
 pub(super) struct Credit {
     admission: Rc<Admission>,
-    permit: core::cell::OnceCell<Rc<Permit>>,
+    permit: std::cell::OnceCell<Rc<Permit>>,
     received: Cell<bool>,
 }
 impl Credit {
     pub(super) fn new(admission: Rc<Admission>) -> Rc<Self> {
         Rc::new(Self {
             admission,
-            permit: core::cell::OnceCell::new(),
+            permit: std::cell::OnceCell::new(),
             received: Cell::new(false),
         })
     }

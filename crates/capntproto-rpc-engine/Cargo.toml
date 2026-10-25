@@ -13,9 +13,6 @@ default = []
 # allocate, including when these conveniences are enabled.
 alloc = []
 
-[dependencies]
-capntproto-task = { path = "../capntproto-task" }
-
 [dev-dependencies]
 allocation-counter = "=0.8.1"
 

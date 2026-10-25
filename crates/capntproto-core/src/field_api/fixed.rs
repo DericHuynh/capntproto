@@ -189,12 +189,6 @@ impl<'a, G: GroupSchema> FixedGroup<'a, G> {
 /// separately into a caller-owned sink when field context is needed.
 pub struct FixedField<'a, K: PointerType>(pub(super) PointerField<'a, K>);
 impl<K: PointerType> FixedField<'_, K> {
-    /// Inspect a selected field without allocating, selecting a union arm or
-    /// exposing the underlying growing pointer builder.
-    pub fn is_null(&mut self) -> Result<bool> {
-        self.0.slot.check_arm()?;
-        Ok(self.0.slot.pointer().is_null())
-    }
     /// Lend this field to a shorter operation without losing its union selector.
     /// In particular, async service adapters need not borrow local context for
     /// the entire lifetime of the surrounding result buffer.

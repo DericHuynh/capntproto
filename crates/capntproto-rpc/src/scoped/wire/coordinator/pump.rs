@@ -1,6 +1,5 @@
 //! Work/output arbitration and physical flush policy over caller-owned IO.
 use super::*;
-use alloc::boxed::Box;
 
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
@@ -163,11 +162,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if !preserves_control {
                     self.control_idle = false;
                 }
-                if core::mem::take(&mut self.output_blocked) {
+                if std::mem::take(&mut self.output_blocked) {
                     self.progressed();
                 }
             }
-            if output_ready && core::mem::take(&mut self.calls_waiting_for_output) {
+            if output_ready && std::mem::take(&mut self.calls_waiting_for_output) {
                 self.schedule.active |= WorkSet::CALLS;
             }
             let idle = self.schedule.active == WorkSet::NONE
@@ -184,7 +183,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.idle = idle;
                 controls.set_idle(idle);
             }
-            let delivered = core::mem::take(&mut self.delivered);
+            let delivered = std::mem::take(&mut self.delivered);
             if delivered {
                 cx.waker().wake_by_ref();
             }
