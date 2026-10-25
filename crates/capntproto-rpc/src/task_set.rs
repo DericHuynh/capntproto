@@ -738,6 +738,10 @@ mod tests {
         use std::task::Waker;
 
         struct Notify;
+        #[allow(
+            clippy::manual_noop_waker,
+            reason = "an owned parent is needed to observe its lifetime through Weak"
+        )]
         impl std::task::Wake for Notify {
             fn wake(self: Arc<Self>) {}
         }
