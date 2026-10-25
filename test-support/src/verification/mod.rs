@@ -246,7 +246,15 @@ pub fn graph_digest(text: &str) -> Result<GraphDigest> {
 }
 
 pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
-    let mut cmd = Command::new(program);
+    let program = program.as_ref();
+    // C++ fixtures use the same explicitly selected reference compiler as the
+    // quality lane. The system g++ may not support the pinned C++23 headers.
+    let compiler = if program == "g++" {
+        std::env::var_os("CAPNTPROTO_REFERENCE_CXX")
+    } else {
+        None
+    };
+    let mut cmd = Command::new(compiler.as_deref().unwrap_or(program));
     cmd.current_dir(root());
     // Nextest exports its profile to tests. A nested workspace must choose its
     // own profile, not inherit the outer CI report's temporary `evidence` profile.
