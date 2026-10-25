@@ -1,5 +1,6 @@
 //! Application dispatch and completion adapters; no physical IO polling.
 use super::*;
+use alloc::boxed::Box;
 
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
@@ -618,7 +619,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     ) -> impl FnMut(&mut ClientHooks<'domain>, &mut Peer<'_, 'domain, '_, I, P, C, H>) + 'output
     {
         move |hooks, driver| {
-            if std::mem::replace(&mut refresh, true) {
+            if core::mem::replace(&mut refresh, true) {
                 Self::collect_hooks(hooks, driver, output);
             }
         }

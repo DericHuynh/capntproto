@@ -1,6 +1,7 @@
 //! Independently routed standard Join messages and direct capability acquisition.
 use super::*;
 use crate::multiparty::{JoinDestination, JoinNetwork, PartResponse};
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::private::capability::JoinedCapability;
 
 pub(super) fn supported<VatId>(state: &ConnectionState<VatId>) -> bool {
@@ -13,7 +14,7 @@ pub(super) fn supported<VatId>(state: &ConnectionState<VatId>) -> bool {
 
 struct LocalReply {
     body: capnp::message::Builder<capnp::message::HeapAllocator>,
-    _guard: Box<dyn std::any::Any>,
+    _guard: Box<dyn core::any::Any>,
 }
 impl ResponseHook for LocalReply {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {

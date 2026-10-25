@@ -1,4 +1,9 @@
 use crate::fd::{AttachedFd, IncomingFds, OutgoingFds};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 // Copyright (c) 2013-2015 Sandstorm Development Group, Inc. and contributors
 // Licensed under the MIT License:
 //
@@ -21,9 +26,9 @@ use crate::fd::{AttachedFd, IncomingFds, OutgoingFds};
 // THE SOFTWARE.
 
 use capnp::capability::CallHints;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
+use core::pin::Pin;
+use core::task::Context;
+use core::task::Poll;
 
 use capnp::any_pointer;
 use capnp::capability::Promise;
@@ -37,10 +42,10 @@ use capntproto_rpc_engine::completion::{
 };
 use futures::{future, Future, FutureExt, TryFutureExt};
 
-use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::hash_map::{self, HashMap};
-use std::mem;
-use std::rc::{Rc, Weak};
+use crate::collections::hash_map::{self, HashMap};
+use alloc::rc::{Rc, Weak};
+use core::cell::{Cell, OnceCell, RefCell};
+use core::mem;
 
 use crate::attach::Attach;
 use crate::local::ResultsDoneHook;
@@ -124,7 +129,7 @@ impl<VatId> QuestionCell<VatId> {
         Self(RefCell::new(question))
     }
 }
-impl<VatId> std::ops::Deref for QuestionCell<VatId> {
+impl<VatId> core::ops::Deref for QuestionCell<VatId> {
     type Target = RefCell<QuestionRef<VatId>>;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -345,12 +350,12 @@ impl<VatId> Drop for QuestionRef<VatId> {
 #[derive(Default)]
 struct AnswerStatus {
     cache: Weak<RefCell<Vec<Rc<AnswerStatus>>>>,
-    response_context: RefCell<Option<Rc<dyn std::any::Any>>>,
+    response_context: RefCell<Option<Rc<dyn core::any::Any>>>,
     return_has_been_sent: Cell<bool>,
     received_finish: Cell<bool>,
     return_guards: Cell<usize>,
     task_canceled: Cell<bool>,
-    task_waker: RefCell<Option<std::task::Waker>>,
+    task_waker: RefCell<Option<core::task::Waker>>,
 }
 
 impl AnswerStatus {
@@ -372,7 +377,7 @@ type AnswerStatusCache = Rc<RefCell<Vec<Rc<AnswerStatus>>>>;
 // the status. Recycle on the last status owner, regardless of release order.
 #[derive(Clone, Default)]
 struct AnswerStatusRef(Rc<AnswerStatus>);
-impl std::ops::Deref for AnswerStatusRef {
+impl core::ops::Deref for AnswerStatusRef {
     type Target = AnswerStatus;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -473,11 +478,11 @@ where
     result_exports: Vec<ExportId>,
     provision: Option<(
         Rc<crate::third_party::ThirdPartyExchange>,
-        Box<dyn std::any::Any>,
+        Box<dyn core::any::Any>,
     )>,
     join: Option<join::PartGuard<VatId>>,
     callee_allocated: bool,
-    join_response: Option<Box<dyn std::any::Any>>,
+    join_response: Option<Box<dyn core::any::Any>>,
 }
 
 impl<VatId> Answer<VatId> {
@@ -523,7 +528,7 @@ enum InboundTarget {
     Exported(Rc<dyn ClientHook>),
     Projected(Box<dyn ClientHook>),
 }
-impl std::ops::Deref for InboundTarget {
+impl core::ops::Deref for InboundTarget {
     type Target = dyn ClientHook;
     fn deref(&self) -> &Self::Target {
         match self {
@@ -761,8 +766,8 @@ where
     embargoes: RefCell<EmbargoTable>,
 
     tasks: RefCell<Option<crate::task_set::TaskSetHandle<capnp::Error>>>,
-    connection: RefCell<::std::result::Result<Box<dyn crate::Connection<VatId>>, ::capnp::Error>>,
-    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
+    connection: RefCell<::core::result::Result<Box<dyn crate::Connection<VatId>>, ::capnp::Error>>,
+    metadata_changes: core::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
     disconnect_fulfiller: RefCell<Option<oneshot::Sender<Promise<(), Error>>>>,
 
     client_downcast_map: RefCell<HashMap<usize, WeakClient<VatId>>>,
@@ -811,7 +816,7 @@ impl<VatId> ConnectionState<VatId> {
             embargoes: RefCell::new(new_embargoes()),
             tasks: RefCell::new(None),
             connection: RefCell::new(Ok(connection)),
-            metadata_changes: std::cell::OnceCell::new(),
+            metadata_changes: core::cell::OnceCell::new(),
             disconnect_fulfiller: RefCell::new(Some(disconnect_fulfiller)),
             client_downcast_map: RefCell::new(HashMap::new()),
             registry,
@@ -1274,7 +1279,7 @@ impl<VatId> ConnectionState<VatId> {
                     }
                 }
             };
-            let mut read = std::pin::pin!(read);
+            let mut read = core::pin::pin!(read);
             let read = future::poll_fn(|cx| {
                 // Bound uninterrupted work, not messages across IO waits.
                 // Returning Pending already gives other tasks a chance to run.
@@ -1398,7 +1403,7 @@ where
     Empty,
     Rpc(ResponseState<VatId>),
     LocallyRedirected(Box<dyn ResultsDoneHook>),
-    Adopted(Box<dyn ResponseHook>, Box<dyn std::any::Any>),
+    Adopted(Box<dyn ResponseHook>, Box<dyn core::any::Any>),
 }
 
 struct Response<VatId>
@@ -1497,7 +1502,7 @@ struct StreamingMessage<VatId: 'static> {
     permit: Rc<crate::admission::Permit>,
 }
 impl<VatId> crate::OutgoingMessage for StreamingMessage<VatId> {
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn set_fds(&mut self, fds: Vec<Rc<std::os::fd::OwnedFd>>) {
         self.message.set_fds(fds);
     }
@@ -1544,13 +1549,13 @@ where
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
 }
 
-impl<VatId> std::ops::Deref for Request<VatId> {
+impl<VatId> core::ops::Deref for Request<VatId> {
     type Target = RequestData<VatId>;
     fn deref(&self) -> &Self::Target {
         self.data.as_ref().expect("live request")
     }
 }
-impl<VatId> std::ops::DerefMut for Request<VatId> {
+impl<VatId> core::ops::DerefMut for Request<VatId> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data.as_mut().expect("live request")
     }
@@ -1834,7 +1839,7 @@ where
 }
 
 impl<VatId> RequestHook for Request<VatId> {
-    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+    fn third_party_tail_target(&self) -> Option<Box<dyn core::any::Any>> {
         if self.get_brand() != 0 && answer_adoption::supported(&self.connection_state) {
             Some(Box::new(self.connection_state.clone()))
         } else {
@@ -2608,7 +2613,7 @@ impl<VatId> Drop for Results<VatId> {
 }
 
 impl<VatId> ResultsHook for Results<VatId> {
-    fn retain_response_context(&mut self, context: Rc<dyn std::any::Any>) {
+    fn retain_response_context(&mut self, context: Rc<dyn core::any::Any>) {
         if let Some(inner) = &self.inner {
             crate::admission::retain_context(
                 &mut inner.return_guard.status.response_context.borrow_mut(),
@@ -2620,9 +2625,9 @@ impl<VatId> ResultsHook for Results<VatId> {
         self.permits_immediate_poll
     }
 
-    fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
+    fn cancellation_guard(&self) -> Option<Box<dyn core::any::Any>> {
         self.cancellation_context()
-            .map(|guard| Box::new(guard) as Box<dyn std::any::Any>)
+            .map(|guard| Box::new(guard) as Box<dyn core::any::Any>)
     }
     fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
         let inner = self.inner.as_ref()?;
@@ -2851,7 +2856,7 @@ enum ResultsDoneVariant {
 }
 
 struct ResultsDone {
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
     inner: Rc<ResultsDoneVariant>,
 }
 
@@ -3148,7 +3153,7 @@ impl<VatId> ThirdPartyClient<VatId> {
             if let ThirdPartyState::Accepted(cap) = &*state {
                 return cap.clone();
             }
-            std::mem::replace(
+            core::mem::replace(
                 &mut *state,
                 ThirdPartyState::Accepted(broken::new_cap(Error::failed(
                     "reentrant third-party acceptance".into(),
@@ -3263,7 +3268,7 @@ type FlowOwner = Rc<RefCell<Option<Box<dyn crate::FlowController>>>>;
 // send. The extra shared owner is then required to release the capability's
 // RefCell borrow before calling a custom FlowController or transport.
 #[derive(Default)]
-struct StreamingFlow(std::cell::OnceCell<FlowOwner>);
+struct StreamingFlow(core::cell::OnceCell<FlowOwner>);
 impl StreamingFlow {
     fn get(&self) -> FlowOwner {
         self.0.get_or_init(|| Rc::new(RefCell::new(None))).clone()
@@ -3336,7 +3341,7 @@ where
     /// Number of times we've received this import from the peer.
     remote_references: ImportRefs,
     fd: Option<AttachedFd>,
-    metadata_changes: std::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
+    metadata_changes: core::cell::OnceCell<Rc<capnp::private::capability::MetadataChanges>>,
 }
 
 impl<VatId> Drop for ImportClient<VatId> {
@@ -3392,7 +3397,7 @@ where
             import_id,
             streaming: StreamingFlow::default(),
             remote_references: ImportRefs::new(),
-            metadata_changes: std::cell::OnceCell::new(),
+            metadata_changes: core::cell::OnceCell::new(),
             fd: None,
         }))
     }
@@ -3917,7 +3922,7 @@ impl<VatId> ClientHook for Client<VatId> {
     ) -> Promise<capnp::private::capability::JoinedCapability, Error> {
         join::send(&self.connection_state, caps)
     }
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn get_fd(&self) -> Option<AttachedFd> {
         match &self.variant {
             ClientVariant::Import(c) => c.borrow().fd.clone(),

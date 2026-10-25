@@ -18,17 +18,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use alloc::sync::Arc;
+use alloc::{boxed::Box, vec::Vec};
 use capntproto_rpc_engine::{completion::shared as oneshot, scheduler};
+use core::pin::Pin;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
+use core::task::Context;
+use core::task::Poll;
 use futures::{
     task::{waker_ref, ArcWake},
     Future, Stream,
 };
-use std::pin::Pin;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use std::task::{Context, Poll};
 
 mod queue;
 mod ready_set;
@@ -93,7 +94,7 @@ where
     pub(crate) fn new(reaper: Box<dyn TaskReaper<E>>) -> (TaskSetHandle<E>, Self)
     where
         E: 'static,
-        E: ::std::fmt::Debug,
+        E: ::core::fmt::Debug,
     {
         let (sender, receiver) = queue::channel();
         let activity = Arc::new(Activity {
@@ -300,14 +301,14 @@ struct Parent<'a>(&'a Arc<Activity>);
 struct Lease(Arc<Activity>);
 impl scheduler::Lease for Lease {
     #[inline(always)]
-    fn waker(&self) -> impl std::ops::Deref<Target = std::task::Waker> {
+    fn waker(&self) -> impl core::ops::Deref<Target = core::task::Waker> {
         waker_ref(&self.0)
     }
 }
 impl scheduler::Parent for Parent<'_> {
     type Lease = Lease;
     #[inline(always)]
-    fn register(&self, parent: &std::task::Waker) {
+    fn register(&self, parent: &core::task::Waker) {
         self.0.parent.register(parent);
     }
     #[inline(always)]
@@ -331,7 +332,7 @@ impl scheduler::Empty<oneshot::Sender<()>> for Empty<'_> {
     }
     #[inline(always)]
     fn fulfill(&mut self) {
-        for f in std::mem::take(self.0) {
+        for f in core::mem::take(self.0) {
             let _ = f.send(());
         }
     }

@@ -21,8 +21,8 @@
 
 use futures::{Future, FutureExt};
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use alloc::rc::Rc;
+use core::cell::RefCell;
 
 pub(crate) fn split<F, T1, T2, E>(
     f: F,

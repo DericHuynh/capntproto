@@ -22,13 +22,13 @@
 use capntproto_rpc_engine::{completion::shared as oneshot, pending};
 use futures::{FutureExt, TryFutureExt};
 
-use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use alloc::rc::{Rc, Weak};
+use core::cell::RefCell;
 
 use capnp::capability::Promise;
 use capnp::Error;
 
-use std::collections::BTreeMap;
+use crate::collections::BTreeMap;
 
 type Inner<In, Out> = pending::State<In, Sender<Out>, BTreeMap<u64, (In, Sender<Out>)>>;
 
@@ -142,8 +142,11 @@ where
     }
 }
 
-pub(crate) type Drain<In, Out> =
-    pending::Drain<In, Sender<Out>, std::collections::btree_map::IntoIter<u64, (In, Sender<Out>)>>;
+pub(crate) type Drain<In, Out> = pending::Drain<
+    In,
+    Sender<Out>,
+    crate::collections::btree_map::IntoIter<u64, (In, Sender<Out>)>,
+>;
 
 pub(crate) struct Sender<T>(Option<oneshot::Sender<T>>);
 impl<T> Sender<T> {

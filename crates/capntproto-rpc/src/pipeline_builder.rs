@@ -1,4 +1,5 @@
 //! Owned construction of result pipelines independent of response allocation.
+use alloc::boxed::Box;
 use capnp::{
     any_pointer,
     capability::FromTypelessPipeline,

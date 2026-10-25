@@ -47,8 +47,22 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   as caller-backed calls, including replies abandoned after delivery. These
   replies still belong to their connection and message scope.
   Fixed providers never fall back to allocation.
-- The default `std` feature enables the existing owned clients, server hooks,
-  futures integration and two-party transport adapters.
+- `alloc` also enables the actual legacy `RpcSystem`, owned clients and server
+  hooks, futures integration, and the optional portable hosted runtime without
+  requiring `std`. Applications supply a `VatNetwork`, drive the systems, and
+  provide a global allocator. On targets with pointer-width atomics, the
+  alloc-only profile uses the supported futures spin backend and hashbrown.
+  `ClientRegistry` replaces the implicit thread-local identity domain: share
+  one registry across all views of each local server and construct generated
+  clients with its `new_client` or `new_client_from_rc` methods. Revocable local
+  servers use `RevocableServer::new_in` with that same registry. Registry entries
+  are weak and do not retain services. `new_adaptive_flow_controller_with_clock`
+  accepts an application clock in this profile. This is still an allocating
+  runtime; it does not make legacy's boxed hooks or message storage no-alloc.
+- The default `std` feature adds two-party OS transport integration, owned Unix
+  descriptors, policy-identity membranes, the implicit thread-local local-client
+  registry, segment caches, and the default monotonic clock.
+  The hosted collection, mutex, cache and ownership types stay unchanged.
   `capnp_rpc::scoped::ClientHooks` bridges owned generated clients to live or
   frozen routes in a scoped engine graph. It bounds outstanding calls, admits them to
   the shared ordered dispatcher, preserves early pipelines and capability

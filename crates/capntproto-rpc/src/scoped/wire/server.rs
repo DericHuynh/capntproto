@@ -2,6 +2,7 @@
 //! The caller retains the original running/answer owner until execution and
 //! reply publication finish. These owned parameters do not borrow the driver.
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 mod results;
 pub use results::{Execution, PlainPayload, Producer, Results};
 pub(crate) use results::{Transfer, Work};
@@ -23,7 +24,7 @@ enum Parameters {
     Plain(owned::PlainParams),
     Hook(Box<dyn ParamsHook>),
 }
-impl std::ops::Deref for Parameters {
+impl core::ops::Deref for Parameters {
     type Target = dyn ParamsHook;
     fn deref(&self) -> &Self::Target {
         match self {

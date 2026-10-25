@@ -14,6 +14,10 @@
 //! this bridge does not replace `RpcSystem` yet.
 #![forbid(unsafe_code)]
 
+use crate::collections::VecDeque;
+use alloc::rc::Rc;
+use alloc::rc::Weak;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::{
     any_pointer,
     capability::{self, CallHints, Promise},
@@ -26,15 +30,14 @@ use capntproto_rpc_engine::{
     clients::{dispatch, Capabilities, Client},
     completion::{self, shared},
 };
+use core::cell::Cell;
+use core::cell::RefCell;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::Context;
+use core::task::Poll;
+use core::task::Waker;
 use futures::{future::Shared, FutureExt};
-use std::{
-    cell::{Cell, RefCell},
-    collections::VecDeque,
-    future::Future,
-    pin::Pin,
-    rc::{Rc, Weak},
-    task::{Context, Poll, Waker},
-};
 
 mod admission;
 mod bindings;
@@ -52,15 +55,15 @@ pub mod wire;
 pub struct EndpointMetadata {
     pub failure: Option<Error>,
     pub introduction: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     pub fd: Option<Rc<std::os::fd::OwnedFd>>,
 }
 
 type Shutdown = shutdown::Receiver;
 struct Inbox {
     completion_cache: response::Cache,
-    call_templates: [std::cell::OnceCell<Box<CallTemplate>>; 4],
-    message_pool: Option<capnp::message::SegmentPool>,
+    call_templates: [core::cell::OnceCell<Box<CallTemplate>>; 4],
+    message_pool: Option<crate::MessagePool>,
     admission: Option<Rc<crate::admission::Admission>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
     queue: RefCell<VecDeque<Box<Call>>>,
@@ -151,7 +154,7 @@ impl Inbox {
             return;
         }
         // Detach every callback-bearing owner before waking or destroying it.
-        let queue = std::mem::take(&mut *self.queue.borrow_mut());
+        let queue = core::mem::take(&mut *self.queue.borrow_mut());
         self.shutdown.close(error);
         drop(queue);
         self.notify();
@@ -166,10 +169,10 @@ struct Endpoint {
     binding_wakes: RefCell<Vec<Waker>>,
     settled: Cell<bool>,
     metadata_generation: Cell<u64>,
-    metadata_changes: std::cell::OnceCell<Rc<MetadataChanges>>,
+    metadata_changes: core::cell::OnceCell<Rc<MetadataChanges>>,
     failure: RefCell<Option<Error>>,
     resolution: RefCell<Option<Resolution>>,
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fd: RefCell<Option<Rc<std::os::fd::OwnedFd>>>,
 }
 impl Endpoint {
@@ -183,10 +186,10 @@ impl Endpoint {
             binding_wakes: RefCell::default(),
             settled: Cell::new(false),
             metadata_generation: Cell::new(0),
-            metadata_changes: std::cell::OnceCell::new(),
+            metadata_changes: core::cell::OnceCell::new(),
             failure: RefCell::default(),
             resolution: RefCell::default(),
-            #[cfg(unix)]
+            #[cfg(all(feature = "std", unix))]
             fd: RefCell::default(),
         })
     }
@@ -298,7 +301,7 @@ impl<'id> ClientHooks<'id> {
         Self {
             inbox: Rc::new(Inbox {
                 completion_cache: response::Cache::new(maximum_calls),
-                call_templates: std::array::from_fn(|_| std::cell::OnceCell::new()),
+                call_templates: core::array::from_fn(|_| core::cell::OnceCell::new()),
                 message_pool: None,
                 admission: None,
                 joins: None,
@@ -333,7 +336,8 @@ impl<'id> ClientHooks<'id> {
     /// and builders keep exclusive ownership until their last owner drops.
     /// Configure this before exporting clients or attaching the coordinator.
     /// Panics if the hook inbox has already been shared.
-    pub(crate) fn with_message_pool(mut self, pool: capnp::message::SegmentPool) -> Self {
+    #[cfg(feature = "std")]
+    pub(crate) fn with_message_pool(mut self, pool: crate::MessagePool) -> Self {
         Rc::get_mut(&mut self.inbox)
             .expect("unpublished hook inbox")
             .message_pool = Some(pool);
@@ -555,13 +559,13 @@ impl<'id> ClientHooks<'id> {
                 binding_wakes: RefCell::default(),
                 settled: Cell::new(!pending),
                 metadata_generation: Cell::new(0),
-                metadata_changes: std::cell::OnceCell::new(),
+                metadata_changes: core::cell::OnceCell::new(),
                 failure: RefCell::new(
                     broken
                         .then(|| Error::failed("capability resolved to a broken endpoint".into())),
                 ),
                 resolution: RefCell::default(),
-                #[cfg(unix)]
+                #[cfg(all(feature = "std", unix))]
                 fd: RefCell::new(None),
             })
         });
@@ -1267,7 +1271,7 @@ impl CallParams {
         }
     }
 }
-impl std::ops::Deref for CallParams {
+impl core::ops::Deref for CallParams {
     type Target = dyn ParamsHook;
     fn deref(&self) -> &Self::Target {
         match self {
@@ -1287,7 +1291,7 @@ impl capnp::private::capability::RequestHook for Call {
     fn set_hints(&mut self, hints: CallHints) {
         self.hints = hints;
     }
-    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+    fn third_party_tail_target(&self) -> Option<Box<dyn core::any::Any>> {
         tail_target(&Hook(self.endpoint.clone(), self.credit.clone()))
     }
     fn set_third_party_tail_target(
@@ -1401,7 +1405,7 @@ impl Call {
         let context = self
             .credit
             .clone()
-            .map(|credit| credit as Rc<dyn std::any::Any>);
+            .map(|credit| credit as Rc<dyn core::any::Any>);
         Box::new(request.into_request(
             self.interface,
             self.method,
@@ -1657,11 +1661,11 @@ impl ClientHook for Hook {
             .as_ref()
             .map(|joins| joins.join(self.add_ref(), part))
     }
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.0.fd.borrow().clone()
     }
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
         Some(self)
     }
     fn debug_info(&self, info: &mut DebugInfo) {
@@ -1703,6 +1707,7 @@ impl ClientHook for Hook {
             }
         }
         let allocator = crate::local::result_allocator(size);
+        #[cfg(feature = "std")]
         let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
             Some(pool) => allocator.segment_pool(pool.clone()),
             None => allocator,
@@ -1894,7 +1899,7 @@ impl Drop for Reply {
 mod tests;
 
 // Exact private hook types carry authority; public brands and wrappers do not.
-pub(crate) fn tail_target(client: &dyn ClientHook) -> Option<Box<dyn std::any::Any>> {
+pub(crate) fn tail_target(client: &dyn ClientHook) -> Option<Box<dyn core::any::Any>> {
     let hook = client.as_any()?.downcast_ref::<Hook>()?;
     // A settled remote endpoint cannot resolve into a different connection
     // after its authenticated destination metadata has been committed.

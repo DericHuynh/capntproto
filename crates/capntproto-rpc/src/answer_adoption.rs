@@ -3,6 +3,7 @@
 
 //! Authenticated level-3 tail return adoption using the network rendezvous hooks.
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 
 const FIRST: u32 = 1 << 30;
 const END: u32 = 1 << 31;

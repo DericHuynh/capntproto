@@ -21,6 +21,7 @@
 
 //! Incoming RPC dispatch and peer message validation.
 use super::*;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 
 // Keep immediate invocations on the receive stack. Only taking ownership
 // creates the completion channel and the two type-erased application hooks.

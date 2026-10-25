@@ -1,17 +1,19 @@
 //! Task sets reuse wake nodes with a bounded multi-producer atomic FIFO.
 //! Exceptional concurrency retains the FuturesUnordered fallback.
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use alloc::vec::Vec;
 use capntproto_rpc_engine::readiness::Queue as Notifications;
 use capntproto_rpc_engine::tasks;
+use core::future::Future;
+use core::pin::Pin;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicU8;
+use core::sync::atomic::AtomicUsize;
+use core::task::Context;
+use core::task::Poll;
+use core::task::Waker;
 use futures::{stream::FuturesUnordered, task::AtomicWaker, Stream};
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::{
-        atomic::{AtomicBool, AtomicU8, AtomicUsize},
-        Arc,
-    },
-    task::{Context, Poll, Wake, Waker},
-};
 
 // Notification storage is bounded independently of task lifetimes. A larger
 // exceptional set uses FuturesUnordered rather than retaining an unbounded pool.
@@ -109,7 +111,7 @@ impl<F: Future + Unpin> ReadySet<F> {
         }
         if self.live == REUSABLE_TASKS {
             let queued = FuturesUnordered::new();
-            for task in std::mem::take(&mut self.tasks) {
+            for task in core::mem::take(&mut self.tasks) {
                 if let Some(future) = task.future {
                     queued.push(future);
                 }

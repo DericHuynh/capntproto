@@ -4,6 +4,7 @@ use crate::scoped::{
     wire::{resources::Import, server::Producer},
     ClientHooks,
 };
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::private::capability::ClientHook;
 use capntproto_rpc_engine::{connection as storage, messages};
 use capntproto_rpc_wire::owned::connection as wire;
@@ -182,12 +183,14 @@ async fn run<V: 'static>(
                 });
                 driver.set_descriptors(coordinator::multiparty::introduction::descriptors());
                 driver.use_owned_output_queues(true);
-                let mut hooks = ClientHooks::new(options.hooks.get(), options.concurrency.get())
-                    .with_message_pool(capnp::message::SegmentPool::new(
-                        options.cached_message_words,
-                        options.cached_message_segments,
-                    ))
+                let hooks = ClientHooks::new(options.hooks.get(), options.concurrency.get())
                     .with_admission(policy.admission.clone());
+                #[cfg(feature = "std")]
+                let hooks = hooks.with_message_pool(crate::MessagePool::new(
+                    options.cached_message_words,
+                    options.cached_message_segments,
+                ));
+                let mut hooks = hooks;
                 if let Some(commands) = &network_commands {
                     hooks = hooks.with_joins(commands.handle());
                 }
@@ -218,9 +221,9 @@ async fn run<V: 'static>(
                 let mut queue = writer
                     .publication_queue(messages, options.output_queue.get())
                     .map_err(error)?;
-                let mut aborted = std::pin::pin!(aborted);
-                let mut failure = std::pin::pin!(failure);
-                let abort = std::future::poll_fn(|cx| {
+                let mut aborted = core::pin::pin!(aborted);
+                let mut failure = core::pin::pin!(failure);
+                let abort = core::future::poll_fn(|cx| {
                     match aborted.as_mut().poll(cx) {
                         Poll::Ready(result) => {
                             return Poll::Ready(result.unwrap_or_else(|_| closing()))
@@ -280,7 +283,7 @@ async fn run<V: 'static>(
     .await
     .map_err(error)?
 }
-fn error(error: impl std::fmt::Display) -> Error {
+fn error(error: impl core::fmt::Display) -> Error {
     Error::failed(error.to_string())
 }
 fn run_error(error: coordinator::RunError<Error, Error>) -> Error {

@@ -1,6 +1,7 @@
 //! Type-erased hosted network policy. Only peers in this system's registry may
 //! introduce one another; transport callbacks authenticate every opaque token.
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 use capnp::{any_pointer, private::capability::ClientHook};
 use coordinator::multiparty::introduction as policy;
 type Body = capnp::message::Builder<capnp::message::HeapAllocator>;
@@ -68,10 +69,10 @@ impl<V: 'static> policy::Network for Network<V> {
     fn domain(&self) -> usize {
         self.connections.as_ptr() as usize
     }
-    fn peer(&self) -> Box<dyn std::any::Any> {
+    fn peer(&self) -> Box<dyn core::any::Any> {
         Box::new(self.connection.borrow().get_peer_vat_id())
     }
-    fn introduce(&self, peer: Box<dyn std::any::Any>) -> capnp::Result<Option<(Body, Body)>> {
+    fn introduce(&self, peer: Box<dyn core::any::Any>) -> capnp::Result<Option<(Body, Body)>> {
         let peer = *peer
             .downcast::<V>()
             .map_err(|_| Error::failed("foreign vat identity type".into()))?;

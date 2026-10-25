@@ -1,6 +1,7 @@
 //! Public equality routing using the same authenticated network profile as the
 //! hosted driver. This handle retains neither tasks nor protocol storage.
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 use capnp::private::capability::{ClientHook, JoinedCapability};
 
 pub struct Joiner<V: 'static> {

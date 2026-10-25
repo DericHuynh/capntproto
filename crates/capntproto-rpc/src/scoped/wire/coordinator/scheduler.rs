@@ -3,12 +3,12 @@
 //! A ready bit is an obligation to poll a lane, not proof that it can progress.
 //! Only the lane may certify itself idle. Yield retains the bit and uses the
 //! executor waker directly; application notifications invalidate certificates.
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc,
-};
-use std::task::{Wake, Waker};
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
+use core::sync::atomic::AtomicU8;
+use core::sync::atomic::Ordering;
+use core::task::Waker;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]

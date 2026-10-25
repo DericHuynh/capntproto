@@ -21,6 +21,7 @@
 
 //! Capability descriptors, import/export resolution and third-party introductions.
 use super::*;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 
 pub(super) fn reference_error(error: capntproto_rpc_engine::references::Error) -> Error {
     use capntproto_rpc_engine::references::Error as RefError;

@@ -10,7 +10,7 @@ pub struct Import<T = ()> {
     pub value: T,
     // Allocate shared state on first metadata or subscription. A subscription
     // preserves future changes even when no descriptor has arrived yet.
-    metadata: std::cell::OnceCell<Rc<MetadataSource>>,
+    metadata: core::cell::OnceCell<Rc<MetadataSource>>,
 }
 impl<T> Import<T> {
     pub fn new(value: T) -> Self {
@@ -21,7 +21,7 @@ impl<T> Import<T> {
     }
     /// Keep the first descriptor, including one received through a later alias.
     /// A redundant descriptor is dropped without replacing existing ownership.
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     pub fn attach(&mut self, fd: Rc<std::os::fd::OwnedFd>) {
         self.update_metadata(|metadata| {
             if metadata.fd.is_none() {
@@ -130,16 +130,15 @@ mod tests {
         owned::Frame,
         rpc_capnp::api::{CapDescriptor, Message, Resolve},
     };
-    use std::{
-        io::Read,
-        num::NonZeroUsize,
-        os::{fd::OwnedFd, unix::net::UnixStream},
-    };
+    use core::num::NonZeroUsize;
+    use std::io::Read;
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
 
     #[test]
     fn attached_import_survives_alias_resolution_hook_and_connection_teardown() {
         let (resource, mut peer) = UnixStream::pair().unwrap();
-        peer.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        peer.set_read_timeout(Some(core::time::Duration::from_secs(2)))
             .unwrap();
         let fd = Rc::new(OwnedFd::from(resource));
         let weak = Rc::downgrade(&fd);
@@ -234,7 +233,7 @@ mod tests {
                     // redundant descriptor. The owned client keeps its first one.
                     let (other, mut other_peer) = UnixStream::pair().unwrap();
                     other_peer
-                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                        .set_read_timeout(Some(core::time::Duration::from_secs(2)))
                         .unwrap();
                     let mut next = [Some(Rc::new(OwnedFd::from(other)))];
                     let frame = Frame::build(messages, 512, Default::default(), |builder| {

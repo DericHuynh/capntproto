@@ -1,11 +1,12 @@
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::capability::Promise;
 use capnp::Error;
 
+use alloc::rc::Rc;
 use capntproto_rpc_engine::completion::shared as oneshot;
+use core::cell::RefCell;
+use core::time::Duration;
 use futures::TryFutureExt;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::time::Duration;
 
 use crate::task_set::{TaskReaper, TaskSet, TaskSetHandle};
 
@@ -13,13 +14,16 @@ use capntproto_rpc_engine::flow_control::Window;
 
 pub(crate) const DEFAULT_WINDOW_SIZE: usize = 65536;
 
+#[cfg(feature = "std")]
 #[derive(Clone)]
 pub(crate) enum Policy {
     Fixed(usize),
     Variable(Rc<dyn Fn() -> usize>),
+    #[cfg(feature = "std")]
     Adaptive(usize),
 }
 
+#[cfg(feature = "std")]
 impl Policy {
     pub(crate) fn controller(&self) -> (Box<dyn crate::FlowController>, Promise<(), Error>) {
         match self {
@@ -28,6 +32,7 @@ impl Policy {
                 let getter = getter.clone();
                 crate::new_variable_window_flow_controller(move || getter())
             }
+            #[cfg(feature = "std")]
             Self::Adaptive(size) => crate::new_adaptive_flow_controller(*size),
         }
     }
@@ -55,7 +60,7 @@ impl WindowState {
     fn take_ready(&mut self) -> Vec<oneshot::Sender<Result<(), Error>>> {
         if self.is_ready() {
             if let State::Running(waiters) = &mut self.state {
-                return std::mem::take(waiters);
+                return core::mem::take(waiters);
             }
         }
         Vec::new()
@@ -81,7 +86,7 @@ impl TaskReaper<Error> for Reaper {
                 return;
             }
             let State::Running(waiters) =
-                std::mem::replace(&mut inner.state, State::Failed(error.clone()))
+                core::mem::replace(&mut inner.state, State::Failed(error.clone()))
             else {
                 unreachable!()
             };
@@ -218,7 +223,7 @@ impl Drop for WindowFlowController {
         // Credit promises are not delivery receipts. The driver still owns all
         // outstanding acknowledgements and completes once they settle.
         let waiters = match &mut self.inner.borrow_mut().state {
-            State::Running(waiters) => std::mem::take(waiters),
+            State::Running(waiters) => core::mem::take(waiters),
             State::Failed(_) => Vec::new(),
         };
         for waiter in waiters {

@@ -1,18 +1,18 @@
 //! Two execution interests over one local protected method. Only wake metadata
 //! crosses threads; the method and its owners remain on the local executor.
+use alloc::rc::Rc;
+use alloc::sync::Arc;
+use alloc::task::Wake;
 use capnp::Error;
+use core::cell::RefCell;
+use core::future::Future;
+use core::pin::Pin;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
+use core::task::Context;
+use core::task::Poll;
+use core::task::Waker;
 use futures::task::AtomicWaker;
-use std::{
-    cell::RefCell,
-    future::Future,
-    pin::Pin,
-    rc::Rc,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    task::{Context, Poll, Wake, Waker},
-};
 struct Notify {
     ready: AtomicBool,
     branches: [AtomicWaker; 2],

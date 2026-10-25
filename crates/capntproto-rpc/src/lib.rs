@@ -25,8 +25,9 @@
 //!
 //! With default features disabled, this crate is `no_std` and requires no allocator.
 //! Use [`bounded`] for caller-backed RPC dispatch and [`engine`] for its resource
-//! and polling contracts. `alloc` adds shared reply ownership; `std` (the default)
-//! enables the existing owned clients, server hooks and transport adapters.
+//! and polling contracts. `alloc` enables the legacy owned clients, server hooks and RPC connection
+//! machinery without std; `std` (the default) adds OS transport adapters and the
+//! default monotonic clock. The alloc profile still requires a global allocator.
 //! These profiles do not make a caller-provided service or IO implementation allocation-free.
 //!
 //! # Example
@@ -66,6 +67,27 @@
 //!
 //! For a more complete example, see <https://github.com/capnproto/capnproto-rust/tree/master/capnp-rpc/examples/calculator>
 
+#[cfg(feature = "alloc")]
+#[macro_use]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+#[cfg(all(test, not(feature = "std")))]
+extern crate std;
+#[cfg(feature = "alloc")]
+mod collections;
+#[cfg(feature = "alloc")]
+mod sync;
+#[cfg(feature = "std")]
+type MessagePool = capnp::message::SegmentPool;
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+#[derive(Clone)]
+enum MessagePool {}
+
 /// Portable protocol transitions and caller-owned resources. The optional
 /// `alloc` profile also enables shared completion owners without requiring std.
 pub use capntproto_rpc_engine as engine;
@@ -73,41 +95,43 @@ pub use capntproto_rpc_engine as engine;
 /// Available in every profile; all storage, IO and execution remain caller supplied.
 pub use capntproto_rpc_wire as bounded;
 
+#[cfg(feature = "alloc")]
+use alloc::rc::Rc;
 #[cfg(feature = "std")]
+use alloc::rc::Weak;
+#[cfg(feature = "alloc")]
 use capnp::capability::Promise;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use capnp::private::capability::ClientHook;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use capnp::Error;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
+use core::cell::RefCell;
+#[cfg(feature = "alloc")]
+use core::pin::Pin;
+#[cfg(feature = "alloc")]
+use core::task::{Context, Poll};
+#[cfg(feature = "alloc")]
 use futures::{Future, FutureExt};
-#[cfg(feature = "std")]
-use std::cell::RefCell;
-#[cfg(feature = "std")]
-use std::pin::Pin;
-#[cfg(feature = "std")]
-use std::rc::{Rc, Weak};
-#[cfg(feature = "std")]
-use std::task::{Context, Poll};
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use crate::rpc::join::Joiner;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use crate::system::Disconnector;
 /// Task-owned hosted runtime over the portable engine. This opt-in replacement
 /// integrates authenticated introductions, independent-path Join, answer handoff
 /// and third-party tail transfer. Live flow limits and diagnostics are supported.
 /// It remains opt-in pending performance qualification and remaining Join parity.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub mod portable;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use crate::task_set::TaskSet;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use crate::reconnect::{auto_reconnect, lazy_auto_reconnect, SetTarget};
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod pipeline_builder;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use pipeline_builder::PipelineBuilder;
 
 /// Code generated from
@@ -123,79 +147,81 @@ pub use capntproto_rpc_wire::rpc_twoparty_capnp;
 /// Unwraps a `Result<T, E>`. In the case of an error `Err(e)`, immediately returns from the
 /// enclosing function with `Promise::err(e)`.
 #[macro_export]
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 macro_rules! pry {
     ($expr:expr) => {
         match $expr {
-            ::std::result::Result::Ok(val) => val,
-            ::std::result::Result::Err(err) => {
-                return ::capnp::capability::Promise::err(::std::convert::From::from(err))
+            ::core::result::Result::Ok(val) => val,
+            ::core::result::Result::Err(err) => {
+                return ::capnp::capability::Promise::err(::core::convert::From::from(err))
             }
         }
     };
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod admission;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod attach;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use admission::{ConnectionSnapshot, RpcDiagnostics};
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod bootstrap;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use bootstrap::Bootstrapper;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod broken;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod fd;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod flow_control;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod local;
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+pub use local::ClientRegistry;
 #[cfg(feature = "std")]
 pub mod membrane;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub mod multiparty;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod queued;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod reconnect;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod revocable;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub mod scoped;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use revocable::RevocableServer;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod rpc;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod sender_queue;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod split;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod system;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod transport_frame;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub use transport_frame::OutgoingFrame;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 mod task_set;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub mod third_party;
 #[cfg(feature = "std")]
 pub mod twoparty;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use capnp::message;
 
 /// A message to be sent by a [`VatNetwork`].
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait OutgoingMessage {
     /// Attach owned descriptor references. Retain these until the queued write
     /// completes, even if the application drops its capability or send promise.
     /// A transport without descriptor support may discard them (the default).
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn set_fds(&mut self, _fds: Vec<Rc<std::os::fd::OwnedFd>>) {}
 
     /// Gets the message body, which the caller may fill in any way it wants.
@@ -291,8 +317,8 @@ pub trait OutgoingMessage {
     /// An existing guard must never be replaced before its write completes.
     fn retain_until_sent(
         &mut self,
-        guard: Rc<dyn std::any::Any>,
-    ) -> Result<(), Rc<dyn std::any::Any>> {
+        guard: Rc<dyn core::any::Any>,
+    ) -> Result<(), Rc<dyn core::any::Any>> {
         Err(guard)
     }
 
@@ -309,7 +335,7 @@ pub trait OutgoingMessage {
 /// Whether the standard dispatcher releases this message before its next read.
 /// Calls and Returns may retain parameter/result storage, including capabilities.
 /// Unknown discriminants are short-lived and follow Unimplemented handling.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub fn is_short_lived_rpc_message(body: capnp::any_pointer::Reader<'_>) -> capnp::Result<bool> {
     use capnp::traits::IntoInternalStructReader;
     // rpc.capnp Message's union tag occupies the first u16. Its wire tags are
@@ -323,7 +349,7 @@ pub fn is_short_lived_rpc_message(body: capnp::any_pointer::Reader<'_>) -> capnp
 }
 
 /// A message received from a [`VatNetwork`].
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait IncomingMessage {
     /// Transfer this message directly into an application parameter owner.
     /// Transports may reuse the message allocation; opaque implementations keep
@@ -392,7 +418,7 @@ pub trait IncomingMessage {
     /// Transfer ownership of received descriptors to RPC. Transports must bound
     /// ancillary-data reception and close truncated descriptors. RPC additionally
     /// accepts at most 253 entries and consumes each entry at most once.
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn take_fds(&mut self) -> Vec<std::os::fd::OwnedFd> {
         Vec::new()
     }
@@ -410,7 +436,7 @@ pub trait IncomingMessage {
 }
 
 /// Exclusive, caller-polled reception for a message transport.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait IncomingMessageStream {
     /// Poll one message; Pending retains partial framing progress. The stream
     /// owns input exclusively. The connection's factory specifies whether
@@ -425,7 +451,7 @@ pub trait IncomingMessageStream {
 /// A successful frame remains immutable and available until `finish_frame`;
 /// polling again before finishing returns that same frame, without reading IO.
 /// Dropping the stream ends reception. Partial progress survives Pending.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait IncomingFrameStream {
     /// A complete next frame is available without IO or transferring ownership.
     /// This hint permits bounded reply batching; false always remains valid.
@@ -439,7 +465,7 @@ pub trait IncomingFrameStream {
     /// The allocation may contain other bytes; consumers must charge its full
     /// capacity. No input is consumed. After finish_frame the stream must keep
     /// this owner immutable and detach before any conflicting read or edit.
-    fn share_frame(&mut self) -> Option<(std::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
+    fn share_frame(&mut self) -> Option<(alloc::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
         None
     }
     /// Prepare a complete frame or a validated streaming length. The default
@@ -461,13 +487,13 @@ pub trait IncomingFrameStream {
     /// Transfer descriptors belonging to the complete current frame, once.
     /// No descriptor from a prefetched successor may be returned. Untaken
     /// descriptors are released by finish_frame. Partial reads retain them.
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn take_fds(&mut self) -> Vec<std::os::fd::OwnedFd> {
         Vec::new()
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 /// Reusable frame publication into a connection's existing ordered output.
 /// Acceptance is synchronous and may defer IO until the caller ends its bounded
 /// publication turn with poll_flush. That method drives or schedules output and
@@ -495,7 +521,7 @@ pub trait OutgoingMessageStream {
 
 /// Exclusive hosted frame transport. outgoing.poll_flush must arrange output
 /// progress and retain accepted resources until local physical completion.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub struct FrameIo {
     pub incoming: Box<dyn IncomingFrameStream>,
     pub outgoing: Box<dyn OutgoingMessageStream>,
@@ -506,7 +532,7 @@ pub struct FrameIo {
 /// Immutable control-plane capability selected when a connection is admitted.
 /// TwoParty never enables introductions, answer handoffs or multiparty Join.
 /// Networks whose features may activate later must select Network from the start.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControlMode {
     TwoParty,
@@ -514,7 +540,7 @@ pub enum ControlMode {
 }
 
 /// A two-way RPC connection, created by [`VatNetwork::connect()`].
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait Connection<VatId> {
     /// This value is fixed for the lifetime of this transport connection.
     fn control_mode(&self) -> ControlMode;
@@ -764,7 +790,7 @@ pub trait Connection<VatId> {
         &mut self,
         _recipient: capnp::any_pointer::Reader<'_>,
         _value: Rc<third_party::ThirdPartyExchange>,
-    ) -> capnp::Result<Box<dyn std::any::Any>> {
+    ) -> capnp::Result<Box<dyn core::any::Any>> {
         Err(Error::unimplemented(
             "third-party rendezvous unavailable".into(),
         ))
@@ -799,7 +825,7 @@ pub trait Connection<VatId> {
 /// Poll the driver until it completes. A successful send grants flow credit;
 /// it does not acknowledge delivery. Dropping the controller releases blocked
 /// senders; the driver retains outstanding acknowledgements until they finish.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub fn new_fixed_window_flow_controller(
     window_size: usize,
 ) -> (Box<dyn FlowController>, Promise<(), Error>) {
@@ -815,7 +841,7 @@ pub fn new_fixed_window_flow_controller(
 /// Changing the estimate alone does not wake blocked sends; the next successful
 /// acknowledgement rechecks them. At zero, credit remains available while
 /// in-flight bytes do not exceed the largest message observed.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub fn new_variable_window_flow_controller(
     get_window: impl Fn() -> usize + 'static,
 ) -> (Box<dyn FlowController>, Promise<(), Error>) {
@@ -842,10 +868,10 @@ pub fn new_adaptive_flow_controller(
 /// or executors that supply their own time. Estimates have microsecond precision;
 /// zero-length intervals do not update the window. Clock sampling requires no
 /// timer task and does not depend on a particular async runtime.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub fn new_adaptive_flow_controller_with_clock(
     initial_window: usize,
-    clock: impl Fn() -> std::time::Duration + 'static,
+    clock: impl Fn() -> core::time::Duration + 'static,
 ) -> (Box<dyn FlowController>, Promise<(), Error>) {
     let (controller, driver) =
         crate::flow_control::WindowFlowController::new(initial_window, None, Some(Rc::new(clock)));
@@ -853,7 +879,7 @@ pub fn new_adaptive_flow_controller_with_clock(
 }
 
 /// Tracks a particular RPC stream in order to implement a flow control algorithm.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait FlowController {
     fn send(
         &mut self,
@@ -870,7 +896,7 @@ pub trait FlowController {
 ///
 /// Cap'n Proto RPC operates between vats, where a "vat" is some sort of host of
 /// objects.  Typically one Cap'n Proto process (in the Unix sense) is one vat.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait VatNetwork<VatId> {
     /// Transfer physical output to the portable runtime's final phase. After
     /// extraction, connection publication only queues owned frames; lifecycle
@@ -910,12 +936,12 @@ pub trait VatNetwork<VatId> {
 /// Bootstrap message content. The factory runs once per request, so it may
 /// apply current application policy. Previously issued capabilities retain
 /// their authority unless the application separately revokes them.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub trait BootstrapFactory<VatId> {
     fn create_for(&self, client_id: &VatId) -> capnp::Result<capnp::capability::Client>;
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub(crate) enum Bootstrap<VatId> {
     Static(Box<dyn ClientHook>),
     Factory {
@@ -923,7 +949,7 @@ pub(crate) enum Bootstrap<VatId> {
         local_id: Rc<VatId>,
     },
 }
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<VatId> Clone for Bootstrap<VatId> {
     fn clone(&self) -> Self {
         match self {
@@ -935,7 +961,7 @@ impl<VatId> Clone for Bootstrap<VatId> {
         }
     }
 }
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<VatId> Bootstrap<VatId> {
     fn for_peer(&self, peer: &VatId) -> capnp::Result<Box<dyn ClientHook>> {
         match self {
@@ -965,7 +991,7 @@ impl<VatId> Bootstrap<VatId> {
 /// executor. A common way accomplish that is to pass the `RpcSystem` to
 /// `tokio::task::spawn_local()`.
 #[must_use = "futures do nothing unless polled"]
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub struct RpcSystem<VatId>
 where
     VatId: 'static,
@@ -981,7 +1007,7 @@ where
     handle: crate::task_set::TaskSetHandle<Error>,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<VatId> RpcSystem<VatId> {
     /// Constructs a new `RpcSystem` with the given network and bootstrap capability.
     pub fn new(
@@ -1182,7 +1208,7 @@ impl<VatId> RpcSystem<VatId> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<VatId: 'static> Drop for RpcSystem<VatId> {
     fn drop(&mut self) {
         let states = system::ConnectionRegistry::begin_close(&self.connections);
@@ -1192,7 +1218,7 @@ impl<VatId: 'static> Drop for RpcSystem<VatId> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<VatId> Future for RpcSystem<VatId>
 where
     VatId: 'static,
@@ -1207,7 +1233,7 @@ where
 /// your local executor. Dropping it releases the executor's task ownership;
 /// calls with no remaining caller are then canceled.
 /// Incoming RPC calls use their RpcSystem's task owner automatically.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub fn new_call_executor() -> (Rc<dyn capnp::capability::CallExecutor>, Promise<(), Error>) {
     struct Reaper;
     impl task_set::TaskReaper<Error> for Reaper {
@@ -1220,9 +1246,9 @@ pub fn new_call_executor() -> (Rc<dyn capnp::capability::CallExecutor>, Promise<
     )
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub(crate) struct CallTaskExecutor(task_set::TaskSetHandle<Error>);
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl capnp::capability::CallExecutor for CallTaskExecutor {
     fn spawn(&self, task: Promise<(), Error>) -> capnp::Result<()> {
         self.0
@@ -1330,8 +1356,8 @@ pub fn new_dynamic_client_from_rc<S: capnp::dynamic_capability::Server>(
 /// Export a local server with a Unix file descriptor. Calls continue to work
 /// over transports which discard descriptors. The descriptor is owned by the
 /// capability and retained by any outgoing messages still waiting to be written.
-#[cfg(unix)]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", unix))]
+#[cfg(feature = "alloc")]
 pub fn new_fd_client<C, S>(server: S, fd: std::os::fd::OwnedFd) -> C
 where
     C: capnp::capability::FromServer<S>,
@@ -1344,8 +1370,8 @@ where
 }
 
 /// Variant of [`new_fd_client`] that also owns protected direct local calls.
-#[cfg(unix)]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", unix))]
+#[cfg(feature = "alloc")]
 pub fn new_fd_client_with_executor<C, S>(
     server: S,
     fd: std::os::fd::OwnedFd,
@@ -1385,8 +1411,8 @@ pub struct CapabilityServerSet<S, C>
 where
     C: capnp::capability::FromServer<S>,
 {
-    caps: std::collections::HashMap<usize, Weak<S>>,
-    marker: std::marker::PhantomData<C>,
+    caps: crate::collections::HashMap<usize, Weak<S>>,
+    marker: core::marker::PhantomData<C>,
 }
 
 #[cfg(feature = "std")]
@@ -1396,8 +1422,8 @@ where
 {
     fn default() -> Self {
         Self {
-            caps: std::default::Default::default(),
-            marker: std::marker::PhantomData,
+            caps: core::default::Default::default(),
+            marker: core::marker::PhantomData,
         }
     }
 }
@@ -1505,7 +1531,7 @@ where
 /// Creates a `Client` from a future that resolves to a `Client`.
 ///
 /// Any calls that arrive before the resolution are accumulated in a queue.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub fn new_future_client<T>(
     client_future: impl ::futures::Future<Output = Result<T, Error>> + 'static,
 ) -> T
@@ -1525,16 +1551,19 @@ where
     T::new(Box::new(queued_client))
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 struct SystemTaskReaper;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl crate::task_set::TaskReaper<Error> for SystemTaskReaper {
     fn task_failed(&mut self, error: Error) {
+        #[cfg(feature = "std")]
         println!("ERROR: {error}");
+        #[cfg(not(feature = "std"))]
+        drop(error);
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub struct ImbuedMessageBuilder<A>
 where
     A: ::capnp::message::Allocator,
@@ -1543,7 +1572,7 @@ where
     cap_table: Vec<Option<Box<dyn ::capnp::private::capability::ClientHook>>>,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<A> ImbuedMessageBuilder<A>
 where
     A: ::capnp::message::Allocator,
@@ -1576,14 +1605,14 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 fn canceled_to_error(_e: capntproto_rpc_engine::completion::Error) -> Error {
     Error::failed("oneshot was canceled".to_string())
 }
 
 /// Standard typed Persistent(SturdyRef, Owner) interface from the pinned C++ schema.
 #[allow(clippy::extra_unused_type_parameters)] // Generated generic schema helpers.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub mod persistent_capnp {
     include!(concat!(env!("OUT_DIR"), "/persistent_capnp.rs"));
 }

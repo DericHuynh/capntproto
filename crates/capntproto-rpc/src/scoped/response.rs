@@ -3,6 +3,7 @@
 //! This is the hosted request adapter, not a second wire ledger.
 use super::*;
 use crate::local::ResultsDoneHook;
+use alloc::{boxed::Box, vec::Vec};
 
 struct Connection {
     shutdown: Shutdown,
@@ -11,7 +12,7 @@ struct Connection {
 
 #[derive(Default)]
 pub(super) struct State {
-    connection: std::cell::OnceCell<Connection>,
+    connection: core::cell::OnceCell<Connection>,
     // One weak shutdown subscription follows this completion allocation through
     // reuse; cached states carry no task waker or application result.
     close_watch: RefCell<Option<Shutdown>>,
@@ -229,7 +230,7 @@ pub(super) enum Results {
 }
 pub(super) struct DirectResults {
     sender: Option<ResultsSender>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
     pipeline: Option<Weak<wire::PipelineState>>,
 }
 impl DirectResults {
@@ -260,7 +261,7 @@ impl Drop for DirectResults {
 
 struct SharedPayloadResponse {
     payload: Rc<wire::Payload>,
-    _context: Option<Rc<dyn std::any::Any>>,
+    _context: Option<Rc<dyn core::any::Any>>,
 }
 impl capnp::private::capability::ResponseHook for SharedPayloadResponse {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
@@ -308,7 +309,7 @@ impl Results {
         }
         Ok(())
     }
-    fn direct(sender: ResultsSender, context: Option<Rc<dyn std::any::Any>>) -> Self {
+    fn direct(sender: ResultsSender, context: Option<Rc<dyn core::any::Any>>) -> Self {
         Self::Direct(DirectResults {
             sender: Some(sender),
             context,
@@ -393,7 +394,7 @@ impl Results {
             Self::Direct(_) => unreachable!(),
         }
     }
-    pub(super) fn retain_context(&mut self, context: Rc<dyn std::any::Any>) {
+    pub(super) fn retain_context(&mut self, context: Rc<dyn core::any::Any>) {
         match self {
             Self::Unsent => unreachable!("unadmitted request"),
             Self::Hook(hook) => hook.retain_response_context(context),
@@ -669,7 +670,7 @@ pub(crate) fn request(
     method: u16,
     hints: CallHints,
     params: Box<crate::local::Request>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let hook = client
         .as_any()
@@ -686,7 +687,7 @@ pub(crate) fn request_scoped(
     method: u16,
     hints: CallHints,
     params: Box<crate::local::Request>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let state = hook
         .0
@@ -768,7 +769,7 @@ pub(super) fn request_pipelined_prepared(
 
 struct OwnedResponse {
     payload: wire::Payload,
-    _context: Option<Rc<dyn std::any::Any>>,
+    _context: Option<Rc<dyn core::any::Any>>,
 }
 impl capnp::private::capability::ResponseHook for OwnedResponse {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
@@ -777,7 +778,7 @@ impl capnp::private::capability::ResponseHook for OwnedResponse {
 }
 fn owned_response(
     mut payload: wire::Payload,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
 ) -> Box<dyn capnp::private::capability::ResponseHook> {
     let context = context.and_then(|context| payload.retain_plain_context(context).err());
     if context.is_none() {
@@ -793,7 +794,7 @@ impl ResultsSender {
     pub(crate) fn send_payload(
         self,
         payload: wire::Payload,
-        context: Option<Rc<dyn std::any::Any>>,
+        context: Option<Rc<dyn core::any::Any>>,
     ) {
         self.send_response(owned_response(payload, context));
     }

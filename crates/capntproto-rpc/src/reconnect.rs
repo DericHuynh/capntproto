@@ -1,7 +1,8 @@
+use alloc::boxed::Box;
+use alloc::rc::Rc;
 use capnp::capability::CallHints;
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
+use core::cell::RefCell;
+use core::marker::PhantomData;
 
 use capnp::capability::{FromClientHook, Promise};
 use capnp::private::capability::{ClientHook, RequestHook};

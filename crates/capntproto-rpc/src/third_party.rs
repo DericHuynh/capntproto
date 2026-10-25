@@ -2,13 +2,14 @@
 // Licensed under the MIT license; see LICENSE.
 
 //! Opaque exchanges shared by authenticated VatNetwork connections.
+use crate::collections::HashMap;
+use alloc::rc::Rc;
+use alloc::{boxed::Box, vec::Vec};
 use capnp::capability::Promise;
 use capnp::private::capability::{ClientHook, PipelineHook, ResponseHook};
 use capnp::Error;
 use capntproto_rpc_engine::completion::shared as oneshot;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
+use core::cell::RefCell;
 
 struct Embargo {
     state: capntproto_rpc_engine::provision::EmbargoState,

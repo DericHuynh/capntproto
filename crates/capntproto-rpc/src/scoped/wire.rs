@@ -2,6 +2,7 @@
 //! this adapter in the same scope as the driver and polls it alongside IO,
 //! protocol maintenance and application execution.
 use super::*;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::private::capability::{PipelineHook, PipelineOp};
 use capnp::traits::{Imbue, ImbueMut};
 use capntproto_rpc_engine::messages;
@@ -66,8 +67,8 @@ impl Payload {
     }
     pub(crate) fn retain_plain_context(
         &mut self,
-        context: Rc<dyn std::any::Any>,
-    ) -> Result<(), Rc<dyn std::any::Any>> {
+        context: Rc<dyn core::any::Any>,
+    ) -> Result<(), Rc<dyn core::any::Any>> {
         if let PayloadBody::Admitted(message) = &mut self.body {
             debug_assert!(self.caps.is_empty());
             message.retain_owner(context);
@@ -177,7 +178,7 @@ impl PipelineHook for PayloadPipeline {
 
 #[cold]
 #[inline(never)]
-fn wire_error(error: impl std::fmt::Display) -> Error {
+fn wire_error(error: impl core::fmt::Display) -> Error {
     Error::failed(error.to_string())
 }
 
@@ -873,7 +874,8 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) {
         if matches!(self.route, CallRoute::Tail(_)) {
-            let CallRoute::Tail(response) = std::mem::replace(&mut self.route, CallRoute::Finished)
+            let CallRoute::Tail(response) =
+                core::mem::replace(&mut self.route, CallRoute::Finished)
             else {
                 unreachable!()
             };
@@ -1283,6 +1285,7 @@ impl PipelineState {
     ) -> crate::local::Params {
         let inbox = self.inbox.upgrade();
         let allocator = crate::local::result_allocator(size);
+        #[cfg(feature = "std")]
         let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
             Some(pool) => allocator.segment_pool(pool.clone()),
             None => allocator,
@@ -1337,7 +1340,7 @@ impl PipelineState {
         }
         let old = self.adopted.replace(Some(published));
         drop(old);
-        let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
+        let waiting = core::mem::take(&mut *self.waiting.borrow_mut());
         for projection in waiting {
             if let Some(client) = projection.client.upgrade() {
                 client.resolve(Ok(pipeline.get_pipelined_cap(&projection.path)));
@@ -1356,10 +1359,10 @@ impl PipelineState {
         let pipeline_ref = pipeline.add_ref();
         let old = self.finished.replace(Some(pipeline));
         drop(old);
-        let cached = std::mem::take(&mut *self.cached.borrow_mut());
+        let cached = core::mem::take(&mut *self.cached.borrow_mut());
         let adopted = self.adopted.borrow_mut().take();
         drop((cached, adopted));
-        let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
+        let waiting = core::mem::take(&mut *self.waiting.borrow_mut());
         for projection in waiting {
             if let Some(client) = projection.client.upgrade() {
                 client.resolve(Ok(pipeline_ref.get_pipelined_cap(&projection.path)));
@@ -1374,7 +1377,7 @@ pub(crate) struct PipelineRef(
     // its producer; no shared future or recursive pipeline polling is needed.
     Option<response::PipelineInterest>,
 );
-impl std::ops::Deref for PipelineRef {
+impl core::ops::Deref for PipelineRef {
     type Target = Rc<PipelineState>;
     fn deref(&self) -> &Self::Target {
         self.0.as_ref().expect("live pipeline interest")
@@ -1526,7 +1529,7 @@ pub(super) fn request_projected(
     method: u16,
     hints: CallHints,
     mut params: Box<crate::local::Request>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let projected = client
         .as_any()
@@ -1545,7 +1548,7 @@ pub(super) fn request_projected(
     response
 }
 impl ClientHook for Projected {
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
         Some(self)
     }
     fn get_failure(&self) -> Option<Error> {
@@ -1554,7 +1557,7 @@ impl ClientHook for Projected {
     fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
         self.inner.metadata_changes()
     }
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.inner.get_fd()
     }

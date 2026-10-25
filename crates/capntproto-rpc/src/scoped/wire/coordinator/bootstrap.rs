@@ -1,6 +1,7 @@
 //! Bootstrap policy for a two-party stream. Factories run once per
 //! admitted request; output backpressure only retries publication.
 use super::*;
+use alloc::boxed::Box;
 
 /// Two-party control handler with a caller-supplied bootstrap factory. Capture
 /// the transport's authenticated peer identity in the factory when applying
