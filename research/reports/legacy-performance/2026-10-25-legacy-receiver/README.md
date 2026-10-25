@@ -45,4 +45,27 @@ Qualification `9950969c0c140032667e5f1822c0c354adbd9aa8`,
 [run 40189088815](https://github.com/DericHuynh/capntproto/actions/runs/40189088815),
 passes all 34 strict-provenance Miri executions: four receiver cases in each
 fixed/alloc profile and pointer width (16), plus nine actual legacy conversations
-on both widths (18). Hosted validation passes; repeated profiles remain running.
+on both widths (18). Full hosted validation and all 240 profile trials pass. Question-lifetime plus
+scheduler Ir/Bc/Bi slopes are identical in every one of five samples after
+including both the old QuestionReply and concrete Receiver names. The apparent
++480 Ir/-480 Ir function pair in the concurrent trace is exact drop-glue renaming,
+not additional work. owner-name-analysis.json reconciles only the exact hosted
+alias; borrowed and nondefault receiver types remain distinct. The reproducible
+canonicalizer is verification/legacy-alloc/canonicalize-owner-types.py.
+
+All 708 common normalized assembly bodies match; six removed and six added
+selected symbols name the concrete reply alias instead. Reconciling their exact
+alias definitions also matches all714 normalized bodies; no unmatched selected
+symbols remain (owner-assembly-analysis.json). This normalization
+compares offsets/instruction forms, not complete binary bytes or native timing.
+TLS allocation counts remain 7/57/202. Full byte/QUIC samples are retained.
+
+Whole-program means vary by -0.038% to +0.015% Ir. Deep Ir rises 46.410 with paired
+sample SD18.962; libc memcpy accounts for +62.880 ±0.084 Ir and +64.570 ±0.224 Bc,
+while memset falls 7.650 ±2.795 Ir. Common helper equality does not erase these
+end-to-end differences or prove their cause. Simulated conditional misses rise
+0.595% in pipelined reads and0.006% in deep; tiny Bim increases in three cases also
+remain in the report. Native latency has not been qualified.
+
+The raw archive is artifact12598266131, 82,866,301 bytes, SHA-256
+1af8dd63d9f2e5ed7213498afa989a5bf9a50f7720a642fa51b84df16d589cac.

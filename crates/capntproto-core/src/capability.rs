@@ -24,6 +24,7 @@
 //! Roughly corresponds to capability.h in the C++ implementation.
 //! Parameters and responses can retain concrete frame owners in every profile.
 //! Requests can retain concrete parameter/publication owners in every profile.
+//! Clients can retain borrowed capability contexts and create concrete requests.
 //! Dynamic client and dispatch hooks are enabled by `alloc`.
 
 use core::future::Future;
@@ -41,12 +42,14 @@ use crate::traits::Pipelined;
 #[cfg(feature = "alloc")]
 use crate::{Error, MessageSize};
 
+mod client_storage;
 #[cfg(test)]
 mod owner_views;
 mod payload_storage;
 #[cfg(test)]
 mod promise_owners;
 mod request_storage;
+pub use client_storage::ClientStorage;
 pub use payload_storage::PayloadStorage;
 pub use request_storage::{PreparedRequest, RequestStorage};
 
@@ -861,10 +864,42 @@ pub struct CallHints {
     pub only_promise_pipeline: bool,
 }
 
-/// An untyped client.
+/// An untyped client retaining its concrete capability owner.
 #[cfg(feature = "alloc")]
-pub struct Client {
-    pub hook: alloc::boxed::Box<dyn ClientHook>,
+pub struct Client<H = alloc::boxed::Box<dyn ClientHook>> {
+    pub hook: H,
+}
+#[cfg(not(feature = "alloc"))]
+pub struct Client<H> {
+    pub hook: H,
+}
+
+impl<H> Client<H> {
+    /// Retain the caller's original context/capability lease. This does not
+    /// register a capability, allocate storage or extend the owner's lifetime.
+    pub fn from_owner(hook: H) -> Self {
+        Self { hook }
+    }
+    pub fn into_owner(self) -> H {
+        self.hook
+    }
+    /// Reserve concrete request storage through this capability's provider.
+    /// Rejection must leave the capability usable and retain the provider's
+    /// capacity and protocol-ID invariants. Sending uses RequestStorage.
+    pub fn try_new_call<P, R>(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        size_hint: Option<crate::MessageSize>,
+        hints: CallHints,
+    ) -> crate::Result<Request<P, R, H::Request<'_>>>
+    where
+        H: ClientStorage<P, R>,
+    {
+        self.hook
+            .try_new_call(interface_id, method_id, size_hint, hints)
+            .map(Request::from_owner)
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -984,11 +1019,10 @@ impl FromClientHook for Client {
     }
 }
 
-#[cfg(feature = "alloc")]
-impl Clone for Client {
+impl<H: Clone> Clone for Client<H> {
     fn clone(&self) -> Self {
         Self {
-            hook: self.hook.add_ref(),
+            hook: self.hook.clone(),
         }
     }
 }

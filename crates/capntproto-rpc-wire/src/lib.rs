@@ -32,6 +32,8 @@ pub mod reception;
 #[cfg(test)]
 mod call_owners;
 #[cfg(test)]
+mod client_owners;
+#[cfg(test)]
 mod request_owners;
 mod resources;
 #[cfg(test)]
