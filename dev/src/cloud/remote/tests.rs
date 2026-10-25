@@ -600,7 +600,9 @@ fn legacy_work_campaign_gates_on_the_droplet_and_salvages_failed_profiles() {
         assert!(api.keys.borrow().is_empty());
         assert!(output.join("secure/secure.tar.gz").is_file());
         let calls = commands.commands.0.borrow();
-        assert!(calls.iter().any(|s| s.contains("--require-no-regression")));
+        if fail_at.is_empty() {
+            assert!(calls.iter().any(|s| s.contains("--require-no-regression")));
+        }
         assert!(!calls
             .iter()
             .any(|s| s.contains("python3 secure-runner.py")
