@@ -34,13 +34,8 @@ mod queue;
 mod ready_set;
 use ready_set::ReadySet;
 
-enum EnqueuedTask<E> {
-    Task(Pin<Box<dyn Future<Output = Result<(), E>>>>),
-    Last(Pin<Box<dyn Future<Output = Result<(), E>>>>),
-    Connection(Pin<Box<dyn Future<Output = Result<(), E>>>>),
-    Terminate(Result<(), E>),
-    OnEmpty(oneshot::Sender<()>),
-}
+type EnqueuedTask<E> =
+    scheduler::Command<Pin<Box<dyn Future<Output = Result<(), E>>>>, E, oneshot::Sender<()>>;
 
 struct Activity {
     ready: AtomicBool,
@@ -262,15 +257,7 @@ impl<E> scheduler::Source for Source<'_, E> {
         let Some(source) = self.0.as_mut() else {
             return Poll::Ready(None);
         };
-        source.poll_next(cx).map(|next| {
-            next.map(|item| match item {
-                EnqueuedTask::Task(f) => scheduler::Command::Task(f),
-                EnqueuedTask::Last(f) => scheduler::Command::Last(f),
-                EnqueuedTask::Connection(f) => scheduler::Command::Connection(f),
-                EnqueuedTask::Terminate(r) => scheduler::Command::Terminate(r),
-                EnqueuedTask::OnEmpty(f) => scheduler::Command::OnEmpty(f),
-            })
-        })
+        source.poll_next(cx)
     }
     #[inline(always)]
     fn is_empty(&self) -> bool {
