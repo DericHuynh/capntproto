@@ -153,53 +153,19 @@ impl<VatId> direct::Owner<Promise<Response<VatId>, Error>> for QuestionCell<VatI
         core::cell::RefMut::map(self.borrow_mut(), |question| &mut question.reply)
     }
 }
-struct QuestionReply<VatId: 'static> {
-    reference: Option<Rc<QuestionCell<VatId>>>,
-    done: bool,
-}
-impl<VatId> QuestionReply<VatId> {
-    fn into_shared(mut self) -> Rc<QuestionCell<VatId>> {
-        assert!(!self.done, "completed question reply");
-        self.reference.take().expect("live reply")
-    }
-    fn poll_reference(
-        reference: &QuestionCell<VatId>,
-        cx: &mut Context<'_>,
-    ) -> Poll<capnp::Result<Response<VatId>>> {
-        direct::poll(reference, cx)
-    }
-    fn release(reference: &QuestionCell<VatId>) {
-        direct::release(reference);
-    }
-}
-impl<VatId> Future for QuestionReply<VatId> {
-    type Output = capnp::Result<Response<VatId>>;
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        assert!(!self.done, "question reply polled after completion");
-        let result = Self::poll_reference(self.reference.as_ref().expect("live reply"), cx);
-        if result.is_ready() {
-            self.done = true;
-            drop(self.reference.take());
-        }
-        result
-    }
-}
-impl<VatId> Drop for QuestionReply<VatId> {
-    fn drop(&mut self) {
-        if let Some(reference) = self.reference.take() {
-            Self::release(&reference);
-        }
-    }
-}
+// The hosted alias retains the same Rc/Option/bool layout. Caller-backed
+// owners use the same receiver without a box or reference count.
+type QuestionReply<VatId> =
+    direct::Receiver<Rc<QuestionCell<VatId>>, Promise<Response<VatId>, Error>>;
 impl<VatId> capnp::private::capability::SharedPromise<Box<dyn ResponseHook>, Error>
     for QuestionCell<VatId>
 {
     fn poll(&self, cx: &mut Context<'_>) -> Poll<capnp::Result<Box<dyn ResponseHook>>> {
-        QuestionReply::poll_reference(self, cx)
+        direct::poll(self, cx)
             .map(|result| result.map(|response| Box::new(response) as Box<dyn ResponseHook>))
     }
     fn cancel(self: Rc<Self>) {
-        QuestionReply::release(&self);
+        direct::release(&*self);
     }
 }
 
@@ -228,10 +194,7 @@ impl<VatId> QuestionRef<VatId> {
             reply: DirectReply::default(),
             pipeline: None,
         }));
-        let reply = QuestionReply {
-            reference: Some(reference.clone()),
-            done: false,
-        };
+        let reply = direct::Receiver::new(reference.clone());
         (reference, reply)
     }
     fn deliver(
@@ -1696,7 +1659,7 @@ where
             }
         };
         ::capnp::capability::RemotePromise {
-            promise: capnp::capability::ResponsePromise::from_shared(promise.into_shared()),
+            promise: capnp::capability::ResponsePromise::from_shared(promise.into_owner()),
             pipeline: any_pointer::Pipeline::new(match pipeline {
                 Some(pipeline) => Box::new(pipeline),
                 None => Box::new(broken::DisabledPipeline),

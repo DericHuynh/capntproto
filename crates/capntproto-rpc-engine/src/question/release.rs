@@ -85,6 +85,10 @@ impl<'a, O: Owner + ?Sized> Last<'a, O> {
             key: Some(key),
         }
     }
+    /// Borrow the retained context without storing a duplicate context pointer.
+    pub fn owner(&self) -> &O {
+        self.owner
+    }
     /// Connection teardown can take back authority without publishing Finish.
     pub fn disarm(mut self) -> O::Key {
         self.key.take().expect("armed last interest")

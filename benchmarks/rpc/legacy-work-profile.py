@@ -32,6 +32,7 @@ def assembly(path, output):
                 'capntproto_rpc_engine::tasks', 'capntproto_rpc_engine::scheduler', 'capntproto_task',
                 'capnp_rpc::rpc::QuestionRef', 'capnp_rpc::rpc::QuestionCell',
                 'capntproto_rpc_engine::question::release',
+                'capntproto_rpc_engine::completion::direct', 'capnp_rpc::rpc::QuestionReply',
                 'capnp::capability::', 'capntproto_rpc_bench::topology::access',
                 'capntproto_rpc_bench::workflows::capability::',
                 'ReturnGuard', 'answer_has_sent_return',

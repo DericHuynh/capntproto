@@ -1,6 +1,6 @@
 //! A reply embedded in its existing operation owner. Unlike a channel, this
 //! has no separately owned endpoints, allocation, task or lifetime bookkeeping.
-//! The owner serializes the unique producer and retains the operation until
+//! The owner serializes the unique producer and single receiver, retaining the operation until
 //! polling or cancellation finishes. Values and wakers leave cell borrows
 //! before polling, waking or destruction can reenter the owner.
 use core::{
@@ -9,6 +9,9 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+
+mod receiver;
+pub use receiver::Receiver;
 
 /// Inline completion storage. `T` may borrow caller-owned resources and need
 /// not allocate. A hosted driver can retain its existing owned promise here.
@@ -53,7 +56,10 @@ impl<T> Owner<T> for RefCell<Reply<T>> {
 /// Poll outside the owner's borrow. A redirected reply may suspend again.
 /// The owner must not poll after completion or cancellation.
 #[inline]
-pub fn poll<T: Future + Unpin>(owner: &impl Owner<T>, cx: &mut Context<'_>) -> Poll<T::Output> {
+pub fn poll<T: Future + Unpin>(
+    owner: &(impl Owner<T> + ?Sized),
+    cx: &mut Context<'_>,
+) -> Poll<T::Output> {
     let value = {
         let mut reply = owner.reply_mut();
         debug_assert!(!reply.observed, "question reply polled after completion");
@@ -90,7 +96,7 @@ pub fn poll<T: Future + Unpin>(owner: &impl Owner<T>, cx: &mut Context<'_>) -> P
 /// its borrow. Returns a late or replaced value intact for caller cleanup.
 /// This primitive does not provide a second producer or authorize a Return.
 #[inline]
-pub fn deliver<T>(owner: &impl Owner<T>, value: T) -> Option<T> {
+pub fn deliver<T>(owner: &(impl Owner<T> + ?Sized), value: T) -> Option<T> {
     let (previous, wake) = {
         let mut reply = owner.reply_mut();
         if reply.observed {
@@ -106,7 +112,7 @@ pub fn deliver<T>(owner: &impl Owner<T>, value: T) -> Option<T> {
 
 /// End receiver interest. Detach user values and wakers before destruction.
 #[inline]
-pub fn release<T>(owner: &impl Owner<T>) {
+pub fn release<T>(owner: &(impl Owner<T> + ?Sized)) {
     let (value, wake) = {
         let mut reply = owner.reply_mut();
         reply.observed = true;

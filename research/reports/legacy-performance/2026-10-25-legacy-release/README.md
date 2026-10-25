@@ -44,3 +44,10 @@ qualification against the preceding request-codegen source. This factors the
 legacy protocol cleanup itself, but its hosted QuestionRef still uses Rc and its
 transport still uses boxed messages. Whole no-global-allocator connection,
 capability/pipeline storage and generated dispatch integration remain pending.
+
+
+Qualification `ac011c440c0ad700c65cbe059a5f73671145697a`,
+[run 40186576383](https://github.com/DericHuynh/capntproto/actions/runs/40186576383),
+passes 42 strict-provenance Miri executions: 24 cleanup cases across both widths
+and fixed/alloc profiles, plus 18 actual legacy conversation cases across both
+widths. Full hosted verification passes; repeated profiling remains running.
