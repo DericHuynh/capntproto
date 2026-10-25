@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -16,6 +17,30 @@ from work_profile import callgrind, comparisons, slope, spread
 HERE = Path(__file__).resolve().parent
 PAIRS = [('frozen', 'factored'), ('factored', 'repeat'), ('factored', 'candidate')]
 CASES = ['unary-small', 'dependent-read', 'pipelined-read', 'concurrent-32', 'callback', 'deep-32-concurrent-32']
+
+
+def regression_gate(result):
+    """Fail closed on incomplete evidence or any higher unrounded five-run mean."""
+    rows = [row for row in result['comparisons']
+            if (row['mode'], row['transport'], row['baseline'], row['candidate'])
+            == ('callgrind', 'tls', 'factored', 'candidate')]
+    assert len(rows) == len(CASES) and {row['case'] for row in rows} == set(CASES), 'incomplete or duplicate cases'
+    failures = []
+    for row in rows:
+        assert row['repetitions'] == 5, 'five repetitions required'
+        for metric in ['Ir', 'Bcm', 'Bim']:
+            values = row['metrics'][metric]
+            for side in ['baseline', 'candidate']:
+                assert len(values[side]['samples']) == 5, 'missing repetitions'
+                assert all(math.isfinite(value) for value in values[side]['samples']), 'invalid counter'
+                assert math.isfinite(values[side]['mean']), 'invalid mean'
+            before, after = values['baseline']['mean'], values['candidate']['mean']
+            assert before >= 0 and after >= 0, 'negative work slope cannot qualify'
+            if after > before:
+                failures.append(dict(case=row['case'], metric=metric, baseline=before,
+                                     candidate=after, delta=after-before))
+    return dict(passed=not failures, metrics=['Ir', 'Bcm', 'Bim'], repetitions=5,
+                transport='tls', comparison='candidate versus factored', failures=failures)
 
 
 def save(path, value):
@@ -31,6 +56,7 @@ def assembly(path, output):
                 'sender_queue::', 'capntproto_rpc_engine::pending', 'capnp_rpc::system::registry',
                 'capntproto_rpc_engine::tasks', 'capntproto_rpc_engine::scheduler', 'capntproto_task',
                 'capnp_rpc::rpc::QuestionRef', 'capnp_rpc::rpc::QuestionCell',
+                'capnp_rpc::rpc::ImportClient', 'capntproto_rpc_engine::references::import',
                 'capntproto_rpc_engine::question::release',
                 'capntproto_rpc_engine::completion::direct', 'capnp_rpc::rpc::QuestionReply',
                 'capnp::capability::', 'capntproto_rpc_bench::topology::access',
@@ -142,12 +168,16 @@ def main():
         parser.add_argument('--' + name, type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--summarize-only', action='store_true')
+    parser.add_argument('--require-no-regression', action='store_true',
+                        help='Reject any higher five-run mean of Ir, Bcm or Bim in any TLS case.')
     parser.add_argument('--pair-only', action='store_true',
                         help='Compare factored and candidate only, after separate control calibration.')
     args = parser.parse_args()
     output = args.output.resolve()
     if args.summarize_only:
         summarize(output)
+        if args.require_no_regression:
+            qualify(output)
         return
     labels = ['factored', 'candidate'] if args.pair_only else ['frozen', 'factored', 'repeat', 'candidate']
     assert all(getattr(args, label) for label in labels if label != 'repeat')
@@ -198,6 +228,15 @@ def main():
                                 print(f'FAILED {prefix}: {error}', flush=True)
                             save(output / 'scope.json', scope)
     summarize(output)
+    if args.require_no_regression:
+        qualify(output)
+
+
+def qualify(output):
+    verdict = regression_gate(json.loads((output / 'comparison.json').read_text()))
+    save(output / 'acceptance.json', verdict)
+    if not verdict['passed']:
+        raise SystemExit(f"Ir/Bcm/Bim regressions: {verdict['failures']}")
 
 
 if __name__ == '__main__':

@@ -11,6 +11,7 @@ fn main() {
     capntproto_legacy_fixed_check::guarded_generated_invocations().unwrap();
     capntproto_legacy_fixed_check::owned_context_generated_invocations().unwrap();
     capntproto_legacy_fixed_check::pooled_frame_generated_invocations().unwrap();
+    capntproto_legacy_fixed_check::imported_generated_invocations().unwrap();
 }
 #[cfg(target_os = "none")]
 #[unsafe(no_mangle)]
@@ -23,6 +24,7 @@ pub extern "C" fn _start() -> ! {
     capntproto_legacy_fixed_check::guarded_generated_invocations().unwrap();
     capntproto_legacy_fixed_check::owned_context_generated_invocations().unwrap();
     capntproto_legacy_fixed_check::pooled_frame_generated_invocations().unwrap();
+    capntproto_legacy_fixed_check::imported_generated_invocations().unwrap();
     loop {
         core::hint::spin_loop();
     }

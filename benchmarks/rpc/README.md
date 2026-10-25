@@ -25,6 +25,14 @@ recorded in each trial. This isolates driver costs; it does not measure VPC
 network latency. The other peer remains idle during this campaign. Select
 `run-remote` for the existing two-droplet VPC workloads and loopback controls.
 
+`run-legacy-work` requires `legacy_base` and performs the repeated legacy work
+comparison on the CI droplet. Candidate and control are built at the same source
+path. All six TLS instruction cases must have no increase in their unrounded
+five-run mean for each of Ir, Bcm and Bim; incomplete evidence fails. There is no
+tolerance or averaging across cases. TLS/QUIC allocation profiles, per-run spread
+and selected disassembly remain in the workflow artifact, including on failure.
+This campaign does not measure native latency or QUIC instruction parity.
+
 For a same-campaign control, pass `-f portable_base=FULL_40_CHARACTER_SHA` or
 `-f legacy_base=FULL_40_CHARACTER_SHA`. CI builds each selected revision in an
 isolated source tree with the same compiler and release profile, then interleaves

@@ -9,6 +9,7 @@ pub(super) enum Campaign {
     Secure,
     Latency,
     Allocations,
+    LegacyWork,
 }
 mod timing;
 mod trace;
@@ -354,6 +355,18 @@ pub(super) fn run(
         fs::set_permissions(state, fs::Permissions::from_mode(0o700))?;
     }
     let archive = state.join("bundle.tar.gz");
+    if matches!(campaign, Campaign::LegacyWork) {
+        for name in [
+            "driver-legacy-baseline",
+            "legacy-work-profile.py",
+            "work_profile.py",
+        ] {
+            ensure!(
+                bundle.join(name).is_file(),
+                "legacy work campaign requires {name}"
+            );
+        }
+    }
     archive_bundle(bundle, &archive)?;
     let remote = output.join("remote");
     ensure!(
@@ -401,7 +414,7 @@ pub(super) fn run(
         }
         if matches!(
             campaign,
-            Campaign::Secure | Campaign::Latency | Campaign::Allocations
+            Campaign::Secure | Campaign::Latency | Campaign::Allocations | Campaign::LegacyWork
         ) {
             return secure::run(
                 commands,
@@ -411,6 +424,7 @@ pub(super) fn run(
                 match campaign {
                     Campaign::Latency => secure::Phase::Latency,
                     Campaign::Allocations => secure::Phase::Allocations,
+                    Campaign::LegacyWork => secure::Phase::LegacyWork,
                     _ => secure::Phase::All,
                 },
             );

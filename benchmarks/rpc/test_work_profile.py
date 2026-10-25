@@ -1,5 +1,6 @@
 import unittest
 import importlib.util
+import copy
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,6 +8,38 @@ from work_profile import callgrind, comparisons, slope
 
 
 class WorkProfile(unittest.TestCase):
+    def test_legacy_gate_rejects_each_counter_without_rounding_or_averaging_cases(self):
+        spec = importlib.util.spec_from_file_location('legacy_work_profile', Path(__file__).with_name('legacy-work-profile.py'))
+        profile = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(profile)
+        result = dict(comparisons=[dict(mode='callgrind', transport='tls', baseline='factored',
+            candidate='candidate', case=case, repetitions=5,
+            metrics={metric: {side: dict(mean=100, samples=[100]*5)
+                              for side in ['baseline', 'candidate']}
+                     for metric in ['Ir', 'Bcm', 'Bim']}) for case in profile.CASES])
+        self.assertTrue(profile.regression_gate(result)['passed'])
+        for metric in ['Ir', 'Bcm', 'Bim']:
+            changed = copy.deepcopy(result)
+            changed['comparisons'][0]['metrics'][metric]['candidate'] = dict(mean=100.00001, samples=[100.00001]*5)
+            changed['comparisons'][1]['metrics'][metric]['candidate'] = dict(mean=50, samples=[50]*5)
+            verdict = profile.regression_gate(changed)
+            self.assertFalse(verdict['passed'])
+            self.assertEqual([(r['case'], r['metric']) for r in verdict['failures']], [(profile.CASES[0], metric)])
+        for invalid in ['missing', 'duplicate', 'repetitions', 'metric', 'nan']:
+            changed = copy.deepcopy(result)
+            if invalid == 'missing':
+                changed['comparisons'].pop()
+            elif invalid == 'duplicate':
+                changed['comparisons'][-1] = changed['comparisons'][0]
+            elif invalid == 'repetitions':
+                changed['comparisons'][0]['repetitions'] = 4
+            elif invalid == 'metric':
+                del changed['comparisons'][0]['metrics']['Bim']
+            else:
+                changed['comparisons'][0]['metrics']['Ir']['candidate']['mean'] = float('nan')
+            with self.assertRaises((AssertionError, KeyError)):
+                profile.regression_gate(changed)
+
     def test_full_summary_keeps_all_repetitions_peers_and_identical_control(self):
         self.check_full_summary(pair_only=False)
 

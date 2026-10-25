@@ -6,6 +6,14 @@ bindings. No bounded or hosted RPC protocol driver is instantiated. The fixture
 therefore proves the method-dispatch ownership boundary, not allocation-free RPC
 connections, capability tables, pipelines or encrypted IO.
 
+The imported-parameter case retains a borrowed `references::import::Last`
+inside the production incoming parameter adapter through generated dispatch.
+Completion, cancellation, unpolled drop and unknown-method rejection all destroy
+the input before retiring its import bindings. A blocked output retains the exact
+Release count in caller-owned connection storage after the task is destroyed.
+Both profiles count zero allocated blocks/bytes. This tests cleanup ownership;
+the scalar method does not resolve callable capabilities or admit descriptors.
+
 Run `cargo test --locked --manifest-path verification/legacy-fixed/Cargo.toml --lib`
 and repeat with `--features alloc`. Five tests count both blocks and bytes:
 retained inherited-method parameters and real standard-Waker notification;

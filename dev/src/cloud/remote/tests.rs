@@ -563,6 +563,52 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
 }
 
 #[test]
+fn legacy_work_campaign_gates_on_the_droplet_and_salvages_failed_profiles() {
+    for fail_at in ["", "python3 legacy-work-profile.py"] {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        let mut manifest = fixture_bundle(&bundle);
+        for name in [
+            "driver-legacy-baseline",
+            "legacy-work-profile.py",
+            "work_profile.py",
+        ] {
+            crate::write(bundle.join(name), "fixture").unwrap();
+        }
+        manifest["binaries"]["driver-legacy-baseline"] = json!(crate::hash("fixture"));
+        crate::write_json(bundle.join("manifest.json"), &manifest).unwrap();
+        let commands = CompletedCommands {
+            commands: PairCommands::default(),
+            manifest,
+            fail_at,
+        };
+        let api = PairApi::default();
+        let output = dir.path().join("output");
+        let state = dir.path().join("state");
+        let result = run(
+            &api,
+            &bundle,
+            &output,
+            &state,
+            &tag("test/legacy-work-pair"),
+            &Cancellation::default(),
+            &commands,
+            Campaign::LegacyWork,
+        );
+        assert_eq!(result.is_ok(), fail_at.is_empty());
+        assert!(api.hosts.borrow().is_empty());
+        assert!(api.keys.borrow().is_empty());
+        assert!(output.join("secure/secure.tar.gz").is_file());
+        let calls = commands.commands.0.borrow();
+        assert!(calls.iter().any(|s| s.contains("--require-no-regression")));
+        assert!(!calls
+            .iter()
+            .any(|s| s.contains("python3 secure-runner.py")
+                || s.contains("python3 secure-profile.py")));
+    }
+}
+
+#[test]
 fn encrypted_campaign_salvages_profiles_and_cleans_up_on_failure() {
     for fail_at in ["", "python3 secure-runner.py"] {
         let dir = tempfile::tempdir().unwrap();

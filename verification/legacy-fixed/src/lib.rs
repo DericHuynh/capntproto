@@ -27,6 +27,8 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use legacy_capnp::{base, node};
+mod imported;
+pub use imported::imported_generated_invocations;
 const ZERO: capnp::Word = capnp::word(0, 0, 0, 0, 0, 0, 0, 0);
 struct Notice(&'static AtomicUsize);
 impl Wake for Notice {
@@ -919,6 +921,11 @@ pub fn pooled_frame_generated_invocations() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn imported_params_keep_cleanup_until_dispatch_ends_without_allocating() {
+        let m = allocation_counter::measure(|| imported_generated_invocations().unwrap());
+        assert_eq!((m.count_total, m.bytes_total), (0, 0));
+    }
     #[test]
     fn pooled_wire_frames_survive_suspension_and_return_storage_on_completion_or_cancel() {
         let m = allocation_counter::measure(|| pooled_frame_generated_invocations().unwrap());

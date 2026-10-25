@@ -440,6 +440,8 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
     for script in [
         "secure-runner.py",
         "secure-profile.py",
+        "legacy-work-profile.py",
+        "work_profile.py",
         "topology-runner.py",
         "ciphertext-counts.py",
         "latency_stats.py",

@@ -5,6 +5,7 @@ pub(super) enum Phase {
     Latency,
     All,
     Allocations,
+    LegacyWork,
 }
 
 pub(super) fn run(
@@ -17,15 +18,19 @@ pub(super) fn run(
     fs::create_dir_all(output)?;
     crate::write_json(output.join("host.json"), &host.receipt)?;
     commands.ssh(&host.options, &host.public.to_string(),
-        "DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 openssl strace && mkdir -p /root/results/secure && uname -a > /root/results/secure/kernel.txt && lscpu > /root/results/secure/cpu.txt && valgrind --version > /root/results/secure/valgrind.txt && sha256sum /root/bench/driver /root/bench/capnp-reference /root/bench/*.py /root/bench/*.json > /root/results/secure/hashes.txt", 180, cancel)?;
+        "DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 openssl strace binutils && mkdir -p /root/results/secure && uname -a > /root/results/secure/kernel.txt && lscpu > /root/results/secure/cpu.txt && valgrind --version > /root/results/secure/valgrind.txt && sha256sum /root/bench/driver /root/bench/capnp-reference /root/bench/*.py /root/bench/*.json > /root/results/secure/hashes.txt", 180, cancel)?;
     // Native measurements are a complete campaign on their own. Expensive
     // diagnostics remain opt-in and always follow timing in a full campaign.
-    let native = if matches!(phase, Phase::Allocations) {
+    let native = if matches!(phase, Phase::Allocations | Phase::LegacyWork) {
         ""
     } else {
         r#"python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/native --repetitions 5 --warmup 100 --iterations 1000"#
     };
     let diagnostics = match phase {
+        Phase::LegacyWork => {
+            r#"test -f /root/bench/driver-legacy-baseline
+python3 legacy-work-profile.py --pair-only --require-no-regression --factored /root/bench/driver-legacy-baseline --candidate /root/bench/driver --output /root/results/secure/legacy-work"#
+        }
         Phase::Latency => "",
         Phase::Allocations => {
             r#"python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles --allocation-only"#

@@ -25,6 +25,8 @@ pub enum Action {
     RunLatency,
     /// Trace cumulative TLS/QUIC allocations on dedicated hosts without timing.
     RunAllocations,
+    /// Qualify five-run legacy Ir/Bcm/Bim without running a latency campaign.
+    RunLegacyWork,
     /// Exercise every workflow locally without credentials or performance claims.
     Smoke,
     Cleanup,
@@ -867,31 +869,35 @@ pub fn run(args: Args) -> Result<()> {
             Ok(())
         }
         Action::Janitor => janitor(&api, &owner),
-        Action::RunRemote | Action::RunSecure | Action::RunLatency | Action::RunAllocations => {
-            remote::run(
-                &api,
-                &args
-                    .bundle
-                    .context("run-remote requires --bundle")?
-                    .canonicalize()?,
-                &std::path::absolute(args.output.context("run-remote requires --output")?)?,
-                &std::path::absolute(args.state)?,
-                &owner,
-                &cancel,
-                &SystemCommands,
-                if matches!(args.action, Action::RunAllocations) {
-                    remote::Campaign::Allocations
-                } else if matches!(args.action, Action::RunLatency) {
-                    remote::Campaign::Latency
-                } else if matches!(args.action, Action::RunSecure) {
-                    remote::Campaign::Secure
-                } else {
-                    remote::Campaign::Workflows {
-                        trace_io: args.trace_io,
-                    }
-                },
-            )
-        }
+        Action::RunRemote
+        | Action::RunSecure
+        | Action::RunLatency
+        | Action::RunAllocations
+        | Action::RunLegacyWork => remote::run(
+            &api,
+            &args
+                .bundle
+                .context("run-remote requires --bundle")?
+                .canonicalize()?,
+            &std::path::absolute(args.output.context("run-remote requires --output")?)?,
+            &std::path::absolute(args.state)?,
+            &owner,
+            &cancel,
+            &SystemCommands,
+            if matches!(args.action, Action::RunLegacyWork) {
+                remote::Campaign::LegacyWork
+            } else if matches!(args.action, Action::RunAllocations) {
+                remote::Campaign::Allocations
+            } else if matches!(args.action, Action::RunLatency) {
+                remote::Campaign::Latency
+            } else if matches!(args.action, Action::RunSecure) {
+                remote::Campaign::Secure
+            } else {
+                remote::Campaign::Workflows {
+                    trace_io: args.trace_io,
+                }
+            },
+        ),
         Action::Run => benchmark(
             &api,
             &args

@@ -4,6 +4,8 @@
 //! The caller owns the capability slots, connection epochs and local lifetimes.
 //! Retire an export only after `release` returns `true`. Retain import cleanup
 //! state until its release ticket is accepted, or the connection is terminal.
+
+pub mod import;
 use core::fmt;
 #[cfg(capntproto_verus)]
 use vstd::prelude::*;

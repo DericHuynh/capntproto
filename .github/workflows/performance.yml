@@ -41,7 +41,7 @@ on:
         description: Latency only (fast), full encrypted diagnostics, allocations, or VPC workflows
         default: run-latency
         type: choice
-        options: [run-latency, run-secure, run-allocations, run-remote]
+        options: [run-latency, run-secure, run-allocations, run-legacy-work, run-remote]
       region:
         description: DigitalOcean region, or auto to select an available region
         default: auto
@@ -135,22 +135,36 @@ jobs:
         if: inputs.legacy_base != ''
         with:
           ref: ${{ inputs.legacy_base }}
-          path: target/legacy-baseline-source
+          # Counter qualification needs identical package/source paths. Keep
+          # the candidate bundle while temporarily checking out its control.
+          path: ${{ inputs.campaign == 'run-legacy-work' && '.' || 'target/legacy-baseline-source' }}
+          clean: false
           persist-credentials: false
       - name: Build the frozen legacy control with the same compiler
         if: inputs.legacy_base != ''
         env:
           LEGACY_BASE: ${{ inputs.legacy_base }}
+          BENCHMARK_CAMPAIGN: ${{ inputs.campaign }}
         run: |
-          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path target/legacy-baseline-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          legacy_manifest=target/legacy-baseline-source/benchmarks/rpc/Cargo.toml
+          if test "$BENCHMARK_CAMPAIGN" = run-legacy-work; then legacy_manifest=benchmarks/rpc/Cargo.toml; fi
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path "$legacy_manifest" --bin capntproto-rpc-bench
           cp benchmarks/rpc/target/release/capntproto-rpc-bench target/benchmark-build/bundle/driver-legacy-baseline
           python3 - <<'PYTHON'
           import hashlib, json, os, tomllib
           from pathlib import Path
           bundle = Path('target/benchmark-build/bundle')
-          data = dict(commit=os.environ['LEGACY_BASE'], sha256=hashlib.sha256((bundle/'driver-legacy-baseline').read_bytes()).hexdigest(), profile='release; settings from pinned Cargo manifests and compiler defaults', benchmark_manifest_release=tomllib.loads(Path('target/legacy-baseline-source/benchmarks/rpc/Cargo.toml').read_text()).get('profile', {}).get('release', {}), profile_environment={key: os.environ[key] for key in ('CARGO_PROFILE_RELEASE_LTO', 'CARGO_PROFILE_RELEASE_CODEGEN_UNITS', 'CARGO_PROFILE_RELEASE_OPT_LEVEL', 'CARGO_PROFILE_RELEASE_DEBUG', 'CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS') if key in os.environ})
+          manifest = Path('benchmarks/rpc/Cargo.toml') if os.environ['BENCHMARK_CAMPAIGN'] == 'run-legacy-work' else Path('target/legacy-baseline-source/benchmarks/rpc/Cargo.toml')
+          data = dict(commit=os.environ['LEGACY_BASE'], sha256=hashlib.sha256((bundle/'driver-legacy-baseline').read_bytes()).hexdigest(), profile='release; settings from pinned Cargo manifests and compiler defaults', benchmark_manifest_release=tomllib.loads(manifest.read_text()).get('profile', {}).get('release', {}), profile_environment={key: os.environ[key] for key in ('CARGO_PROFILE_RELEASE_LTO', 'CARGO_PROFILE_RELEASE_CODEGEN_UNITS', 'CARGO_PROFILE_RELEASE_OPT_LEVEL', 'CARGO_PROFILE_RELEASE_DEBUG', 'CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS') if key in os.environ})
           (bundle/'legacy-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
           PYTHON
+      - name: Restore candidate sources after same-path control build
+        if: inputs.campaign == 'run-legacy-work' && inputs.legacy_base != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          persist-credentials: false
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -245,7 +259,7 @@ jobs:
         if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign == 'run-remote' }}
         run: cargo run --locked -p capntproto-quality -- report "$RUNNER_TEMP/benchmark-quality" benchmark
       - name: Analyze saved encrypted evidence for the selected campaign
-        if: ${{ !cancelled() && inputs.campaign != 'run-remote' }}
+        if: ${{ !cancelled() && inputs.campaign != 'run-remote' && inputs.campaign != 'run-legacy-work' }}
         env:
           MEASUREMENT_OUTCOME: ${{ steps.measure.outcome }}
           BENCHMARK_CAMPAIGN: ${{ inputs.campaign || 'run-latency' }}
@@ -253,6 +267,11 @@ jobs:
           analysis=()
           if test "$BENCHMARK_CAMPAIGN" = run-latency; then analysis+=(--native-only); fi
           python3 benchmarks/rpc/analyze-secure-ci.py "${analysis[@]}" "$GITHUB_RUN_ID" "$RUNNER_TEMP/benchmark-quality/analysis" --saved-root "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure" --measurement-outcome "$MEASUREMENT_OUTCOME"
+      - name: Publish legacy instruction and branch verdict
+        if: ${{ !cancelled() && inputs.campaign == 'run-legacy-work' }}
+        run: |
+          comparison="$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure/legacy-work/comparison.md"
+          if test -f "$comparison"; then cat "$comparison" >> "$GITHUB_STEP_SUMMARY"; fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -261,7 +280,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
       - name: Export compact README data (including failed test runs)
-        if: success() || failure()
+        if: ${{ (success() || failure()) && inputs.campaign != 'run-legacy-work' }}
         run: cargo run --locked -p capntproto-dev -- reports collect --input "$RUNNER_TEMP/benchmark-quality" --kind benchmark --output target/readme-data/publication.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
