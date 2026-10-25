@@ -41,4 +41,19 @@ Qualification `3cd54685c5313669afca020986c6c7c48a864ca9`,
 [run 40192177129](https://github.com/DericHuynh/capntproto/actions/runs/40192177129),
 passes 30 strict-provenance Miri executions: three client cases across both fixed/
 alloc profiles and pointer widths (12), plus nine actual legacy conversations on
-both widths (18). Hosted validation passes; repeated profiles remain running.
+both widths (18). Full hosted validation and all 240 profile trials pass. The capability-owner,
+question-lifetime and scheduler groups retain exact Ir/Bc/Bi parity in all five
+samples, including reconciliation of only the default Client< Box<dynClientHook> >
+type spelling. The normalizer does not equate arbitrary concrete or borrowed
+owners. Canonical assembly matches 706 of 716 common selected bodies; this is not
+whole-binary byte equality. TLS allocation counts remain 7/57/202 and all byte/
+QUIC samples remain in comparison.json.
+
+Whole Ir ranges from -0.105% to +0.033%; deep adds 62.775 with paired sample
+SD 67.507. Small helper equality does not establish whole-program parity.
+Simulated Bcm regresses in five cases, including deep +39.255%; Bim rises in unary,
+dependent (+4.646%), pipelined (+5.247%) and callback (+2.104%), while concurrent/
+deep improve. These regressions are retained and native latency stays unqualified.
+
+Raw artifact 12599371331 is 82,740,153 bytes, SHA-256
+47e59fa59bb744532f7089dd6bc4933c2d446499c0cceed40700e217f4e35de3.

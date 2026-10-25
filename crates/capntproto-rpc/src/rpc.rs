@@ -110,15 +110,49 @@ impl<VatId> Question<VatId> {
 
 /// A reference to an entry on the question table.  Used to detect when the `Finish` message
 /// can be sent.
-type QuestionRefData<VatId> = capntproto_rpc_engine::question::reference::Reference<
+type QuestionRefView<'a, VatId> = capntproto_rpc_engine::question::reference::View<
+    'a,
     Rc<ConnectionState<VatId>>,
     QuestionId,
+    Promise<Response<VatId>, Error>,
+    Weak<RefCell<PipelineState<VatId>>>,
+>;
+type QuestionRefParts<'a, VatId> = capntproto_rpc_engine::question::reference::Parts<
+    'a,
+    Rc<ConnectionState<VatId>>,
     QuestionFulfiller<VatId>,
     Promise<Response<VatId>, Error>,
     Weak<RefCell<PipelineState<VatId>>>,
 >;
+// Keep owning fields flat: nesting a separate record here outlines its generated
+// destructor and adds 17 instructions per question. Borrowed projections share
+// the fixed record's operations without changing this layout/drop boundary.
 struct QuestionRef<VatId: 'static> {
-    record: QuestionRefData<VatId>,
+    connection_state: Option<Rc<ConnectionState<VatId>>>,
+    id: QuestionId,
+    fulfiller: Option<QuestionFulfiller<VatId>>,
+    reply: DirectReply<VatId>,
+    pipeline: Option<Weak<RefCell<PipelineState<VatId>>>>,
+}
+impl<VatId> QuestionRef<VatId> {
+    #[inline(always)]
+    fn record(&self) -> QuestionRefView<'_, VatId> {
+        capntproto_rpc_engine::question::reference::View {
+            context: &self.connection_state,
+            id: &self.id,
+            reply: &self.reply,
+            pipeline: &self.pipeline,
+        }
+    }
+    #[inline(always)]
+    fn record_mut(&mut self) -> QuestionRefParts<'_, VatId> {
+        capntproto_rpc_engine::question::reference::Parts {
+            context: &mut self.connection_state,
+            producer: &mut self.fulfiller,
+            reply: &mut self.reply,
+            pipeline: &mut self.pipeline,
+        }
+    }
 }
 
 // A local type lets the existing shared question implement the core response
@@ -146,11 +180,13 @@ type DirectReply<VatId> = direct::Reply<Promise<Response<VatId>, Error>>;
 impl<VatId> direct::Owner<Promise<Response<VatId>, Error>> for QuestionCell<VatId> {
     #[inline]
     fn reply(&self) -> core::cell::Ref<'_, DirectReply<VatId>> {
-        core::cell::Ref::map(self.borrow(), |question| question.record.reply())
+        core::cell::Ref::map(self.borrow(), |question| question.record().reply())
     }
     #[inline]
     fn reply_mut(&self) -> core::cell::RefMut<'_, DirectReply<VatId>> {
-        core::cell::RefMut::map(self.borrow_mut(), |question| question.record.reply_mut())
+        core::cell::RefMut::map(self.borrow_mut(), |question| {
+            question.record_mut().reply_mut()
+        })
     }
 }
 // The hosted alias retains the same Rc/Option/bool layout. Caller-backed
@@ -176,11 +212,11 @@ impl<VatId> QuestionRef<VatId> {
         fulfiller: oneshot::Sender<Promise<Response<VatId>, Error>>,
     ) -> Self {
         Self {
-            record: QuestionRefData::new(
-                Some(state),
-                id,
-                Some(QuestionFulfiller::External(fulfiller)),
-            ),
+            connection_state: Some(state),
+            id,
+            fulfiller: Some(QuestionFulfiller::External(fulfiller)),
+            reply: DirectReply::default(),
+            pipeline: None,
         }
     }
     fn direct(
@@ -188,7 +224,11 @@ impl<VatId> QuestionRef<VatId> {
         id: QuestionId,
     ) -> (Rc<QuestionCell<VatId>>, QuestionReply<VatId>) {
         let reference = Rc::new(QuestionCell::new(Self {
-            record: QuestionRefData::new(Some(state), id, Some(QuestionFulfiller::Direct)),
+            connection_state: Some(state),
+            id,
+            fulfiller: Some(QuestionFulfiller::Direct),
+            reply: DirectReply::default(),
+            pipeline: None,
         }));
         let reply = direct::Receiver::new(reference.clone());
         (reference, reply)
@@ -251,9 +291,9 @@ impl<VatId> QuestionRef<VatId> {
         Option<Rc<RefCell<PipelineState<VatId>>>>,
     ) {
         let mut reference = reference.borrow_mut();
-        let fulfiller = reference.record.take_producer();
+        let fulfiller = reference.record_mut().take_producer();
         let pipeline = reference
-            .record
+            .record()
             .pipeline()
             .and_then(Weak::upgrade)
             .filter(|state| state.borrow().resolves_on_return);
@@ -267,10 +307,10 @@ impl<VatId> QuestionRef<VatId> {
 
 impl<VatId> Drop for QuestionRef<VatId> {
     fn drop(&mut self) {
-        let Some(connection_state) = self.record.take_context() else {
+        let Some(connection_state) = self.record_mut().take_context() else {
             return;
         };
-        capntproto_rpc_engine::question::release::run(&*connection_state, *self.record.id());
+        capntproto_rpc_engine::question::release::run(&*connection_state, *self.record().id());
     }
 }
 
@@ -1008,7 +1048,7 @@ impl<VatId> ConnectionState<VatId> {
         let questions = mem::replace(&mut *self.questions.borrow_mut(), LocalTable::new());
         for question in questions.iter() {
             if let Some(reference) = question.self_ref.as_ref().and_then(Weak::upgrade) {
-                reference.borrow_mut().record.take_context();
+                reference.borrow_mut().record_mut().take_context();
                 QuestionRef::reject(&reference, network_error.clone());
             }
         }
@@ -1898,7 +1938,11 @@ impl<VatId> RequestHook for Request<VatId> {
             .borrow_mut()
             .push_high(question);
         let reference = Rc::new(QuestionCell::new(QuestionRef {
-            record: QuestionRefData::new(Some(request.connection_state.clone()), id, None),
+            connection_state: Some(request.connection_state.clone()),
+            id,
+            fulfiller: None,
+            reply: DirectReply::default(),
+            pipeline: None,
         }));
         request
             .connection_state
@@ -2028,7 +2072,7 @@ impl<VatId> RequestHook for Request<VatId> {
 
         let promise = promise.map_ok(|_response| ());
 
-        let question_id = *question_ref.borrow().record.id();
+        let question_id = *question_ref.borrow().record().id();
         let pipeline: Box<dyn PipelineHook> = if disabled {
             Box::new(broken::DisabledPipeline)
         } else {
@@ -2174,7 +2218,7 @@ impl<VatId> Pipeline<VatId> {
         }));
         let previous = reference
             .borrow_mut()
-            .record
+            .record_mut()
             .replace_pipeline(Rc::downgrade(&state));
         drop(previous);
         if let Some(redirect_later_promise) = redirect_later {
@@ -3704,7 +3748,7 @@ impl<VatId> Client<VatId> {
             ClientVariant::Pipeline(pipeline_client) => {
                 let mut builder = target.init_promised_answer();
                 let question_ref = &pipeline_client.borrow().question_ref;
-                builder.set_question_id(question_ref.borrow().record.id().to_wire());
+                builder.set_question_id(question_ref.borrow().record().id().to_wire());
                 let mut transform =
                     builder.init_transform(pipeline_client.borrow().ops.len() as u32);
                 for idx in 0..pipeline_client.borrow().ops.len() {
@@ -3746,7 +3790,7 @@ impl<VatId> Client<VatId> {
             ClientVariant::Pipeline(pipeline_client) => {
                 let mut promised_answer = descriptor.init_receiver_answer();
                 let question_ref = &pipeline_client.borrow().question_ref;
-                promised_answer.set_question_id(question_ref.borrow().record.id().to_wire());
+                promised_answer.set_question_id(question_ref.borrow().record().id().to_wire());
                 let mut transform =
                     promised_answer.init_transform(pipeline_client.borrow().ops.len() as u32);
                 for idx in 0..pipeline_client.borrow().ops.len() {

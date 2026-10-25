@@ -34,4 +34,26 @@ Qualification `e828d3ec633bff323b599b551c97526cb8472096`,
 [run 40191032409](https://github.com/DericHuynh/capntproto/actions/runs/40191032409),
 passes 26 strict-provenance Miri executions: two record cases across both profiles
 and pointer widths (8), plus nine actual legacy conversations on both widths (18).
-Hosted validation passes; repeated work/allocation profiles remain running.
+Full hosted validation and all 240 profile trials pass. The report retains every
+five-sample mean, sample SD and paired delta. TLS blocks remain 7/57/202; full byte
+and QUIC allocation samples remain in comparison.json.
+
+This extraction regresses actual compiled work. The new nested owning Reference
+has a separately generated destructor: concurrent self work adds 864 Ir there,
+while QuestionCell::drop_slow saves 320 Ir. The combined question/scheduler group
+therefore adds 544 Ir and 32 conditional branches per 32-call batch (paired SD zero),
+or 17 Ir/one branch per question. Indirect instruction counts remain equal.
+The narrow parent-only group would have hidden this cost. analyze.py includes
+both the parent and core reference record. Normalized assembly matches 662 of 714
+common bodies; two new selected symbols are the nested reference destructor.
+
+Whole Ir rises 0.016–0.121% across all six cases. Simulated Bim regresses in unary
+(+4.676%), concurrent (+37.468%), callback (+6.982%) and deep (+11.275%); dependent
+and pipelined reads improve slightly. Conditional misses also regress in four
+cases. These remain performance gaps, not a parity pass. A follow-up keeps the
+hosted fields flat and shares their operations through borrowed projections;
+its cost recovery needs its own qualification.
+
+Raw artifact 12598389987 is 82,921,938 bytes, SHA-256
+1055cce8704ce7b3b46b5ef240cc8d8b7295b238862b5e82426a47c6309f0040.
+Native latency has not been measured.

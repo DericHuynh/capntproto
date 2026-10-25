@@ -42,3 +42,15 @@ The local compiler reached the container memory limit while rebuilding a wire
 test; removing 219 MB of obsolete generated compiler cache let it finish without
 an OOM kill. All reports, archived evidence, source and link probes were retained.
 This environment supplies no native performance measurements.
+
+
+Qualification 5b485980227be7edc40f61c91bc441f188365a86,
+run 40193516046, passes 38 strict-provenance Miri executions (20 new fixed/alloc
+cases across both widths, 18 actual legacy conversations). Its verify job fails
+at the M4 Cargo binary link: cargo-auditable injects the host flag
+-Wl,-u,AUDITABLE_VERSION_INFO into direct rust-lld. Source and local M4 evidence
+are intact. Workflow-only qualification 69a0b8d97733cb6993e6c957b4389b6e0fb8d5fa,
+run 40194606842, keeps auditable hosted/library builds and uses the established
+direct-rustc bare-metal probe link. Miri is not repeated for that identical source;
+its earlier 38 executions remain the memory-safety evidence. Hosted/work checks
+continue in the new run. No failed hosted/profile qualification is called a pass.

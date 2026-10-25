@@ -826,7 +826,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             )?;
                         }
                         return_::AwaitFromThirdParty(token) => {
-                            let pipeline = reference.borrow().record.pipeline().cloned();
+                            let pipeline = reference.borrow().record().pipeline().cloned();
                             let response =
                                 answer_adoption::await_answer(&connection_state, token, pipeline);
                             QuestionRef::fulfill(&reference, response);

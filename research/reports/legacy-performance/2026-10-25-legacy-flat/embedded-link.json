@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-flat.elf",
+  "bytes": 860184,
+  "sha256": "cb96284c470658ed48d16ab32a3e3889262e6816a93f3b55d8ab54990e15f303",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "fd6fa7ae3cf726805f9e2cdc373b4001608badea30573283f405d09b7ecea404",
+  "scope": "Link-only caller-backed legacy question records through borrowed projections, response retention and deferred Finish. Does not prove hosted flat-destructor compiled work or complete RPC; not board execution."
+}
