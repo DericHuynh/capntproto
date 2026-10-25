@@ -26,12 +26,9 @@
 //! Requests can retain concrete parameter/publication owners in every profile.
 //! Dynamic client and dispatch hooks are enabled by `alloc`.
 
-#[cfg(feature = "alloc")]
 use core::future::Future;
 use core::marker::PhantomData;
-#[cfg(feature = "alloc")]
 use core::pin::Pin;
-#[cfg(feature = "alloc")]
 use core::task::Poll;
 
 use crate::any_pointer;
@@ -47,6 +44,8 @@ use crate::{Error, MessageSize};
 #[cfg(test)]
 mod owner_views;
 mod payload_storage;
+#[cfg(test)]
+mod promise_owners;
 mod request_storage;
 pub use payload_storage::PayloadStorage;
 pub use request_storage::{PreparedRequest, RequestStorage};
@@ -67,8 +66,13 @@ pub use call::{CallContext, ReplyContext};
 #[cfg(feature = "alloc")]
 pub type DynClientHook = dyn ClientHook;
 
-/// A computation that might eventually resolve to a value of type `T` or to an error
-///  of type `E`. Dropping the promise cancels the computation.
+/// A computation that might eventually resolve to a value of type `T` or an error
+/// of type `E`. Dropping the promise drops its future owner.
+///
+/// `from_owner` retains an unpinned owner or a caller-pinned future reference
+/// without allocation or a `'static` bound. Under `alloc`, the default future
+/// owner remains boxed and `from_future` allocates it. Synchronous errors are
+/// boxed only in that profile to retain the hosted representation.
 ///
 /// The nightly-only `rpc_try` feature allows `?` on a `Result` inside a function
 /// returning `Promise<T, Error>`, converting the error with `Error::from`.
@@ -76,24 +80,70 @@ pub type DynClientHook = dyn ClientHook;
 /// in async code. `Promise` itself does not implement `Try`.
 #[cfg(feature = "alloc")]
 #[must_use = "futures do nothing unless polled"]
-pub struct Promise<T, E> {
-    inner: PromiseInner<T, E>,
+pub struct Promise<
+    T,
+    E,
+    F = Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>,
+> {
+    inner: PromiseInner<T, E, F>,
+}
+#[cfg(not(feature = "alloc"))]
+#[must_use = "futures do nothing unless polled"]
+pub struct Promise<T, E, F = core::future::Ready<core::result::Result<T, E>>> {
+    inner: PromiseInner<T, E, F>,
 }
 
 #[cfg(feature = "alloc")]
-enum PromiseInner<T, E> {
-    // Keep potentially large error context off every deferred promise. Success
-    // stays inline; only a synchronously rejected promise allocates its error.
-    Immediate(Result<T, alloc::boxed::Box<E>>),
-    Deferred(Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>),
+type ImmediateError<E> = alloc::boxed::Box<E>;
+#[cfg(not(feature = "alloc"))]
+type ImmediateError<E> = E;
+
+enum PromiseInner<T, E, F> {
+    // Keep potentially large error context off every hosted deferred promise.
+    // Fixed profiles retain their error inline without a fallback allocator.
+    Immediate(Result<T, ImmediateError<E>>),
+    Deferred(F),
     Empty,
 }
 
-// Allow Promise<T,E> to be Unpin, regardless of whether T and E are.
-#[cfg(feature = "alloc")]
-impl<T, E> Unpin for PromiseInner<T, E> {}
+// Only the deferred owner is projected for polling. Immediate results are moved,
+// never pinned, so their output/error types need not implement Unpin.
+impl<T, E, F: Unpin> Unpin for PromiseInner<T, E, F> {}
 
-#[cfg(feature = "alloc")]
+impl<T, E, F> Promise<T, E, F> {
+    /// Retain the original future owner. For a !Unpin future, pass the
+    /// `Pin<&mut F>` returned by `core::pin::pin!` instead of moving the future.
+    /// The returned promise cannot outlive that borrow. A borrowed Pin does not
+    /// own destruction of the original future; use a task-place owner when
+    /// dropping the promise must destroy the stored operation immediately.
+    ///
+    /// ```
+    /// use capnp::capability::Promise;
+    /// let value = 17;
+    /// let future = core::pin::pin!(async { Ok::<_, ()>(&value) });
+    /// let _promise = Promise::from_owner(future);
+    /// ```
+    ///
+    /// ```compile_fail,E0597
+    /// use capnp::capability::Promise;
+    /// let promise;
+    /// {
+    ///     let value = 17;
+    ///     let future = core::pin::pin!(async { Ok::<_, ()>(&value) });
+    ///     promise = Promise::from_owner(future);
+    /// }
+    /// drop(promise);
+    /// ```
+    pub fn from_owner(future: F) -> Self
+    where
+        F: Future<Output = core::result::Result<T, E>> + Unpin,
+    {
+        Self {
+            inner: PromiseInner::Deferred(future),
+        }
+    }
+}
+
 impl<T, E> Promise<T, E> {
     pub fn ok(value: T) -> Self {
         Self {
@@ -102,11 +152,14 @@ impl<T, E> Promise<T, E> {
     }
 
     pub fn err(error: E) -> Self {
+        #[cfg(feature = "alloc")]
+        let error = alloc::boxed::Box::new(error);
         Self {
-            inner: PromiseInner::Immediate(Err(alloc::boxed::Box::new(error))),
+            inner: PromiseInner::Immediate(Err(error)),
         }
     }
 
+    #[cfg(feature = "alloc")]
     pub fn from_future<F>(f: F) -> Self
     where
         F: Future<Output = core::result::Result<T, E>> + 'static,
@@ -117,8 +170,10 @@ impl<T, E> Promise<T, E> {
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<T, E> Future for Promise<T, E> {
+impl<T, E, F> Future for Promise<T, E, F>
+where
+    F: Future<Output = core::result::Result<T, E>> + Unpin,
+{
     type Output = core::result::Result<T, E>;
 
     #[inline(always)]
@@ -127,20 +182,25 @@ impl<T, E> Future for Promise<T, E> {
             PromiseInner::Empty => panic!("Promise polled after done."),
             ref mut imm @ PromiseInner::Immediate(_) => {
                 match core::mem::replace(imm, PromiseInner::Empty) {
-                    PromiseInner::Immediate(r) => Poll::Ready(r.map_err(|error| *error)),
+                    PromiseInner::Immediate(r) => {
+                        #[cfg(feature = "alloc")]
+                        let r = r.map_err(|error| *error);
+                        Poll::Ready(r)
+                    }
                     _ => unreachable!(),
                 }
             }
-            PromiseInner::Deferred(ref mut f) => f.as_mut().poll(cx),
+            PromiseInner::Deferred(ref mut f) => Pin::new(f).poll(cx),
         }
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<T, E> From<Result<T, E>> for Promise<T, E> {
     fn from(value: Result<T, E>) -> Self {
+        #[cfg(feature = "alloc")]
+        let value = value.map_err(alloc::boxed::Box::new);
         Self {
-            inner: PromiseInner::Immediate(value.map_err(alloc::boxed::Box::new)),
+            inner: PromiseInner::Immediate(value),
         }
     }
 }

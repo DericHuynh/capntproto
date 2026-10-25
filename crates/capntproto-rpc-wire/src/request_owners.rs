@@ -259,3 +259,95 @@ fn unsent_request_unlocks_storage_before_real_sender_drop_wakes_receiver() {
     assert_eq!(allocations.count_total, 0);
     assert_eq!(allocations.bytes_total, 0);
 }
+
+#[test]
+fn concrete_service_promise_destroys_caller_pinned_future_before_slot_reuse() {
+    use capnp::capability::Promise;
+    use capntproto_rpc_engine::tasks::PinnedSlots;
+    struct Guard<'a>(&'a Cell<usize>);
+    impl Drop for Guard<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let allocations = allocation_counter::measure(|| {
+        let storage = RefCell::new(42);
+        let drops = Cell::new(0);
+        let guard = storage.borrow_mut();
+        let release = Guard(&drops);
+        let operation = async move {
+            let _release = release;
+            let value = *guard;
+            core::future::pending::<()>().await;
+            Ok::<_, ()>(value)
+        };
+        let mut slots = core::pin::pin!(PinnedSlots::<_, 1>::new());
+        let [place] = slots.as_mut().places();
+        let owner = place.insert_erased(operation).ok().unwrap();
+        let mut promise = Promise::from_owner(owner);
+        assert!(Pin::new(&mut promise)
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        assert!(storage.try_borrow_mut().is_err());
+        drop(promise);
+        assert!(slots.is_empty());
+        assert_eq!(drops.get(), 1);
+        assert!(storage.try_borrow_mut().is_ok());
+    });
+    assert_eq!(allocations.count_total, 0);
+    assert_eq!(allocations.bytes_total, 0);
+}
+
+#[test]
+fn concrete_service_completion_preserves_real_wakes_and_borrowed_response_storage() {
+    use self::std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    use self::std::task::Wake;
+    use capnp::capability::{Promise, Response};
+    use capntproto_rpc_engine::tasks::PinnedSlots;
+    struct Notified(AtomicBool);
+    impl Wake for Notified {
+        fn wake(self: Arc<Self>) {
+            self.0.store(true, Ordering::Release);
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+    let notified = Arc::new(Notified(AtomicBool::new(false)));
+    let waker = Waker::from(notified.clone());
+    let allocations = allocation_counter::measure(|| {
+        let mut words = [ZERO; 8];
+        let mut builder = message::FixedBuilder::new(&mut words).unwrap();
+        builder.try_set_root_text("retained").unwrap();
+        let segments = [builder.into_segment()];
+        let mut slot = completion::Slot::new();
+        let (sender, receiver) = slot.pair().unwrap();
+        let mut tasks = core::pin::pin!(PinnedSlots::<_, 1>::new());
+        let [place] = tasks.as_mut().places();
+        let owner = place
+            .insert_erased(async move { receiver.await })
+            .ok()
+            .unwrap();
+        let mut promise = Promise::from_owner(owner);
+        let mut cx = Context::from_waker(&waker);
+        assert!(Pin::new(&mut promise).poll(&mut cx).is_pending());
+        assert!(!notified.0.load(Ordering::Acquire));
+        let response = Response::<capnp::text::Owned, _>::from_owner(message::Reader::new(
+            &segments[..],
+            Default::default(),
+        ));
+        assert!(sender.send(response).is_ok());
+        assert!(notified.0.swap(false, Ordering::AcqRel));
+        let Poll::Ready(Ok(response)) = Pin::new(&mut promise).poll(&mut cx) else {
+            panic!("completed operation was not notified")
+        };
+        drop(promise);
+        assert!(tasks.is_empty());
+        assert_eq!(response.get().unwrap(), "retained");
+    });
+    assert_eq!(allocations.count_total, 0);
+    assert_eq!(allocations.bytes_total, 0);
+}
