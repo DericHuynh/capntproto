@@ -39,7 +39,7 @@ def assembly(path, output):
         for line in process.stdout:
             if re.match(r'^[0-9a-f]+ <', line):
                 function = line.split(' <', 1)[1].rsplit('>:', 1)[0]
-                keep = any(name in function for name in selected) or function.lstrip('<').startswith(('capnp::capability::Params<', 'capnp::capability::Response<', 'capnp::capability::ResponsePromise<', 'capnp::capability::Request<', 'capnp::capability::Promise<', 'capnp::capability::PromiseInner<', 'capnp::capability::request_storage::', 'capnp::capability::payload_storage::', 'capnp_rpc::local::')) or any(name in function for name in (' as capnp::private::capability::ParamsHook>', ' as capnp::private::capability::ResponseHook>'))
+                keep = any(name in function for name in selected) or function.lstrip('<').startswith(('capnp::capability::Params<', 'capnp::capability::Response<', 'capnp::capability::ResponsePromise<', 'capnp::capability::Request<', 'capnp::capability::Promise<', 'capnp::capability::PromiseInner<', 'capnp::capability::call::', 'capnp::capability::request_storage::', 'capnp::capability::payload_storage::', 'capnp_rpc::local::')) or any(name in function for name in (' as capnp::private::capability::ParamsHook>', ' as capnp::private::capability::ResponseHook>'))
             if keep:
                 target.write(line)
         assert process.wait() == 0

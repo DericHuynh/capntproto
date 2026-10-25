@@ -43,3 +43,10 @@ Reproduce the meaningful local subset:
 verification/portable/legacy-request-link.rs is the standalone ownership probe.
 It builds a real Call envelope and transfers its fixed content owner through the
 same shared completion primitive. It is not the portable protocol driver.
+
+
+The immutable request qualification is `60f95b1937de55a45d87736e5d9e1f74b3f42e49`,
+[run 40180030960](https://github.com/DericHuynh/capntproto/actions/runs/40180030960).
+Its strict-provenance Miri job passes all six ownership tests in no-default and
+explicit alloc profiles on 64-bit and 32-bit targets (24 executions). Hosted
+profiles remain running; their result is not inferred from Miri success.

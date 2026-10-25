@@ -55,10 +55,10 @@ mod reply;
 #[cfg(feature = "alloc")]
 pub use reply::{PublishedReply, Reply, ReplyBuilder};
 
-#[cfg(feature = "alloc")]
 mod call;
 #[cfg(feature = "alloc")]
-pub use call::{CallContext, ReplyContext};
+pub use call::ReplyContext;
+pub use call::{CallContext, CallStorage, PreparedCall};
 
 /// Type alias for `dyn ClientHook`. We define this here because so that generated code
 /// can avoid needing to refer to `dyn` types directly; in Rust 2015 the syntax for

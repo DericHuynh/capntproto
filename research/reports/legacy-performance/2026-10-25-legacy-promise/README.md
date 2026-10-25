@@ -45,3 +45,12 @@ compiled-work/allocation profiles require the immutable qualification. Native
 latency must use dedicated droplets. Remaining ClientHook/PipelineHook and
 connection ownership are still allocating/static-erased; this extraction does
 not complete no-allocator legacy RPC or select the alternate bounded driver.
+
+
+Source `522030dcf471796c0394b4df1b04a8571a2f7d05`, qualification
+`1691d0f60ca6a46256adbbbcaee33643c9d69636`,
+[run 40180710173](https://github.com/DericHuynh/capntproto/actions/runs/40180710173).
+Strict-provenance Miri passes 18 core and 32 wire ownership executions across
+64-bit/32-bit no-default/explicit-alloc profiles. Five core tests run without
+alloc, four with alloc; the fifth specifically requires the inline fixed error
+representation. Hosted compiled-work/allocation qualification remains running.
