@@ -120,11 +120,16 @@ impl Publication {
 
     #[inline(always)]
     fn postpone(&mut self, busy: bool) -> bool {
-        let postpone = (self.turns == 0) | (busy & (self.turns < 32));
-        // The increment is selected only below 32. Discarding the other value
-        // avoids both an overflow branch and a redundant saturation select.
-        self.turns = core::hint::select_unpredictable(postpone, self.turns.wrapping_add(1), 0);
-        postpone
+        let limit = if busy { 32 } else { 1 };
+        // The caller already branches around its callback. Share that decision
+        // with the counter update instead of forcing a separate selection.
+        if self.turns < limit {
+            self.turns = self.turns.wrapping_add(1);
+            true
+        } else {
+            self.turns = 0;
+            false
+        }
     }
 }
 

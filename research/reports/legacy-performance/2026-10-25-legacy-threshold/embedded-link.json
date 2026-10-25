@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-threshold.elf",
+  "bytes": 724208,
+  "sha256": "4f24417f7e55986e50b51045e0d3dcd74e269b732a8a0c676182365a12e98042",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "fd3dd37096bdb1dbaca399e767cd76f2cfc8eba4724319f81037e91ffee52758",
+  "scope": "Link-only actual shared legacy scheduler with conditional threshold selection and fixed owned tasks/queues. Not complete allocation-free connection, native latency or board execution."
+}

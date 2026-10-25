@@ -1,0 +1,25 @@
+{
+  "scope": "Exact production Publication types compiled as separate local translation units, preventing equivalent-function merging. Standalone selection wrapper only, not full scheduler, misses or native latency.",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "candidate_source_sha256": "9e4e462e3c8aad37565dee016e4ffcbd93bb8b82a052735b022078609c8537a1",
+  "counts": {
+    "baseline": {
+      "instructions": 16,
+      "conditional_jumps": [
+        "je\t.LBB0_1"
+      ],
+      "conditional_moves": [
+        "cmovnel\t%eax, %ecx"
+      ]
+    },
+    "candidate": {
+      "instructions": 12,
+      "conditional_jumps": [
+        "jae\t.LBB0_1"
+      ],
+      "conditional_moves": [
+        "cmovnel\t%eax, %ecx"
+      ]
+    }
+  }
+}
