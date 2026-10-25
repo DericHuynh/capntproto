@@ -23,8 +23,12 @@ pub fn build(targets: &[&str]) -> Result<PathBuf> {
             "reference source drift: {name}"
         );
     }
+    let mut configure = command("cmake");
+    if let Some(compiler) = std::env::var_os("CAPNTPROTO_REFERENCE_CXX") {
+        configure.env("CXX", compiler);
+    }
     run(
-        command("cmake")
+        configure
             .args(["-S", "vendor/capnproto", "-B"])
             .arg(&destination)
             .args([
