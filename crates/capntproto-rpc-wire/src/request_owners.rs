@@ -327,10 +327,7 @@ fn concrete_service_completion_preserves_real_wakes_and_borrowed_response_storag
         let (sender, receiver) = slot.pair().unwrap();
         let mut tasks = core::pin::pin!(PinnedSlots::<_, 1>::new());
         let [place] = tasks.as_mut().places();
-        let owner = place
-            .insert_erased(async move { receiver.await })
-            .ok()
-            .unwrap();
+        let owner = place.insert_erased(receiver).ok().unwrap();
         let mut promise = Promise::from_owner(owner);
         let mut cx = Context::from_waker(&waker);
         assert!(Pin::new(&mut promise).poll(&mut cx).is_pending());

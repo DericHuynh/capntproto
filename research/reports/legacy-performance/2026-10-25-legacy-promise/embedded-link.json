@@ -1,11 +1,11 @@
 {
   "target": "thumbv7em-none-eabi",
   "artifact": "/tmp/legacy-promise.elf",
-  "bytes": 884020,
-  "sha256": "0bebc7eae52237b67c8c2f5e2da0da9955fc1f1e5f0253ecaf4dedab1e345546",
+  "bytes": 883772,
+  "sha256": "206f11fc911ac107b589bef1da43bf9ac50a8fc0d00295a8ae17e08bb0571bc0",
   "undefined_symbols": [],
   "allocator_symbols": [],
   "entry_present": true,
-  "source_sha256": "1b6aaa02ac359312c91ed59f9f8380763888ac7b5754034a545f22c2d8545b6a",
+  "source_sha256": "780e949080f49a83a8121c6102e1614f70d11c195dd9e7b114d5aa9b2f8d8a59",
   "scope": "Link-only caller-pinned legacy Promise retaining an engine task-place future and fixed Call payload; not a complete legacy RPC conversation, not executed on a board."
 }

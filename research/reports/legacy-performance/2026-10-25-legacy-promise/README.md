@@ -11,7 +11,8 @@ Concrete future errors are returned directly without allocating, even with alloc
 The no-alloc profile also supports immediate success/error/result conversion,
 using an inline error and a Ready default future type. Only the deferred owner is
 projected for polling and it must be Unpin; results/errors are moved, never pinned.
-No new unsafe code or pin projection is added. A !Unpin operation is pinned by its
+No new unsafe code or pin projection is added. Redundant async forwarding is
+removed from the completion fixture/probe; the existing receiver is the future. A !Unpin operation is pinned by its
 caller or by the existing audited task-place owner.
 
 Ownership is explicit: dropping a borrowed Pin reference does not destroy the
@@ -31,7 +32,7 @@ future retirement. Waker Arc construction occurs outside the measured region;
 cloning it within the operation allocates nothing. These are ownership/primitive
 integration tests, not a complete network RPC conversation.
 
-Local results: core 49 no-default unit tests, all targeted wire ownership tests,
+Local results: core 49 no-default unit tests, 117 no-default wire tests,
 13 no-default documentation tests (4 ignored), nine actual alloc-only legacy
 conversation tests, and core-library/wire-all-target Clippy pass. The host probe
 executes Request, Call envelope, borrowed completion, owning task-place future

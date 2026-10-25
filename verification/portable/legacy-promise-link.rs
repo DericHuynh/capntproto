@@ -19,7 +19,7 @@ fn exercise() {
     {
         let mut slot = capntproto_rpc_engine::completion::Slot::new();
         let (sender, receiver) = slot.pair().unwrap();
-        let operation = async move { receiver.await };
+        let operation = receiver;
         let mut tasks = core::pin::pin!(capntproto_rpc_engine::tasks::PinnedSlots::<_, 1>::new());
         let [place] = tasks.as_mut().places();
         let owner = place.insert_erased(operation).ok().unwrap();
