@@ -69,6 +69,29 @@ result = dict(self_work=work,
               assembly=layout, added_symbols=sorted(after.keys() - before.keys()),
               removed_symbols=sorted(before.keys() - after.keys()))
 (root / 'analysis.json').write_text(json.dumps(result, indent=2) + '\n')
+
+
+def symbols(label):
+    rows = []
+    for line in (root / (label + '.symbols')).read_text().splitlines():
+        match = re.fullmatch(r'([0-9a-f]+) (?:([0-9a-f]+) )?([A-Za-z]) (.*)', line)
+        if match:
+            rows.append((line, match.groups()))
+    return rows
+
+
+symbol_rows = {label: symbols(label) for label in ['factored', 'candidate']}
+text = {label: [line for line, (_, _, kind, _) in rows if kind in ['t', 'T']]
+        for label, rows in symbol_rows.items()}
+examples = ['capnp::private::layout::NULL_ARENA',
+            'capntproto_rpc_wire::rpc_capnp::cap_descriptor::_private::ENCODED_NODE']
+symbol_analysis = dict(text_symbol_rows=len(text['factored']),
+                       text_symbol_rows_identical=text['factored'] == text['candidate'],
+                       read_only_examples={label: {name: address for _, (address, _, _, name) in rows
+                                                  if name in examples}
+                                           for label, rows in symbol_rows.items()},
+                       scope='nm -nSC text-symbol names, addresses and sizes; not instruction-byte equivalence.')
+(root / 'symbol-analysis.json').write_text(json.dumps(symbol_analysis, indent=2) + '\n')
 for row in work:
     if row['metric'] in ['Ir', 'Bi']:
         print(row['case'], row['group'], row['metric'], row['mean_delta'], 'SD', row['sd_delta'])

@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/home/runner/work/_temp/legacy-readiness.elf",
+  "bytes": 706756,
+  "sha256": "f728cb1fdd183aea33edcc41a6e2bad149cf99735d60d4919e923efab94d8864",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "7a7785b0a44853603115f015cb765659bc28b2a305e86555eb34eab5991ba2d1",
+  "scope": "Link-only, not executed on a board. Caller-backed readiness with four borrowed futures, duplicate coalescing, reentrant publication and storage reuse; black-boxed storage retains the exercised transitions."
+}
