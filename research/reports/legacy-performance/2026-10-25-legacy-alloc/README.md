@@ -38,3 +38,27 @@ Vec capability/message/export storage and heap-owned erased futures. The read/ou
 admission, task and pending providers are available, but those providers must be wired
 into these actual protocol owners before the no-alloc target is complete. A core-only
 facade check or bounded-driver conversation is insufficient evidence of completion.
+
+## Qualified hosted comparison
+
+Source `8c6c898`, control `f516105`, qualification `1dda852`,
+[run 40171165717](https://github.com/DericHuynh/capntproto/actions/runs/40171165717), successful.
+Final hosted tests/Clippy, core-only and allocating M4 compilation, and initial
+five-case no_std Miri pass. The expanded wake/framing eight-case fixture and
+explicit alloc fixed-result owners also passed strict-provenance Miri on both
+widths in [run 40172257171](https://github.com/DericHuynh/capntproto/actions/runs/40172257171)
+(16 conversation and 12 result-owner executions). It is still allocating RPC.
+
+The 240 repeated work trials retain five samples and all paired spreads.
+Selected read-owner and scheduler self Ir/Bc/Bi are exactly equal; 139 common
+normalized assembly functions match. This is not every legacy function or byte
+identity. TLS blocks remain 7/58/202. All bytes and noisy QUIC slopes are retained.
+Whole Ir changes -0.041%..+0.007%, but simulated Bim increases 33.484% for concurrent,
+6.148% dependent, 4.280% pipeline and 7.048% deep; callback improves 7.307%.
+The 139 identical normalized bodies and their changed linked identities help
+investigate predictor/layout effects; they do not establish that every miss is
+layout alone or prove no native regression. Native latency remains unqualified.
+
+Artifact 12590408928: 81,362,330 bytes; SHA-256
+`78edbe826d98567dbd2d29c8f7422883eb886cfef306c27b50ad7031f869fcab`.
+Original assembly/symbols/raw profiles remain in that verified archive.

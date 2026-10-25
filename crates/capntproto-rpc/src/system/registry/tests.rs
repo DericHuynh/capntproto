@@ -242,3 +242,61 @@ fn stale_cancellation_does_not_disconnect_replacement() {
     registry.begin_close();
     assert!(matches!(poll(&mut registry.closed()), Poll::Ready(Err(_))));
 }
+
+#[test]
+fn registration_identity_does_not_allocate_after_map_capacity_is_reserved() {
+    let registry = Connections::<State>::new();
+    registry.0.entries.borrow_mut().reserve(4);
+    let mut acquired = None;
+    let count = allocation_counter::measure(|| {
+        acquired = Some(reserve(&registry, 7));
+    });
+    assert_eq!(count.count_total, 0);
+    assert_eq!(count.bytes_total, 0);
+    acquired.take().unwrap().complete(Ok(()));
+}
+
+#[test]
+fn the_final_identity_is_valid_and_exhaustion_never_reuses_it() {
+    let registry = Connections::<State>::new();
+    registry.0.next_identity.set(NonZeroU64::new(u64::MAX));
+    assert!(registry.acquire_bounded(6, 0).is_err());
+    assert_eq!(registry.0.next_identity.get(), NonZeroU64::new(u64::MAX));
+    let final_registration = reserve(&registry, 7);
+    let live = state();
+    final_registration.publish(live.clone()).unwrap();
+    // Lookup of a published state never consumes another identity.
+    assert!(
+        matches!(registry.acquire(7), Ok(Acquired::Existing(found)) if Rc::ptr_eq(&found, &live))
+    );
+    final_registration.detach();
+    assert!(
+        matches!(registry.acquire(7), Err(error) if error.kind == capnp::ErrorKind::Overloaded)
+    );
+    assert!(registry.0.entries.borrow().is_empty());
+    assert_eq!(registry.0.completion.remaining.get(), 1);
+    final_registration.complete(Ok(()));
+    assert_eq!(registry.0.completion.remaining.get(), 0);
+    assert!(
+        matches!(registry.acquire(8), Err(error) if error.kind == capnp::ErrorKind::Overloaded)
+    );
+}
+
+#[test]
+fn concurrent_and_reused_registration_tokens_do_not_allocate() {
+    let registry = Connections::<State>::new();
+    registry.0.entries.borrow_mut().reserve(32);
+    let count = allocation_counter::measure(|| {
+        for _ in 0..4 {
+            let registrations: [Registration<State>; 32] =
+                core::array::from_fn(|id| reserve(&registry, id));
+            for registration in registrations {
+                registration.complete(Ok(()));
+            }
+        }
+    });
+    assert_eq!(count.count_total, 0);
+    assert_eq!(count.bytes_total, 0);
+    assert!(registry.0.entries.borrow().is_empty());
+    assert_eq!(registry.0.completion.remaining.get(), 0);
+}

@@ -28,7 +28,7 @@ def assembly(path, output):
     selected = ('task_set::TaskSet', 'task_set::ready_set::Ready',
                 'task_set::ready_set::Notify', 'capntproto_rpc_engine::readiness',
                 'task_set::queue', 'capntproto_rpc_engine::admission',
-                'sender_queue::', 'capntproto_rpc_engine::pending',
+                'sender_queue::', 'capntproto_rpc_engine::pending', 'capnp_rpc::system::registry',
                 'capntproto_rpc_engine::tasks', 'capntproto_rpc_engine::scheduler', 'capntproto_task',
                 'ReturnGuard', 'answer_has_sent_return',
                 'aes_gcm::aeshwclmulmovbe::seal', '::poll_prepare_frame')
