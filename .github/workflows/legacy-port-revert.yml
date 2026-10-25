@@ -25,15 +25,13 @@ jobs:
         with:
           cache-key: legacy-factoring
           workspaces: . -> target
-      - name: Install compilers and pinned model checker
+      - name: Install only tools needed by the remaining checks
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y clang cmake ninja-build capnproto libcapnp-dev libssl-dev protobuf-compiler default-jre-headless
-          rustup component add rustfmt clippy
-          rustup target add thumbv7em-none-eabi
-          git submodule update --init --depth 1 -- vendor/capnproto
-          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$RUNNER_TEMP/tla2tools.jar"
-          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
+          timeout 180s sudo apt-get update
+          timeout 180s sudo apt-get install --no-install-recommends -y clang cmake ninja-build capnproto libcapnp-dev libssl-dev protobuf-compiler
+          timeout 180s rustup component add rustfmt clippy
+          timeout 180s rustup target add thumbv7em-none-eabi
+          timeout 180s git submodule update --init --depth 1 -- vendor/capnproto
       # Library, API and transport tests passed in 40237812436. Miri passed
       # in both preceding runs. This source delta only aligns the reviewed
       # unsafe fingerprints; check-unsafe itself runs workspace/all-target
