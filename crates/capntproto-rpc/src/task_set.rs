@@ -735,11 +735,13 @@ mod tests {
 
     #[test]
     fn retained_connection_and_deferred_wakers_are_safe_after_task_set_drop() {
-        use std::task::Waker;
+        use std::{sync::atomic::AtomicUsize, task::Waker};
 
-        struct Notify;
+        struct Notify(AtomicUsize);
         impl std::task::Wake for Notify {
-            fn wake(self: Arc<Self>) {}
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
         }
 
         for deferred in [false, true] {
@@ -758,18 +760,25 @@ mod tests {
             } else {
                 handle.try_add_connection(future).unwrap();
             }
-            let parent = Arc::new(Notify);
+            let parent = Arc::new(Notify(AtomicUsize::new(0)));
             let parent_weak = Arc::downgrade(&parent);
-            let parent_waker = Waker::from(parent);
+            let parent_waker = Waker::from(parent.clone());
             for _ in 0..3 {
                 assert!(Pin::new(&mut tasks)
                     .poll(&mut Context::from_waker(&parent_waker))
                     .is_pending());
             }
             let retained = registered.borrow_mut().take().unwrap();
+            let previous = parent.0.load(Ordering::SeqCst);
+            retained.wake_by_ref();
+            assert!(parent.0.load(Ordering::SeqCst) > previous);
+            assert!(Pin::new(&mut tasks)
+                .poll(&mut Context::from_waker(&parent_waker))
+                .is_pending());
             drop(tasks);
             drop(handle);
             drop(parent_waker);
+            drop(parent);
             assert!(parent_weak.upgrade().is_none());
             std::thread::spawn(move || {
                 retained.wake_by_ref();
