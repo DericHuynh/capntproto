@@ -25,7 +25,8 @@ def save(path, value):
 def assembly(path, output):
     # Keep addresses and instructions for the changed scheduler and unchanged
     # guard/TLS hot paths; this diagnoses layout changes without huge binaries.
-    selected = ('task_set::TaskSet', 'task_set::ready_set::ReadySet',
+    selected = ('task_set::TaskSet', 'task_set::ready_set::Ready',
+                'task_set::ready_set::Notify', 'capntproto_rpc_engine::readiness',
                 'ReturnGuard', 'answer_has_sent_return',
                 'aes_gcm::aeshwclmulmovbe::seal', '::poll_prepare_frame')
     with output.open('w') as target:
