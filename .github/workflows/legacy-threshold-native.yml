@@ -1,0 +1,15 @@
+name: Performance / Legacy threshold native qualification
+on:
+  push:
+    branches: [codex/legacy-native-qualification-20261025]
+permissions:
+  contents: read
+jobs:
+  latency:
+    uses: ./.github/workflows/performance.yml
+    with:
+      legacy_base: c6900f3210c7d8505d47ea8821e419c2f492b2ab
+      campaign: run-latency
+      region: auto
+      size: auto
+    secrets: inherit
