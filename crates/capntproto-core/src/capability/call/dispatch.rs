@@ -70,31 +70,59 @@ pub async fn dispatch_call<
 /// The same ownership transfer with an independently retained application
 /// context, for nested calls/capability lookup. Context and service/task storage
 /// must not borrow a connection record that contains that same future.
-pub async fn dispatch_call_with_context<
+/// The context owner may be a plain value, a borrowed context or a pool loan
+/// implementing BorrowMut<C>. It remains owned across method suspension;
+/// no external mutable guard must be kept beside the task.
+/// Input and result storage are released before this context on every exit,
+/// including dropping the future without polling it.
+pub fn dispatch_call_with_context<
     'call,
     PH: ParamsHook + 'call,
     RH: DispatchResults + 'call,
     S: ContextService<C> + 'call,
-    C,
+    C: 'call,
+    O: core::borrow::BorrowMut<C> + 'call,
 >(
     invocation: Invocation<'call, PH, RH>,
     mut service: S,
     interface_id: u64,
     method_id: u16,
-    context: &'call mut C,
-) -> Result<()> {
-    if service.method_info(interface_id, method_id).is_none() {
-        return Err(Error::from_kind(ErrorKind::Unimplemented));
+    context: O,
+) -> impl core::future::Future<Output = Result<()>> + 'call {
+    // Keep a single flat capture, also before first poll. Separate async
+    // arguments/locals would not preserve input -> output -> context cleanup.
+    let (params, results) = invocation.into_owner().into_owners();
+    let mut resources = ContextResources {
+        params,
+        results,
+        context,
+    };
+    async move {
+        if service.method_info(interface_id, method_id).is_none() {
+            return Err(Error::from_kind(ErrorKind::Unimplemented));
+        }
+        let (params, results, context) = resources.borrow_owners();
+        service
+            .dispatch_with_context(
+                interface_id,
+                method_id,
+                params.get()?,
+                results.content()?,
+                context.borrow_mut(),
+            )
+            .await
     }
-    let mut storage = invocation.into_owner();
-    let (params, results) = storage.borrow_owners();
-    service
-        .dispatch_with_context(
-            interface_id,
-            method_id,
-            params.get()?,
-            results.content()?,
-            context,
-        )
-        .await
+}
+
+struct ContextResources<PH, RH, O> {
+    params: PH,
+    results: RH,
+    context: O,
+}
+impl<PH, RH, O> ContextResources<PH, RH, O> {
+    // Borrow the whole aggregate so disjoint async captures cannot split its
+    // ownership/drop order. The returned references remain disjoint.
+    fn borrow_owners(&mut self) -> (&PH, &mut RH, &mut O) {
+        (&self.params, &mut self.results, &mut self.context)
+    }
 }

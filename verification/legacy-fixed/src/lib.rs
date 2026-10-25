@@ -680,9 +680,137 @@ pub fn guarded_generated_invocations() -> Result<()> {
     }
     Ok(())
 }
+struct OwnedContext<'a> {
+    value: core::cell::RefMut<'a, u64>,
+    drops: &'a Cell<usize>,
+    params: &'a Cell<usize>,
+    results_released: &'a Cell<usize>,
+    final_value: &'a Cell<u64>,
+}
+impl core::borrow::BorrowMut<u64> for OwnedContext<'_> {
+    fn borrow_mut(&mut self) -> &mut u64 {
+        &mut self.value
+    }
+}
+impl core::borrow::Borrow<u64> for OwnedContext<'_> {
+    fn borrow(&self) -> &u64 {
+        &self.value
+    }
+}
+impl Drop for OwnedContext<'_> {
+    fn drop(&mut self) {
+        assert_eq!(self.params.get(), 1, "context released before input");
+        assert_eq!(
+            self.results_released.get(),
+            1,
+            "context released before results"
+        );
+        self.final_value.set(*self.value);
+        self.drops.set(self.drops.get() + 1);
+    }
+}
+/// The per-call context guard, input frame and result guard all live inside
+/// the pinned task. Contextual methods still accept their ordinary &mut C view.
+pub fn owned_context_generated_invocations() -> Result<()> {
+    for mode in 0..5 {
+        let mut input_words = [ZERO; 32];
+        let input = core::cell::RefCell::new(source(&mut input_words, false)?);
+        let mut output_words = [ZERO; 32];
+        let output = core::cell::RefCell::new(message::FixedBuilder::new(
+            &mut output_words[..if mode == 3 { 1 } else { 32 }],
+        )?);
+        let context = core::cell::RefCell::new(1u64);
+        let params = Cell::new(0);
+        let results_released = Cell::new(0);
+        let context_dropped = Cell::new(0);
+        let final_value = Cell::new(0);
+        {
+            let input_owner = Input {
+                reader: message::Reader::new(input.borrow(), Default::default()),
+                drops: &params,
+            };
+            let result_owner = GuardedOutput {
+                builder: output.borrow_mut(),
+                input: &input,
+                params: &params,
+                released: &results_released,
+            };
+            let context_owner = OwnedContext {
+                value: context.borrow_mut(),
+                drops: &context_dropped,
+                final_value: &final_value,
+                params: &params,
+                results_released: &results_released,
+            };
+            let call = CallContext::<'_, any_pointer::Owned, any_pointer::Owned, _>::from_owner(
+                PreparedCall::new(
+                    capnp_rpc::incoming::Params::new(input_owner, ()),
+                    result_owner,
+                ),
+            );
+            let mut places = core::pin::pin!(tasks::PinnedSlots::<_, 1>::new());
+            let [place] = places.as_mut().places();
+            let service = node::ContextServerDispatch::new(Contextual);
+            let mut task = Promise::from_owner(
+                place
+                    .insert_erased(dispatch_call_with_context(
+                        call,
+                        service,
+                        base::Owned::READ.interface_id(),
+                        if mode == 4 { 99 } else { 0 },
+                        context_owner,
+                    ))
+                    .ok()
+                    .unwrap(),
+            );
+            assert!(context.try_borrow_mut().is_err());
+            if mode >= 3 {
+                assert!(matches!(
+                    Pin::new(&mut task).poll(&mut Context::from_waker(Waker::noop())),
+                    Poll::Ready(Err(_))
+                ));
+                assert_eq!(context_dropped.get(), 1);
+                assert_eq!(results_released.get(), 1);
+            } else if mode != 2 {
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(Pin::new(&mut task).poll(&mut cx).is_pending());
+                assert_eq!(context_dropped.get(), 0);
+                assert_eq!(results_released.get(), 0);
+                if mode == 0 {
+                    assert!(matches!(
+                        Pin::new(&mut task).poll(&mut cx),
+                        Poll::Ready(Ok(()))
+                    ));
+                    assert_eq!(
+                        context_dropped.get(),
+                        1,
+                        "completed task retained its context guard"
+                    );
+                    assert!(context.try_borrow_mut().is_ok());
+                }
+            }
+            drop(task);
+            assert!(places.is_empty());
+        }
+        assert_eq!(context_dropped.get(), 1);
+        assert_eq!(results_released.get(), 1);
+        assert_eq!(params.get(), 1);
+        assert!(input.try_borrow_mut().is_ok());
+        assert!(output.try_borrow_mut().is_ok());
+        let expected = if mode == 0 { 42 } else { 1 };
+        assert_eq!(final_value.get(), expected);
+        assert_eq!(*context.borrow(), expected);
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn owned_application_context_guards_release_on_completion_cancel_and_unpolled_drop() {
+        let m = allocation_counter::measure(|| owned_context_generated_invocations().unwrap());
+        assert_eq!((m.count_total, m.bytes_total), (0, 0));
+    }
     #[test]
     fn pooled_input_and_result_guards_release_in_order_on_all_task_exits() {
         let m = allocation_counter::measure(|| guarded_generated_invocations().unwrap());

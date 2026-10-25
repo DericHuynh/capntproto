@@ -46,3 +46,20 @@ allocation-free connection conversation matrix or board execution. Full hosted
 compiled work, allocations, strict-provenance Miri and hardware latency remain
 unqualified until the immutable checks. Mandatory outgoing-message, capability/
 pipeline hook and connection resource ownership still need integration.
+
+
+Qualification 471d4bed45e7c58acddbef9f5e065e080c3925a8,
+run 40197283591, passes 46 strict-provenance Miri executions (8 incoming-owner,
+20 fixed/alloc generated-service, 18 actual legacy conversations), complete hosted
+verification including the boxed-cache test, and all 240 repeated profile trials.
+The real legacy ResponseHook::get self Ir falls 1 unary, 2 dependent/pipelined/
+callback, 32 concurrent/deep, all with paired SD zero; self Bc/Bi remain equal.
+response-get-analysis.json retains every component sample. Normalized assembly
+matches 666 of 715 common bodies after exact default-owner spellings are reconciled.
+TLS allocation counts remain 7/57/202; full byte and QUIC spread data is retained.
+
+Simulated conditional misses improve in all six cases (3.025–6.836%). Indirect
+misses improve in five (1.225–20.977%), but callback regresses 2.076%. Whole Ir
+varies from -0.068% to +0.030%; noise, linked predictor behavior and libc work are
+retained and native latency is unqualified. Raw artifact 12601231598 is 82,930,890
+bytes, SHA-256 5573b2cf0b852dd1fde65ad048c9d20bcdf7ff0231d019f288e0da285ee19d9b.

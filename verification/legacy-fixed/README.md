@@ -46,3 +46,10 @@ polling. The intact PreparedCall enforces input-before-result cleanup; completio
 pending cancellation, output-capacity rejection and unpolled drop all release
 both pool slots with zero allocations. The test checks actual RefCell borrow
 availability during result destruction, not only a synthetic drop counter.
+
+
+The seventh case owns a per-call application context guard as well. The context
+adapter accepts BorrowMut<C>, so plain values and borrowed contexts use the same
+handler API. A flat resource capture fixes input -> results -> context cleanup
+order, including before first poll, invalid methods and output rejection. The
+case adds zero blocks/bytes in both profiles and checks each pool's reuse.
