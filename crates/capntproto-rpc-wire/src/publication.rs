@@ -132,7 +132,7 @@ pub(crate) fn validate<T>(
     bytes: &[u8],
     scratch: &mut [u32],
     options: capnp::message::ReaderOptions,
-    mut reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
+    reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
 ) -> Result<(), Error> {
     let mut input = bytes;
     let frame = capnp::serialize::read_message_from_flat_slice_no_alloc(&mut input, options)?;
@@ -140,6 +140,42 @@ pub(crate) fn validate<T>(
         return Err(Error::TrailingBytes);
     }
     let root = frame.get_root::<rpc_capnp::message::Reader<'_>>()?;
+    validate_root(batch, root, scratch, reflected).map(|_| ())
+}
+
+/// Cleanup facts from the same descriptor walk that authorizes publication.
+/// Keep the common empty/single-export case inline, including repeated grants.
+/// Multiple distinct exports use the retained frame without adding allocations
+/// to fixed storage or increasing every answer by a capability-sized array.
+#[derive(Clone, Copy)]
+pub(crate) enum ResultExports {
+    Serialized,
+    Empty,
+    One { id: ExportId, count: u32 },
+}
+impl ResultExports {
+    fn record(&mut self, id: ExportId) {
+        *self = match *self {
+            Self::Empty => Self::One { id, count: 1 },
+            Self::One {
+                id: previous,
+                count,
+            } if previous == id => Self::One {
+                id,
+                count: count.checked_add(1).expect("validated grant count"),
+            },
+            _ => Self::Serialized,
+        };
+    }
+}
+
+pub(crate) fn validate_root<T>(
+    batch: &exports::Batch<'_, '_, '_, T>,
+    root: rpc_capnp::message::Reader<'_>,
+    scratch: &mut [u32],
+    mut reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
+) -> Result<ResultExports, Error> {
+    let mut grants = ResultExports::Empty;
     let message = root.which()?;
     if let rpc_capnp::message::Resolve(resolution) = message {
         let resolution = resolution?;
@@ -153,7 +189,11 @@ pub(crate) fn validate<T>(
                 if matches!(descriptor.which(), Ok(rpc_capnp::cap_descriptor::None(()))) {
                     return Err(Error::InvalidResolution);
                 }
-                check_descriptor(descriptor, &mut check, false, |d| reflected(d, 0))?;
+                if let Some(id) =
+                    check_descriptor(descriptor, &mut check, false, |d| reflected(d, 0))?
+                {
+                    grants.record(id);
+                }
             }
             rpc_capnp::resolve::Exception(exception) => {
                 exception?
@@ -163,7 +203,7 @@ pub(crate) fn validate<T>(
             }
         }
         check.finish()?;
-        return Ok(());
+        return Ok(grants);
     }
     if batch.resolution_id().is_some() {
         return Err(Error::InvalidResolution);
@@ -185,17 +225,20 @@ pub(crate) fn validate<T>(
         .validate_capability_indices(descriptors.len())?;
     let mut check = batch.descriptors(scratch)?;
     for (i, descriptor) in descriptors.iter().enumerate() {
-        check_descriptor(descriptor, &mut check, no_finish, |d| reflected(d, i))?;
+        if let Some(id) = check_descriptor(descriptor, &mut check, no_finish, |d| reflected(d, i))?
+        {
+            grants.record(id);
+        }
     }
     check.finish()?;
-    Ok(())
+    Ok(grants)
 }
 fn check_descriptor<T>(
     descriptor: rpc_capnp::cap_descriptor::Reader<'_>,
     check: &mut exports::DescriptorCheck<'_, T>,
     no_finish: bool,
     reflected: impl FnOnce(rpc_capnp::cap_descriptor::Reader<'_>) -> Result<bool, Error>,
-) -> Result<(), Error> {
+) -> Result<Option<ExportId>, Error> {
     let kind = descriptor
         .which()
         .map_err(|_| Error::UnsupportedDescriptor)?;
@@ -203,10 +246,10 @@ fn check_descriptor<T>(
         return Err(Error::InvalidReturn);
     }
     if reflected(descriptor)? {
-        return Ok(());
+        return Ok(None);
     }
     let (id, promise) = match kind {
-        rpc_capnp::cap_descriptor::None(()) => return Ok(()),
+        rpc_capnp::cap_descriptor::None(()) => return Ok(None),
         rpc_capnp::cap_descriptor::SenderHosted(id) => (id, false),
         rpc_capnp::cap_descriptor::SenderPromise(id) => (id, true),
         rpc_capnp::cap_descriptor::ThirdPartyHosted(third) => {
@@ -217,7 +260,7 @@ fn check_descriptor<T>(
         _ => return Err(Error::UnsupportedDescriptor),
     };
     check.record_kind(ExportId::from_wire(id), promise)?;
-    Ok(())
+    Ok(Some(ExportId::from_wire(id)))
 }
 
 pub mod descriptors;

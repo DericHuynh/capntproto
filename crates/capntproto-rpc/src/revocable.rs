@@ -1,11 +1,14 @@
 //! Explicit revocation of locally implemented capability servers.
+use alloc::rc::{Rc, Weak};
+use alloc::vec::Vec;
 use capnp::capability::{CallExecutor, FromClientHook, FromServer, Promise, Server};
 use capnp::Error;
-use std::cell::RefCell;
-use std::future::Future;
-use std::pin::Pin;
-use std::rc::{Rc, Weak};
-use std::task::{Context, Poll, Waker};
+use core::cell::RefCell;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::Context;
+use core::task::Poll;
+use core::task::Waker;
 
 /// A revocation owner for all clients issued through this object.
 ///
@@ -21,12 +24,14 @@ pub struct RevocableServer<C: FromClientHook> {
     revoker: crate::local::Revoker,
 }
 impl<C: FromClientHook> RevocableServer<C> {
+    #[cfg(feature = "std")]
     pub fn new<S>(server: S) -> Self
     where
         C: FromServer<S>,
     {
         Self::from_rc(Rc::new(server))
     }
+    #[cfg(feature = "std")]
     pub fn from_rc<S>(server: Rc<S>) -> Self
     where
         C: FromServer<S>,
@@ -35,12 +40,14 @@ impl<C: FromClientHook> RevocableServer<C> {
     }
     /// Supply an owner for non-cancellable direct local calls. Incoming RPC
     /// calls can instead use their RpcSystem's executor automatically.
+    #[cfg(feature = "std")]
     pub fn new_with_executor<S>(server: S, executor: Rc<dyn CallExecutor>) -> Self
     where
         C: FromServer<S>,
     {
         Self::from_rc_with_executor(Rc::new(server), executor)
     }
+    #[cfg(feature = "std")]
     pub fn from_rc_with_executor<S>(server: Rc<S>, executor: Rc<dyn CallExecutor>) -> Self
     where
         C: FromServer<S>,
@@ -53,7 +60,7 @@ impl<C: FromClientHook> RevocableServer<C> {
     /// Associate an owned descriptor with this revocation owner. Revocation
     /// stops new local descriptor lookups, but cannot recall descriptors that
     /// have already been obtained or transferred to another process.
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     pub fn new_with_fd<S>(server: S, fd: std::os::fd::OwnedFd) -> Self
     where
         C: FromServer<S>,
@@ -64,7 +71,7 @@ impl<C: FromClientHook> RevocableServer<C> {
         ))
     }
     /// Descriptor-backed variant with a driver for protected local calls.
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     pub fn new_with_fd_and_executor<S>(
         server: S,
         fd: std::os::fd::OwnedFd,
@@ -75,6 +82,31 @@ impl<C: FromClientHook> RevocableServer<C> {
     {
         Self::from_local(
             crate::local::Client::new_with_fd(C::from_server(Rc::new(server)), Rc::new(fd))
+                .with_executor(executor),
+        )
+    }
+    /// Construct in an explicit identity domain without thread-local storage.
+    #[cfg(not(feature = "std"))]
+    pub fn new_in<S>(registry: &crate::ClientRegistry, server: Rc<S>) -> Self
+    where
+        C: FromServer<S>,
+    {
+        Self::from_local(crate::local::Client::new_in(
+            C::from_server(server),
+            registry.clone(),
+        ))
+    }
+    #[cfg(not(feature = "std"))]
+    pub fn new_in_with_executor<S>(
+        registry: &crate::ClientRegistry,
+        server: Rc<S>,
+        executor: Rc<dyn CallExecutor>,
+    ) -> Self
+    where
+        C: FromServer<S>,
+    {
+        Self::from_local(
+            crate::local::Client::new_in(C::from_server(server), registry.clone())
                 .with_executor(executor),
         )
     }
@@ -135,7 +167,7 @@ impl Canceler {
             return;
         }
         *self.error.borrow_mut() = Some(error.clone());
-        let tasks = std::mem::take(&mut *self.tasks.borrow_mut());
+        let tasks = core::mem::take(&mut *self.tasks.borrow_mut());
         for task in tasks.into_iter().filter_map(|t| t.upgrade()) {
             let (future, waker) = {
                 let mut task = task.borrow_mut();

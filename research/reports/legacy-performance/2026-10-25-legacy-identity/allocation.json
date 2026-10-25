@@ -1,0 +1,57 @@
+{
+  "baseline": "8cdaf8698b734e065bacaff8ccea5bb093695248",
+  "source": "crates/capntproto-rpc/src/system/registry.rs",
+  "original_sha256": "1df988e3d7e44a8ed5ef4200c0a412912c6b690b74f370a9912c6d353eccfb4e",
+  "candidate_sha256": "6d2f1bbfb0ba4c8d10eae16b88462f80bb0b929c693ec8c916e617d2233a1ac2",
+  "operations_per_repetition": 128,
+  "concurrent": 32,
+  "waves_per_repetition": 4,
+  "repetitions": 5,
+  "results": {
+    "baseline": {
+      "revision": "baseline",
+      "blocks_samples": [
+        128,
+        128,
+        128,
+        128,
+        128
+      ],
+      "bytes_samples": [
+        2048,
+        2048,
+        2048,
+        2048,
+        2048
+      ],
+      "pointer_bytes": 8,
+      "blocks_mean": 128,
+      "blocks_sd": 0.0,
+      "bytes_mean": 2048,
+      "bytes_sd": 0.0
+    },
+    "candidate": {
+      "revision": "candidate",
+      "blocks_samples": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "bytes_samples": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pointer_bytes": 8,
+      "blocks_mean": 0,
+      "blocks_sd": 0.0,
+      "bytes_mean": 0,
+      "bytes_sd": 0.0
+    }
+  },
+  "scope": "Unpublished connection registrations with map capacity reserved before tracing. Excludes registry construction and map growth; the registry counter increases setup size. Other Rc owners remain. No timing claim."
+}

@@ -1,6 +1,7 @@
 //! Third-party tail transfer uses private connection handles and owned service
 //! work. No branded graph handle or numeric authority crosses driver scopes.
 use super::*;
+use alloc::boxed::Box;
 use capnp::private::capability::RequestHook;
 use capntproto_rpc_engine::answers;
 
@@ -30,7 +31,7 @@ pub(super) struct Produced<'id> {
     _permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
 }
 impl Handle {
-    pub(crate) fn tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+    pub(crate) fn tail_target(&self) -> Option<Box<dyn core::any::Any>> {
         let commands = self.0.upgrade()?;
         if commands.closed.borrow().is_some()
             || !commands.network.borrow().as_ref()?.supports_answers()

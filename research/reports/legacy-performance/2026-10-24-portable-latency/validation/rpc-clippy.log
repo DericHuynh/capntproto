@@ -1,0 +1,4 @@
+    Checking capntproto-rpc-wire v0.1.0 (/workspace/capntproto/crates/capntproto-rpc-wire)
+    Checking capntproto-futures v0.25.2 (/workspace/capntproto/crates/capntproto-futures)
+    Checking capntproto-rpc v0.25.1 (/workspace/capntproto/crates/capntproto-rpc)
+    Finished `dev` profile [unoptimized] target(s) in 17.38s

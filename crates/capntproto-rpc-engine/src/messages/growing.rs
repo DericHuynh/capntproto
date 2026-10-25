@@ -41,6 +41,7 @@ pub struct GrowingBuffers<'bytes> {
     inline: [OnceCell<Buffer<'bytes>>; 3],
     segments: [OnceCell<Vec<OnceCell<Buffer<'bytes>>>>; usize::BITS as usize],
     count: Cell<usize>,
+    reuse_after: [Cell<usize>; usize::BITS as usize + 1],
     retained_bytes: Cell<usize>,
     received_bytes: OnceCell<alloc::rc::Rc<Cell<usize>>>,
     pub(super) parts_charges: OnceCell<alloc::rc::Rc<super::parts::Charges>>,
@@ -59,6 +60,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
             inline: [const { OnceCell::new() }; 3],
             segments: [const { OnceCell::new() }; usize::BITS as usize],
             count: Cell::new(0),
+            reuse_after: [const { Cell::new(0) }; usize::BITS as usize + 1],
             retained_bytes: Cell::new(0),
             received_bytes: OnceCell::new(),
             parts_charges: OnceCell::new(),
@@ -72,6 +74,29 @@ impl<'bytes> GrowingBuffers<'bytes> {
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+    // Keep a position per power-of-two demand class: a small reply must not
+    // reset the search for a larger incoming frame. These are only hints. Every
+    // search wraps over all slots and checks ownership, size and generation.
+    #[inline(always)]
+    pub(super) fn reuse_indices(&self, minimum: usize) -> impl Iterator<Item = usize> {
+        let len = self.len();
+        let start = self.reuse_start(minimum);
+        (start..len).chain(0..start)
+    }
+    #[inline(always)]
+    pub(super) fn reused(&self, index: usize, minimum: usize) {
+        self.reuse_after[Self::reuse_class(minimum)].set(index + 1);
+    }
+    #[inline(always)]
+    pub(super) fn reuse_start(&self, minimum: usize) -> usize {
+        self.reuse_after[Self::reuse_class(minimum)]
+            .get()
+            .min(self.len())
+    }
+    #[inline(always)]
+    fn reuse_class(minimum: usize) -> usize {
+        (usize::BITS - minimum.saturating_sub(1).leading_zeros()) as usize
     }
     pub fn retained_bytes(&self) -> usize {
         self.retained_bytes.get()

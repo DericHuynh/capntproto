@@ -383,3 +383,43 @@ fn growing_export_rollback_retains_owners_until_explicit_cleanup() {
     })
     .unwrap();
 }
+
+#[test]
+fn deferred_peer_release_checks_before_mutation_and_preserves_local_owners() {
+    use core::cell::Cell;
+    struct Owner<'a>(&'a Cell<usize>);
+    impl Drop for Owner<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    let dropped = Cell::new(0);
+    with_exports(&mut [Slot::EMPTY], |exports| {
+        let mut batch = exports.batch();
+        let grant = batch
+            .export(Owner(&dropped))
+            .unwrap_or_else(|_| panic!("export"));
+        let _ = batch.grant(grant.key()).unwrap();
+        batch.commit();
+        let lease = exports.lease(grant.id()).unwrap();
+        assert_eq!(
+            exports.release_deferred(grant.id(), 3),
+            Err(Error::OverRelease)
+        );
+        assert!(exports.lookup(grant.id()).is_some());
+        assert_eq!(exports.release_deferred(grant.id(), 2), Ok(()));
+        assert!(exports.lookup(grant.id()).is_none());
+        assert!(exports.take_retired(0).is_none());
+        assert_eq!(dropped.get(), 0);
+        exports.release_local_deferred(lease);
+        assert_eq!(dropped.get(), 0);
+        drop(
+            exports
+                .take_retired(0)
+                .expect("retired after final local owner"),
+        );
+        assert_eq!(dropped.get(), 1);
+        assert!(exports.is_empty());
+    })
+    .unwrap();
+}

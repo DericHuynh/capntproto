@@ -2,6 +2,48 @@
 //! fixed buffers, cancellation and pipeline observers retain the ordinary path.
 use super::*;
 
+#[cfg(feature = "alloc")]
+enum PlainSource<'a> {
+    Unique(
+        capnp::message::Reader<capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>>,
+        Option<&'a core::cell::Cell<Option<usize>>>,
+    ),
+    Shared(
+        &'a capnp::message::SharedReader<
+            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+        >,
+    ),
+}
+#[cfg(feature = "alloc")]
+impl PlainSource<'_> {
+    fn select<T>(
+        self,
+        select: impl for<'a> FnOnce(
+            capnp::any_pointer::Reader<'a>,
+        ) -> Result<
+            Option<(capnp::any_pointer::Reader<'a>, T)>,
+            super::super::Error,
+        >,
+    ) -> Result<Option<(super::super::question::PlainReader, T)>, super::super::Error> {
+        use super::super::question::PlainReader;
+        match self {
+            Self::Unique(source, remaining) => source
+                .try_select_pointer_or_else(select, |reader| {
+                    if let Some(remaining) = remaining {
+                        remaining.set(reader.read_budget().remaining_words());
+                    }
+                })
+                .map(|result| result.map(|(message, value)| (PlainReader::Unique(message), value))),
+            Self::Shared(source) => {
+                let Some((pointer, value)) = select(source.get_root()?)? else {
+                    return Ok(None);
+                };
+                Ok(Some((PlainReader::Shared(source.retain(pointer)?), value)))
+            }
+        }
+    }
+}
+
 // Decline only the common single-segment envelope when it cannot be a plain
 // reply. This is a storage hint, never an admission certificate: accepted and
 // noncanonical frames still pass through the complete existing validation.
@@ -44,7 +86,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     #[inline(never)]
     pub fn try_receive_plain_owned<T>(
         &mut self,
-        frame: Frame<'pool>,
+        mut frame: Frame<'pool>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         select: impl FnOnce(questions::Key<'id>, Option<usize>) -> Option<T>,
     ) -> Result<PlainReceived<'pool, T>, (Error, Frame<'pool>)> {
@@ -55,12 +97,32 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         {
             return Ok(PlainReceived::Deferred(frame));
         }
-        let source = match frame.shared_reader(messages) {
-            Ok(Some(reader)) => reader,
-            Ok(None) => return Ok(PlainReceived::Deferred(frame)),
-            Err(error) => return Err((Error::Input(error), frame)),
+        let remaining = core::cell::Cell::new(frame.budget.remaining_words());
+        let outcome = if let Some(source) = frame.reader.get() {
+            // Existing observers must continue sharing the exact same budget.
+            self.receive_plain_reader(PlainSource::Shared(source), messages, select)
+        } else {
+            let segments = match frame.share_segments(messages) {
+                Ok(Some(segments)) => segments,
+                Ok(None) => return Ok(PlainReceived::Deferred(frame)),
+                Err(error) => return Err((Error::Input(error), frame)),
+            };
+            let options = capnp::message::ReaderOptions {
+                traversal_limit_in_words: remaining.get(),
+                ..frame.options
+            };
+            let source = capnp::message::Reader::new(segments, options);
+            let result = self.receive_plain_reader(
+                PlainSource::Unique(source, Some(&remaining)),
+                messages,
+                select,
+            );
+            // A deferred/error frame keeps the allowance consumed by the probe.
+            // Successful selection owns its budget and releases this frame.
+            frame.budget = capnp::message::ReadBudget::new(remaining.get());
+            result
         };
-        match self.receive_plain_reader(source, messages, select) {
+        match outcome {
             Ok(Some((receiver, message))) => {
                 frame.release(messages);
                 Ok(PlainReceived::Delivered(receiver, message))
@@ -99,10 +161,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         let segments = capnp::serialize::NoAllocBufferSegments::from_buffer_exact(bytes, options)
             .map_err(|error| Error::Input(error.into()))?;
-        let source = capnp::message::Reader::new(segments, options)
-            .into_shared()
-            .map_err(|error| Error::Input(error.into()))?;
-        self.receive_plain_reader(&source, messages, select)
+        let source = capnp::message::Reader::new(segments, options);
+        self.receive_plain_reader(PlainSource::Unique(source, None), messages, select)
     }
 
     // Keep reply validation and ownership handoff out of each receive-pump
@@ -110,14 +170,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     #[inline(never)]
     fn receive_plain_reader<T>(
         &mut self,
-        source: &capnp::message::SharedReader<
-            capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
-        >,
+        source: PlainSource<'_>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         select: impl FnOnce(questions::Key<'id>, Option<usize>) -> Option<T>,
     ) -> Result<Option<(T, alloc::boxed::Box<super::super::PlainResults>)>, Error> {
-        let admitted = (|| -> Result<_, super::super::Error> {
-            let root = source.get_root::<capnp::any_pointer::Reader>()?;
+        let admitted = source.select(|root| -> Result<_, super::super::Error> {
             let root = root.get_as::<rpc_capnp::message::Reader>()?;
             use capnp::traits::IntoInternalStructReader;
             let fields = rpc_capnp::api::MessageRef::from(root.into_internal_struct_reader());
@@ -159,9 +216,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             else {
                 return Ok(None);
             };
-            let message = source.retain(content)?;
-            Ok(Some((message, (index, receiver, pending))))
-        })();
+            Ok(Some((content, (index, receiver, pending))))
+        });
         match admitted {
             Ok(Some((message, (index, receiver, pending)))) => {
                 // Retention completed before committing the question transition.

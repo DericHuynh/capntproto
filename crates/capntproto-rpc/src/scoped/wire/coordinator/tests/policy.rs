@@ -71,6 +71,12 @@ fn idle_is_revoked_before_prequeued_and_same_turn_writes() {
         ) -> Poll<capnp::Result<bool>> {
             self.wake = Some(cx.waker().clone());
             if std::mem::take(&mut self.publish) {
+                // Hosted publication can enter the physical FIFO immediately,
+                // before the later output poll reaches CheckedWriter.
+                assert!(
+                    !self.idle.get(),
+                    "control publication must follow active notification"
+                );
                 publish(messages, queue);
                 Poll::Ready(Ok(true))
             } else {

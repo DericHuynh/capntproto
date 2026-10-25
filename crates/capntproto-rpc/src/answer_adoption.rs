@@ -3,6 +3,7 @@
 
 //! Authenticated level-3 tail return adoption using the network rendezvous hooks.
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 
 const FIRST: u32 = 1 << 30;
 const END: u32 = 1 << 31;
@@ -193,7 +194,11 @@ pub(super) fn receive<VatId>(
         .insert_adopted(id, Question::new())
         .map_err(|_| Error::failed("ThirdPartyAnswer ID became occupied".into()))?;
     let (sender, receiver) = oneshot::channel();
-    let reference = Rc::new(RefCell::new(QuestionRef::new(state.clone(), id, sender)));
+    let reference = Rc::new(QuestionCell::new(QuestionRef::new(
+        state.clone(),
+        id,
+        sender,
+    )));
     state.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
     // Install the sparse question synchronously: Return may precede the redirect
     // on the introducer connection, but is not exposed until authentication matches.
@@ -385,13 +390,7 @@ pub(super) fn receive_call<VatId>(
     parent.request_words = words;
     let mut direct = Answer::new();
     direct.callee_allocated = true;
-    let ack = Rc::new(ReturnGuard {
-        state: Rc::downgrade(origin),
-        id: original_id,
-        status: parent.status.clone(),
-        redirect: true,
-        only_pipeline: false,
-    });
+    let ack = ReturnGuard::new(origin, original_id, parent.status.clone(), true);
     let (sender, receiver) = oneshot::channel();
     let (pipeline_sender, mut pipeline) = queued::Pipeline::new();
     let results = Results::new(
@@ -436,14 +435,14 @@ pub(super) fn receive_call<VatId>(
         let mut answers = origin.answers.borrow_mut();
         if let Some(parent) = answers.slots.get_mut(&original_id) {
             parent.pipeline = Some(Box::new(pipeline.clone()));
-            parent.call_completion_promise = Some(original_running);
+            parent.call_task = Some(original_running.into());
         }
     }
     {
         let mut answers = destination.answers.borrow_mut();
         if let Some(direct) = answers.slots.get_mut(&id) {
             direct.pipeline = Some(Box::new(pipeline));
-            direct.call_completion_promise = Some(direct_running);
+            direct.call_task = Some(direct_running.into());
         }
     }
     Ok(())
@@ -518,7 +517,7 @@ fn receive_self_call<VatId>(
         let mut answers = origin.answers.borrow_mut();
         if let Some(answer) = answers.slots.get_mut(&id) {
             answer.pipeline = Some(Box::new(pipeline));
-            answer.call_completion_promise = Some(running);
+            answer.call_task = Some(running.into());
         }
     }
     let response = Promise::from_future(

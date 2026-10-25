@@ -1,0 +1,19 @@
+{
+  "ci_run": 40128516423,
+  "job": 120975015707,
+  "conclusion": "success",
+  "tests": {
+    "engine_alloc": 225,
+    "engine_without_alloc": 179,
+    "hosted_rpc": 377,
+    "secure_tls_quic": 30
+  },
+  "checks": [
+    "engine Clippy warnings denied",
+    "RPC Clippy warnings denied",
+    "formatting",
+    "engine Cortex-M build without default features",
+    "RPC Cortex-M check without default features"
+  ],
+  "counting": "811 executions; engine profiles overlap. No full-workspace coverage or Miri rerun."
+}

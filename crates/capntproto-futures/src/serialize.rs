@@ -533,23 +533,14 @@ where
     write_buffers(&mut writer, &mut buffers).await
 }
 
-// Keep the one-frame scatter/gather metadata on the poll stack. The future
-// retains only the writer and unsent suffix across partial writes or Pending.
+// A retained frame is already contiguous, so use the scalar path directly.
+// TLS can encrypt this slice without an intermediate gather buffer. write_all
+// retains the unsent suffix through partial writes and Pending.
 pub(crate) async fn write_framed<W: AsyncWrite + Unpin>(
     writer: &mut W,
-    mut bytes: &[u8],
+    bytes: &[u8],
 ) -> Result<()> {
-    while !bytes.is_empty() {
-        let written = core::future::poll_fn(|cx| {
-            core::pin::Pin::new(&mut *writer)
-                .poll_write_vectored(cx, &[std::io::IoSlice::new(bytes)])
-        })
-        .await?;
-        if written == 0 {
-            return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into());
-        }
-        bytes = &bytes[written..];
-    }
+    writer.write_all(bytes).await?;
     Ok(())
 }
 
@@ -558,6 +549,9 @@ async fn write_buffers<W: AsyncWrite + Unpin>(
     mut remaining: &mut [std::io::IoSlice<'_>],
 ) -> Result<()> {
     while !remaining.is_empty() {
+        if let [buffer] = remaining {
+            return write_framed(writer, buffer).await;
+        }
         let count = remaining.len().min(MAX_IO_SLICES);
         let written = writer.write_vectored(&remaining[..count]).await?;
         if written == 0 {

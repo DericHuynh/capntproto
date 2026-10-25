@@ -18,6 +18,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use alloc::{boxed::Box, string::ToString, vec::Vec};
+mod protected;
+
 use capnp::capability::CallHints;
 use capnp::capability::{self, Promise};
 use capnp::private::capability::{
@@ -31,14 +34,18 @@ use capntproto_rpc_engine::completion::shared as oneshot;
 use futures::FutureExt;
 use futures::TryFutureExt;
 
-use std::any::{Any, TypeId};
-use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{HashMap, VecDeque};
-use std::future::Future;
-use std::pin::Pin;
-use std::rc::{Rc, Weak};
-use std::task::{Context, Poll};
+use crate::collections::HashMap;
+use crate::collections::VecDeque;
+use alloc::rc::{Rc, Weak};
+use core::any::{Any, TypeId};
+use core::cell::{Cell, OnceCell, RefCell};
+use core::future::Future;
+use core::pin::Pin;
+use core::task::Context;
+use core::task::Poll;
 
+#[cfg(all(test, feature = "std"))]
+mod allocation_tests;
 #[cfg(test)]
 mod owned_results_tests;
 
@@ -165,7 +172,7 @@ impl Params {
 }
 
 impl ParamsHook for Params {
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
         Some(self)
     }
     fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
@@ -187,7 +194,7 @@ impl ParamsHook for Params {
 }
 
 pub(crate) struct Results {
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
     retained_results: OnceCell<Rc<RefCell<Option<Box<dyn ResultsDoneHook>>>>>,
     only_pipeline: bool,
     is_streaming: bool,
@@ -301,39 +308,12 @@ impl Results {
     }
 }
 
-struct OwnedResponse {
-    payload: crate::scoped::wire::Payload,
-    _context: Option<Rc<dyn Any>>,
-}
-impl crate::scoped::response::ResultsSender {
-    pub(crate) fn send_payload(
-        self,
-        mut payload: crate::scoped::wire::Payload,
-        context: Option<Rc<dyn Any>>,
-    ) {
-        let context = context.and_then(|context| payload.retain_plain_context(context).err());
-        if context.is_none() {
-            self.send_response(payload.into_response());
-            return;
-        }
-        self.send_response(Box::new(OwnedResponse {
-            payload,
-            _context: context,
-        }));
-    }
-}
-impl ResponseHook for OwnedResponse {
-    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        ResponseHook::get(&self.payload)
-    }
-}
-
 impl Drop for Results {
     fn drop(&mut self) {
         let Some(fulfiller) = self.results_done_fulfiller.take() else {
             return;
         };
-        let cap_table = ::std::mem::take(&mut self.cap_table);
+        let cap_table = ::core::mem::take(&mut self.cap_table);
         let result: Box<dyn ResultsDoneHook> = match self.response.take() {
             Some(response) => Box::new(SharedResponse {
                 response,
@@ -367,7 +347,7 @@ impl ResultsHook for Results {
     fn retain_response_context(&mut self, context: Rc<dyn Any>) {
         crate::admission::retain_context(&mut self.context, context);
     }
-    fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
+    fn cancellation_guard(&self) -> Option<Box<dyn core::any::Any>> {
         Some(Box::new(
             self.retained_results
                 .get_or_init(|| Rc::new(RefCell::new(None)))
@@ -505,7 +485,7 @@ pub(crate) fn result_allocator(size_hint: Option<capnp::MessageSize>) -> message
 }
 
 struct ResultsDoneInner {
-    _context: Option<Rc<dyn std::any::Any>>,
+    _context: Option<Rc<dyn core::any::Any>>,
     message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
 }
@@ -543,7 +523,7 @@ impl ResultsDone {
             }),
         }
     }
-    pub(crate) fn with_context(mut self, context: Option<Rc<dyn std::any::Any>>) -> Self {
+    pub(crate) fn with_context(mut self, context: Option<Rc<dyn core::any::Any>>) -> Self {
         Rc::get_mut(&mut self.inner)
             .expect("unpublished results")
             ._context = context;
@@ -590,7 +570,7 @@ impl RequestMessage {
             return;
         }
         let RequestMessage::Envelope(message) =
-            std::mem::replace(self, RequestMessage::Root(message::Builder::new_default()))
+            core::mem::replace(self, RequestMessage::Root(message::Builder::new_default()))
         else {
             unreachable!()
         };
@@ -607,7 +587,7 @@ enum RequestClient {
     // parent pipeline in this same slot until ordered wire publication.
     Publishing(crate::scoped::wire::PipelineRef),
 }
-impl std::ops::Deref for RequestClient {
+impl core::ops::Deref for RequestClient {
     type Target = dyn ClientHook;
     fn deref(&self) -> &Self::Target {
         match self {
@@ -620,7 +600,7 @@ impl std::ops::Deref for RequestClient {
 
 pub(crate) struct Request {
     third_party: Option<Rc<message::Builder<message::HeapAllocator>>>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
     message: RequestMessage,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
     interface_id: u64,
@@ -724,7 +704,7 @@ impl Request {
 }
 
 impl RequestHook for Request {
-    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+    fn third_party_tail_target(&self) -> Option<Box<dyn core::any::Any>> {
         crate::scoped::tail_target(self.client.as_deref().expect("unsent request"))
     }
     fn set_third_party_tail_target(
@@ -875,11 +855,11 @@ impl RequestHook for Request {
 
         if hints.no_promise_pipelining {
             return capability::RemotePromise {
-                promise: Promise::from_future(async move {
+                promise: capability::ResponsePromise::new(Promise::from_future(async move {
                     let ((), results) =
                         futures::future::try_join(promise, results_done_promise).await?;
                     Ok(capability::Response::new(Box::new(Response::new(results))))
-                }),
+                })),
                 pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
             };
         }
@@ -902,7 +882,7 @@ impl RequestHook for Request {
         let pipeline = any_pointer::Pipeline::new(Box::new(pipeline));
 
         capability::RemotePromise {
-            promise: Promise::from_future(left),
+            promise: capability::ResponsePromise::new(Promise::from_future(left)),
             pipeline,
         }
     }
@@ -995,24 +975,88 @@ pub(crate) struct Client<S>
 where
     S: capability::Server + Clone,
 {
-    state: Rc<RefCell<ClientState<S>>>,
+    state: Rc<LocalState<S>>,
 }
 
 type LocalKey = (TypeId, usize);
+trait RegisteredState: Any {
+    fn is_live(&self) -> bool;
+}
+/// Liveness is readable without borrowing the application's mutable state.
+/// Both facts share one allocation; the registry retains only a weak owner.
+struct LocalState<S: capability::Server + Clone> {
+    live: Cell<bool>,
+    inner: RefCell<ClientState<S>>,
+}
+impl<S: capability::Server + Clone> core::ops::Deref for LocalState<S> {
+    type Target = RefCell<ClientState<S>>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl<S: capability::Server + Clone + 'static> RegisteredState for LocalState<S> {
+    #[inline]
+    fn is_live(&self) -> bool {
+        self.live.get()
+    }
+}
 struct LocalRegistration {
-    state: Weak<dyn Any>,
-    live: Weak<Cell<bool>>,
+    state: Weak<dyn RegisteredState>,
     revocable: bool,
 }
 impl LocalRegistration {
     fn is_live(&self) -> bool {
-        self.live.upgrade().is_some_and(|live| live.get())
+        self.state.upgrade().is_some_and(|state| state.is_live())
     }
 }
+#[cfg(feature = "std")]
 thread_local! {
     // Weak entries do not keep application servers alive. Different generated
     // interface views of a Rust server have distinct dispatch implementations.
     static LOCAL_CLIENTS: RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>> = RefCell::default();
+}
+
+/// Explicit identity domain for local clients without thread-local storage.
+/// Keep this registry shared by every client view of the same server. Registries
+/// retain only weak registrations; they do not keep application servers alive.
+#[cfg(not(feature = "std"))]
+#[derive(Clone, Default)]
+pub struct ClientRegistry(Rc<RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>>>);
+#[cfg(not(feature = "std"))]
+impl ClientRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn new_client<C, S>(&self, server: S) -> C
+    where
+        C: capability::FromServer<S>,
+        S: 'static,
+    {
+        self.new_client_from_rc(Rc::new(server))
+    }
+    pub fn new_client_from_rc<C, S>(&self, server: Rc<S>) -> C
+    where
+        C: capability::FromServer<S>,
+        S: 'static,
+    {
+        C::new(Client::new_in(C::from_server(server), self.clone()).into_hook())
+    }
+    pub fn new_client_with_executor<C, S>(
+        &self,
+        server: Rc<S>,
+        executor: Rc<dyn capability::CallExecutor>,
+    ) -> C
+    where
+        C: capability::FromServer<S>,
+        S: 'static,
+    {
+        C::new(
+            Client::new_in(C::from_server(server), self.clone())
+                .with_executor(executor)
+                .into_hook(),
+        )
+    }
 }
 
 struct ClientState<S>
@@ -1022,14 +1066,15 @@ where
     inner: Option<S>,
     identity: usize,
     registration: Option<LocalKey>,
-    live: Rc<Cell<bool>>,
+    #[cfg(not(feature = "std"))]
+    registry: ClientRegistry,
     resolved: Option<Box<dyn ClientHook>>,
     resolve_task: Option<futures::future::Shared<Promise<(), Error>>>,
-    resolve_canceler: Rc<crate::revocable::Canceler>,
+    resolve_canceler: Option<Rc<crate::revocable::Canceler>>,
     revocation: Option<Rc<crate::revocable::Canceler>>,
     executor: Option<Rc<dyn capability::CallExecutor>>,
-    #[cfg(unix)]
-    fd: Option<std::rc::Rc<std::os::fd::OwnedFd>>,
+    #[cfg(all(feature = "std", unix))]
+    fd: Option<alloc::rc::Rc<std::os::fd::OwnedFd>>,
 
     /// If a streaming call on this capability has returned an error,
     /// this contains a copy of that error.
@@ -1044,24 +1089,35 @@ where
 impl<S: capability::Server + Clone> Drop for ClientState<S> {
     fn drop(&mut self) {
         if let Some(key) = self.registration {
-            let _ = LOCAL_CLIENTS.try_with(|clients| {
-                if let Ok(mut clients) = clients.try_borrow_mut() {
-                    if let Some(views) = clients.get_mut(&key.1) {
-                        if views
-                            .get(&key.0)
-                            .is_some_and(|entry| entry.state.strong_count() == 0)
-                        {
-                            views.remove(&key.0);
-                        }
-                        if views.is_empty() {
-                            clients.remove(&key.1);
-                        }
-                    }
-                }
-            });
+            #[cfg(feature = "std")]
+            let _ = LOCAL_CLIENTS.try_with(|clients| Self::unregister(clients, key));
+            #[cfg(not(feature = "std"))]
+            Self::unregister(&self.registry.0, key);
         }
-        self.resolve_canceler
-            .cancel(Error::failed("local client dropped".into()));
+        if let Some(canceler) = &self.resolve_canceler {
+            canceler.cancel(Error::failed("local client dropped".into()));
+        }
+    }
+}
+impl<S: capability::Server + Clone> ClientState<S> {
+    #[inline]
+    fn unregister(
+        clients: &RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>>,
+        key: LocalKey,
+    ) {
+        if let Ok(mut clients) = clients.try_borrow_mut() {
+            if let Some(views) = clients.get_mut(&key.1) {
+                if views
+                    .get(&key.0)
+                    .is_some_and(|entry| entry.state.strong_count() == 0)
+                {
+                    views.remove(&key.0);
+                }
+                if views.is_empty() {
+                    clients.remove(&key.1);
+                }
+            }
+        }
     }
 }
 
@@ -1119,7 +1175,7 @@ struct StreamingCall<S>
 where
     S: capability::Server + Clone + 'static,
 {
-    state: Rc<RefCell<ClientState<S>>>,
+    state: Rc<LocalState<S>>,
     promise: Promise<(), Error>,
     completed: bool,
 }
@@ -1163,16 +1219,17 @@ impl<S> ClientState<S>
 where
     S: capability::Server + Clone + 'static,
 {
-    fn revoke(state: &Rc<RefCell<Self>>, error: Error) {
+    fn revoke(state: &Rc<LocalState<S>>, error: Error) {
+        let live = &state.live;
         let (server, revocation, resolution, queued) = {
             let mut state = state.borrow_mut();
             let Some(server) = state.inner.take() else {
                 return;
             };
-            state.live.set(false);
+            live.set(false);
             state.broken_error = Some(error.clone());
             state.blocked = false;
-            #[cfg(unix)]
+            #[cfg(all(feature = "std", unix))]
             {
                 state.fd = None;
             }
@@ -1180,13 +1237,15 @@ where
                 server,
                 state.revocation.clone(),
                 state.resolve_canceler.clone(),
-                std::mem::take(&mut state.blocked_calls),
+                core::mem::take(&mut state.blocked_calls),
             )
         };
         if let Some(revocation) = revocation {
             revocation.cancel(error.clone());
         }
-        resolution.cancel(error.clone());
+        if let Some(resolution) = resolution {
+            resolution.cancel(error.clone());
+        }
         for call in queued {
             match call {
                 BlockedCall::Call { fulfiller, .. } => {
@@ -1202,7 +1261,7 @@ where
     }
 
     fn dispatch_or_queue(
-        state: Rc<RefCell<Self>>,
+        state: Rc<LocalState<S>>,
         interface_id: u64,
         method_id: u16,
         params: Box<dyn ParamsHook>,
@@ -1239,7 +1298,7 @@ where
     }
 
     fn dispatch_call(
-        state: Rc<RefCell<Self>>,
+        state: Rc<LocalState<S>>,
         interface_id: u64,
         method_id: u16,
         params: Box<dyn ParamsHook>,
@@ -1250,32 +1309,39 @@ where
     }
 
     fn dispatch_context(
-        state: Rc<RefCell<Self>>,
+        state: Rc<LocalState<S>>,
         interface_id: u64,
         method_id: u16,
         context: &mut dyn capnp::private::capability::CallContextHook,
     ) -> Promise<(), Error> {
-        let inner = {
+        let (inner, explicit_executor) = {
             let state_ref = state.borrow();
             if let Some(e) = &state_ref.broken_error {
                 return Promise::err(e.clone());
             }
-            state_ref.inner.as_ref().expect("live server").clone()
+            (
+                state_ref.inner.as_ref().expect("live server").clone(),
+                state_ref.executor.is_some(),
+            )
         };
 
         let results = context.results();
-        let permits_immediate_poll = results.permits_immediate_poll();
+        let permits_immediate_poll = results.permits_immediate_poll() && !explicit_executor;
         let guard = results.cancellation_context();
         let executor = state
             .borrow()
             .executor
             .clone()
             .or_else(|| results.cancellation_executor());
-        let mut f = inner.dispatch_call(
-            interface_id,
-            method_id,
-            ::capnp::capability::CallContext::new(context),
-        );
+        let context = ::capnp::capability::CallContext::new(context);
+        // A user-supplied executor may already be stopped. Its spawn() must
+        // accept the protected task before either entry or the first poll.
+        let context = if explicit_executor {
+            context.with_deferred_protection()
+        } else {
+            context
+        };
+        let mut f = inner.dispatch_call(interface_id, method_id, context);
 
         let revocation = state.borrow().revocation.clone();
         if let Some(revocation) = revocation {
@@ -1299,18 +1365,23 @@ where
                     return Promise::from(result);
                 }
             }
-            let retained_server = state.clone();
-            let task = Promise::from_future(async move {
-                let result = f.promise.await;
-                drop(guard);
-                drop(retained_server);
-                result
-            })
-            .shared();
-            if let Err(error) = executor.spawn(Promise::from_future(task.clone())) {
+            let mut retained_server = Some(state.clone());
+            let mut guard = guard;
+            let mut operation = Some(f.promise);
+            let work = futures::future::poll_fn(move |cx| {
+                let result = futures::ready!(Pin::new(operation.as_mut().unwrap()).poll(cx));
+                drop(operation.take());
+                drop(guard.take());
+                drop(retained_server.take());
+                Poll::Ready(result)
+            });
+            // Both caller and executor can drive protected execution. The two
+            // fixed interests need no dynamic waiter slab or boxed shared task.
+            let (task, completion) = protected::pair(work);
+            if let Err(error) = executor.spawn(Promise::from_future(task)) {
                 return Promise::err(error);
             }
-            f.promise = Promise::from_future(task);
+            f.promise = Promise::from_future(completion);
         }
 
         if f.is_streaming {
@@ -1327,7 +1398,7 @@ where
         }
     }
 
-    fn unblock(state: Rc<RefCell<Self>>) {
+    fn unblock(state: Rc<LocalState<S>>) {
         loop {
             let blocked_call = {
                 let mut state_ref = state.borrow_mut();
@@ -1374,6 +1445,7 @@ impl<S> Client<S>
 where
     S: capability::Server + Clone,
 {
+    #[cfg(feature = "std")]
     pub(crate) fn is_registered(server: usize, identity: usize) -> bool
     where
         S: 'static,
@@ -1387,7 +1459,10 @@ where
                 .and_then(|entry| entry.state.upgrade())
         });
         existing
-            .and_then(|state| state.downcast::<RefCell<ClientState<S>>>().ok())
+            .and_then(|state| {
+                let state: Rc<dyn Any> = state;
+                state.downcast::<LocalState<S>>().ok()
+            })
             .is_some_and(|state| {
                 let state = state.borrow();
                 state.identity == identity && state.inner.is_some()
@@ -1403,14 +1478,14 @@ where
             self.state.borrow().inner.as_ref().unwrap().as_ptr(),
         );
         let revocable = self.state.borrow().revocation.is_some();
-        let (existing, conflict) = LOCAL_CLIENTS.with(|clients| {
+        let (existing, conflict) = self.with_registry(|clients| {
             let clients = clients.borrow();
             match clients.get(&key.1) {
                 Some(views) => (
                     views.get(&key.0).and_then(|entry| entry.state.upgrade()),
                     views
                         .values()
-                        .any(|entry| entry.is_live() && (revocable || entry.revocable)),
+                        .any(|entry| (revocable || entry.revocable) && entry.is_live()),
                 ),
                 None => (None, false),
             }
@@ -1425,20 +1500,19 @@ where
             ));
         }
         if let Some(existing) = existing {
-            let state = existing.downcast::<RefCell<ClientState<S>>>().ok().unwrap();
+            let existing: Rc<dyn Any> = existing;
+            let state = existing.downcast::<LocalState<S>>().ok().unwrap();
             if state.borrow().inner.is_some() {
                 return Box::new(Self { state });
             }
         }
         self.state.borrow_mut().registration = Some(key);
-        let erased: Rc<dyn Any> = self.state.clone();
-        let live = Rc::downgrade(&self.state.borrow().live);
-        LOCAL_CLIENTS.with(|clients| {
+        let erased: Rc<dyn RegisteredState> = self.state.clone();
+        self.with_registry(|clients| {
             clients.borrow_mut().entry(key.1).or_default().insert(
                 key.0,
                 LocalRegistration {
                     state: Rc::downgrade(&erased),
-                    live,
                     revocable,
                 },
             )
@@ -1501,8 +1575,14 @@ where
             Ok(())
         });
         let (canceler, executor) = {
-            let state = self.state.borrow();
-            (state.resolve_canceler.clone(), state.executor.clone())
+            let mut state = self.state.borrow_mut();
+            // A settled server has no resolution task to cancel. Allocate this
+            // owner only when shorten_path() actually supplies one.
+            let canceler = state
+                .resolve_canceler
+                .get_or_insert_with(Rc::default)
+                .clone();
+            (canceler, state.executor.clone())
         };
         let task = canceler.wrap(task).shared();
         self.state.borrow_mut().resolve_task = Some(task.clone());
@@ -1534,6 +1614,7 @@ where
         (self, revoker)
     }
 
+    #[cfg(feature = "std")]
     pub(crate) fn new_with_executor(server: S, executor: Rc<dyn capability::CallExecutor>) -> Self {
         Self::new(server).with_executor(executor)
     }
@@ -1543,31 +1624,58 @@ where
         self
     }
 
-    #[cfg(unix)]
-    pub(crate) fn new_with_fd(server: S, fd: std::rc::Rc<std::os::fd::OwnedFd>) -> Self {
+    #[cfg(all(feature = "std", unix))]
+    pub(crate) fn new_with_fd(server: S, fd: alloc::rc::Rc<std::os::fd::OwnedFd>) -> Self {
         let client = Self::new(server);
         client.state.borrow_mut().fd = Some(fd);
         client
     }
 
+    #[inline]
+    fn with_registry<R>(
+        &self,
+        f: impl FnOnce(&RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>>) -> R,
+    ) -> R {
+        #[cfg(feature = "std")]
+        {
+            LOCAL_CLIENTS.with(f)
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            f(&self.state.borrow().registry.0)
+        }
+    }
+    #[cfg(feature = "std")]
     pub(crate) fn new(server: S) -> Self {
+        Self::construct(server)
+    }
+    #[cfg(not(feature = "std"))]
+    pub(crate) fn new_in(server: S, registry: ClientRegistry) -> Self {
+        Self::construct(server, registry)
+    }
+    #[inline]
+    fn construct(server: S, #[cfg(not(feature = "std"))] registry: ClientRegistry) -> Self {
         let client = Self {
-            state: Rc::new(RefCell::new(ClientState {
-                identity: 0,
-                registration: None,
-                live: Rc::new(Cell::new(true)),
-                resolved: None,
-                resolve_task: None,
-                resolve_canceler: Rc::new(crate::revocable::Canceler::default()),
-                inner: Some(server),
-                revocation: None,
-                executor: None,
-                #[cfg(unix)]
-                fd: None,
-                broken_error: None,
-                blocked: false,
-                blocked_calls: VecDeque::new(),
-            })),
+            state: Rc::new(LocalState {
+                live: Cell::new(true),
+                inner: RefCell::new(ClientState {
+                    identity: 0,
+                    registration: None,
+                    #[cfg(not(feature = "std"))]
+                    registry,
+                    resolved: None,
+                    resolve_task: None,
+                    resolve_canceler: None,
+                    inner: Some(server),
+                    revocation: None,
+                    executor: None,
+                    #[cfg(all(feature = "std", unix))]
+                    fd: None,
+                    broken_error: None,
+                    blocked: false,
+                    blocked_calls: VecDeque::new(),
+                }),
+            }),
         };
         client.state.borrow_mut().identity = Rc::as_ptr(&client.state) as usize;
         client
@@ -1614,7 +1722,7 @@ where
             chain.follow(&*resolved);
         } else if state.inner.is_some() {
             chain.push("local");
-            chain.push(std::any::type_name::<S>());
+            chain.push(core::any::type_name::<S>());
         } else {
             chain.push("revoked");
         }
@@ -1643,8 +1751,8 @@ where
             result
         })
     }
-    #[cfg(unix)]
-    fn get_fd(&self) -> Option<std::rc::Rc<std::os::fd::OwnedFd>> {
+    #[cfg(all(feature = "std", unix))]
+    fn get_fd(&self) -> Option<alloc::rc::Rc<std::os::fd::OwnedFd>> {
         self.state.borrow().fd.clone()
     }
     fn add_ref(&self) -> Box<dyn ClientHook> {

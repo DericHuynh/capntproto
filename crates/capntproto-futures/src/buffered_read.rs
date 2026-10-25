@@ -146,7 +146,31 @@ enum Storage {
     SharedBytes(Arc<Vec<u8>>),
     Owned(Box<[Word]>),
     Recycled(Box<RecycledSpill>),
+    Cached(CachedFrame),
 }
+// Concurrent retained RPC frames use independent buffers. Reuse only released
+// buffers, with both a count and byte bound; readers may outlive their stream.
+const CACHED_FRAMES: usize = 64;
+const CACHED_FRAME_WORDS: usize = 16 * 1024;
+type FrameCache = Arc<Mutex<Vec<Vec<Word>>>>;
+struct CachedFrame {
+    words: Vec<Word>,
+    cache: Weak<Mutex<Vec<Vec<Word>>>>,
+}
+impl Drop for CachedFrame {
+    fn drop(&mut self) {
+        if self.words.capacity() > CACHED_FRAME_WORDS {
+            return;
+        }
+        if let Some(cache) = self.cache.upgrade() {
+            let mut cache = cache.lock().unwrap();
+            if cache.len() < CACHED_FRAMES {
+                cache.push(core::mem::take(&mut self.words));
+            }
+        }
+    }
+}
+
 // Only released owning frames may return storage. A weak cache reference keeps
 // retained readers independent of the stream and does not prolong its cache.
 struct RecycledSpill {
@@ -173,6 +197,7 @@ impl Storage {
             Self::SharedBytes(bytes) => bytes,
             Self::Owned(words) => Word::words_to_bytes(words),
             Self::Recycled(spill) => Word::words_to_bytes(&spill.words),
+            Self::Cached(frame) => Word::words_to_bytes(&frame.words),
         }
     }
 }
@@ -301,8 +326,22 @@ impl BufferedSegments {
         )
     }
 
-    fn detach(mut self) -> Self {
-        let mut storage = Word::allocate_zeroed_vec(self.frame.bytes / 8);
+    fn detach(mut self, cache: &mut Option<FrameCache>) -> Self {
+        let words = self.frame.bytes / 8;
+        if words <= CACHED_FRAME_WORDS {
+            let cache = cache.get_or_insert_with(|| Arc::new(Mutex::new(Vec::new())));
+            let mut storage = cache.lock().unwrap().pop().unwrap_or_default();
+            storage.resize(words, capnp::word(0, 0, 0, 0, 0, 0, 0, 0));
+            Word::words_to_bytes_mut(&mut storage)
+                .copy_from_slice(&self.storage.bytes()[self.start..self.start + self.frame.bytes]);
+            self.storage = Storage::Cached(CachedFrame {
+                words: storage,
+                cache: Arc::downgrade(cache),
+            });
+            self.start = 0;
+            return self;
+        }
+        let mut storage = Word::allocate_zeroed_vec(words);
         Word::words_to_bytes_mut(&mut storage)
             .copy_from_slice(&self.storage.bytes()[self.start..self.start + self.frame.bytes]);
         // Detached frames have one owner. Only views into the stream's receive
@@ -321,6 +360,7 @@ impl ReaderSegments for BufferedSegments {
             // conversion). Only shared receive views need an additional offset.
             Storage::Owned(words) => &Word::words_to_bytes(words)[start..end],
             Storage::Recycled(spill) => &Word::words_to_bytes(&spill.words)[start..end],
+            Storage::Cached(frame) => &Word::words_to_bytes(&frame.words)[start..end],
             Storage::SharedWords(words) => {
                 &Word::words_to_bytes(words)[self.start + start..self.start + end]
             }
@@ -381,7 +421,11 @@ impl ReaderSegments for BufferedScratchSegments<'_> {
 }
 
 impl BufferedSegments {
-    fn retain(self, scratch: Option<&mut [Word]>) -> BufferedScratchSegments<'_> {
+    fn retain<'a>(
+        self,
+        scratch: Option<&'a mut [Word]>,
+        cache: &mut Option<FrameCache>,
+    ) -> BufferedScratchSegments<'a> {
         if let Some(words) = scratch.filter(|words| words.len() >= self.frame.bytes / 8) {
             let words = &mut words[..self.frame.bytes / 8];
             Word::words_to_bytes_mut(words)
@@ -391,7 +435,7 @@ impl BufferedSegments {
                 frame: self.frame,
             })
         } else {
-            BufferedScratchSegments(ScratchStorage::Buffered(self.detach()))
+            BufferedScratchSegments(ScratchStorage::Buffered(self.detach(cache)))
         }
     }
 }
@@ -430,6 +474,7 @@ pub struct BufferedRead<R> {
     spill: Option<Spill>,
     spare: Vec<Word>,
     owned_spare: Option<Arc<Mutex<Vec<Word>>>>,
+    frame_cache: Option<FrameCache>,
     terminal: Option<Result<()>>,
     consumed: u64,
     borrowed: bool,
@@ -474,6 +519,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             spill: None,
             spare: Vec::new(),
             owned_spare: None,
+            frame_cache: None,
             terminal: None,
             consumed: 0,
             borrowed: false,
@@ -519,13 +565,23 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     }
 
     /// Whether the next complete frame is already buffered, without reading or
-    /// transferring its ownership. Errors remain for the ordinary receive path.
-    pub fn has_buffered_next_frame(&self) -> bool {
+    /// transferring its ownership. Validated header metadata is retained for
+    /// the receive path. Errors remain for the ordinary receive path.
+    pub fn has_buffered_next_frame(&mut self) -> bool {
         if self.terminal.is_some() || self.has_outstanding_short_lived_message() {
             return false;
         }
-        let bytes = &self.buffer.bytes()[self.begin..self.end];
-        matches!(Frame::parse(bytes, self.options), Ok(Some(frame)) if frame.bytes <= bytes.len())
+        if self.frame.is_none() && self.end - self.begin >= 8 {
+            // Keep validated segment offsets in the existing framing state.
+            // The receive path consumes this same header; lookahead neither
+            // reads the transport nor advances bytes or ancillary ownership.
+            self.frame = Frame::parse(&self.buffer.bytes()[self.begin..self.end], self.options)
+                .ok()
+                .flatten();
+        }
+        self.frame
+            .as_ref()
+            .is_some_and(|frame| frame.bytes <= self.end - self.begin)
     }
 
     fn advance(&mut self, bytes: usize) -> Result<()> {
@@ -733,7 +789,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         let segments = if short_lived {
             BufferedScratchSegments(ScratchStorage::Buffered(segments))
         } else {
-            segments.retain(scratch.take())
+            segments.retain(scratch.take(), &mut self.frame_cache)
         };
         self.consume_buffered(bytes);
         // Classification uses its own traversal budget.
@@ -1022,7 +1078,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
                 (self.read_hint)(&mut self.input, 1)?;
                 return Poll::Ready(Ok(true));
             }
-            if self.frame.is_none() {
+            if self.frame.is_none() && self.end - self.begin >= 8 {
                 self.frame =
                     Frame::parse(&self.buffer.bytes()[self.begin..self.end], self.options)?;
             }
@@ -1160,6 +1216,49 @@ mod tests {
             self.hints.push(bytes);
             Ok(())
         }
+    }
+
+    #[test]
+    fn retained_frame_cache_reuses_only_released_storage_and_outlives_no_reader() {
+        let frames: Vec<_> = (*b"abc")
+            .into_iter()
+            .map(|byte| {
+                let mut message = capnp::message::Builder::new_default();
+                message.initn_root::<capnp::data::Builder>(32).fill(byte);
+                capnp::serialize::write_message_to_words(&message)
+            })
+            .collect();
+        let mut input = BufferedRead::new(
+            futures::io::Cursor::new(frames.concat()),
+            Default::default(),
+        );
+        let read = |input: &mut BufferedRead<_>| {
+            futures::executor::block_on(futures::future::poll_fn(|cx| {
+                input.poll_read_message(cx, |_| Ok(false))
+            }))
+            .unwrap()
+            .unwrap()
+        };
+        let first = read(&mut input);
+        let second = read(&mut input);
+        let first_address = first.get_segments().framed_bytes().as_ptr();
+        let second_address = second.get_segments().framed_bytes().as_ptr();
+        assert_ne!(first_address, second_address);
+        drop(second);
+        let third = read(&mut input);
+        assert_eq!(third.get_segments().framed_bytes().as_ptr(), second_address);
+        assert_eq!(
+            first.get_root::<capnp::data::Reader>().unwrap(),
+            &[b'a'; 32]
+        );
+        let cache = Arc::downgrade(input.frame_cache.as_ref().unwrap());
+        drop(input);
+        assert!(cache.upgrade().is_none());
+        assert_eq!(
+            third.get_root::<capnp::data::Reader>().unwrap(),
+            &[b'c'; 32]
+        );
+        assert_eq!(first.get_segments().framed_bytes().as_ptr(), first_address);
     }
 
     #[test]
@@ -1971,6 +2070,53 @@ mod tests {
             input.poll_stream_frame_size(&mut cx),
             Poll::Ready(Err(_))
         ));
+        assert!(!input.has_buffered_next_frame());
+    }
+
+    #[test]
+    fn lookahead_reuses_segment_metadata_without_consuming_the_successor() {
+        let mut bytes = vec![0; 8]; // Empty first frame, to prefetch successors.
+        for word in [2u32, 1, 1, 1] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0; 24]); // Three one-word segments.
+        bytes.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0]);
+        bytes.extend_from_slice(&[0; 8]); // A differently sized successor.
+        let mut input = BufferedRead::new(futures::io::Cursor::new(bytes), Default::default());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(8))
+        );
+        input.finish_borrowed_frame();
+        assert!(input.has_buffered_next_frame());
+        let position = input.get_ref().position();
+        let allocations = allocation_counter::measure(|| {
+            for _ in 0..8 {
+                assert!(input.has_buffered_next_frame());
+            }
+            assert_eq!(
+                input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+                Poll::Ready(Some(40))
+            );
+        });
+        assert_eq!(
+            allocations.count_total, 0,
+            "reuse the already checked segment table"
+        );
+        assert_eq!(input.get_ref().position(), position);
+        assert_eq!(input.consumed_bytes(), 48);
+        assert!(
+            !input.has_buffered_next_frame(),
+            "current frame is still borrowed"
+        );
+        input.finish_borrowed_frame();
+        assert!(input.has_buffered_next_frame());
+        assert_eq!(
+            input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
+            Poll::Ready(Some(16))
+        );
+        input.finish_borrowed_frame();
         assert!(!input.has_buffered_next_frame());
     }
 

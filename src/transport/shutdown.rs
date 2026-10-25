@@ -97,7 +97,7 @@ impl ShutdownDriver {
         for index in 0..3 {
             // After the RPC stream is drained there are usually no readable
             // streams at all. Avoid three failed lookups on that common path;
-            // readable resets and zero-byte FINs still go through stream_recv.
+            // readable resets and zero-byte FINs still go through stream_recv_buf.
             if !conn.is_readable() {
                 break;
             }
@@ -105,7 +105,7 @@ impl ShutdownDriver {
                 continue;
             }
             loop {
-                match conn.stream_recv(
+                match conn.stream_recv_buf(
                     self.incoming_id + 4 * index as u64,
                     &mut self.incoming[index][self.receive_offset[index]..],
                 ) {

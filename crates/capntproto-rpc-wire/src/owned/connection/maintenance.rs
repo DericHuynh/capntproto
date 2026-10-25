@@ -3,11 +3,10 @@ use super::*;
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
-    /// The last maintenance poll only retired references and published Finish
-    /// or Release. It performed no promise propagation or application dispatch.
-    /// Returned owners and independently notified work still need observation.
-    pub fn maintenance_published_retirement(&self) -> bool {
-        self.maintenance_published_retirement
+    /// Effects are latched until the next maintenance visit. Applying them does
+    /// not require inferring which owners changed from a coarse Progress value.
+    pub fn maintenance_effects(&self) -> MaintenanceEffects {
+        self.maintenance_effects
     }
     /// Read readiness from producer-owned queues. There is no retained idle
     /// certificate: changes are visible on the next poll without invalidation.
@@ -208,7 +207,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             pipelines::Error,
         >,
     ) -> Result<Progress<I, A, S>, Error> {
-        self.maintenance_published_retirement = false;
+        self.maintenance_effects = MaintenanceEffects::default();
         self.check_live()?;
         if *budget == 0 {
             return Ok(Progress::Yield);
@@ -231,6 +230,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             *budget -= 1;
             self.control_waiting &= !(1 << work);
             self.control_waits[work as usize] = None;
+            self.maintenance_effects.selected(work);
             match self.maintenance_step(
                 work, messages, queue, minimum, options, scratch, resources, attach, resolve,
             ) {
@@ -242,8 +242,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 Ok(None) => {}
                 Err(error) if self.park_control(work, error, messages, queue) => {}
                 outcome => {
-                    self.maintenance_published_retirement =
-                        matches!(work, 9 | 10) && outcome.is_ok();
                     return outcome.map(|progress| progress.expect("productive work"));
                 }
             }

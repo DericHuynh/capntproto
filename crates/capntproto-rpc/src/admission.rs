@@ -1,13 +1,14 @@
 //! Local outgoing call admission. This does not limit message allocation or
 //! application calls queued on a purely local unresolved capability.
 
+use alloc::rc::Rc;
+use alloc::vec::Vec;
 use capntproto_rpc_engine::flow_control::outgoing::Outgoing;
 pub(crate) use capntproto_rpc_engine::flow_control::outgoing::OwnedPermit as Permit;
-use std::rc::Rc;
 
 pub(crate) fn retain_context(
-    slot: &mut Option<Rc<dyn std::any::Any>>,
-    context: Rc<dyn std::any::Any>,
+    slot: &mut Option<Rc<dyn core::any::Any>>,
+    context: Rc<dyn core::any::Any>,
 ) {
     if slot.as_ref().is_some_and(|old| Rc::ptr_eq(old, &context)) {
         return;
@@ -20,14 +21,14 @@ pub(crate) fn retain_context(
 
 pub(crate) struct Admission {
     counter: Rc<Outgoing>,
-    pub(crate) held_responses: std::cell::Cell<usize>,
+    pub(crate) held_responses: core::cell::Cell<usize>,
 }
 
 impl Admission {
     pub(crate) fn new(limit: usize) -> Rc<Self> {
         Rc::new(Self {
             counter: Rc::new(Outgoing::new(limit)),
-            held_responses: std::cell::Cell::new(0),
+            held_responses: core::cell::Cell::new(0),
         })
     }
 

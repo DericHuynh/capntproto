@@ -1,8 +1,9 @@
 //! Outgoing owned calls and local execution over one portable invocation ledger.
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 use capntproto_rpc_engine::clients::{Destination, Location};
 use capntproto_rpc_wire::clients::{Endpoint, Route};
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 type Peer<'p, 'id, 's, I, A, P, const C: usize, const H: usize> =
     Driver<'p, 'id, 's, I, A, P, Rc<dyn ClientHook>, C, H>;
@@ -107,7 +108,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     published: usize,
     pending: Option<Box<Call>>,
     maximum: usize,
-    admission_wait: Option<std::sync::Arc<super::ready::Signal>>,
+    admission_wait: Option<alloc::sync::Arc<super::ready::Signal>>,
     admission_parked: bool,
     ready: super::ready::Queue,
     lane: u8,
@@ -370,7 +371,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             messages,
             options,
             cx,
-            budget,
+            &mut budget.get(),
             import,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
@@ -472,7 +473,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             messages,
             options,
             cx,
-            budget,
+            &mut budget.get(),
             import,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
@@ -549,7 +550,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         messages: &mut messages::Messages<'p, '_, '_>,
         options: capnp::message::ReaderOptions,
         cx: &mut Context<'_>,
-        budget: NonZeroUsize,
+        budget: &mut usize,
         mut import: impl FnMut(
             &mut capntproto_rpc_wire::owned::connection::Scope<
                 '_,
@@ -583,7 +584,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         }
         hooks.register_next(cx.waker());
         let mut advanced = false;
-        for _ in 0..budget.get() {
+        while *budget != 0 {
+            *budget -= 1;
             let dispatch_ready = driver.runtime().dispatch_is_pending()
                 || driver
                     .capabilities()

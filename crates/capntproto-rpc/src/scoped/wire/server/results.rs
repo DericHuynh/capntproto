@@ -1,5 +1,10 @@
 //! Owned application results; protocol ownership stays in the portable driver.
 use super::*;
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use capnp::private::capability::RequestHook;
 use coordinator::multiparty::{tail, Handle};
 #[cfg(test)]
@@ -9,40 +14,80 @@ mod tests;
 struct State {
     revision: Cell<u64>,
     protocol_wake: RefCell<Option<Waker>>,
-    message_pool: Option<capnp::message::SegmentPool>,
+    message_pool: Option<crate::MessagePool>,
     tail_origin: RefCell<Option<Handle>>,
     network: RefCell<Option<Box<NetworkState>>>,
     transferred: Cell<bool>,
-    context: RefCell<Option<Rc<dyn std::any::Any>>>,
+    context: RefCell<Option<Rc<dyn core::any::Any>>>,
     method: Cell<Option<DynamicCall>>,
-    payload: RefCell<Option<CompletedPayload>>,
+    payload: core::cell::OnceCell<CompletedPayload>,
     pipeline: RefCell<Option<Rc<dyn PipelineHook>>>,
     completion: RefCell<Option<capnp::Result<()>>>,
-    wake: RefCell<Vec<Waker>>,
+    wake: RefCell<Waiters>,
     charge: RefCell<Option<coordinator::policy::Charge>>,
     trace_prepared: Cell<bool>,
     trace: RefCell<Option<String>>,
 }
-// A capability-free result already owns an immutable Return. Share that
-// allocation directly; build the general payload wrapper only for consumers
-// which need the capability-aware representation.
-#[derive(Clone)]
+// A suspended invocation normally has one collector. Extra public observers
+// keep their own notifications without allocating a vector for that first one.
+#[derive(Default)]
+struct Waiters {
+    first: Option<Waker>,
+    overflow: Vec<Waker>,
+}
+impl Waiters {
+    fn contains(&self, wake: &Waker) -> bool {
+        self.first
+            .iter()
+            .chain(&self.overflow)
+            .any(|old| old.will_wake(wake))
+    }
+    fn clear(&mut self) {
+        self.first = None;
+        self.overflow.clear();
+    }
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.first.is_none() && self.overflow.is_empty()
+    }
+}
+// A contiguous result stays in the existing producer context. Segmented
+// output retains a separate message owner so an in-flight write does not keep
+// the worker's recyclable result context alive.
 enum CompletedPayload {
-    Plain(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    Plain(connection::FrozenReturn<capnp::message::HeapAllocator>),
+    Shared(Rc<connection::FrozenReturn<capnp::message::HeapAllocator>>),
     General(Rc<Payload>),
+}
+/// A checked result envelope available for direct publication. Only segmented
+/// replies need an independent owner retained by asynchronous output.
+#[derive(Clone, Copy)]
+pub enum PlainPayload<'a> {
+    Inline(&'a connection::FrozenReturn<capnp::message::HeapAllocator>),
+    Shared(&'a Rc<connection::FrozenReturn<capnp::message::HeapAllocator>>),
+}
+impl<'a> PlainPayload<'a> {
+    pub fn message(&self) -> &'a connection::FrozenReturn<capnp::message::HeapAllocator> {
+        match self {
+            Self::Inline(message) => message,
+            Self::Shared(message) => message,
+        }
+    }
 }
 impl CompletedPayload {
     fn reader(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         match self {
             Self::Plain(message) => message.reader(),
-            Self::General(p) => p.reader(),
+            Self::Shared(message) => message.reader(),
+            Self::General(payload) => payload.reader(),
         }
     }
-    fn plain(&self) -> Option<&Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>> {
+    fn plain(&self) -> Option<PlainPayload<'_>> {
         match self {
-            Self::Plain(message) => Some(message),
-            Self::General(p) if p.caps.is_empty() => match &p.body {
-                PayloadBody::Return(message) => Some(message),
+            Self::Plain(message) => Some(PlainPayload::Inline(message)),
+            Self::Shared(message) => Some(PlainPayload::Shared(message)),
+            Self::General(payload) if payload.caps.is_empty() => match &payload.body {
+                PayloadBody::Return(message) => Some(PlainPayload::Shared(message)),
                 _ => None,
             },
             _ => None,
@@ -50,13 +95,17 @@ impl CompletedPayload {
     }
     fn cap_count(&self) -> usize {
         match self {
-            Self::Plain(_) => 0,
-            Self::General(p) => p.caps.len(),
+            Self::Plain(_) | Self::Shared(_) => 0,
+            Self::General(payload) => payload.caps.len(),
         }
     }
-    fn share(&self) -> Rc<Payload> {
+    fn share(&self, owner: &Results) -> Rc<Payload> {
         match self {
-            Self::Plain(message) => Rc::new(Payload {
+            Self::Plain(_) => Rc::new(Payload {
+                body: PayloadBody::Produced(owner.clone()),
+                caps: Vec::new(),
+            }),
+            Self::Shared(message) => Rc::new(Payload {
                 body: PayloadBody::Return(message.clone()),
                 caps: Vec::new(),
             }),
@@ -73,7 +122,7 @@ struct NetworkState {
     destination: Option<tail::Destination>,
     guard: Option<(
         Option<Rc<crate::third_party::ThirdPartyExchange>>,
-        Box<dyn std::any::Any>,
+        Box<dyn core::any::Any>,
     )>,
 }
 impl State {
@@ -84,8 +133,8 @@ impl State {
                 .checked_add(1)
                 .expect("results revision exhausted"),
         );
-        let wakes = std::mem::take(&mut *self.wake.borrow_mut());
-        for wake in wakes {
+        let wakes = core::mem::take(&mut *self.wake.borrow_mut());
+        for wake in wakes.first.into_iter().chain(wakes.overflow) {
             wake.wake();
         }
     }
@@ -111,7 +160,7 @@ impl Cache {
     pub(super) fn acquire(
         &self,
         charge: Option<coordinator::policy::Charge>,
-        pool: Option<capnp::message::SegmentPool>,
+        pool: Option<crate::MessagePool>,
     ) -> Results {
         let cached = self.0.take();
         match cached {
@@ -134,7 +183,7 @@ impl Cache {
         drop(state.tail_origin.get_mut().take());
         drop(state.network.get_mut().take());
         drop(state.context.get_mut().take());
-        drop(state.payload.get_mut().take());
+        drop(state.payload.take());
         drop(state.pipeline.get_mut().take());
         drop(state.completion.get_mut().take());
         state.wake.get_mut().clear();
@@ -159,7 +208,7 @@ impl Cache {
 /// running operation to release its protocol interest.
 #[derive(Default)]
 pub struct Producer(Results);
-impl std::ops::Deref for Producer {
+impl core::ops::Deref for Producer {
     type Target = Results;
     fn deref(&self) -> &Results {
         &self.0
@@ -185,12 +234,24 @@ impl Drop for Producer {
     }
 }
 impl Results {
+    pub(in crate::scoped::wire) fn payload_reader(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        self.0.payload.get().expect("published result").reader()
+    }
+    pub(in crate::scoped::wire) fn prepared_return(
+        &self,
+    ) -> Option<&connection::FrozenReturn<capnp::message::HeapAllocator>> {
+        self.0
+            .payload
+            .get()?
+            .plain()
+            .map(|payload| payload.message())
+    }
     pub(in crate::scoped::wire) fn projections_pending(
         &self,
         hooks: &ClientHooks<'_>,
         cx: &mut Context<'_>,
     ) -> bool {
-        let payload = match self.0.payload.borrow().as_ref() {
+        let payload = match self.0.payload.get() {
             Some(CompletedPayload::General(payload)) => Some(payload.clone()),
             _ => None,
         };
@@ -273,7 +334,7 @@ impl Results {
     pub(crate) fn retain_network(
         &self,
         exchange: Option<Rc<crate::third_party::ThirdPartyExchange>>,
-        guard: Box<dyn std::any::Any>,
+        guard: Box<dyn core::any::Any>,
     ) {
         let previous = self
             .0
@@ -300,7 +361,7 @@ impl Results {
     }
     pub(in crate::scoped::wire) fn with_charge(
         charge: Option<coordinator::policy::Charge>,
-        message_pool: Option<capnp::message::SegmentPool>,
+        message_pool: Option<crate::MessagePool>,
     ) -> Self {
         Self(Rc::new(State {
             revision: Cell::new(0),
@@ -312,10 +373,10 @@ impl Results {
             network: RefCell::new(None),
             context: RefCell::new(None),
             method: Cell::new(None),
-            payload: RefCell::new(None),
+            payload: core::cell::OnceCell::new(),
             pipeline: RefCell::new(None),
             completion: RefCell::new(None),
-            wake: RefCell::new(Vec::new()),
+            wake: RefCell::new(Waiters::default()),
             trace_prepared: Cell::new(false),
             trace: RefCell::new(None),
         }))
@@ -341,17 +402,28 @@ impl Results {
         // already-completed synchronous method.
         match self.0.completion.borrow().as_ref() {
             Some(Err(error)) => return Poll::Ready(Err(error.clone())),
-            Some(Ok(())) if self.0.payload.borrow().is_some() => return Poll::Ready(Ok(())),
+            Some(Ok(())) if self.0.payload.get().is_some() => return Poll::Ready(Ok(())),
             _ => (),
         }
-        let mut wakes = self.0.wake.borrow_mut();
-        if !wakes.iter().any(|wake| wake.will_wake(cx.waker())) {
-            wakes.push(cx.waker().clone());
+        if !self.0.wake.borrow().contains(cx.waker()) {
+            // Custom clone/drop callbacks can reenter completion. Hold no state
+            // borrow while invoking them, then recheck before publishing.
+            let mut wake = Some(cx.waker().clone());
+            {
+                let mut wakes = self.0.wake.borrow_mut();
+                if !wakes.contains(wake.as_ref().unwrap()) {
+                    if wakes.first.is_none() {
+                        wakes.first = wake.take();
+                    } else {
+                        wakes.overflow.push(wake.take().unwrap());
+                    }
+                }
+            }
+            drop(wake);
         }
-        drop(wakes);
         match self.0.completion.borrow().as_ref() {
             Some(Err(error)) => Poll::Ready(Err(error.clone())),
-            Some(Ok(())) if self.0.payload.borrow().is_some() => Poll::Ready(Ok(())),
+            Some(Ok(())) if self.0.payload.get().is_some() => Poll::Ready(Ok(())),
             _ => Poll::Pending,
         }
     }
@@ -383,9 +455,7 @@ impl Results {
             .and_then(|r| r.as_ref().err())
             .cloned()
     }
-    pub(super) fn plain_payload(
-        &self,
-    ) -> Option<Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>> {
+    pub(super) fn plain_payload(&self) -> Option<PlainPayload<'_>> {
         if self.transfer_ready()
             || self.redirect().is_some()
             || self.0.pipeline.borrow().is_some()
@@ -393,9 +463,7 @@ impl Results {
         {
             return None;
         }
-        let payload = self.0.payload.borrow();
-        let payload = payload.as_ref()?;
-        payload.plain().cloned()
+        self.0.payload.get()?.plain()
     }
     pub(in crate::scoped::wire) fn early_pipeline(&self) -> Option<Box<dyn PipelineHook>> {
         self.0
@@ -440,11 +508,10 @@ impl Results {
             let payload = self
                 .0
                 .payload
-                .borrow()
-                .clone()
+                .get()
                 .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
             if let Some(message) = payload.plain() {
-                if let Some(bytes) = message.framed_len() {
+                if let Some(bytes) = message.message().framed_len() {
                     // Whole-envelope copies need no payload traversal for
                     // sizing. Retain the general codec's two staging/tag
                     // words as well: transferred results can use that path.
@@ -481,12 +548,12 @@ impl Results {
         path: capntproto_rpc_wire::pipeline::Path<'_>,
     ) -> Option<Box<dyn ClientHook>> {
         let pipeline = self.0.pipeline.borrow().clone();
-        let ops: Vec<_> = path
-            .fields()
-            .iter()
-            .map(|&field| PipelineOp::GetPointerField(field))
-            .collect();
         if let Some(pipeline) = pipeline {
+            let ops: Vec<_> = path
+                .fields()
+                .iter()
+                .map(|&field| PipelineOp::GetPointerField(field))
+                .collect();
             return Some(pipeline.get_pipelined_cap(&ops));
         }
         if let Some(error) = self.failure() {
@@ -495,11 +562,16 @@ impl Results {
         if self.0.completion.borrow().is_none() {
             return None;
         }
-        let payload = self.0.payload.borrow().clone()?;
+        let payload = self.0.payload.get()?;
         Some(
             payload
                 .reader()
-                .and_then(|reader| reader.get_pipelined_cap(&ops))
+                .and_then(|mut reader| {
+                    for &field in path.fields() {
+                        reader = reader.pointer_field(field)?;
+                    }
+                    reader.get_pipelined_cap(&[])
+                })
                 .unwrap_or_else(crate::broken::new_cap),
         )
     }
@@ -607,25 +679,33 @@ impl Drop for Execution {
 
 struct Hook {
     results: Results,
-    message: Option<Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>>,
+    message: Option<connection::PreparedReturn<capnp::message::HeapAllocator>>,
     caps: Vec<Option<Box<dyn ClientHook>>>,
     executor: Option<Rc<dyn capability::CallExecutor>>,
 }
 impl Drop for Hook {
     fn drop(&mut self) {
-        let caps = std::mem::take(&mut self.caps);
-        let payload = match self.message.take() {
-            Some(message) if caps.is_empty() => CompletedPayload::Plain(message),
+        let caps = core::mem::take(&mut self.caps);
+        let payload = match self.message.take().map(connection::PreparedReturn::freeze) {
+            Some(message) if caps.is_empty() => {
+                if message.segment_count() == 1 {
+                    CompletedPayload::Plain(message)
+                } else {
+                    CompletedPayload::Shared(Rc::new(message))
+                }
+            }
             message => CompletedPayload::General(Rc::new(match message {
                 Some(message) => Payload {
-                    body: PayloadBody::Return(message),
+                    body: PayloadBody::Return(Rc::new(message)),
                     caps,
                 },
                 None => Payload::owned(Default::default(), caps),
             })),
         };
-        let previous = self.results.0.payload.borrow_mut().replace(payload);
-        drop(previous);
+        assert!(
+            self.results.0.payload.set(payload).is_ok(),
+            "result payload already published"
+        );
         self.results.0.notify();
     }
 }
@@ -636,10 +716,10 @@ impl ResultsHook for Hook {
         // local dispatch establishes streaming barriers before polling those.
         true
     }
-    fn retain_response_context(&mut self, context: Rc<dyn std::any::Any>) {
+    fn retain_response_context(&mut self, context: Rc<dyn core::any::Any>) {
         crate::admission::retain_context(&mut self.results.0.context.borrow_mut(), context);
     }
-    fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
+    fn cancellation_guard(&self) -> Option<Box<dyn core::any::Any>> {
         Some(Box::new(self.results.clone()))
     }
     fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
@@ -654,29 +734,37 @@ impl ResultsHook for Hook {
         &mut self,
         hint: Option<capnp::MessageSize>,
     ) -> capnp::Result<any_pointer::Builder<'_>> {
-        let message =
-            self.message.get_or_insert_with(|| {
-                let hint = hint.map(|mut size| {
-                    size.word_count = size
-                        .word_count
-                        .saturating_add(connection::PreparedReturnTemplate::ENVELOPE_WORDS);
-                    size
-                });
-                let allocator = crate::local::result_allocator(hint);
-                let allocator = match &self.results.0.message_pool {
-                    Some(pool) => allocator.segment_pool(pool.clone()),
-                    None => allocator,
-                };
-                thread_local! {
-                    static TEMPLATE: connection::PreparedReturnTemplate = Default::default();
-                }
-                Rc::new(TEMPLATE.with(|template| {
-                    connection::PreparedReturn::from_template(template, allocator)
-                }))
+        let message = self.message.get_or_insert_with(|| {
+            let hint = hint.map(|mut size| {
+                size.word_count = size
+                    .word_count
+                    .saturating_add(connection::PreparedReturnTemplate::ENVELOPE_WORDS);
+                size
             });
-        let mut root = Rc::get_mut(message)
-            .expect("unpublished result builder")
-            .results();
+            let allocator = crate::local::result_allocator(hint);
+            #[cfg(feature = "std")]
+            let allocator = match &self.results.0.message_pool {
+                Some(pool) => allocator.segment_pool(pool.clone()),
+                None => allocator,
+            };
+            #[cfg(feature = "std")]
+            thread_local! {
+                static TEMPLATE: connection::PreparedReturnTemplate = Default::default();
+            }
+            #[cfg(feature = "std")]
+            {
+                TEMPLATE
+                    .with(|template| connection::PreparedReturn::from_template(template, allocator))
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                connection::PreparedReturn::from_template(
+                    &connection::PreparedReturnTemplate::default(),
+                    allocator,
+                )
+            }
+        });
+        let mut root = message.results();
         root.imbue_mut(&mut self.caps);
         Ok(root)
     }
@@ -782,11 +870,10 @@ impl Transfer {
                     .results
                     .0
                     .payload
-                    .borrow()
-                    .clone()
+                    .get()
                     .expect("completed transfer payload");
                 Ok(Box::new(TransferResponse {
-                    payload: payload.share(),
+                    payload: payload.share(&self.results),
                     _results: self.results,
                 })
                     as Box<dyn capnp::private::capability::ResponseHook>)
@@ -846,7 +933,7 @@ impl PipelineHook for TransferPipeline {
 // Result storage stays on the dispatch stack until a service suspends. Taking
 // ownership boxes exactly this producer; synchronous handlers never box it.
 struct InboundCall {
-    params: Option<Box<dyn ParamsHook>>,
+    params: Option<Parameters>,
     results: Option<Hook>,
 }
 impl capnp::private::capability::CallContextHook for InboundCall {
@@ -861,7 +948,7 @@ impl capnp::private::capability::CallContextHook for InboundCall {
     }
     fn take(&mut self) -> (Box<dyn ParamsHook>, Box<dyn ResultsHook>) {
         (
-            self.params.take().expect("consumed call"),
+            self.params.take().expect("consumed call").into_hook(),
             Box::new(self.results.take().expect("consumed call")),
         )
     }
@@ -1004,14 +1091,13 @@ impl<'id> ClientHooks<'id> {
         let payload = results
             .0
             .payload
-            .borrow()
-            .as_ref()
-            .map(CompletedPayload::share)
+            .get()
+            .map(|payload| payload.share(results))
             .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
         let mut retained = Vec::with_capacity(payload.caps.len());
         let result = (|| {
             if payload.caps.is_empty() {
-                if let (Some(answer), PayloadBody::Return(source)) = (answer, &payload.body) {
+                if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
                     if let Some(result) = driver
                         .local_answer_prepared(
                             answer,
@@ -1044,15 +1130,14 @@ impl<'id> ClientHooks<'id> {
                 };
                 retained.push(client);
             }
-            let references = retained.iter().map(Option::as_ref).collect::<Vec<_>>();
-            if let (Some(answer), PayloadBody::Return(source)) = (answer, &payload.body) {
+            if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
                 if let Some(result) = driver
                     .local_answer_prepared_with_capabilities(
                         answer,
                         method.interface,
                         method.method,
                         source,
-                        &references,
+                        retained.iter().map(Option::as_ref),
                         messages,
                         options,
                     )
@@ -1078,6 +1163,7 @@ impl<'id> ClientHooks<'id> {
                     capnp::wire_capability::IndexMap::identity(payload.caps.len() as u32),
                 )
             };
+            let references = retained.iter().map(Option::as_ref).collect::<Vec<_>>();
             let result = if let Some(answer) = answer {
                 driver.local_answer_dynamic(
                     answer,

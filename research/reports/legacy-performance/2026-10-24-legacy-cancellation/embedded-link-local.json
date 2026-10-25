@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-factor2-embedded.elf",
+  "bytes": 704892,
+  "sha256": "379cb360a4636d80a00faeaac36260838264a133cf924a93a030338e217f9cf6",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "48693731dfe6c94bd6c631155bb37ba913366407d01a743e8bbfa79d596d3761",
+  "scope": "Link-only, not executed on a board. Borrowed cancellation cells and task; black-boxed cell references prevent eliminating the entire cancellation sequence."
+}

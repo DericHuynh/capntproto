@@ -184,6 +184,37 @@ pub struct Lease<'id> {
     brand: Brand<'id>,
 }
 
+/// A lease and its immutable used prefix travel together. Unlike read(), this
+/// view does not borrow a token stored beside it, so an owning message reader
+/// can move into a caller-pinned task without self references. Recover the lease
+/// before releasing it; dropping/forgetting this owner retains its reservation.
+#[must_use = "recover/release the lease or terminate the pool scope"]
+pub struct Reading<'id, 'storage> {
+    lease: Lease<'id>,
+    view: Ref<'storage, [u8]>,
+}
+impl<'id> Reading<'id, '_> {
+    pub fn bytes(&self) -> &[u8] {
+        &self.view
+    }
+    pub fn into_lease(self) -> Lease<'id> {
+        let Self { lease, view } = self;
+        drop(view);
+        lease
+    }
+}
+impl core::ops::Deref for Reading<'_, '_> {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        self.bytes()
+    }
+}
+impl AsRef<[u8]> for Reading<'_, '_> {
+    fn as_ref(&self) -> &[u8] {
+        self.bytes()
+    }
+}
+
 /// Rejected sealing returns the writer intact so the caller can retry/discard.
 #[derive(Debug)]
 pub struct SealError<'id> {
@@ -311,8 +342,10 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             brand: PhantomData,
         }))
     }
-    /// Reserve the first reusable buffer which fits, clearing its whole capacity
-    /// before exposing it. Exhausted generations are never reused.
+    /// Reserve a reusable buffer which fits, clearing its whole capacity
+    /// before exposing it. Growing storage resumes its search after the previous
+    /// reservation of a similar size; fixed storage starts at zero. Exhausted
+    /// generations are never reused.
     pub fn reserve(&mut self, minimum: usize) -> Result<Writer<'id>, Error> {
         self.reserve_length(minimum, false, true)
     }
@@ -402,7 +435,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             return Ok(None);
         };
         let mut exhausted = false;
-        for index in 0..buffers.len() {
+        for index in buffers.reuse_indices(source.len()) {
             let buffer = buffers.at(index);
             if buffer.state.get() != State::Free || buffer.capacity.get() < source.len() {
                 continue;
@@ -419,6 +452,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             }
             bytes[..source.len()].copy_from_slice(source);
             buffer.generation.set(buffer.generation.get() + 1);
+            buffers.reused(index, source.len());
             return Ok(bytes.share(0..source.len()));
         }
         let index = buffers.append(source.len()).ok_or_else(|| {
@@ -433,6 +467,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         let mut bytes = buffer.bytes.borrow_mut();
         bytes[..source.len()].copy_from_slice(source);
         buffer.generation.set(buffer.generation.get() + 1);
+        buffers.reused(index, source.len());
         Ok(bytes.share(0..source.len()))
     }
 
@@ -472,7 +507,8 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             edit(bytes);
         };
         let mut exhausted = false;
-        for (index, buffer) in self.buffers.iter().enumerate() {
+        for index in self.buffers.reuse_indices(capacity) {
+            let buffer = self.buffers.at(index);
             if buffer.state.get() != State::Free || buffer.capacity.get() < capacity {
                 continue;
             }
@@ -493,6 +529,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
                 readers: 1,
                 sends: 0,
             });
+            self.buffers.reused(index, capacity);
             return Ok(Lease {
                 key: BufferKey {
                     index,
@@ -517,6 +554,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             readers: 1,
             sends: 0,
         });
+        self.buffers.reused(index, capacity);
         Ok(Lease {
             key: BufferKey {
                 index,
@@ -532,7 +570,8 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         clear: bool,
     ) -> Result<Writer<'id>, Error> {
         let mut exhausted = false;
-        for (index, buffer) in self.buffers.iter().enumerate() {
+        for index in self.buffers.reuse_indices(minimum) {
+            let buffer = self.buffers.at(index);
             if buffer.state.get() != State::Free || buffer.capacity.get() < minimum {
                 continue;
             }
@@ -558,6 +597,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             }
             buffer.generation.set(buffer.generation.get() + 1);
             buffer.state.set(State::Writing);
+            self.buffers.reused(index, minimum);
             return Ok(Writer {
                 length,
                 key: BufferKey {
@@ -586,6 +626,7 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
             buffer.bytes.borrow_mut()[..length].fill(0);
         }
         buffer.state.set(State::Writing);
+        self.buffers.reused(index, minimum);
         Ok(Writer {
             length,
             key: BufferKey {
@@ -687,6 +728,12 @@ impl<'id, 'storage, 'bytes> Messages<'id, 'storage, 'bytes> {
         'storage: 'view,
     {
         self.bytes(lease.key)
+    }
+    /// Transfer a live lease into a movable read owner without incrementing
+    /// readers or allocating. Other buffers and partial sends can progress.
+    pub fn read_owned(&self, lease: Lease<'id>) -> Reading<'id, 'storage> {
+        let view = self.bytes(lease.key);
+        Reading { lease, view }
     }
     #[inline(always)]
     fn bytes(&self, key: BufferKey) -> Ref<'storage, [u8]> {

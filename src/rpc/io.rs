@@ -17,7 +17,30 @@ pub(crate) fn defer(cx: &mut Context<'_>) {
     let _ = std::future::Future::poll(yielding.as_mut(), cx);
 }
 
-pub(crate) struct TokioIo<T>(pub(crate) T);
+// QUIC consumes each plaintext slice separately. Coalescing a bounded batch
+// avoids a stream-send allocation for every RPC segment table. Plain TCP and
+// TLS keep their scatter/gather paths; TLS combines fragments at record boundaries.
+// Scalar writers consume a bounded prefix instead of a standalone header.
+const ENCRYPTED_BATCH_BYTES: usize = 128 * 1024;
+pub(crate) struct TokioIo<T> {
+    inner: T,
+    encrypted_batch: Option<Vec<u8>>,
+}
+impl<T> TokioIo<T> {
+    pub(crate) fn new(inner: T) -> Self {
+        Self {
+            inner,
+            encrypted_batch: None,
+        }
+    }
+    #[cfg(any(feature = "quic", test))]
+    pub(crate) fn encrypted(inner: T) -> Self {
+        Self {
+            inner,
+            encrypted_batch: Some(Vec::new()),
+        }
+    }
+}
 
 impl<T: AsyncRead + Unpin> futures::AsyncRead for TokioIo<T> {
     fn poll_read(
@@ -26,7 +49,7 @@ impl<T: AsyncRead + Unpin> futures::AsyncRead for TokioIo<T> {
         bytes: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         let mut buffer = ReadBuf::new(bytes);
-        Pin::new(&mut self.get_mut().0)
+        Pin::new(&mut self.get_mut().inner)
             .poll_read(cx, &mut buffer)
             .map_ok(|()| buffer.filled().len())
     }
@@ -38,7 +61,7 @@ impl<T: AsyncWrite + Unpin> futures::AsyncWrite for TokioIo<T> {
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().0).poll_write(cx, bytes)
+        Pin::new(&mut self.get_mut().inner).poll_write(cx, bytes)
     }
 
     fn poll_write_vectored(
@@ -46,15 +69,46 @@ impl<T: AsyncWrite + Unpin> futures::AsyncWrite for TokioIo<T> {
         cx: &mut Context<'_>,
         buffers: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().0).poll_write_vectored(cx, buffers)
+        let this = self.get_mut();
+        if let Some(batch) = &mut this.encrypted_batch {
+            if buffers.len() > 1 {
+                let length = buffers.iter().try_fold(0usize, |sum, b| {
+                    sum.checked_add(b.len())
+                        .filter(|n| *n <= ENCRYPTED_BATCH_BYTES)
+                });
+                let length = length.or_else(|| {
+                    // A scalar-only writer would otherwise accept just the
+                    // frame header. Fill its first send with a bounded prefix;
+                    // subsequent contiguous payload slices pass through.
+                    (!this.inner.is_write_vectored()).then_some(ENCRYPTED_BATCH_BYTES)
+                });
+                if let Some(length) = length {
+                    batch.clear();
+                    // Exact reserve keeps retained capacity within the bound.
+                    batch.reserve_exact(length);
+                    for buffer in buffers {
+                        let remaining = length - batch.len();
+                        if remaining == 0 {
+                            break;
+                        }
+                        batch.extend_from_slice(&buffer[..buffer.len().min(remaining)]);
+                    }
+                    // AsyncWrite cannot retain this borrow after returning.
+                    // Pending/partial writes consume only the reported prefix;
+                    // the caller supplies its remaining slices on the next poll.
+                    return Pin::new(&mut this.inner).poll_write(cx, batch);
+                }
+            }
+        }
+        Pin::new(&mut this.inner).poll_write_vectored(cx, buffers)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_flush(cx)
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().0).poll_shutdown(cx)
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
     }
 }
 
@@ -142,7 +196,7 @@ mod tests {
 
     #[test]
     fn framing_keeps_vectored_writes_through_pending_and_partial_progress() {
-        let mut writer = TokioIo(Writer::default());
+        let mut writer = TokioIo::new(Writer::default());
         let mut message = capnp::message::Builder::new_default();
         message.set_root("vectored framing").unwrap();
         let expected = capnp::serialize::write_message_to_words(&message);
@@ -156,9 +210,161 @@ mod tests {
                 io::ErrorKind::BrokenPipe
             );
         });
-        assert!(writer.0.calls > 2);
-        assert_eq!(writer.0.bytes, expected);
-        assert!(writer.0.flushed && writer.0.closed);
+        assert!(writer.inner.calls > 2);
+        assert_eq!(writer.inner.bytes, expected);
+        assert!(writer.inner.flushed && writer.inner.closed);
+    }
+
+    #[derive(Default)]
+    struct EncryptedWriter {
+        bytes: Vec<u8>,
+        scalar: usize,
+        vectored: usize,
+        vectored_supported: bool,
+        pending: bool,
+        limit: usize,
+        failed: bool,
+    }
+    impl EncryptedWriter {
+        fn ready(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            if self.failed {
+                return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+            }
+            if !self.pending {
+                self.pending = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            self.pending = false;
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl AsyncWrite for EncryptedWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.scalar += 1;
+            std::task::ready!(self.ready(cx))?;
+            let count = self.limit.min(bytes.len());
+            self.bytes.extend_from_slice(&bytes[..count]);
+            Poll::Ready(Ok(count))
+        }
+        fn poll_write_vectored(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buffers: &[io::IoSlice<'_>],
+        ) -> Poll<io::Result<usize>> {
+            self.vectored += 1;
+            if !self.vectored_supported {
+                return self.poll_write(
+                    cx,
+                    buffers.iter().find(|b| !b.is_empty()).map_or(&[], |b| &**b),
+                );
+            }
+            std::task::ready!(self.ready(cx))?;
+            let mut count = 0;
+            for buffer in buffers {
+                let length = buffer.len().min(self.limit - count);
+                self.bytes.extend_from_slice(&buffer[..length]);
+                count += length;
+            }
+            Poll::Ready(Ok(count))
+        }
+        fn is_write_vectored(&self) -> bool {
+            self.vectored_supported
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[test]
+    fn encrypted_batches_preserve_framing_through_pending_and_partial_writes() {
+        for limit in [3, usize::MAX] {
+            let mut writer = TokioIo::encrypted(EncryptedWriter {
+                limit,
+                ..Default::default()
+            });
+            let mut first = capnp::message::Builder::new_default();
+            first.set_root("first encrypted message").unwrap();
+            let mut second = capnp::message::Builder::new_default();
+            second.set_root("second encrypted message").unwrap();
+            let expected: Vec<_> = [&first, &second]
+                .into_iter()
+                .flat_map(capnp::serialize::write_message_to_words)
+                .collect();
+            futures::executor::block_on(async {
+                capnp_futures::serialize::write_messages(&mut writer, &[first, second])
+                    .await
+                    .unwrap();
+                writer.flush().await.unwrap();
+            });
+            assert_eq!(writer.inner.bytes, expected);
+            assert!(writer.inner.scalar > 0);
+            if limit == usize::MAX {
+                assert_eq!(writer.inner.vectored, 0);
+            }
+            assert!(writer.encrypted_batch.as_ref().unwrap().capacity() <= ENCRYPTED_BATCH_BYTES);
+            writer.inner.failed = true;
+            let error = futures::executor::block_on(
+                writer.write_vectored(&[io::IoSlice::new(b"header"), io::IoSlice::new(b"payload")]),
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+            assert_eq!(writer.inner.bytes, expected);
+        }
+    }
+
+    #[test]
+    fn encrypted_large_batches_keep_scatter_gather_without_growing_scratch() {
+        let mut writer = TokioIo::encrypted(EncryptedWriter {
+            limit: usize::MAX,
+            vectored_supported: true,
+            ..Default::default()
+        });
+        let payload = vec![7; ENCRYPTED_BATCH_BYTES];
+        let buffers = [io::IoSlice::new(b"header"), io::IoSlice::new(&payload)];
+        let written = futures::executor::block_on(writer.write_vectored(&buffers)).unwrap();
+        assert_eq!(written, 6 + payload.len());
+        assert_eq!(writer.inner.scalar, 0);
+        assert!(writer.inner.vectored > 0);
+        assert_eq!(writer.encrypted_batch.as_ref().unwrap().capacity(), 0);
+        assert_eq!(&writer.inner.bytes[..6], b"header");
+        assert_eq!(&writer.inner.bytes[6..], payload);
+    }
+
+    #[test]
+    fn encrypted_scalar_writers_coalesce_a_bounded_large_frame_prefix() {
+        for limit in [8191, usize::MAX] {
+            let mut writer = TokioIo::encrypted(EncryptedWriter {
+                limit,
+                ..Default::default()
+            });
+            let payload = vec![9; 2 * ENCRYPTED_BATCH_BYTES];
+            let mut slices = [io::IoSlice::new(b"header"), io::IoSlice::new(&payload)];
+            let mut buffers = &mut slices[..];
+            futures::executor::block_on(async {
+                let first = writer.write_vectored(buffers).await.unwrap();
+                assert_eq!(first, limit.min(ENCRYPTED_BATCH_BYTES));
+                io::IoSlice::advance_slices(&mut buffers, first);
+                while !buffers.is_empty() {
+                    let written = writer.write_vectored(buffers).await.unwrap();
+                    assert!(written > 0);
+                    io::IoSlice::advance_slices(&mut buffers, written);
+                }
+            });
+            assert_eq!(&writer.inner.bytes[..6], b"header");
+            assert_eq!(&writer.inner.bytes[6..], payload);
+            assert_eq!(
+                writer.encrypted_batch.as_ref().unwrap().capacity(),
+                ENCRYPTED_BATCH_BYTES
+            );
+        }
     }
 
     #[tokio::test]
@@ -168,7 +374,7 @@ mod tests {
             .await
             .unwrap();
         drop(writer);
-        let mut reader = TokioIo(reader);
+        let mut reader = TokioIo::new(reader);
         let mut bytes = [0; 8];
         assert_eq!(reader.read(&mut bytes).await.unwrap(), 3);
         assert_eq!(&bytes[..3], b"abc");
@@ -178,7 +384,7 @@ mod tests {
     #[tokio::test]
     async fn scalar_writes_preserve_partial_progress_backpressure_and_disconnect() {
         let (writer, mut reader) = tokio::io::duplex(1);
-        let mut writer = TokioIo(writer);
+        let mut writer = TokioIo::new(writer);
         assert_eq!(writer.write(b"ab").await.unwrap(), 1);
         let mut pending = Box::pin(writer.write(b"b"));
         assert!(futures::poll!(pending.as_mut()).is_pending());

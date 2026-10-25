@@ -2,6 +2,7 @@
 //! opaque tokens are authenticated by VatNetwork, never by protocol question IDs.
 use super::transport::vat;
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 mod handoff;
 pub(crate) mod introduction;
 pub(crate) mod tail;
@@ -70,14 +71,14 @@ impl Commands {
             return;
         }
         *self.closed.borrow_mut() = Some(error.clone());
-        let queue = std::mem::take(&mut *self.queue.borrow_mut());
-        let adoptions = std::mem::take(&mut *self.adoptions.borrow_mut());
+        let queue = core::mem::take(&mut *self.queue.borrow_mut());
+        let adoptions = core::mem::take(&mut *self.adoptions.borrow_mut());
         drop(adoptions);
-        let provisions = std::mem::take(&mut *self.provisions.borrow_mut());
+        let provisions = core::mem::take(&mut *self.provisions.borrow_mut());
         drop(provisions);
-        let forwarding = std::mem::take(&mut *self.forwarding.borrow_mut());
+        let forwarding = core::mem::take(&mut *self.forwarding.borrow_mut());
         drop(forwarding);
-        let markers = std::mem::take(&mut *self.markers.borrow_mut());
+        let markers = core::mem::take(&mut *self.markers.borrow_mut());
         drop(markers);
         for request in queue {
             let _ = request.sender.send(Err(error.clone()));

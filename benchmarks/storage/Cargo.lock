@@ -88,6 +88,9 @@ dependencies = [
 [[package]]
 name = "capntproto-rpc-engine"
 version = "0.1.0"
+dependencies = [
+ "capntproto-task",
+]
 
 [[package]]
 name = "capntproto-rpc-wire"
@@ -110,6 +113,10 @@ dependencies = [
  "serde_json",
  "tempfile",
 ]
+
+[[package]]
+name = "capntproto-task"
+version = "0.1.0"
 
 [[package]]
 name = "cc"

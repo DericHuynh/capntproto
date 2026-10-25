@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 mod support;
 use capnp::{
-    capability::{Promise, Request, Response},
+    capability::{Request, ResponsePromise},
     traits::ImbueMut,
     Error, ErrorKind,
 };
@@ -20,7 +20,7 @@ use std::{
 };
 use support::{ConnectionStatus, Endpoint, Hub};
 
-type EchoPromise = Promise<Response<harness::value::Owned>, Error>;
+type EchoPromise = ResponsePromise<harness::value::Owned>;
 type EchoRequest = Request<harness::echo_params::Owned, harness::value::Owned>;
 struct Empty;
 impl harness::Server for Empty {}

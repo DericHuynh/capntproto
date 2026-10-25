@@ -5,6 +5,8 @@
 //! type when passing a reader to a generic message or pointer setter.
 //!
 //! ```
+//! # #[cfg(feature = "alloc")]
+//! # {
 //! use capnp::{any_pointer, any_struct, message};
 //! let mut message = message::Builder::new_default();
 //! let mut value = message.init_root::<any_pointer::Builder>().init_as_any_struct(1, 1);
@@ -14,6 +16,7 @@
 //! let mut copy = message::Builder::new_default();
 //! copy.set_root::<any_pointer::Owned>(value.as_reader())?;
 //! assert_eq!(copy.get_root_as_reader::<any_struct::Reader>()?.get_pointer_section().len(), 1);
+//! # }
 //! # Ok::<(), capnp::Error>(())
 //! ```
 

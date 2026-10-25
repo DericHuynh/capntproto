@@ -1,0 +1,1121 @@
+{
+  "runtime": {
+    "source": "31f7a335773a6faae60b529aa178821daacff150",
+    "path": "/tmp/capntproto-build-cache/portable-latency-step13/bin/candidate",
+    "bytes": 87952496,
+    "sha256": "8a25a53e1339e1acc9970940a56d1892652da9f138ba47955f221d38fa0ba810",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "build",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "benchmarks/rpc/Cargo.toml",
+      "--bin",
+      "capntproto-rpc-bench"
+    ],
+    "environment": {
+      "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+      "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+      "CARGO_PROFILE_RELEASE_LTO": "fat",
+      "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "TMPDIR": "/tmp/capntproto-build-cache",
+      "CC": "clang",
+      "CXX": "clang++"
+    }
+  },
+  "steps": {
+    "10": {
+      "binary": {
+        "source": "750e7a53fefe712525af0a5c9035658dab97b7ff",
+        "path": "/tmp/capntproto-build-cache/portable-latency-step10/bin/candidate",
+        "bytes": 87910712,
+        "sha256": "6155833186c5fab88337caf739d3303af1face39e393e07337b4a96a2a4a94c2",
+        "command": [
+          "/root/.cargo/bin/cargo",
+          "build",
+          "--locked",
+          "--release",
+          "--manifest-path",
+          "benchmarks/rpc/Cargo.toml",
+          "--bin",
+          "capntproto-rpc-bench"
+        ],
+        "environment": {
+          "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+          "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+          "CARGO_PROFILE_RELEASE_LTO": "fat",
+          "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+          "CARGO_INCREMENTAL": "0",
+          "CARGO_BUILD_JOBS": "1",
+          "TMPDIR": "/tmp/capntproto-build-cache",
+          "CC": "clang",
+          "CXX": "clang++"
+        }
+      },
+      "native_overview": {
+        "portable-baseline": {
+          "lower": 9,
+          "cases": 14,
+          "geometric_mean_change_percent": -4.479215094802324
+        },
+        "legacy": {
+          "lower": 1,
+          "cases": 14,
+          "geometric_mean_change_percent": 23.494579276691006
+        },
+        "cpp": {
+          "lower": 7,
+          "cases": 7,
+          "geometric_mean_change_percent": -34.3093647992801
+        }
+      },
+      "validation": [
+        {
+          "name": "rpc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "wire",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc-wire",
+            "--features",
+            "std",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "secure",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto",
+            "--features",
+            "quic",
+            "--test",
+            "secure_rpc"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "rpc-clippy",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "clippy",
+            "-p",
+            "capntproto-rpc",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "format",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    "11": {
+      "binary": {
+        "source": "4ff2c4e56692e368ca71bb4b62d8c88d3a1e9b8f",
+        "path": "/tmp/capntproto-build-cache/portable-latency-step11/bin/candidate",
+        "bytes": 87934352,
+        "sha256": "1c09e1db70eb21e2bec9d92e19d37ee5cab702c1102713cfb38ea9c492a792e5",
+        "command": [
+          "/root/.cargo/bin/cargo",
+          "build",
+          "--locked",
+          "--release",
+          "--manifest-path",
+          "benchmarks/rpc/Cargo.toml",
+          "--bin",
+          "capntproto-rpc-bench"
+        ],
+        "environment": {
+          "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+          "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+          "CARGO_PROFILE_RELEASE_LTO": "fat",
+          "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+          "CARGO_INCREMENTAL": "0",
+          "CARGO_BUILD_JOBS": "1",
+          "TMPDIR": "/tmp/capntproto-build-cache",
+          "CC": "clang",
+          "CXX": "clang++"
+        }
+      },
+      "native_overview": {
+        "portable-baseline": {
+          "lower": 6,
+          "cases": 14,
+          "geometric_mean_change_percent": 0.1983719343586987
+        },
+        "legacy": {
+          "lower": 1,
+          "cases": 14,
+          "geometric_mean_change_percent": 26.556244828919006
+        },
+        "cpp": {
+          "lower": 6,
+          "cases": 7,
+          "geometric_mean_change_percent": -31.72473090244302
+        }
+      },
+      "validation": [
+        {
+          "name": "rpc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "wire",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc-wire",
+            "--features",
+            "std",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "secure",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto",
+            "--features",
+            "quic",
+            "--test",
+            "secure_rpc"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "rpc-clippy",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "clippy",
+            "-p",
+            "capntproto-rpc",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "format",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    "12": {
+      "binary": {
+        "source": "da47cade28185622d76f0c5a7edbb2630629a3ab",
+        "path": "/tmp/capntproto-build-cache/portable-latency-step12/bin/candidate",
+        "bytes": 87952824,
+        "sha256": "e9b7c679ecafce54b56ec4b9d1c595ab41b5b2b9d56e4028b416a37da3382366",
+        "command": [
+          "/root/.cargo/bin/cargo",
+          "build",
+          "--locked",
+          "--release",
+          "--manifest-path",
+          "benchmarks/rpc/Cargo.toml",
+          "--bin",
+          "capntproto-rpc-bench"
+        ],
+        "environment": {
+          "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+          "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+          "CARGO_PROFILE_RELEASE_LTO": "fat",
+          "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+          "CARGO_INCREMENTAL": "0",
+          "CARGO_BUILD_JOBS": "1",
+          "TMPDIR": "/tmp/capntproto-build-cache",
+          "CC": "clang",
+          "CXX": "clang++"
+        }
+      },
+      "native_overview": {
+        "portable-baseline": {
+          "lower": 28,
+          "cases": 48,
+          "geometric_mean_change_percent": -0.19099531591142416
+        },
+        "legacy": {
+          "lower": 10,
+          "cases": 48,
+          "geometric_mean_change_percent": 12.184876624392093
+        },
+        "cpp": {
+          "lower": 24,
+          "cases": 24,
+          "geometric_mean_change_percent": -32.450383203270974
+        }
+      },
+      "validation": [
+        {
+          "name": "engine",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc-engine",
+            "--features",
+            "alloc",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "engine-clippy",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "clippy",
+            "-p",
+            "capntproto-rpc-engine",
+            "--features",
+            "alloc",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "engine-no-alloc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "check",
+            "-p",
+            "capntproto-rpc-engine",
+            "--no-default-features"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "rpc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "wire",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc-wire",
+            "--features",
+            "std",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "secure",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto",
+            "--features",
+            "quic",
+            "--test",
+            "secure_rpc"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "rpc-clippy",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "clippy",
+            "-p",
+            "capntproto-rpc",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "wire-no-alloc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "check",
+            "-p",
+            "capntproto-rpc-wire",
+            "--no-default-features"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "unix",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto",
+            "--features",
+            "quic",
+            "--lib",
+            "unix_rpc",
+            "--",
+            "--test-threads=1"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "format",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exit_code": 0
+        }
+      ]
+    },
+    "13": {
+      "binary": {
+        "source": "31f7a335773a6faae60b529aa178821daacff150",
+        "path": "/tmp/capntproto-build-cache/portable-latency-step13/bin/candidate",
+        "bytes": 87952496,
+        "sha256": "8a25a53e1339e1acc9970940a56d1892652da9f138ba47955f221d38fa0ba810",
+        "command": [
+          "/root/.cargo/bin/cargo",
+          "build",
+          "--locked",
+          "--release",
+          "--manifest-path",
+          "benchmarks/rpc/Cargo.toml",
+          "--bin",
+          "capntproto-rpc-bench"
+        ],
+        "environment": {
+          "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+          "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+          "CARGO_PROFILE_RELEASE_LTO": "fat",
+          "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+          "CARGO_INCREMENTAL": "0",
+          "CARGO_BUILD_JOBS": "1",
+          "TMPDIR": "/tmp/capntproto-build-cache",
+          "CC": "clang",
+          "CXX": "clang++"
+        }
+      },
+      "native_overview": {
+        "portable-baseline": {
+          "lower": 25,
+          "cases": 48,
+          "geometric_mean_change_percent": -2.373929223627491
+        },
+        "legacy": {
+          "lower": 11,
+          "cases": 48,
+          "geometric_mean_change_percent": 12.171765278042713
+        },
+        "cpp": {
+          "lower": 22,
+          "cases": 24,
+          "geometric_mean_change_percent": -29.99388770735516
+        }
+      },
+      "validation": [
+        {
+          "name": "engine",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc-engine",
+            "--features",
+            "alloc",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "engine-clippy",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "clippy",
+            "-p",
+            "capntproto-rpc-engine",
+            "--features",
+            "alloc",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "engine-no-alloc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "check",
+            "-p",
+            "capntproto-rpc-engine",
+            "--no-default-features"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "rpc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "wire",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto-rpc-wire",
+            "--features",
+            "std",
+            "--lib"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "secure",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto",
+            "--features",
+            "quic",
+            "--test",
+            "secure_rpc"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "rpc-clippy",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "clippy",
+            "-p",
+            "capntproto-rpc",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "wire-no-alloc",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "check",
+            "-p",
+            "capntproto-rpc-wire",
+            "--no-default-features"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "unix",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "test",
+            "-p",
+            "capntproto",
+            "--features",
+            "quic",
+            "--lib",
+            "unix_rpc",
+            "--",
+            "--test-threads=1"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "format",
+          "command": [
+            "/root/.cargo/bin/cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exit_code": 0
+        }
+      ]
+    }
+  },
+  "frozen_controls": {
+    "runtime": "87be38e069b86b442cc36500f44e0e4907ce813e",
+    "binary": {
+      "source": "87be38e069b86b442cc36500f44e0e4907ce813e",
+      "path": "/tmp/capntproto-build-cache/portable-latency-step8/bin/candidate",
+      "bytes": 87929472,
+      "sha256": "43da289b24093d189c2e9fe2743e26c4012286bfd241479b751b5ba98ba469be",
+      "command": [
+        "/root/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ],
+      "environment": {
+        "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+        "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+        "CARGO_PROFILE_RELEASE_LTO": "fat",
+        "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "1",
+        "TMPDIR": "/tmp/capntproto-build-cache",
+        "CC": "clang",
+        "CXX": "clang++"
+      }
+    }
+  },
+  "cpp": {
+    "runtime": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+    "sha256": "76fe3d435f15a60b6ab5820b480add1a46dd4a885016157a5a62d7a0fe3e82fc",
+    "quic_fixture": false
+  },
+  "qualification": {
+    "source": "31f7a335773a6faae60b529aa178821daacff150",
+    "qualification": "f404764b7673597957caad161b3a04eadf975a10",
+    "branch": "codex/portable-architecture-compact-qualification-20261024",
+    "portable_control": "87be38e069b86b442cc36500f44e0e4907ce813e",
+    "control_runtime": "87be38e069b86b442cc36500f44e0e4907ce813e",
+    "status": {
+      "observed_at": "2026-10-24 19:29:46 UTC",
+      "runtime": "31f7a335773a6faae60b529aa178821daacff150",
+      "qualification_commit": "f404764b7673597957caad161b3a04eadf975a10",
+      "run_id": 40124330566,
+      "jobs": [
+        {
+          "id": 120962402911,
+          "name": "qualify / Compile optimized benchmark bundle",
+          "status": "in_progress",
+          "conclusion": null,
+          "run_id": 40124330566,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run ./.github/actions/auditable-setup",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Build prerequisites",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Compile individual release benchmarks without running them",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Test droplet packaging, orchestration and cleanup",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Test benchmark identity, validation, and CPU placement",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Test latency means and spread calculations",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Exercise all six workflow implementations locally (not timing evidence)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            },
+            {
+              "name": "Exercise TLS and QUIC fixtures and certificate rejection (not timing evidence)",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10
+            },
+            {
+              "name": "Validate the optional frozen portable revision",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12
+            },
+            {
+              "name": "Build the frozen portable control with the same compiler and release profile",
+              "status": "in_progress",
+              "conclusion": null,
+              "number": 13
+            },
+            {
+              "name": "Validate the optional frozen legacy revision",
+              "status": "pending",
+              "conclusion": null,
+              "number": 14
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "pending",
+              "conclusion": null,
+              "number": 15
+            },
+            {
+              "name": "Build the frozen legacy control with the same compiler and release profile",
+              "status": "pending",
+              "conclusion": null,
+              "number": 16
+            },
+            {
+              "name": "Archive executable bundle with permissions intact",
+              "status": "pending",
+              "conclusion": null,
+              "number": 17
+            },
+            {
+              "name": "Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+              "status": "pending",
+              "conclusion": null,
+              "number": 18
+            },
+            {
+              "name": "Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+              "status": "pending",
+              "conclusion": null,
+              "number": 19
+            },
+            {
+              "name": "Explain benchmark scope",
+              "status": "pending",
+              "conclusion": null,
+              "number": 20
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "pending",
+              "conclusion": null,
+              "number": 38
+            },
+            {
+              "name": "Post Run ./.github/actions/auditable-setup",
+              "status": "pending",
+              "conclusion": null,
+              "number": 39
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "pending",
+              "conclusion": null,
+              "number": 40
+            }
+          ]
+        }
+      ],
+      "initial_three_changes": {
+        "run_id": 40122332537,
+        "runtime": "da47cade28185622d76f0c5a7edbb2630629a3ab",
+        "jobs": [
+          {
+            "id": 120956389211,
+            "name": "qualify / Compile optimized benchmark bundle",
+            "status": "completed",
+            "conclusion": "success",
+            "run_id": 40122332537,
+            "logs_url": null,
+            "steps": [
+              {
+                "name": "Set up job",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              },
+              {
+                "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 2
+              },
+              {
+                "name": "Run ./.github/actions/auditable-setup",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 3
+              },
+              {
+                "name": "Build prerequisites",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 4
+              },
+              {
+                "name": "Compile individual release benchmarks without running them",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 5
+              },
+              {
+                "name": "Test droplet packaging, orchestration and cleanup",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 6
+              },
+              {
+                "name": "Test benchmark identity, validation, and CPU placement",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 7
+              },
+              {
+                "name": "Test latency means and spread calculations",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 8
+              },
+              {
+                "name": "Exercise all six workflow implementations locally (not timing evidence)",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 9
+              },
+              {
+                "name": "Exercise TLS and QUIC fixtures and certificate rejection (not timing evidence)",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 10
+              },
+              {
+                "name": "Validate the optional frozen portable revision",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 11
+              },
+              {
+                "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 12
+              },
+              {
+                "name": "Build the frozen portable control with the same compiler and release profile",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 13
+              },
+              {
+                "name": "Validate the optional frozen legacy revision",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 14
+              },
+              {
+                "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 15
+              },
+              {
+                "name": "Build the frozen legacy control with the same compiler and release profile",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 16
+              },
+              {
+                "name": "Archive executable bundle with permissions intact",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 17
+              },
+              {
+                "name": "Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 18
+              },
+              {
+                "name": "Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 19
+              },
+              {
+                "name": "Explain benchmark scope",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 20
+              },
+              {
+                "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 37
+              },
+              {
+                "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 38
+              },
+              {
+                "name": "Post Run ./.github/actions/auditable-setup",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 39
+              },
+              {
+                "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 40
+              },
+              {
+                "name": "Complete job",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 41
+              }
+            ]
+          },
+          {
+            "id": 120961109193,
+            "name": "qualify / Measure on dedicated droplets, validate, and clean up",
+            "status": "in_progress",
+            "conclusion": null,
+            "run_id": 40122332537,
+            "logs_url": null,
+            "steps": [
+              {
+                "name": "Set up job",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 1
+              },
+              {
+                "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 2
+              },
+              {
+                "name": "Run ./.github/actions/auditable-setup",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 3
+              },
+              {
+                "name": "Install report validation prerequisites",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 4
+              },
+              {
+                "name": "Restore pinned sources for bundle identity validation",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 5
+              },
+              {
+                "name": "Run actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 6
+              },
+              {
+                "name": "Restore this run's release bundle",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 7
+              },
+              {
+                "name": "Require configured Actions secret and check dedicated capacity",
+                "status": "completed",
+                "conclusion": "success",
+                "number": 8
+              },
+              {
+                "name": "Run encrypted benchmarks on dedicated droplets",
+                "status": "in_progress",
+                "conclusion": null,
+                "number": 9
+              },
+              {
+                "name": "Extract dedicated encrypted evidence",
+                "status": "pending",
+                "conclusion": null,
+                "number": 10
+              },
+              {
+                "name": "Always verify cleanup of both droplets and SSH keys",
+                "status": "pending",
+                "conclusion": null,
+                "number": 11
+              },
+              {
+                "name": "Validate downloaded samples",
+                "status": "pending",
+                "conclusion": null,
+                "number": 12
+              },
+              {
+                "name": "Generate validated README and comparison bar charts",
+                "status": "pending",
+                "conclusion": null,
+                "number": 13
+              },
+              {
+                "name": "Analyze saved encrypted evidence for the selected campaign",
+                "status": "pending",
+                "conclusion": null,
+                "number": 14
+              },
+              {
+                "name": "Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+                "status": "pending",
+                "conclusion": null,
+                "number": 15
+              },
+              {
+                "name": "Export compact README data (including failed test runs)",
+                "status": "pending",
+                "conclusion": null,
+                "number": 16
+              },
+              {
+                "name": "Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+                "status": "pending",
+                "conclusion": null,
+                "number": 17
+              },
+              {
+                "name": "Run actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+                "status": "pending",
+                "conclusion": null,
+                "number": 18
+              },
+              {
+                "name": "Job summary",
+                "status": "pending",
+                "conclusion": null,
+                "number": 19
+              },
+              {
+                "name": "Post Run ./.github/actions/auditable-setup",
+                "status": "pending",
+                "conclusion": null,
+                "number": 37
+              },
+              {
+                "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "status": "pending",
+                "conclusion": null,
+                "number": 38
+              }
+            ]
+          }
+        ]
+      },
+      "prior_fast_run": {
+        "run_id": 40116177710,
+        "conclusion": "success",
+        "runtime": "87be38e069b86b442cc36500f44e0e4907ce813e"
+      }
+    }
+  },
+  "raw_archive": {
+    "path": "/tmp/capntproto-portable-architecture-20261024.tar.gz",
+    "bytes": 328167812,
+    "sha256": "32eb760a1b7d21456e2ae7d92f435f609116c6e34142a123ebff83727084ac01",
+    "verified_files": 28284,
+    "links": {}
+  }
+}

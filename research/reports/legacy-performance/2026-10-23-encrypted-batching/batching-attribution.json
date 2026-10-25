@@ -1,0 +1,347 @@
+{
+  "note": "Selected site attribution from saved raw DHAT. All-peer totals include every site; fractional sites below 0.5 blocks are omitted only from the selected site counters. Categories are diagnostic, not mutually exclusive.",
+  "rows": [
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "legacy",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 8.0,
+      "bytes": 846.0444444444445,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 0,
+        "endpoint_header": 0,
+        "connection_header": 0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "legacy",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 4.0,
+      "bytes": 566.0666666666667,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 0,
+        "endpoint_header": 0,
+        "connection_header": 0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "portable",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 7.0,
+      "bytes": 926.0222222222222,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 0,
+        "endpoint_header": 0,
+        "connection_header": 0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "portable",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 5.0,
+      "bytes": 622.0,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 0,
+        "endpoint_header": 0,
+        "connection_header": 0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "legacy-baseline",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 9.0,
+      "bytes": 878.0666666666667,
+      "sites": {
+        "tls_slice_vector": 1.0,
+        "answer_status": 0,
+        "quiche_send_buffer": 0,
+        "endpoint_header": 0,
+        "connection_header": 0
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "variant": "legacy-baseline",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 6.0,
+      "bytes": 654.1333333333333,
+      "sites": {
+        "tls_slice_vector": 1.0,
+        "answer_status": 1.0,
+        "quiche_send_buffer": 0,
+        "endpoint_header": 0,
+        "connection_header": 0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 2560.3555555555554,
+      "bytes": 12661921.799999999,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 1032.4222222222222,
+        "endpoint_header": 285.24444444444447,
+        "connection_header": 285.24444444444447
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 2895.8,
+      "bytes": 12673700.622222222,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 1029.8,
+        "endpoint_header": 285.9555555555556,
+        "connection_header": 285.9555555555556
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "portable",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 2539.5777777777776,
+      "bytes": 12658609.711111112,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 1028.2888888888888,
+        "endpoint_header": 282.55555555555554,
+        "connection_header": 282.55555555555554
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "portable",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 2868.088888888889,
+      "bytes": 12671314.311111111,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 1029.3111111111111,
+        "endpoint_header": 285.4222222222222,
+        "connection_header": 285.4222222222222
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy-baseline",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 2561.733333333333,
+      "bytes": 12663087.91111111,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 1032.0222222222221,
+        "endpoint_header": 287.8,
+        "connection_header": 287.8
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "variant": "legacy-baseline",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 2898.6444444444446,
+      "bytes": 12673760.888888888,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 1.0,
+        "quiche_send_buffer": 1031.5111111111112,
+        "endpoint_header": 284.22222222222223,
+        "connection_header": 284.22222222222223
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "legacy",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 238.0,
+      "bytes": 35112.02222222222,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 2.0,
+        "endpoint_header": 1.0,
+        "connection_header": 1.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "legacy",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 78.64444444444445,
+      "bytes": 20136.17777777778,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 2.0,
+        "endpoint_header": 1.0,
+        "connection_header": 1.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "portable",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 264.02222222222224,
+      "bytes": 42856.62222222222,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 2.0,
+        "endpoint_header": 1.0,
+        "connection_header": 1.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "portable",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 107.82222222222222,
+      "bytes": 20211.555555555555,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 2.0,
+        "endpoint_header": 1.0,
+        "connection_header": 1.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "legacy-baseline",
+      "peer": "client",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 300.0,
+      "bytes": 36104.02222222222,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 0,
+        "quiche_send_buffer": 64.0,
+        "endpoint_header": 1.0,
+        "connection_header": 1.0
+      }
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "variant": "legacy-baseline",
+      "peer": "service-0",
+      "points": [
+        5,
+        50
+      ],
+      "blocks": 173.26666666666668,
+      "bytes": 22982.044444444444,
+      "sites": {
+        "tls_slice_vector": 0,
+        "answer_status": 32.0,
+        "quiche_send_buffer": 64.0,
+        "endpoint_header": 1.0,
+        "connection_header": 1.0
+      }
+    }
+  ]
+}

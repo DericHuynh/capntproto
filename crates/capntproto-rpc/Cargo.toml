@@ -19,8 +19,8 @@ repository = "https://github.com/DericHuynh/capntproto"
 
 [features]
 default = ["std"]
-alloc = ["capnp/alloc", "capntproto-rpc-wire/alloc", "capntproto-rpc-engine/alloc"]
-std = ["alloc", "capnp/std", "capntproto-rpc-wire/std", "dep:capnp-futures", "dep:futures"]
+alloc = ["capnp/alloc", "capntproto-rpc-wire/alloc", "capntproto-rpc-engine/alloc", "dep:futures", "dep:hashbrown", "dep:spin"]
+std = ["alloc", "capnp/std", "capntproto-rpc-wire/std", "dep:capnp-futures", "futures/std"]
 
 [lib]
 name = "capnp_rpc"
@@ -46,10 +46,22 @@ version = "0.25.0"
 path = "../capntproto-futures"
 optional = true
 
+[dependencies.spin]
+version = "=0.12.3"
+optional = true
+default-features = false
+features = ["mutex", "spin_mutex"]
+
+[dependencies.hashbrown]
+version = "=0.17.1"
+optional = true
+default-features = false
+features = ["default-hasher", "inline-more"]
+
 [dependencies.futures]
 optional = true
 version = "0.3.0"
-features = ["std"]
+features = ["alloc", "async-await", "spin"]
 default-features = false
 
 [lints.clippy]
@@ -63,4 +75,5 @@ unreachable_pub = "deny"
 capnpc = { package = "capntproto-codegen", version = "0.25", path = "../capntproto-codegen" }
 
 [dev-dependencies]
+allocation-counter = "=0.8.1"
 futures = { version = "0.3.0", features = ["executor"] }

@@ -23,12 +23,14 @@ pub struct Options {
     pub retained_bytes: NonZeroUsize,
     /// Separate bound on released application builder segments cached for
     /// reuse. Live requests/results are not part of this cache. Zero disables it.
+    #[cfg(feature = "std")]
     pub cached_message_words: usize,
+    #[cfg(feature = "std")]
     pub cached_message_segments: usize,
     pub output_queue: NonZeroUsize,
     /// Cooperative work/read/write allowance per poll. The hosted default of
     /// 128 lets the ordinary call and cleanup lanes complete in one turn while
-    /// retaining the coordinator's separate eight-frame input bound.
+    /// retaining the coordinator's separate 32-frame input bound.
     pub poll_budget: NonZeroUsize,
     pub reader: capnp::message::ReaderOptions,
     pub maximum_fds: usize,
@@ -55,10 +57,12 @@ impl Options {
             message_buffers: entries,
             message_bytes,
             retained_bytes,
+            #[cfg(feature = "std")]
             cached_message_words: (retained_bytes.get() / 8).min(16 * 1024),
             // Match the two-party builder cache's segment bound. A separate
             // word limit still caps retained bytes; the former 16-segment cap
             // discarded small buffers while most of that byte budget was free.
+            #[cfg(feature = "std")]
             cached_message_segments: entries.get().min(64),
             output_queue: entries,
             poll_budget: NonZeroUsize::new(128).unwrap(),

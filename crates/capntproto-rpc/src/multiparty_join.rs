@@ -1,6 +1,7 @@
 //! Independently routed standard Join messages and direct capability acquisition.
 use super::*;
 use crate::multiparty::{JoinDestination, JoinNetwork, PartResponse};
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::private::capability::JoinedCapability;
 
 pub(super) fn supported<VatId>(state: &ConnectionState<VatId>) -> bool {
@@ -13,7 +14,7 @@ pub(super) fn supported<VatId>(state: &ConnectionState<VatId>) -> bool {
 
 struct LocalReply {
     body: capnp::message::Builder<capnp::message::HeapAllocator>,
-    _guard: Box<dyn std::any::Any>,
+    _guard: Box<dyn core::any::Any>,
 }
 impl ResponseHook for LocalReply {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
@@ -58,7 +59,7 @@ fn response_for<VatId>(
     message: Box<dyn crate::OutgoingMessage>,
 ) -> PartResponse {
     let (tx, rx) = oneshot::channel();
-    let reference = Rc::new(RefCell::new(QuestionRef::new(state.clone(), id, tx)));
+    let reference = Rc::new(QuestionCell::new(QuestionRef::new(state.clone(), id, tx)));
     state.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
     let _ = message.send_detached();
     Promise::from_future(
@@ -205,7 +206,7 @@ pub(super) fn receive<VatId>(
     let running = owner.eagerly_evaluate(task);
     if let Some(answer) = owner.answers.borrow_mut().slots.get_mut(&id) {
         answer.pipeline = Some(Box::new(pipeline));
-        answer.call_completion_promise = Some(running);
+        answer.call_task = Some(running.into());
     }
     Ok(())
 }

@@ -2,8 +2,9 @@
 //! The caller retains the original running/answer owner until execution and
 //! reply publication finish. These owned parameters do not borrow the driver.
 use super::*;
+use alloc::{boxed::Box, vec::Vec};
 mod results;
-pub use results::{Execution, Producer, Results};
+pub use results::{Execution, PlainPayload, Producer, Results};
 pub(crate) use results::{Transfer, Work};
 mod worker;
 pub use worker::{Progress, Worker};
@@ -14,7 +15,36 @@ pub use worker::{Progress, Worker};
 #[must_use = "dispatch the prepared invocation or drop its owned parameters"]
 pub struct Prepared {
     method: DynamicCall,
-    params: Box<dyn ParamsHook>,
+    params: Parameters,
+}
+// Immediate dispatch borrows its parameters. Only a handler that takes
+// ownership needs the public boxed hook; retaining the admitted reader does
+// not require an allocation of its own.
+enum Parameters {
+    Plain(owned::PlainParams),
+    Hook(Box<dyn ParamsHook>),
+}
+impl core::ops::Deref for Parameters {
+    type Target = dyn ParamsHook;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Plain(params) => params,
+            Self::Hook(params) => &**params,
+        }
+    }
+}
+impl Parameters {
+    fn into_hook(self) -> Box<dyn ParamsHook> {
+        match self {
+            Self::Plain(params) => Box::new(params),
+            Self::Hook(params) => params,
+        }
+    }
+}
+impl From<Box<dyn ParamsHook>> for Parameters {
+    fn from(params: Box<dyn ParamsHook>) -> Self {
+        Self::Hook(params)
+    }
 }
 impl ParamsHook for Payload {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
@@ -31,10 +61,10 @@ impl Payload {
         match self.body {
             PayloadBody::Shared { message } if self.caps.is_empty() => {
                 // Admission proved this immutable frame has no capabilities.
-                // The existing allocation already owns its storage and reader;
-                // wrapping the Payload again would add a box to every call.
+                // Move the reader directly into the parameter hook without
+                // a second wrapper around the capability-free payload.
                 debug_assert!(self.caps.is_empty());
-                message
+                Box::new(message)
             }
             _ => Box::new(self),
         }
@@ -59,7 +89,7 @@ impl Prepared {
         destination.call_with_hints(
             self.method.interface,
             self.method.method,
-            self.params,
+            self.params.into_hook(),
             results,
             CallHints {
                 no_promise_pipelining: self.method.no_promise_pipelining,
@@ -103,7 +133,7 @@ impl<'id> ClientHooks<'id> {
             content.imbue(&caps);
             Ok(Prepared {
                 method: params.hints(),
-                params: Payload::copy(content)?.into_params(),
+                params: Payload::copy(content)?.into_params().into(),
             })
         })
         .map_err(wire_error)?
@@ -129,9 +159,10 @@ impl<'id> ClientHooks<'id> {
         if let Some(message) = call.share_plain_params(messages).map_err(wire_error)? {
             return Ok(Prepared {
                 method: call.method(),
-                params: message,
+                params: Parameters::Plain(message),
             });
         }
+        self.collect(&mut driver.capabilities());
         call.with(messages, |params| {
             let mut caps = Vec::with_capacity(params.capability_count());
             for index in 0..params.capability_count() {
@@ -142,8 +173,7 @@ impl<'id> ClientHooks<'id> {
                             .bind_capability(cap)
                             .map_err(wire_error)?
                             .into_client();
-                        let hook = self.export_client(&mut driver.capabilities(), &client);
-                        driver.capabilities().release(client);
+                        let hook = self.import_after_collect(&mut driver.capabilities(), client);
                         Some(hook?.hook)
                     }
                 };
@@ -157,7 +187,8 @@ impl<'id> ClientHooks<'id> {
                         .map_err(wire_error)?,
                     caps,
                 )?
-                .into_params(),
+                .into_params()
+                .into(),
             })
         })
         .map_err(wire_error)?

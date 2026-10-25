@@ -1,0 +1,304 @@
+{
+  "scope": "Both-peer full lifecycles. Marginal estimate (500-50)/450, ten warmups at each point. One diagnostic per point. Baseline and legacy profiles reused from sealed secure57, identical binary and fixture. Callgrind counters are simulated, not PMU or native time. DHAT measures cumulative allocations, not peak/live memory.",
+  "raw": [
+    {
+      "stage": "direct",
+      "iterations": 50,
+      "transport": "quic",
+      "case": "pipelined-read",
+      "peers": {
+        "client": {
+          "bytes": 953799,
+          "blocks": 3873
+        },
+        "service-0": {
+          "bytes": 956764,
+          "blocks": 3543
+        }
+      },
+      "total": {
+        "bytes": 1910563,
+        "blocks": 7416
+      }
+    },
+    {
+      "stage": "direct",
+      "iterations": 500,
+      "transport": "quic",
+      "case": "pipelined-read",
+      "peers": {
+        "client": {
+          "bytes": 3708346,
+          "blocks": 25474
+        },
+        "service-0": {
+          "bytes": 3849528,
+          "blocks": 24259
+        }
+      },
+      "total": {
+        "bytes": 7557874,
+        "blocks": 49733
+      }
+    },
+    {
+      "stage": "direct",
+      "iterations": 50,
+      "transport": "tls",
+      "case": "dependent-read",
+      "peers": {
+        "client": {
+          "bytes": 580551,
+          "blocks": 2332
+        },
+        "service-0": {
+          "bytes": 654212,
+          "blocks": 2551
+        }
+      },
+      "total": {
+        "bytes": 1234763,
+        "blocks": 4883
+      }
+    },
+    {
+      "stage": "direct",
+      "iterations": 50,
+      "transport": "tls",
+      "case": "pipelined-read",
+      "peers": {
+        "client": {
+          "bytes": 639895,
+          "blocks": 2938
+        },
+        "service-0": {
+          "bytes": 660655,
+          "blocks": 2731
+        }
+      },
+      "total": {
+        "bytes": 1300550,
+        "blocks": 5669
+      }
+    },
+    {
+      "stage": "direct",
+      "iterations": 500,
+      "transport": "tls",
+      "case": "dependent-read",
+      "peers": {
+        "client": {
+          "bytes": 2727960,
+          "blocks": 15832
+        },
+        "service-0": {
+          "bytes": 3300233,
+          "blocks": 18301
+        }
+      },
+      "total": {
+        "bytes": 6028193,
+        "blocks": 34133
+      }
+    },
+    {
+      "stage": "direct",
+      "iterations": 500,
+      "transport": "tls",
+      "case": "pipelined-read",
+      "peers": {
+        "client": {
+          "bytes": 3202203,
+          "blocks": 20938
+        },
+        "service-0": {
+          "bytes": 3345373,
+          "blocks": 19831
+        }
+      },
+      "total": {
+        "bytes": 6547576,
+        "blocks": 40769
+      }
+    }
+  ],
+  "marginal": [
+    {
+      "stage": "direct",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "per_operation": {
+        "bytes": 12549.58,
+        "blocks": 94.03777777777778
+      },
+      "peers": {
+        "client": {
+          "bytes": 6121.2155555555555,
+          "blocks": 48.00222222222222
+        },
+        "service-0": {
+          "bytes": 6428.364444444444,
+          "blocks": 46.035555555555554
+        }
+      }
+    },
+    {
+      "stage": "direct",
+      "transport": "tls",
+      "case": "dependent-read",
+      "per_operation": {
+        "bytes": 10652.066666666668,
+        "blocks": 65.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 4772.02,
+          "blocks": 30.0
+        },
+        "service-0": {
+          "bytes": 5880.046666666667,
+          "blocks": 35.0
+        }
+      }
+    },
+    {
+      "stage": "direct",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "per_operation": {
+        "bytes": 11660.057777777778,
+        "blocks": 78.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 5694.017777777778,
+          "blocks": 40.0
+        },
+        "service-0": {
+          "bytes": 5966.04,
+          "blocks": 38.0
+        }
+      }
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 16697.03777777778,
+        "blocks": 120.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 6676.013333333333,
+          "blocks": 41.0
+        },
+        "service-0": {
+          "bytes": 10021.024444444445,
+          "blocks": 79.0
+        }
+      },
+      "stage": "legacy"
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 10740.011111111111,
+        "blocks": 66.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 4772.006666666667,
+          "blocks": 30.0
+        },
+        "service-0": {
+          "bytes": 5968.004444444445,
+          "blocks": 36.0
+        }
+      },
+      "stage": "baseline"
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 18257.03777777778,
+        "blocks": 137.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 7294.013333333333,
+          "blocks": 50.0
+        },
+        "service-0": {
+          "bytes": 10963.024444444445,
+          "blocks": 87.0
+        }
+      },
+      "stage": "legacy"
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 11748.037777777778,
+        "blocks": 79.0
+      },
+      "peers": {
+        "client": {
+          "bytes": 5694.013333333333,
+          "blocks": 40.0
+        },
+        "service-0": {
+          "bytes": 6054.024444444444,
+          "blocks": 39.0
+        }
+      },
+      "stage": "baseline"
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "legacy",
+      "per_operation": {
+        "bytes": 19143.595555555556,
+        "blocks": 159.01111111111112
+      },
+      "peers": {
+        "client": {
+          "bytes": 7721.324444444444,
+          "blocks": 62.00666666666667
+        },
+        "service-0": {
+          "bytes": 11422.271111111111,
+          "blocks": 97.00444444444445
+        }
+      },
+      "stage": "legacy"
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "variant": "portable",
+      "per_operation": {
+        "bytes": 12634.553333333333,
+        "blocks": 95.00888888888889
+      },
+      "peers": {
+        "client": {
+          "bytes": 6121.282222222222,
+          "blocks": 48.004444444444445
+        },
+        "service-0": {
+          "bytes": 6513.271111111111,
+          "blocks": 47.004444444444445
+        }
+      },
+      "stage": "baseline"
+    }
+  ]
+}

@@ -1,0 +1,377 @@
+{
+  "scope": "All peers; paired (50-10)/40 operations, two warmups. Single diagnostic pairs; no latency claim.",
+  "rows": [
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "counts": {
+        "Ir": 46202.85,
+        "Dr": 12538.7,
+        "Dw": 9681.95,
+        "I1mr": 3225.925,
+        "D1mr": 32.2,
+        "D1mw": 87.15,
+        "ILmr": 0.1,
+        "DLmr": 0.025,
+        "DLmw": 0.6,
+        "Bc": 5948.55,
+        "Bcm": 326.65,
+        "Bi": 569.025,
+        "Bim": 187.05
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "Ir": 46142.9,
+        "Dr": 12529.4,
+        "Dw": 9677.95,
+        "I1mr": 3257.625,
+        "D1mr": 35.525,
+        "D1mw": 96.325,
+        "ILmr": 0.05,
+        "DLmr": 0.1,
+        "DLmw": 0.575,
+        "Bc": 5948.35,
+        "Bcm": 323.9,
+        "Bi": 568.975,
+        "Bim": 166.05
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "counts": {
+        "Ir": 118642.6,
+        "Dr": 31286.125,
+        "Dw": 23617.825,
+        "I1mr": 7119.05,
+        "D1mr": 161.05,
+        "D1mw": 297.525,
+        "ILmr": -0.05,
+        "DLmr": 0.025,
+        "DLmw": 0.7,
+        "Bc": 14178.75,
+        "Bcm": 964.425,
+        "Bi": 1262.0,
+        "Bim": 444.025
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "Ir": 118540.85,
+        "Dr": 31271.525,
+        "Dw": 23610.425,
+        "I1mr": 7195.725,
+        "D1mr": 186.875,
+        "D1mw": 309.775,
+        "ILmr": 0.0,
+        "DLmr": 0.05,
+        "DLmw": 0.675,
+        "Bc": 14177.925,
+        "Bcm": 926.7,
+        "Bi": 1262.025,
+        "Bim": 397.9
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "counts": {
+        "Ir": 97160.85,
+        "Dr": 25387.3,
+        "Dw": 19217.8,
+        "I1mr": 5292.95,
+        "D1mr": 205.175,
+        "D1mw": 279.375,
+        "ILmr": 0.075,
+        "DLmr": -0.025,
+        "DLmw": 0.75,
+        "Bc": 11086.825,
+        "Bcm": 800.2,
+        "Bi": 944.0,
+        "Bim": 351.95
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "Ir": 97153.925,
+        "Dr": 25387.15,
+        "Dw": 19215.45,
+        "I1mr": 5331.8,
+        "D1mr": 219.6,
+        "D1mw": 282.675,
+        "ILmr": 0.025,
+        "DLmr": 0.025,
+        "DLmw": 0.6,
+        "Bc": 11083.1,
+        "Bcm": 772.125,
+        "Bi": 944.0,
+        "Bim": 331.975
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "counts": {
+        "Ir": 670402.5,
+        "Dr": 184753.2,
+        "Dw": 145449.075,
+        "I1mr": 26090.95,
+        "D1mr": 1711.45,
+        "D1mw": 1837.8,
+        "ILmr": 0.0,
+        "DLmr": -0.05,
+        "DLmw": -0.2,
+        "Bc": 78965.05,
+        "Bcm": 2103.825,
+        "Bi": 6362.0,
+        "Bim": 347.975
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "Ir": 670453.9,
+        "Dr": 184759.875,
+        "Dw": 145451.375,
+        "I1mr": 26044.95,
+        "D1mr": 1729.525,
+        "D1mw": 1851.3,
+        "ILmr": 0.075,
+        "DLmr": 0.025,
+        "DLmw": -0.2,
+        "Bc": 78964.95,
+        "Bcm": 2222.65,
+        "Bi": 6362.0,
+        "Bim": 554.95
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy",
+      "counts": {
+        "Ir": 104245.7,
+        "Dr": 28541.65,
+        "Dw": 22075.225,
+        "I1mr": 6972.175,
+        "D1mr": 64.6,
+        "D1mw": 164.1,
+        "ILmr": -0.025,
+        "DLmr": -0.025,
+        "DLmw": 0.5,
+        "Bc": 13602.4,
+        "Bcm": 895.95,
+        "Bi": 1325.975,
+        "Bim": 501.0
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "Ir": 104248.4,
+        "Dr": 28542.45,
+        "Dw": 22073.5,
+        "I1mr": 7050.75,
+        "D1mr": 73.6,
+        "D1mw": 176.8,
+        "ILmr": 0.0,
+        "DLmr": -0.05,
+        "DLmw": 0.525,
+        "Bc": 13601.225,
+        "Bcm": 863.5,
+        "Bi": 1326.0,
+        "Bim": 449.025
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "counts": {
+        "Ir": 3542428.4,
+        "Dr": 1195605.1,
+        "Dw": 903029.9,
+        "I1mr": 28608.25,
+        "D1mr": 9220.625,
+        "D1mw": 13747.375,
+        "ILmr": -0.025,
+        "DLmr": 0.025,
+        "DLmw": -0.225,
+        "Bc": 655197.575,
+        "Bcm": 4199.625,
+        "Bi": 29532.0,
+        "Bim": 2379.025
+      }
+    },
+    {
+      "mode": "callgrind",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "Ir": 3542616.175,
+        "Dr": 1195789.9,
+        "Dw": 903247.025,
+        "I1mr": 28606.425,
+        "D1mr": 9329.05,
+        "D1mw": 13759.05,
+        "ILmr": 0.025,
+        "DLmr": 0.05,
+        "DLmw": -0.25,
+        "Bc": 655396.075,
+        "Bcm": 4112.6,
+        "Bi": 29532.0,
+        "Bim": 2582.925
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 912.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "blocks": 7.0,
+        "bytes": 911.8
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "counts": {
+        "blocks": 58.0,
+        "bytes": 7448.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "blocks": 58.0,
+        "bytes": 7448.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.1
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "blocks": 202.0,
+        "bytes": 40520.0
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "counts": {
+        "blocks": 21.85,
+        "bytes": 2316.075
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "blocks": 21.45,
+        "bytes": 2279.925
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "counts": {
+        "blocks": 72.15,
+        "bytes": 11022.675
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "blocks": 72.85,
+        "bytes": 11092.275
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "counts": {
+        "blocks": 219.025,
+        "bytes": 52623.2
+      }
+    },
+    {
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "counts": {
+        "blocks": 218.7,
+        "bytes": 52588.675
+      }
+    }
+  ]
+}

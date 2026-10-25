@@ -1,0 +1,11 @@
+{
+  "upstream_original_files": 119,
+  "modified_files": [
+    "src/common_state.rs",
+    "src/crypto/cipher.rs",
+    "src/crypto/ring/tls13.rs",
+    "src/msgs/message/outbound.rs",
+    "src/record_layer.rs"
+  ],
+  "original_licenses_unchanged": true
+}

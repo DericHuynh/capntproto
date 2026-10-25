@@ -3,16 +3,16 @@
 //! This is the hosted request adapter, not a second wire ledger.
 use super::*;
 use crate::local::ResultsDoneHook;
+use alloc::{boxed::Box, vec::Vec};
 
 struct Connection {
-    receiver: Rc<capability::ResponseReceiver<Error>>,
     shutdown: Shutdown,
     inbox: Weak<Inbox>,
 }
 
 #[derive(Default)]
 pub(super) struct State {
-    connection: std::cell::OnceCell<Connection>,
+    connection: core::cell::OnceCell<Connection>,
     // One weak shutdown subscription follows this completion allocation through
     // reuse; cached states carry no task waker or application result.
     close_watch: RefCell<Option<Shutdown>>,
@@ -47,41 +47,64 @@ pub(super) fn notify_closed(state: &Rc<State>) {
     }
 }
 
-/// Retain two empty completions for overlapping parent/child requests. Only the
-/// last owner may recycle a state, so retained operations cannot observe reuse.
-#[derive(Default)]
-pub(super) struct Cache([Cell<Option<Rc<State>>>; 2]);
+/// Reuse empty completions up to the inbox's existing call limit. The common
+/// serial/parent-child slots stay inline; a concurrent high-water mark grows
+/// the overflow lazily. Only the final owner may recycle a completed state.
+pub(super) struct Cache {
+    inline: [Cell<Option<Rc<State>>>; 2],
+    overflow: RefCell<Vec<Rc<State>>>,
+    maximum: usize,
+}
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new(2)
+    }
+}
 impl Cache {
+    pub(super) fn new(maximum: usize) -> Self {
+        Self {
+            inline: Default::default(),
+            overflow: RefCell::new(Vec::new()),
+            maximum,
+        }
+    }
     fn acquire(&self) -> Rc<State> {
-        let cached = self.0[0].take().or_else(|| self.0[1].take());
+        let cached = self.inline[0]
+            .take()
+            .or_else(|| self.inline[1].take())
+            .or_else(|| self.overflow.borrow_mut().pop());
         match cached {
             Some(state) => {
                 debug_assert_eq!(Rc::strong_count(&state), 1, "exclusive cached completion");
-                let state_mut = &state;
                 debug_assert!(
-                    !has_value(&state_mut.status)
-                        && !has_value(&state_mut.results)
-                        && !has_value(&state_mut.receive)
-                        && !has_value(&state_mut.canceled)
+                    !has_value(&state.status)
+                        && !has_value(&state.results)
+                        && !has_value(&state.receive)
+                        && !has_value(&state.canceled)
                 );
-                state_mut.observed.set(false);
-                state_mut.ready.set(false);
+                state.observed.set(false);
+                state.ready.set(false);
                 state
             }
             None => Rc::default(),
         }
     }
     fn recycle(&self, state: &Rc<State>) {
-        if Rc::strong_count(state) == 1 {
-            // No callbacks occur while the existing cache is temporarily out.
-            for slot in &self.0 {
-                let cached = slot.take();
-                let occupied = cached.is_some();
-                slot.set(Some(cached.unwrap_or_else(|| state.clone())));
-                if !occupied {
-                    break;
-                }
+        if Rc::strong_count(state) != 1 {
+            return;
+        }
+        // No callbacks occur while cached ownership is temporarily removed.
+        for slot in self.inline.iter().take(self.maximum) {
+            let cached = slot.take();
+            let occupied = cached.is_some();
+            slot.set(Some(cached.unwrap_or_else(|| state.clone())));
+            if !occupied {
+                return;
             }
+        }
+        let mut overflow = self.overflow.borrow_mut();
+        if overflow.len() < self.maximum.saturating_sub(self.inline.len()) {
+            overflow.push(state.clone());
         }
     }
 }
@@ -207,7 +230,7 @@ pub(super) enum Results {
 }
 pub(super) struct DirectResults {
     sender: Option<ResultsSender>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
     pipeline: Option<Weak<wire::PipelineState>>,
 }
 impl DirectResults {
@@ -238,7 +261,7 @@ impl Drop for DirectResults {
 
 struct SharedPayloadResponse {
     payload: Rc<wire::Payload>,
-    _context: Option<Rc<dyn std::any::Any>>,
+    _context: Option<Rc<dyn core::any::Any>>,
 }
 impl capnp::private::capability::ResponseHook for SharedPayloadResponse {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
@@ -286,7 +309,7 @@ impl Results {
         }
         Ok(())
     }
-    fn direct(sender: ResultsSender, context: Option<Rc<dyn std::any::Any>>) -> Self {
+    fn direct(sender: ResultsSender, context: Option<Rc<dyn core::any::Any>>) -> Self {
         Self::Direct(DirectResults {
             sender: Some(sender),
             context,
@@ -303,19 +326,55 @@ impl Results {
             Self::Unsent => None,
         }
     }
-    pub(super) fn finish_shared(&mut self, payload: &Rc<wire::Payload>) -> bool {
-        let Self::Direct(direct) = self else {
-            return false;
+    /// A wire reply owns both halves of a direct request. Finish projections
+    /// before making the response ready, then publish payload and status once.
+    #[allow(clippy::result_large_err)]
+    pub(super) fn complete_payload(
+        &mut self,
+        completion: &CallCompletion,
+        payload: wire::Payload,
+        pipeline: Option<&Rc<wire::PipelineState>>,
+        early_pipeline: impl FnOnce() -> Option<Box<dyn capnp::private::capability::PipelineHook>>,
+    ) -> Result<(), wire::Payload> {
+        let (Self::Direct(direct), CallCompletion::Response(completion)) = (self, completion)
+        else {
+            return Err(payload);
         };
-        direct
-            .sender
-            .take()
-            .expect("unconsumed direct results")
-            .send_response(Box::new(SharedPayloadResponse {
-                payload: payload.clone(),
+        let Some(sender) = direct.sender.as_ref() else {
+            return Err(payload);
+        };
+        if !Rc::ptr_eq(&sender.0, &completion.0) {
+            return Err(payload);
+        }
+        let sender = direct.sender.take().expect("checked direct sender");
+        let response = if let Some(pipeline) = pipeline {
+            let payload = Rc::new(payload);
+            let completed = early_pipeline()
+                .unwrap_or_else(|| Box::new(wire::PayloadPipeline(payload.clone())));
+            let response = Box::new(SharedPayloadResponse {
+                payload,
                 _context: direct.context.take(),
-            }));
-        true
+            });
+            pipeline.finish(completed);
+            response as Box<dyn capnp::private::capability::ResponseHook>
+        } else {
+            owned_response(payload, direct.context.take())
+        };
+        let state = &sender.0;
+        if state.observed.get() {
+            return Ok(());
+        }
+        debug_assert!(!has_value(&state.status) && !has_value(&state.results));
+        state.results.set(Some(ResultOwner::Response(response)));
+        state.status.set(Some(Ok(())));
+        state.ready.set(true);
+        // The wire producer above completed this exact request's projections.
+        drop(state.pipeline.take());
+        drop(state.canceled.take());
+        if let Some(wake) = state.receive.take() {
+            wake.wake();
+        }
+        Ok(())
     }
     pub(super) fn into_hook(self) -> Box<dyn ResultsHook> {
         match self {
@@ -335,7 +394,7 @@ impl Results {
             Self::Direct(_) => unreachable!(),
         }
     }
-    pub(super) fn retain_context(&mut self, context: Rc<dyn std::any::Any>) {
+    pub(super) fn retain_context(&mut self, context: Rc<dyn core::any::Any>) {
         match self {
             Self::Unsent => unreachable!("unadmitted request"),
             Self::Hook(hook) => hook.retain_response_context(context),
@@ -463,21 +522,19 @@ impl State {
     fn promise(
         self: Rc<Self>,
         inbox: Rc<Inbox>,
-    ) -> Promise<capability::Response<any_pointer::Owned>, Error> {
-        let connection = self.connection.get_or_init(|| {
+    ) -> capability::ResponsePromise<any_pointer::Owned> {
+        self.connection.get_or_init(|| {
             // The weak subscription follows this allocation through cache reuse.
             // Its terminal connection never needs another registration.
             let shutdown = inbox.shutdown.clone();
             self.watch_close(&shutdown);
             Connection {
-                receiver: Rc::default(),
                 shutdown,
                 inbox: Rc::downgrade(&inbox),
             }
         });
         self.response_interest.set(true);
-        let receiver = connection.receiver.clone();
-        Promise::from_shared_response(receiver, self, capability::Response::new)
+        capability::ResponsePromise::from_shared(self)
     }
     fn poll_response(
         &self,
@@ -562,17 +619,18 @@ impl State {
 impl
     capnp::private::capability::SharedPromise<
         Box<dyn capnp::private::capability::ResponseHook>,
-        Box<Error>,
+        Error,
     > for State
 {
     fn poll(
         &self,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<Box<dyn capnp::private::capability::ResponseHook>, Box<Error>>> {
+    ) -> Poll<Result<Box<dyn capnp::private::capability::ResponseHook>, Error>> {
         self.poll_response(
             &self.connection.get().expect("admitted completion").shutdown,
             cx,
         )
+        .map(|result| result.map_err(|error| *error))
     }
     fn cancel(self: Rc<Self>) {
         self.cancel_response(&self.connection.get().expect("admitted completion").inbox);
@@ -612,7 +670,7 @@ pub(crate) fn request(
     method: u16,
     hints: CallHints,
     params: Box<crate::local::Request>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let hook = client
         .as_any()
@@ -629,7 +687,7 @@ pub(crate) fn request_scoped(
     method: u16,
     hints: CallHints,
     params: Box<crate::local::Request>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let state = hook
         .0
@@ -649,7 +707,7 @@ pub(crate) fn request_scoped(
     );
     let promise = match admitted {
         Ok(inbox) => state.promise(inbox),
-        Err(error) => Promise::err(*error),
+        Err(error) => capability::ResponsePromise::new(Promise::err(*error)),
     };
     capability::RemotePromise {
         promise,
@@ -670,7 +728,7 @@ pub(super) fn request_prepared(
     call.completion = CallCompletion::Response(Completion(state.clone()));
     let promise = match call.enqueue_owned(inbox) {
         Ok(inbox) => state.promise(inbox),
-        Err(error) => Promise::err(*error),
+        Err(error) => capability::ResponsePromise::new(Promise::err(*error)),
     };
     capability::RemotePromise {
         promise,
@@ -700,12 +758,45 @@ pub(super) fn request_pipelined_prepared(
         Ok(inbox) => state.promise(inbox),
         Err(error) => {
             pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new((*error).clone())));
-            Promise::err(*error)
+            capability::ResponsePromise::new(Promise::err(*error))
         }
     };
     capability::RemotePromise {
         promise,
         pipeline: any_pointer::Pipeline::new(pipeline.owned(interest)),
+    }
+}
+
+struct OwnedResponse {
+    payload: wire::Payload,
+    _context: Option<Rc<dyn core::any::Any>>,
+}
+impl capnp::private::capability::ResponseHook for OwnedResponse {
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        capnp::private::capability::ResponseHook::get(&self.payload)
+    }
+}
+fn owned_response(
+    mut payload: wire::Payload,
+    context: Option<Rc<dyn core::any::Any>>,
+) -> Box<dyn capnp::private::capability::ResponseHook> {
+    let context = context.and_then(|context| payload.retain_plain_context(context).err());
+    if context.is_none() {
+        payload.into_response()
+    } else {
+        Box::new(OwnedResponse {
+            payload,
+            _context: context,
+        })
+    }
+}
+impl ResultsSender {
+    pub(crate) fn send_payload(
+        self,
+        payload: wire::Payload,
+        context: Option<Rc<dyn core::any::Any>>,
+    ) {
+        self.send_response(owned_response(payload, context));
     }
 }
 
@@ -722,6 +813,71 @@ mod tests {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
+    #[test]
+    fn fused_reply_finishes_pipeline_and_retains_response_context() {
+        for early in [false, true] {
+            let hooks = ClientHooks::new(8, 8);
+            let state = Rc::new(State::default());
+            let pipeline = wire::PipelineState::prepared(Some(&hooks.inbox));
+            let interest = state.retain_pipeline(&pipeline);
+            let completion = CallCompletion::Response(Completion(state.clone()));
+            let context = Rc::new(());
+            let weak = Rc::downgrade(&context);
+            let mut results = Results::direct(ResultsSender(state.clone()), Some(context));
+            let mut promise = state.promise(hooks.inbox.clone());
+            let wake = Arc::new(WakeCount(AtomicUsize::new(0)));
+            let waker = Waker::from(wake.clone());
+            assert!(Pin::new(&mut promise)
+                .poll(&mut Context::from_waker(&waker))
+                .is_pending());
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .set_root::<capnp::text::Owned>("fused reply")
+                .unwrap();
+            let payload = wire::Payload::copy(message.get_root_as_reader().unwrap()).unwrap();
+            assert!(results
+                .complete_payload(&completion, payload, Some(&pipeline), || {
+                    early.then(|| {
+                        Box::new(crate::broken::Pipeline::new(Error::failed("early".into())))
+                            as Box<dyn capnp::private::capability::PipelineHook>
+                    })
+                })
+                .is_ok());
+            assert!(!pipeline.unresolved());
+            assert_eq!(wake.0.load(Ordering::SeqCst), 1);
+            if early {
+                assert_eq!(
+                    pipeline
+                        .owned(interest)
+                        .get_pipelined_cap(&[])
+                        .get_failure()
+                        .unwrap()
+                        .extra,
+                    "early"
+                );
+            } else {
+                drop(interest);
+            }
+            let Poll::Ready(Ok(response)) =
+                Pin::new(&mut promise).poll(&mut Context::from_waker(&waker))
+            else {
+                panic!("ready response")
+            };
+            drop((completion, results, promise));
+            assert_eq!(
+                response
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap(),
+                "fused reply"
+            );
+            assert!(weak.upgrade().is_some());
+            drop(response);
+            assert!(weak.upgrade().is_none());
+        }
+    }
+
     #[test]
     fn producer_completes_unpolled_pipeline_and_pipeline_only_interest() {
         for drop_response in [false, true] {
@@ -805,7 +961,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_receiver_recycles_completion_and_shutdown_wakes_the_next_use() {
+    fn direct_response_recycles_completion_and_shutdown_wakes_the_next_use() {
         let hooks = ClientHooks::new(8, 8);
         let mut address = None;
         for value in ["first", "second"] {
@@ -855,7 +1011,7 @@ mod tests {
         assert!(hooks
             .inbox
             .completion_cache
-            .0
+            .inline
             .iter()
             .all(|slot| !has_value(slot)));
     }
@@ -867,7 +1023,7 @@ mod tests {
         state.observed.set(true);
         let pending_owner = state.clone();
         cache.recycle(&state);
-        assert!(cache.0.iter().all(|slot| !has_value(slot)));
+        assert!(cache.inline.iter().all(|slot| !has_value(slot)));
         drop(pending_owner);
         cache.recycle(&state);
         drop(state);
@@ -908,9 +1064,38 @@ mod tests {
             let retained = second.clone();
             cache.recycle(&first);
             cache.recycle(&second);
-            assert!(!has_value(&cache.0[1]));
+            assert!(!has_value(&cache.inline[1]));
             drop(retained);
             cache.recycle(&second);
+        }
+    }
+
+    #[test]
+    fn concurrent_completion_cache_is_bounded_and_reuses_its_high_water_mark() {
+        for maximum in [0, 1, 2, 9, 37] {
+            let cache = Cache::new(maximum);
+            let mut states = (0..maximum + 1)
+                .map(|_| cache.acquire())
+                .collect::<Vec<_>>();
+            let overflow = Rc::downgrade(states.last().unwrap());
+            for state in &states {
+                cache.recycle(state);
+            }
+            states.clear();
+            assert!(
+                overflow.upgrade().is_none(),
+                "cache exceeded its call limit"
+            );
+            for _ in 0..3 {
+                let measured = allocation_counter::measure(|| {
+                    states.extend((0..maximum).map(|_| cache.acquire()));
+                    for state in &states {
+                        cache.recycle(state);
+                    }
+                    states.clear();
+                });
+                assert_eq!(measured.count_total, 0);
+            }
         }
     }
 

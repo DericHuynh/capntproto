@@ -21,6 +21,7 @@
 
 //! Capability descriptors, import/export resolution and third-party introductions.
 use super::*;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 
 pub(super) fn reference_error(error: capntproto_rpc_engine::references::Error) -> Error {
     use capntproto_rpc_engine::references::Error as RefError;
@@ -34,6 +35,22 @@ pub(super) fn reference_error(error: capntproto_rpc_engine::references::Error) -
 }
 
 impl<VatId: 'static> ConnectionState<VatId> {
+    pub(super) fn get_dispatch_target(
+        &self,
+        target: message_target::Reader,
+    ) -> capnp::Result<InboundTarget> {
+        if let message_target::ImportedCap(id) = target.which()? {
+            self.exports
+                .borrow()
+                .get(ExportId::from_wire(id))
+                .map(|export| InboundTarget::Exported(export.client_hook.clone()))
+                .ok_or_else(|| Error::failed("Message target is not a current export ID.".into()))
+        } else {
+            self.get_message_target(target)
+                .map(InboundTarget::Projected)
+        }
+    }
+
     pub(super) fn get_message_target(
         &self,
         target: message_target::Reader,
@@ -41,7 +58,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         match target.which()? {
             message_target::ImportedCap(export_id) => {
                 match self.exports.borrow().get(ExportId::from_wire(export_id)) {
-                    Some(exp) => Ok(exp.client_hook.clone()),
+                    Some(exp) => Ok(exp.client_hook.add_ref()),
                     _ => Err(Error::failed(
                         "Message target is not a current export ID.".to_string(),
                     )),
@@ -152,7 +169,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             .borrow_mut()
                             .remove(&exp.client_hook.get_ptr());
                     }
-                    exp.client_hook = resolution.clone();
+                    exp.client_hook = Rc::from(resolution.clone());
 
                     // The export now points to `resolution`, but it is not necessarily the
                     // canonical export for `resolution`. The export itself still represents
@@ -311,7 +328,11 @@ impl<VatId: 'static> ConnectionState<VatId> {
         question.lifecycle = capntproto_rpc_engine::question::Question::no_return();
         let id = host.questions.borrow_mut().push(question);
         let (sender, _receiver) = oneshot::channel();
-        let reference = Rc::new(RefCell::new(QuestionRef::new(host.clone(), id, sender)));
+        let reference = Rc::new(QuestionCell::new(QuestionRef::new(
+            host.clone(),
+            id,
+            sender,
+        )));
         host.questions.borrow_mut().find(id).unwrap().self_ref = Some(Rc::downgrade(&reference));
         if let message::Provide(provide) =
             message.get_body()?.get_as::<message::Builder>()?.which()?
@@ -322,7 +343,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         let mut export = Export::new(inner.add_ref());
         export.vine = Some(Rc::new(move |embargo| {
             let reference = reference.borrow();
-            let Some(state) = reference.connection_state.as_ref() else {
+            let Some(state) = reference.record().context() else {
                 return Ok(());
             };
             let Ok(mut message) = state.new_outgoing_message(32) else {
@@ -338,7 +359,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
             d.reborrow()
                 .init_target()
                 .init_promised_answer()
-                .set_question_id(reference.id.to_wire());
+                .set_question_id(reference.record().id().to_wire());
             d.init_context().set_accept(embargo);
             let _ = message.send_detached();
             Ok(())
@@ -430,7 +451,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         )?;
         let question_id = host.questions.borrow_mut().push(Question::new());
         let (sender, receiver) = oneshot::channel();
-        let reference = Rc::new(RefCell::new(QuestionRef::new(
+        let reference = Rc::new(QuestionCell::new(QuestionRef::new(
             host.clone(),
             question_id,
             sender,
@@ -512,7 +533,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                         // This is a promise.  Arrange for the `Resolve` message to be sent later.
                         if let Some(exp) = state.exports.borrow_mut().find(export_id) {
                             exp.resolve_op =
-                                Self::resolve_exported_promise(state, export_id, wrapped);
+                                Some(Self::resolve_exported_promise(state, export_id, wrapped));
                         }
                         descriptor.set_sender_promise(export_id.to_wire());
                     }

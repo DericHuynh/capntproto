@@ -1,0 +1,10 @@
+{
+  "run": {
+    "headSha": "bbe8af44a55f49b3c82138aef9955e4e23aa9bde",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40016773400",
+    "status": "analysis-before-upload",
+    "conclusion": null
+  },
+  "measurement_outcome": "success",
+  "source": "saved droplet archive; final job status must be checked separately"
+}

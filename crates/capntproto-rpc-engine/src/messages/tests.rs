@@ -3,6 +3,60 @@ extern crate std;
 use super::*;
 
 #[test]
+fn owned_reader_moves_while_other_buffers_and_partial_sends_progress_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        let mut a = [0; 8];
+        let mut b = [0; 8];
+        let mut buffers = [Buffer::new(&mut a), Buffer::new(&mut b)];
+        let mut sends = [SendSlot::EMPTY];
+        with_messages(&mut buffers, &mut sends, |messages| {
+            let writer = messages.reserve(8).unwrap();
+            messages.write(&writer)[..4].copy_from_slice(b"kept");
+            let lease = messages.seal(writer, 4).unwrap();
+            let offer = messages.offer(&lease).unwrap();
+            let send = messages.accept(offer);
+            let reading = messages.read_owned(lease);
+            let moved = reading;
+            assert_eq!(moved.bytes(), b"kept");
+            let other = messages.reserve(8).unwrap();
+            messages.discard(other);
+            assert_eq!(messages.send_window(send).unwrap().advance(2), Ok(false));
+            assert_eq!(moved.bytes(), b"kept");
+            assert_eq!(messages.send_window(send).unwrap().advance(2), Ok(true));
+            let lease = moved.into_lease();
+            messages.release(lease);
+            let first = messages.reserve(8).unwrap();
+            let second = messages.reserve(8).unwrap();
+            messages.discard(first);
+            messages.discard(second);
+        })
+        .unwrap();
+    });
+    assert_eq!((measured.count_total, measured.bytes_total), (0, 0));
+}
+
+#[test]
+fn dropping_owned_reader_keeps_its_affine_reservation_until_scope_teardown() {
+    let measured = allocation_counter::measure(|| {
+        let mut bytes = [0; 8];
+        let mut buffers = [Buffer::new(&mut bytes)];
+        with_messages(&mut buffers, &mut [], |messages| {
+            let writer = messages.reserve(8).unwrap();
+            let lease = messages.seal(writer, 4).unwrap();
+            drop(messages.read_owned(lease));
+            assert_eq!(messages.reserve(1).err(), Some(Error::NoBuffer));
+        })
+        .unwrap();
+        with_messages(&mut buffers, &mut [], |messages| {
+            let writer = messages.reserve(8).unwrap();
+            messages.discard(writer);
+        })
+        .unwrap();
+    });
+    assert_eq!((measured.count_total, measured.bytes_total), (0, 0));
+}
+
+#[test]
 fn capacity_lookahead_preserves_fixed_generations_and_live_owners() {
     let mut bytes = [0; 16];
     let mut buffers = [Buffer::new(&mut bytes)];

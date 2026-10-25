@@ -1221,3 +1221,51 @@ fn frame_io_acquisition_is_atomic_and_keeps_its_exclusive_owners() {
     drop(io.incoming);
     assert!(lifetime.upgrade().is_none());
 }
+
+#[test]
+fn outgoing_envelopes_reuse_only_empty_storage_and_release_guards() {
+    let mut network = VatNetwork::new(
+        futures::io::Cursor::new(Vec::<u8>::new()),
+        futures::io::sink(),
+        VatId::Client,
+        Default::default(),
+    );
+    let mut connection = network.connection.take().unwrap();
+    let mut first = connection.new_outgoing_call(64).unwrap();
+    first.get_call().unwrap().set_question_id(17);
+    let address = &*first as *const dyn crate::OutgoingMessage as *const ();
+    let guard = Rc::new(());
+    let weak = Rc::downgrade(&guard);
+    assert!(first.retain_until_sent(guard).is_ok());
+    let body = first.take();
+    assert!(
+        weak.upgrade().is_none(),
+        "empty envelope must not retain admission"
+    );
+    let mut second = connection.new_outgoing_call(64).unwrap();
+    assert_eq!(
+        &*second as *const dyn crate::OutgoingMessage as *const (),
+        address
+    );
+    assert_eq!(second.get_call().unwrap().get_question_id(), 0);
+    second.get_call().unwrap().set_question_id(99);
+    let crate::rpc_capnp::message::Call(call) = body
+        .get_root_as_reader::<crate::rpc_capnp::message::Reader>()
+        .unwrap()
+        .which()
+        .unwrap()
+    else {
+        panic!("Call")
+    };
+    assert_eq!(call.unwrap().get_question_id(), 17);
+    let envelopes: Vec<_> = (0..CACHED_ENVELOPES + 5)
+        .map(|_| connection.new_outgoing_call(64).unwrap())
+        .collect();
+    for envelope in envelopes {
+        drop(envelope.take());
+    }
+    assert_eq!(
+        connection.inner.borrow().message_cache.borrow().len(),
+        CACHED_ENVELOPES
+    );
+}

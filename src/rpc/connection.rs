@@ -27,7 +27,7 @@ impl Connection {
         bootstrap: Option<Client>,
         side: Side,
     ) -> Self {
-        let (read, write) = futures::AsyncReadExt::split(TokioIo(io));
+        let (read, write) = futures::AsyncReadExt::split(TokioIo::new(io));
         let mut network =
             capnp_rpc::twoparty::VatNetwork::new(read, write, side, Default::default());
         network.set_task_yield(super::io::defer);

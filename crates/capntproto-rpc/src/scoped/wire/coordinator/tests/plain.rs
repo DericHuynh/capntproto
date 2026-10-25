@@ -885,7 +885,7 @@ impl ImportReceiver<()> for Replies {
     fn make_import(&mut self, _: ImportId) {}
 }
 impl transport::Input<()> for Replies {
-    fn has_buffered_next_frame(&self) -> bool {
+    fn has_buffered_next_frame(&mut self) -> bool {
         !self.frames.is_empty()
     }
     fn take_buffered_frame<'p>(
@@ -1046,6 +1046,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                 queue.reserve().unwrap().accept(messages, offer);
                 messages.release(lease);
                 for _ in 0..4096 {
+                    let consumed = reader.consumed;
                     if let Poll::Ready(result) = coordinator.poll_prepared(
                         messages,
                         &mut queue,
@@ -1062,6 +1063,10 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     ) {
                         result.unwrap();
                     }
+                    assert!(
+                        reader.consumed - consumed <= budget.min(32),
+                        "ready control traffic must obey the same receive-turn bound"
+                    );
                     if reader.frames.is_empty()
                         && pending.is_none()
                         && queue.is_empty()
@@ -1132,6 +1137,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     reader.frames.push_back(words);
                 }
                 for _ in 0..4096 {
+                    let consumed = reader.consumed;
                     if let Poll::Ready(result) = coordinator.poll_prepared(
                         messages,
                         &mut queue,
@@ -1148,6 +1154,10 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                     ) {
                         result.unwrap();
                     }
+                    assert!(
+                        reader.consumed - consumed <= budget.min(32),
+                        "ready control traffic must obey the same receive-turn bound"
+                    );
                     if reader.frames.is_empty()
                         && pending.is_none()
                         && coordinator.schedule.active == WorkSet::NONE
@@ -1302,7 +1312,7 @@ fn buffered_reply_batches_respect_frame_budget_and_stop_between_frames() {
                         if !pipeline && budget == 1 && before == 1 && !stop_after_first {
                             assert!(control.polls > control_polls);
                         }
-                        assert!(reader.consumed - before <= budget.min(8));
+                        assert!(reader.consumed - before <= budget.min(32));
                         if pipeline && budget >= 4 && before == 0 && !stop_after_first {
                             assert!(
                                 reader.consumed > 1,
@@ -1860,6 +1870,93 @@ fn general_notification_refreshes_late_metadata_before_enqueue_only_admission() 
                 &fd
             ));
             drop(request);
+            drop(client);
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                messages,
+                &mut queue,
+                &mut Policy::default(),
+                Ok(()),
+            ))
+            .unwrap();
+            reclaimed(messages);
+        });
+    }
+}
+
+#[test]
+fn plain_burst_preserves_idle_lanes_and_stays_within_actual_work_budget() {
+    for capability in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(8, 8);
+            let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+            let mut coordinator = Coordinator::new(
+                driver,
+                hooks,
+                NonZeroUsize::new(4).unwrap(),
+                None,
+                options(),
+            )
+            .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+            let mut cx = Context::from_waker(Waker::noop());
+            for _ in 0..256 {
+                if let Poll::Ready(result) =
+                    coordinator.poll_work(messages, &mut queue, &mut [0; 32], &NoResources, &mut cx)
+                {
+                    result.unwrap();
+                }
+                if coordinator.schedule.active == WorkSet::NONE {
+                    break;
+                }
+            }
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+            let requests: Vec<_> = (0..if capability { 2 } else { 3 })
+                .map(|method| {
+                    let mut request = client
+                        .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                            7,
+                            method,
+                            None,
+                            capability::CallHints {
+                                no_promise_pipelining: true,
+                                ..Default::default()
+                            },
+                        );
+                    if capability && method == 1 {
+                        request.get().set_as_capability(client.hook.add_ref());
+                    }
+                    request.send()
+                })
+                .collect();
+            let wake = coordinator.notifications.waker();
+            let visits: &[(usize, usize)] = if capability {
+                &[(2, 2)]
+            } else {
+                &[(2, 2), (1, 3)]
+            };
+            for &(budget, published) in visits {
+                let mut remaining = budget;
+                let Poll::Ready(result) = coordinator.poll_work_budget(
+                    messages,
+                    &mut queue,
+                    &mut [0; 32],
+                    &NoResources,
+                    &mut cx,
+                    &mut remaining,
+                    &wake,
+                ) else {
+                    panic!("ready requests must publish within the available budget")
+                };
+                result.unwrap();
+                assert_eq!(remaining, 0);
+                assert_eq!(queue.len(), published);
+                assert_eq!(
+                    coordinator.direct_publication, !capability,
+                    "a later capability grant invalidates the plain-publication certificate"
+                );
+            }
+            assert!(coordinator.hooks.inbox.queue.borrow().is_empty());
+            drop(requests);
             drop(client);
             futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
                 messages,

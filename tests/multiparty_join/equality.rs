@@ -246,7 +246,7 @@ impl harness::Server for Ordered {
 fn send(
     cap: &harness::Client,
     value: u32,
-) -> Promise<capnp::capability::Response<harness::value::Owned>, Error> {
+) -> capnp::capability::ResponsePromise<harness::value::Owned> {
     let mut request = cap.echo_request();
     request.get().set_value(value);
     request.send().promise

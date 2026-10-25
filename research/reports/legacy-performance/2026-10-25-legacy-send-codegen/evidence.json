@@ -1,0 +1,33 @@
+{
+  "baseline": "ddeffe7e66aede9bfc614c966b9dc24f0f508c71",
+  "subject": "crates/capntproto-core/src/capability.rs",
+  "source_sha256": {
+    "baseline": "a5b87c22af47f6fc75046b7dc5235f5de024f4bb1a2ba6e0590a6b943e87ff43",
+    "candidate": "de706f34b17d79313de7bdd0d0a33cb32e56e92620ef9bfcf2b007af5991b0a7"
+  },
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "target": "host compiler default",
+  "optimization": "opt-level=3, overflow checks on, debug=1",
+  "probe_sha256": "0c0fb25f89ba30c269e9513ed1c8f0c64cab6adcb6ee3c3bd1071d36f49899c9",
+  "reference_sha256": "3fbd1a3fc608766b5aab4a476a19b1d568772ece4291dc5fc124efaec6aaaf7a",
+  "lock_sha256": "c8b37bf616da5772e7ce7c82ebb0ac3448c9960a67c80b9dc070c8c2c9779e22",
+  "results": {
+    "baseline": {
+      "instructions": {
+        "original": 204,
+        "current": 212
+      },
+      "normalized_equal": false,
+      "assembly_sha256": "86b86b4bdd0e72092834b7752e71d825689f94df354cc9950fde68766c5e81cb"
+    },
+    "candidate": {
+      "instructions": {
+        "original": 204,
+        "current": 204
+      },
+      "normalized_equal": true,
+      "assembly_sha256": "280cf4c12f3ecf2eb7c32e0b548fea9edfff7cb0a245e0acff05ecb937298ff2"
+    }
+  },
+  "scope": "Static caller instruction forms, not executed; isolated core source at the same path. Reference uses pre-refactor send operations. Other core files are held current. Normalization removes local function label numbers and source-location constants; not byte equivalence or whole RPC/native performance."
+}

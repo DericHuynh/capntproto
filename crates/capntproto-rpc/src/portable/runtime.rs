@@ -1,20 +1,23 @@
 //! One turn has two phases: application/protocol progress, then transport output.
 use super::RpcSystem;
+use alloc::rc::Rc;
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use alloc::{boxed::Box, vec::Vec};
 use capnp::{capability::Promise, Error};
 use capntproto_rpc_engine::completion::shared;
+use core::cell::RefCell;
+use core::future::Future;
+use core::num::NonZeroUsize;
+use core::pin::pin;
+use core::pin::Pin;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicU8;
+use core::sync::atomic::Ordering;
+use core::task::Context;
+use core::task::Poll;
+use core::task::Waker;
 use futures::task::AtomicWaker;
-use std::{
-    cell::RefCell,
-    future::Future,
-    num::NonZeroUsize,
-    pin::{pin, Pin},
-    rc::Rc,
-    sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc,
-    },
-    task::{Context, Poll, Wake, Waker},
-};
 
 trait Driver {
     fn progress(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>>;
@@ -141,7 +144,7 @@ impl Runtime {
     pub async fn run<F: Future>(&mut self, application: F) -> F::Output {
         let mut application = pin!(application);
         self.application.ready.store(true, Ordering::Release);
-        std::future::poll_fn(|cx| self.poll(application.as_mut(), cx)).await
+        core::future::poll_fn(|cx| self.poll(application.as_mut(), cx)).await
     }
     fn poll<F: Future>(
         &mut self,
@@ -234,7 +237,7 @@ impl Drop for Runtime {
             let mut pending = self.pending.borrow_mut();
             pending.closed = true;
             pending.active = 0;
-            std::mem::take(&mut pending.queued)
+            core::mem::take(&mut pending.queued)
         };
         drop(queued);
         self.systems.clear();

@@ -1,0 +1,7468 @@
+{
+  "security_version": 1,
+  "transports": [
+    "tls",
+    "quic"
+  ],
+  "cases": [
+    {
+      "family": "workflow",
+      "name": "unary-small",
+      "payload_bytes": 64,
+      "width": 1,
+      "rpcs_per_iteration": 1
+    },
+    {
+      "family": "workflow",
+      "name": "dependent-read",
+      "payload_bytes": 1024,
+      "width": 1,
+      "rpcs_per_iteration": 2
+    },
+    {
+      "family": "workflow",
+      "name": "pipelined-read",
+      "payload_bytes": 1024,
+      "width": 1,
+      "rpcs_per_iteration": 2
+    },
+    {
+      "family": "workflow",
+      "name": "bulk-64k",
+      "payload_bytes": 65536,
+      "width": 1,
+      "rpcs_per_iteration": 1
+    },
+    {
+      "family": "workflow",
+      "name": "bulk-1m",
+      "payload_bytes": 1048576,
+      "width": 1,
+      "rpcs_per_iteration": 1
+    },
+    {
+      "family": "workflow",
+      "name": "bulk-4m",
+      "payload_bytes": 4194304,
+      "width": 1,
+      "rpcs_per_iteration": 1
+    },
+    {
+      "family": "topology",
+      "name": "deep-32",
+      "depth": 32,
+      "width": 1,
+      "connections": 1,
+      "hops": 1,
+      "payload_bytes_per_node": 32
+    },
+    {
+      "family": "topology",
+      "name": "concurrent-32",
+      "depth": 1,
+      "width": 32,
+      "connections": 1,
+      "hops": 1,
+      "payload_bytes_per_node": 32
+    },
+    {
+      "family": "topology",
+      "name": "services-4-deep-16-clients-8",
+      "depth": 16,
+      "width": 32,
+      "connections": 8,
+      "hops": 4,
+      "payload_bytes_per_node": 32
+    }
+  ],
+  "repetitions": 5,
+  "warmup": 50,
+  "iterations": 200,
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "cpu_topology": "# The following is the parsable format, which can be fed to other\n# programs. Each different item in every column has an unique ID\n# starting usually from zero.\n# CPU,Core,Socket\n0,0,0\n1,1,0\n2,2,0\n3,3,0\n4,4,0\n",
+  "binaries": {
+    "legacy": {
+      "path": "/tmp/capntproto-build-cache/local-unbuffered-20261024/bin/current",
+      "sha256": "3d6509ba4af03eb01c8c65d109596d125edae2066443b427a23df19b359cf466"
+    },
+    "portable": {
+      "path": "/tmp/capntproto-build-cache/local-unbuffered-20261024/bin/current",
+      "sha256": "3d6509ba4af03eb01c8c65d109596d125edae2066443b427a23df19b359cf466"
+    },
+    "cpp": {
+      "path": "/tmp/capntproto-build-cache/local-unbuffered-20261024/bin/cpp",
+      "sha256": "76fe3d435f15a60b6ab5820b480add1a46dd4a885016157a5a62d7a0fe3e82fc"
+    },
+    "portable-baseline": {
+      "path": "/tmp/capntproto-build-cache/local-unbuffered-20261024/bin/pre-unbuffered",
+      "sha256": "d23b7a1cb6581122fc4098554d120b8e052a672bb01d0a80a504c091617699ae"
+    },
+    "legacy-baseline": {
+      "path": "/tmp/capntproto-build-cache/local-unbuffered-20261024/bin/pre-unbuffered",
+      "sha256": "d23b7a1cb6581122fc4098554d120b8e052a672bb01d0a80a504c091617699ae"
+    }
+  },
+  "certificate_manifest": {
+    "benchmark_only": true,
+    "authentication": "server-certificate",
+    "server_name": "localhost",
+    "certificate_sha256": {
+      "ca.der": "a508dce28509fecbe82a279ac89a6b3f8b16aaa56186332183dbee7acf23e9d5",
+      "server.der": "eeb82cbde8424a6333d02b3691277ada0f51328db1718288ce7f4cc28b84e434"
+    }
+  },
+  "sources": {
+    "secure-runner.py": "7cab8ea16717b2cb950b8e117c5d37f56f07acd4c58e592c628c36ef217edb05",
+    "generate-certificates.py": "03c45d1cd67e55df6eb6c0a75067e5603c6ba934d1a99bda9193720263dc12e9",
+    "workflows.json": "2c017c9dcec386c2617fab67de05c85da78877788e38b5df1cedf8f1ef599344",
+    "topologies.json": "e316a0acbcdf7e93b21ab995322470174b95cde75926c0829f458ec8ec4a2d1f",
+    "latency_stats.py": "a550c5e667abc8dc8f539ef6bc85cd52dd6e08bd91aaed218935080612799774"
+  },
+  "metric": "Established-connection whole-operation latency; setup/handshake excluded, validation and cleanup included.",
+  "order": "Rotate variants then reverse every complete cycle; five repetitions do not exactly balance positions.",
+  "unsupported": [
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "unary-small"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "dependent-read"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "pipelined-read"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "bulk-64k"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "bulk-1m"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "bulk-4m"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "deep-32"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "concurrent-32"
+    },
+    {
+      "transport": "quic",
+      "implementation": "cpp",
+      "case": "services-4-deep-16-clients-8"
+    }
+  ],
+  "diagnostic": false,
+  "trials": [
+    {
+      "path": "tls-unary-small-0-legacy",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43097"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-unary-small-0-portable",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36051"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-unary-small-0-cpp",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46615"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-unary-small-0-portable-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42297"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-unary-small-0-legacy-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33999"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-unary-small-1-portable",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46323"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-unary-small-1-cpp",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44617"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-unary-small-1-portable-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42417"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-unary-small-1-legacy-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37041"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-unary-small-1-legacy",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33893"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-unary-small-2-cpp",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42537"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-unary-small-2-portable-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41129"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-unary-small-2-legacy-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37699"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-unary-small-2-legacy",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39489"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-unary-small-2-portable",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43251"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-unary-small-3-portable-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33549"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-unary-small-3-legacy-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39921"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-unary-small-3-legacy",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33999"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-unary-small-3-portable",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43419"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-unary-small-3-cpp",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:45615"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-unary-small-4-legacy-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40851"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-unary-small-4-legacy",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43367"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-unary-small-4-portable",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39531"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-unary-small-4-cpp",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46525"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-unary-small-4-portable-baseline",
+      "transport": "tls",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37469"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-dependent-read-0-legacy",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44203"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-dependent-read-0-portable",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36603"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-dependent-read-0-cpp",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46135"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-dependent-read-0-portable-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37697"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-dependent-read-0-legacy-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37895"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-dependent-read-1-portable",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33823"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-dependent-read-1-cpp",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39505"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-dependent-read-1-portable-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43249"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-dependent-read-1-legacy-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41513"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-dependent-read-1-legacy",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45827"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-dependent-read-2-cpp",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41361"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-dependent-read-2-portable-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39705"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-dependent-read-2-legacy-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46035"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-dependent-read-2-legacy",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43737"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-dependent-read-2-portable",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39165"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-dependent-read-3-portable-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44943"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-dependent-read-3-legacy-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42741"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-dependent-read-3-legacy",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41653"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-dependent-read-3-portable",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35063"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-dependent-read-3-cpp",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39993"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-dependent-read-4-legacy-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36245"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-dependent-read-4-legacy",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42401"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-dependent-read-4-portable",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:42559"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-dependent-read-4-cpp",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:43149"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-dependent-read-4-portable-baseline",
+      "transport": "tls",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41769"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-pipelined-read-0-legacy",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41723"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-pipelined-read-0-portable",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43263"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-pipelined-read-0-cpp",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46785"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-pipelined-read-0-portable-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33287"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-pipelined-read-0-legacy-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37347"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-pipelined-read-1-portable",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34529"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-pipelined-read-1-cpp",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:36755"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-pipelined-read-1-portable-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43389"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-pipelined-read-1-legacy-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42539"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-pipelined-read-1-legacy",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46857"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-pipelined-read-2-cpp",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42689"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-pipelined-read-2-portable-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35529"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-pipelined-read-2-legacy-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37147"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-pipelined-read-2-legacy",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38023"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-pipelined-read-2-portable",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35355"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-pipelined-read-3-portable-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35723"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-pipelined-read-3-legacy-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34097"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-pipelined-read-3-legacy",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43563"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-pipelined-read-3-portable",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36319"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-pipelined-read-3-cpp",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37661"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-pipelined-read-4-legacy-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41221"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-pipelined-read-4-legacy",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39783"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-pipelined-read-4-portable",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35733"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-pipelined-read-4-cpp",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:45523"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-pipelined-read-4-portable-baseline",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34727"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-64k-0-legacy",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45677"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-64k-0-portable",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35607"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-64k-0-cpp",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41519"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-64k-0-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44729"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-64k-0-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38469"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-64k-1-portable",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41843"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-64k-1-cpp",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35105"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-64k-1-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38881"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-64k-1-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40301"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-64k-1-legacy",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37531"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-64k-2-cpp",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41739"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-64k-2-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40523"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-64k-2-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44923"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-64k-2-legacy",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37107"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-64k-2-portable",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39497"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-64k-3-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42421"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-64k-3-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41027"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-64k-3-legacy",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43879"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-64k-3-portable",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35339"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-64k-3-cpp",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:43403"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-64k-4-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43355"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-64k-4-legacy",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36817"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-64k-4-portable",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46749"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-64k-4-cpp",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44631"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-64k-4-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35513"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-1m-0-legacy",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39797"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-1m-0-portable",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39519"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-1m-0-cpp",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39185"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-1m-0-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37223"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-1m-0-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44651"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-1m-1-portable",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36727"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-1m-1-cpp",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46643"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-1m-1-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44435"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-1m-1-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43801"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-1m-1-legacy",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34951"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-1m-2-cpp",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37865"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-1m-2-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:32779"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-1m-2-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38031"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-1m-2-legacy",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33197"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-1m-2-portable",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37453"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-1m-3-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35295"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-1m-3-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36411"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-1m-3-legacy",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43099"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-1m-3-portable",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35441"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-1m-3-cpp",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46461"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-1m-4-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38745"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-1m-4-legacy",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42561"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-1m-4-portable",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43683"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-1m-4-cpp",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46439"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-1m-4-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46685"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-4m-0-legacy",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36593"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-4m-0-portable",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43497"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-4m-0-cpp",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35811"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-4m-0-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44831"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-4m-0-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36545"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-bulk-4m-1-portable",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45109"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-4m-1-cpp",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46827"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-4m-1-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33371"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-4m-1-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37501"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-4m-1-legacy",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38467"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-bulk-4m-2-cpp",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:43857"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-4m-2-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33153"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-4m-2-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37319"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-4m-2-legacy",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33893"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-4m-2-portable",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38497"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-bulk-4m-3-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34829"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-4m-3-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35483"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-4m-3-legacy",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34823"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-4m-3-portable",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35939"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-4m-3-cpp",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:45141"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-bulk-4m-4-legacy-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43883"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-4m-4-legacy",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34587"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-4m-4-portable",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43949"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-4m-4-cpp",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:34675"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-bulk-4m-4-portable-baseline",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39719"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-deep-32-0-legacy",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45709"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-deep-32-0-portable",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:32919"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-deep-32-0-cpp",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:36481"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-deep-32-0-portable-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37859"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-deep-32-0-legacy-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45079"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-deep-32-1-portable",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39805"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-deep-32-1-cpp",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:33677"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-deep-32-1-portable-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41043"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-deep-32-1-legacy-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35359"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-deep-32-1-legacy",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40051"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-deep-32-2-cpp",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44913"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-deep-32-2-portable-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35875"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-deep-32-2-legacy-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35919"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-deep-32-2-legacy",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34135"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-deep-32-2-portable",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46613"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-deep-32-3-portable-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34699"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-deep-32-3-legacy-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43917"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-deep-32-3-legacy",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38727"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-deep-32-3-portable",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:42683"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-deep-32-3-cpp",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44637"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-deep-32-4-legacy-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43775"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-deep-32-4-legacy",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36771"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-deep-32-4-portable",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40773"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-deep-32-4-cpp",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41197"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-deep-32-4-portable-baseline",
+      "transport": "tls",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44395"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-concurrent-32-0-legacy",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46333"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-concurrent-32-0-portable",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:44759"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-concurrent-32-0-cpp",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41223"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-concurrent-32-0-portable-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44633"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-concurrent-32-0-legacy-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45361"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-concurrent-32-1-portable",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34989"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-concurrent-32-1-cpp",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:36555"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-concurrent-32-1-portable-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38709"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-concurrent-32-1-legacy-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40037"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-concurrent-32-1-legacy",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41269"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-concurrent-32-2-cpp",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37913"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-concurrent-32-2-portable-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46303"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-concurrent-32-2-legacy-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42015"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-concurrent-32-2-legacy",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38455"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-concurrent-32-2-portable",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43339"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-concurrent-32-3-portable-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33637"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-concurrent-32-3-legacy-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44715"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-concurrent-32-3-legacy",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41273"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-concurrent-32-3-portable",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41381"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-concurrent-32-3-cpp",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42639"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-concurrent-32-4-legacy-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42465"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-concurrent-32-4-legacy",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39297"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-concurrent-32-4-portable",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35505"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-concurrent-32-4-cpp",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44731"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-concurrent-32-4-portable-baseline",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45071"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-0-legacy",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36665"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:36681"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40947"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46097"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-0-portable",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33487"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:40421"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:43579"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46103"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-0-cpp",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:34245"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:40837"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:39819"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:34247"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-0-portable-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42427"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:39497"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:37705"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41935"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-0-legacy-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39653"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:36653"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:39147"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39687"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-1-portable",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33869"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:46713"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:34095"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:44581"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-1-cpp",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37117"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:34443"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:33909"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39277"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-1-portable-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40535"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:44417"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:34541"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35747"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-1-legacy-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36727"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:39223"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:40441"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45267"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-1-legacy",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38075"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:41357"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46547"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39373"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-2-cpp",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:36035"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:46187"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:42413"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46797"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-2-portable-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41315"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:38805"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:38631"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42461"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-2-legacy-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35205"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:35829"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:46691"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45431"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-2-legacy",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36733"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:45865"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33365"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36761"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-2-portable",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40611"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:45619"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:45605"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39503"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-3-portable-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35163"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:40845"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:39449"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44575"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-3-legacy-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41815"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:45875"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:33945"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34663"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-3-legacy",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34805"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:45953"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42323"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41659"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-3-portable",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36393"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:39421"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:40369"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35713"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-3-cpp",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41359"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:38033"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:43059"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38397"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-4-legacy-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45693"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:41709"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:36347"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44013"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-4-legacy",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35749"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:42515"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41573"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46187"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-4-portable",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35879"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:34173"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:37781"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39827"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-4-cpp",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "cpp",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35257"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:45935"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:34815"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:34787"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "tls-services-4-deep-16-clients-8-4-portable-baseline",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38253"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:37277"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:36791"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34109"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-unary-small-0-legacy",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:57476"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-unary-small-0-portable",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:55698"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-unary-small-0-portable-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55939"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-unary-small-0-legacy-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:48854"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-unary-small-1-portable",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:49261"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-unary-small-1-portable-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55837"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-unary-small-1-legacy-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33073"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-unary-small-1-legacy",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:56087"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-unary-small-2-portable-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33905"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-unary-small-2-legacy-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45270"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-unary-small-2-legacy",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:52038"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-unary-small-2-portable",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:52844"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-unary-small-3-legacy-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42018"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-unary-small-3-legacy",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46550"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-unary-small-3-portable",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33565"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-unary-small-3-portable-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:58588"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-unary-small-4-legacy-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37898"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-unary-small-4-portable-baseline",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49869"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-unary-small-4-portable",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:32878"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-unary-small-4-legacy",
+      "transport": "quic",
+      "case": "unary-small",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41439"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-dependent-read-0-legacy",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:60455"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-dependent-read-0-portable",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:59551"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-dependent-read-0-portable-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40721"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-dependent-read-0-legacy-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45522"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-dependent-read-1-portable",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:57550"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-dependent-read-1-portable-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55035"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-dependent-read-1-legacy-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37676"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-dependent-read-1-legacy",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39046"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-dependent-read-2-portable-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:52492"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-dependent-read-2-legacy-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41226"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-dependent-read-2-legacy",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:52561"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-dependent-read-2-portable",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37930"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-dependent-read-3-legacy-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:51656"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-dependent-read-3-legacy",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34971"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-dependent-read-3-portable",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46689"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-dependent-read-3-portable-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:53199"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-dependent-read-4-legacy-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:57653"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-dependent-read-4-portable-baseline",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33942"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-dependent-read-4-portable",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:57621"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-dependent-read-4-legacy",
+      "transport": "quic",
+      "case": "dependent-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33747"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-pipelined-read-0-legacy",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37887"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-pipelined-read-0-portable",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40618"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-pipelined-read-0-portable-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:50626"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-pipelined-read-0-legacy-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46064"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-pipelined-read-1-portable",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:54533"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-pipelined-read-1-portable-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46398"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-pipelined-read-1-legacy-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:60358"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-pipelined-read-1-legacy",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:51151"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-pipelined-read-2-portable-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42007"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-pipelined-read-2-legacy-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:53811"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-pipelined-read-2-legacy",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35758"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-pipelined-read-2-portable",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:55955"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-pipelined-read-3-legacy-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39465"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-pipelined-read-3-legacy",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:58585"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-pipelined-read-3-portable",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40508"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-pipelined-read-3-portable-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35669"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-pipelined-read-4-legacy-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37694"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-pipelined-read-4-portable-baseline",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41623"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-pipelined-read-4-portable",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:54197"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-pipelined-read-4-legacy",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:52038"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-64k-0-legacy",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:53788"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-64k-0-portable",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46833"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-64k-0-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:53810"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-64k-0-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45021"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-64k-1-portable",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45364"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-64k-1-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47712"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-64k-1-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59703"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-64k-1-legacy",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:58426"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-64k-2-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:57964"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-64k-2-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49861"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-64k-2-legacy",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46120"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-64k-2-portable",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:51676"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-64k-3-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34009"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-64k-3-legacy",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36447"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-64k-3-portable",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43260"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-64k-3-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35349"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-64k-4-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49356"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-64k-4-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49668"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-64k-4-portable",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45119"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-64k-4-legacy",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:49755"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-1m-0-legacy",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37198"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-1m-0-portable",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:59356"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-1m-0-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:50388"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-1m-0-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:54466"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-1m-1-portable",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46315"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-1m-1-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:52822"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-1m-1-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39735"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-1m-1-legacy",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:60681"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-1m-2-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47063"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-1m-2-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59179"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-1m-2-legacy",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:49722"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-1m-2-portable",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45190"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-1m-3-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36076"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-1m-3-legacy",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:48881"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-1m-3-portable",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:54214"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-1m-3-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39424"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-1m-4-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:51713"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-1m-4-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49652"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-1m-4-portable",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:47055"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-1m-4-legacy",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35908"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-4m-0-legacy",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37744"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-4m-0-portable",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:51352"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-4m-0-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37061"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-4m-0-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45366"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-bulk-4m-1-portable",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43446"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-4m-1-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:54999"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-4m-1-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:60127"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-4m-1-legacy",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44113"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-bulk-4m-2-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:48940"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-4m-2-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:48644"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-4m-2-legacy",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35160"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-4m-2-portable",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:57041"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-bulk-4m-3-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42490"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-4m-3-legacy",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:54044"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-4m-3-portable",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45335"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-4m-3-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45756"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-bulk-4m-4-legacy-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59005"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-4m-4-portable-baseline",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46525"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-4m-4-portable",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:49886"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-bulk-4m-4-legacy",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35554"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-deep-32-0-legacy",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:51308"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-deep-32-0-portable",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:48492"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-deep-32-0-portable-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37453"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-deep-32-0-legacy-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37714"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-deep-32-1-portable",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41523"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-deep-32-1-portable-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42839"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-deep-32-1-legacy-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55521"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-deep-32-1-legacy",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:47621"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-deep-32-2-portable-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:57100"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-deep-32-2-legacy-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59269"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-deep-32-2-legacy",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:54214"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-deep-32-2-portable",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35860"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-deep-32-3-legacy-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43140"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-deep-32-3-legacy",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46844"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-deep-32-3-portable",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:55088"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-deep-32-3-portable-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59426"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-deep-32-4-legacy-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38140"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-deep-32-4-portable-baseline",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:58070"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-deep-32-4-portable",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:48649"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-deep-32-4-legacy",
+      "transport": "quic",
+      "case": "deep-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:59885"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-concurrent-32-0-legacy",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40453"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-concurrent-32-0-portable",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:51664"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-concurrent-32-0-portable-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:53786"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-concurrent-32-0-legacy-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46799"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-concurrent-32-1-portable",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:55315"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-concurrent-32-1-portable-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55032"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-concurrent-32-1-legacy-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33405"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-concurrent-32-1-legacy",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45256"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-concurrent-32-2-portable-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:54544"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-concurrent-32-2-legacy-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55418"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-concurrent-32-2-legacy",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41731"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-concurrent-32-2-portable",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39025"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-concurrent-32-3-legacy-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44833"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-concurrent-32-3-legacy",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:60636"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-concurrent-32-3-portable",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:56063"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-concurrent-32-3-portable-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37979"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-concurrent-32-4-legacy-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:32977"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-concurrent-32-4-portable-baseline",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35451"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-concurrent-32-4-portable",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:60687"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-concurrent-32-4-legacy",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:56279"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-0-legacy",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:53172"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:58556"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:50325"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42698"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-0-portable",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:49123"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:51757"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:46781"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:52410"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-0-portable-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35466"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:37131"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:32894"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59207"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-0-legacy-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:56821"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:35868"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:33297"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41055"
+        }
+      ],
+      "mixed": false,
+      "repetition": 0
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-1-portable",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46498"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:42677"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:54872"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36075"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-1-portable-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45894"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:53008"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:56753"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41177"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-1-legacy-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:48101"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:47620"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:49229"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34971"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-1-legacy",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43113"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:47060"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:58692"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44375"
+        }
+      ],
+      "mixed": false,
+      "repetition": 1
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-2-portable-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40237"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:50219"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:33677"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41541"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-2-legacy-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47935"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:54048"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:47595"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49614"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-2-legacy",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40469"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:49449"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33429"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40935"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-2-portable",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:50236"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:39035"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:54965"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:52899"
+        }
+      ],
+      "mixed": false,
+      "repetition": 2
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-3-legacy-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37804"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:49732"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:56197"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47420"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-3-legacy",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33546"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:40318"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:54695"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:58543"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-3-portable",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40977"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:51884"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:44820"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35451"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-3-portable-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46034"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:43820"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:35389"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:48638"
+        }
+      ],
+      "mixed": false,
+      "repetition": 3
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-4-legacy-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41614"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:43665"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:57766"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42089"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-4-portable-baseline",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable-baseline",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:58203"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:49648"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:36861"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:56001"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-4-portable",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "portable",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35315"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:47335"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:50597"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39525"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    },
+    {
+      "path": "quic-services-4-deep-16-clients-8-4-legacy",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "client": "legacy",
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:59112"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:57911"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33222"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38907"
+        }
+      ],
+      "mixed": false,
+      "repetition": 4
+    }
+  ]
+}

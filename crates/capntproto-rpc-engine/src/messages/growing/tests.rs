@@ -525,3 +525,52 @@ fn growing_fifo_preserves_wrapped_head_and_partial_frame() {
     })
     .unwrap();
 }
+
+#[test]
+fn reuse_wraps_without_overwriting_shared_undersized_or_exhausted_slots() {
+    let mut pool = GrowingBuffers::new(4, 32, 4 * 39);
+    with_growing_messages(&mut pool, sends(0), |messages| {
+        let writers: Vec<_> = [32, 8, 32, 32]
+            .into_iter()
+            .map(|size| messages.reserve(size).unwrap())
+            .collect();
+        let mut retained = None;
+        for (index, writer) in writers.into_iter().enumerate() {
+            if index == 2 {
+                messages.write(&writer).fill(0xa5);
+                let lease = messages.seal(writer, 32).unwrap();
+                retained = messages.share(&lease);
+                messages.release(lease);
+            } else {
+                messages.discard(writer);
+            }
+        }
+        messages.buffers[3].generation.set(u64::MAX);
+        let address = messages.buffers[0].bytes.borrow().as_ptr();
+        let usage = allocation_counter::measure(|| {
+            for _ in 0..8 {
+                // Each successful reservation leaves the hint after slot zero.
+                // Every other slot is unavailable for this request; a complete
+                // wrap must find the original slot before attempting growth.
+                let writer = messages.reserve_exact(32).unwrap();
+                assert_eq!(writer.key.index, 0);
+                assert_eq!(&*messages.write(&writer), &[0; 32]);
+                messages.discard(writer);
+                let lease = messages.copy_from(&[0x5a; 32]).unwrap();
+                assert_eq!(lease.key.index, 0);
+                assert_eq!(messages.read(&lease).as_ptr(), address);
+                messages.release(lease);
+                let shared = messages.copy_shared(&[0x3c; 32]).unwrap().unwrap();
+                assert_eq!(shared.as_ptr(), address);
+                assert_eq!(&*shared, &[0x3c; 32]);
+                drop(shared);
+            }
+        });
+        assert_eq!(usage.count_total, 0);
+        assert_eq!(&*retained.unwrap(), &[0xa5; 32]);
+        assert_eq!(messages.buffers[1].generation.get(), 1);
+        assert_eq!(messages.buffers[3].generation.get(), u64::MAX);
+    })
+    .unwrap();
+    assert_eq!(pool.len(), 4);
+}

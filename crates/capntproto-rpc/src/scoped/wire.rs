@@ -2,6 +2,7 @@
 //! this adapter in the same scope as the driver and polls it alongside IO,
 //! protocol maintenance and application execution.
 use super::*;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::private::capability::{PipelineHook, PipelineOp};
 use capnp::traits::{Imbue, ImbueMut};
 use capntproto_rpc_engine::messages;
@@ -41,9 +42,10 @@ pub(crate) struct Payload {
 }
 enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
-    Return(Rc<connection::PreparedReturn<capnp::message::HeapAllocator>>),
+    Return(Rc<connection::FrozenReturn<capnp::message::HeapAllocator>>),
+    Produced(server::Results),
     Admitted(Box<owned::PlainResults>),
-    Shared { message: Box<SharedPayload> },
+    Shared { message: SharedPayload },
 }
 struct SharedPayload {
     message: capnp::message::CachedPointerReader<
@@ -56,10 +58,17 @@ impl capnp::private::capability::ResponseHook for SharedPayload {
     }
 }
 impl Payload {
+    fn prepared_return(&self) -> Option<&connection::FrozenReturn<capnp::message::HeapAllocator>> {
+        match &self.body {
+            PayloadBody::Return(message) => Some(message),
+            PayloadBody::Produced(results) => results.prepared_return(),
+            _ => None,
+        }
+    }
     pub(crate) fn retain_plain_context(
         &mut self,
-        context: Rc<dyn std::any::Any>,
-    ) -> Result<(), Rc<dyn std::any::Any>> {
+        context: Rc<dyn core::any::Any>,
+    ) -> Result<(), Rc<dyn core::any::Any>> {
         if let PayloadBody::Admitted(message) = &mut self.body {
             debug_assert!(self.caps.is_empty());
             message.retain_owner(context);
@@ -76,7 +85,7 @@ impl Payload {
             }
             PayloadBody::Shared { message } if self.caps.is_empty() => {
                 debug_assert!(self.caps.is_empty());
-                message
+                Box::new(message)
             }
             _ => Box::new(self),
         }
@@ -115,7 +124,7 @@ impl Payload {
         if let Some(message) = retained {
             return Ok(Self {
                 body: PayloadBody::Shared {
-                    message: Box::new(SharedPayload { message }),
+                    message: SharedPayload { message },
                 },
                 caps,
             });
@@ -128,11 +137,12 @@ impl Payload {
         let mut root: any_pointer::Reader<'_> = match &self.body {
             PayloadBody::Owned(message) => message.get_root_as_reader()?,
             PayloadBody::Return(message) => message.reader()?,
+            PayloadBody::Produced(results) => results.payload_reader()?,
             PayloadBody::Admitted(message) => {
                 capnp::private::capability::ResponseHook::get(&**message)?
             }
             PayloadBody::Shared { message } => {
-                capnp::private::capability::ResponseHook::get(&**message)?
+                capnp::private::capability::ResponseHook::get(message)?
             }
         };
         root.imbue(&self.caps);
@@ -149,7 +159,7 @@ impl capnp::private::capability::ResponseHook for Payload {
 }
 // A completed wire payload is immutable. Its pipeline can retain it directly;
 // there is no mutable local result state to synchronize with another owner.
-struct PayloadPipeline(Rc<Payload>);
+pub(super) struct PayloadPipeline(pub(super) Rc<Payload>);
 impl PipelineHook for PayloadPipeline {
     fn add_ref(&self) -> Box<dyn PipelineHook> {
         Box::new(Self(self.0.clone()))
@@ -168,7 +178,7 @@ impl PipelineHook for PayloadPipeline {
 
 #[cold]
 #[inline(never)]
-fn wire_error(error: impl std::fmt::Display) -> Error {
+fn wire_error(error: impl core::fmt::Display) -> Error {
     Error::failed(error.to_string())
 }
 
@@ -675,8 +685,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     }
                 }
                 ProjectionTarget::Queued(client) => {
-                    let result = hooks.export_before_wire_refresh(&mut driver.capabilities(), &cap);
-                    driver.capabilities().release(cap);
+                    let result = hooks.import_client(&mut driver.capabilities(), cap);
                     refresh(hooks, driver);
                     let result = result.map(|client| client.hook);
                     if let Ok(hook) = &result {
@@ -865,7 +874,8 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) {
         if matches!(self.route, CallRoute::Tail(_)) {
-            let CallRoute::Tail(response) = std::mem::replace(&mut self.route, CallRoute::Finished)
+            let CallRoute::Tail(response) =
+                core::mem::replace(&mut self.route, CallRoute::Finished)
             else {
                 unreachable!()
             };
@@ -1051,6 +1061,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
+                        hooks.collect(&mut driver.capabilities());
                         let mut caps = Vec::with_capacity(payload.capability_count());
                         for index in 0..payload.capability_count() {
                             let cap = payload.capability_at(index as u32).map_err(wire_error)?;
@@ -1060,8 +1071,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                     let cap = driver.bind_capability(cap)
                                         .map_err(wire_error)?
                                         .into_client();
-                                    let result = hooks.export_before_wire_refresh(&mut driver.capabilities(), &cap);
-                                    driver.capabilities().release(cap);
+                                    let result = hooks.import_after_collect(&mut driver.capabilities(), cap);
                                     Some(result?.hook)
                                 }
                             };
@@ -1084,6 +1094,23 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         driver.release_output(output, messages);
         match result {
             Ok(payload) => {
+                let call = self.call.as_mut().expect("wire completion once");
+                let payload = match call.results.complete_payload(
+                    &call.completion,
+                    payload,
+                    self.pipeline.as_ref(),
+                    || {
+                        self.local_results
+                            .as_ref()
+                            .and_then(server::Results::early_pipeline)
+                    },
+                ) {
+                    Ok(()) => {
+                        self.call.take();
+                        return Ok(());
+                    }
+                    Err(payload) => payload,
+                };
                 let payload = if self.pipeline.is_none() {
                     let results = &mut self.call.as_mut().expect("wire completion once").results;
                     match results.finish_admitted(payload) {
@@ -1101,18 +1128,6 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     .pipeline
                     .as_ref()
                     .map(|_| Box::new(PayloadPipeline(payload.clone())) as Box<dyn PipelineHook>);
-                if self.call.as_mut().unwrap().results.finish_shared(&payload) {
-                    if let Some(state) = &self.pipeline {
-                        state.finish(
-                            self.local_results
-                                .as_ref()
-                                .and_then(server::Results::early_pipeline)
-                                .unwrap_or_else(|| pipeline.expect("enabled pipeline")),
-                        );
-                    }
-                    self.call.take().unwrap().complete(Ok(()));
-                    return Ok(());
-                }
                 let results = &mut self
                     .call
                     .as_mut()
@@ -1270,6 +1285,7 @@ impl PipelineState {
     ) -> crate::local::Params {
         let inbox = self.inbox.upgrade();
         let allocator = crate::local::result_allocator(size);
+        #[cfg(feature = "std")]
         let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
             Some(pool) => allocator.segment_pool(pool.clone()),
             None => allocator,
@@ -1324,7 +1340,7 @@ impl PipelineState {
         }
         let old = self.adopted.replace(Some(published));
         drop(old);
-        let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
+        let waiting = core::mem::take(&mut *self.waiting.borrow_mut());
         for projection in waiting {
             if let Some(client) = projection.client.upgrade() {
                 client.resolve(Ok(pipeline.get_pipelined_cap(&projection.path)));
@@ -1339,14 +1355,14 @@ impl PipelineState {
     fn remember(&self, path: Vec<PipelineOp>, hook: &dyn ClientHook) -> capnp::Result<()> {
         self.cached.borrow_mut().remember(path, hook, self.maximum)
     }
-    fn finish(&self, pipeline: Box<dyn PipelineHook>) {
+    pub(super) fn finish(&self, pipeline: Box<dyn PipelineHook>) {
         let pipeline_ref = pipeline.add_ref();
         let old = self.finished.replace(Some(pipeline));
         drop(old);
-        let cached = std::mem::take(&mut *self.cached.borrow_mut());
+        let cached = core::mem::take(&mut *self.cached.borrow_mut());
         let adopted = self.adopted.borrow_mut().take();
         drop((cached, adopted));
-        let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
+        let waiting = core::mem::take(&mut *self.waiting.borrow_mut());
         for projection in waiting {
             if let Some(client) = projection.client.upgrade() {
                 client.resolve(Ok(pipeline_ref.get_pipelined_cap(&projection.path)));
@@ -1361,7 +1377,7 @@ pub(crate) struct PipelineRef(
     // its producer; no shared future or recursive pipeline polling is needed.
     Option<response::PipelineInterest>,
 );
-impl std::ops::Deref for PipelineRef {
+impl core::ops::Deref for PipelineRef {
     type Target = Rc<PipelineState>;
     fn deref(&self) -> &Self::Target {
         self.0.as_ref().expect("live pipeline interest")
@@ -1470,7 +1486,10 @@ struct Projected {
     pipeline: PipelineRef,
 }
 impl Projected {
-    fn drive<T: 'static>(&self, mut promise: Promise<T, Error>) -> Promise<T, Error> {
+    fn drive<T: 'static>(
+        &self,
+        mut promise: impl Future<Output = Result<T, Error>> + Unpin + 'static,
+    ) -> Promise<T, Error> {
         use crate::attach::Attach;
         let endpoint = direct_response_hook(self).map(|hook| hook.0.clone());
         Promise::from_future(
@@ -1510,7 +1529,7 @@ pub(super) fn request_projected(
     method: u16,
     hints: CallHints,
     mut params: Box<crate::local::Request>,
-    context: Option<Rc<dyn std::any::Any>>,
+    context: Option<Rc<dyn core::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     let projected = client
         .as_any()
@@ -1525,11 +1544,11 @@ pub(super) fn request_projected(
         params,
         context,
     );
-    response.promise = projected.drive(response.promise);
+    response.promise = capability::ResponsePromise::new(projected.drive(response.promise));
     response
 }
 impl ClientHook for Projected {
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
         Some(self)
     }
     fn get_failure(&self) -> Option<Error> {
@@ -1538,7 +1557,7 @@ impl ClientHook for Projected {
     fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
         self.inner.metadata_changes()
     }
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.inner.get_fd()
     }

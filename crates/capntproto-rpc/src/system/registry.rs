@@ -1,20 +1,22 @@
 //! Hosted connection ownership, independent of a protocol driver or transport.
 //! Registrations cover construction, live lookup and final transport shutdown.
+use crate::collections::HashMap;
+use alloc::rc::Rc;
+use alloc::rc::Weak;
+use alloc::vec::Vec;
 use capnp::{capability::Promise, Error};
 use capntproto_rpc_engine::completion::shared;
+use core::cell::Cell;
+use core::cell::RefCell;
+use core::num::NonZeroU64;
 use futures::{future::Shared, FutureExt};
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-    rc::{Rc, Weak},
-};
 
 pub(crate) trait Connection {
     fn disconnect(&self, error: Error);
 }
 
 struct Entry<S> {
-    identity: Rc<()>,
+    identity: NonZeroU64,
     state: Option<Rc<S>>,
 }
 struct Completion {
@@ -45,6 +47,9 @@ impl Completion {
 }
 struct Inner<S> {
     entries: RefCell<HashMap<usize, Entry<S>>>,
+    // Never reuse a token, including after lookup detaches a still-draining task.
+    // None permanently rejects new registrations after the final u64 identity.
+    next_identity: Cell<Option<NonZeroU64>>,
     completion: Rc<Completion>,
     closed: Shared<Promise<(), Error>>,
 }
@@ -66,6 +71,7 @@ impl<S: Connection> Connections<S> {
         let (sender, receiver) = shared::channel();
         Self(Rc::new(Inner {
             entries: RefCell::default(),
+            next_identity: Cell::new(Some(NonZeroU64::MIN)),
             completion: Rc::new(Completion {
                 remaining: Cell::new(0),
                 closing: Cell::new(false),
@@ -112,17 +118,22 @@ impl<S: Connection> Connections<S> {
             .get()
             .checked_add(1)
             .ok_or_else(|| Error::overloaded("RPC connection capacity exhausted".into()))?;
+        let identity = self
+            .0
+            .next_identity
+            .get()
+            .ok_or_else(|| Error::overloaded("RPC connection identities exhausted".into()))?;
         entries
             .try_reserve(1)
             .map_err(|_| Error::overloaded("RPC connection allocation failed".into()))?;
-        let identity = Rc::new(());
         entries.insert(
             id,
             Entry {
-                identity: identity.clone(),
+                identity,
                 state: None,
             },
         );
+        self.0.next_identity.set(identity.checked_add(1));
         self.0.completion.remaining.set(next);
         Ok(Acquired::New(Registration {
             registry: Rc::downgrade(&self.0),
@@ -153,7 +164,7 @@ impl<S: Connection> Connections<S> {
             if entries
                 .get(&id)
                 .and_then(|entry| entry.state.as_ref())
-                .is_some_and(|current| std::ptr::eq(&**current, state))
+                .is_some_and(|current| core::ptr::eq(&**current, state))
             {
                 entries.remove(&id)
             } else {
@@ -196,7 +207,7 @@ pub(crate) struct Registration<S: Connection> {
     registry: Weak<Inner<S>>,
     completion: Option<Rc<Completion>>,
     id: usize,
-    identity: Rc<()>,
+    identity: NonZeroU64,
 }
 impl<S: Connection> Registration<S> {
     pub(crate) fn publish(&self, state: Rc<S>) -> capnp::Result<()> {
@@ -207,7 +218,7 @@ impl<S: Connection> Registration<S> {
         let mut entries = registry.entries.borrow_mut();
         let entry = entries
             .get_mut(&self.id)
-            .filter(|entry| Rc::ptr_eq(&entry.identity, &self.identity) && entry.state.is_none())
+            .filter(|entry| entry.identity == self.identity && entry.state.is_none())
             .ok_or_else(|| Error::failed("RPC registration is no longer vacant".into()))?;
         entry.state = Some(state);
         Ok(())
@@ -222,7 +233,7 @@ impl<S: Connection> Registration<S> {
             let mut entries = registry.entries.borrow_mut();
             if entries
                 .get(&self.id)
-                .is_some_and(|entry| Rc::ptr_eq(&entry.identity, &self.identity))
+                .is_some_and(|entry| entry.identity == self.identity)
             {
                 entries.remove(&self.id)
             } else {

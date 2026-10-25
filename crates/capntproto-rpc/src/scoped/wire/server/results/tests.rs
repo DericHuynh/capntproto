@@ -105,7 +105,9 @@ fn call_context_preserves_borrowed_and_suspended_results() {
                 method,
                 ..Default::default()
             },
-            params: Payload::owned(Default::default(), vec![]).into_params(),
+            params: Payload::owned(Default::default(), vec![])
+                .into_params()
+                .into(),
         };
         let work = prepared
             .execute_using(&client, &results, None, immediate)
@@ -305,7 +307,9 @@ fn prepared() -> Prepared {
             method: 9,
             ..Default::default()
         },
-        params: Payload::owned(Default::default(), vec![]).into_params(),
+        params: Payload::owned(Default::default(), vec![])
+            .into_params()
+            .into(),
     }
 }
 
@@ -340,20 +344,20 @@ fn returned_results_skip_ready_waiters_but_pending_work_and_early_pipelines_stil
             )
         });
         let mut execution = prepared().execute(&*service.hook, &results, None).unwrap();
-        assert!(results.0.payload.borrow().is_none());
+        assert!(results.0.payload.get().is_none());
         wake.0.store(0, Ordering::SeqCst);
         assert_eq!(
             results.poll_work(&mut execution, &mut cx).is_pending(),
             pending
         );
-        assert!(results.0.payload.borrow().is_some());
+        assert!(results.0.payload.get().is_some());
         assert_eq!(wake.0.load(Ordering::SeqCst), 0);
         if pending {
             results.fail(Error::failed("external completion".into()));
             assert_eq!(wake.0.load(Ordering::SeqCst), 1);
         } else {
             assert!(results.0.wake.borrow().is_empty());
-            assert_eq!(results.0.wake.borrow().capacity(), 0);
+            assert_eq!(results.0.wake.borrow().overflow.capacity(), 0);
         }
     }
 
@@ -457,7 +461,7 @@ fn transferred_pipeline_waits_for_results_retained_after_execution_completes() {
     }
     assert_eq!(wake.0.load(Ordering::SeqCst), 0);
     assert!(results.0.completion.borrow().is_some());
-    assert!(results.0.payload.borrow().is_none());
+    assert!(results.0.payload.get().is_none());
     wake.0.store(0, Ordering::SeqCst);
     drop(hook);
     assert!(wake.0.load(Ordering::SeqCst) > 0);
@@ -483,7 +487,7 @@ fn pooled_results_keep_retained_payloads_and_clear_reused_segments() {
             assert!(data.iter().all(|byte| *byte == 0));
             data.fill(value);
             drop(hook);
-            let payload = results.0.payload.borrow().as_ref().unwrap().clone();
+            let payload = results.0.payload.get().unwrap().share(&results);
             payload
         };
         let retained = build(0xa5);
@@ -519,6 +523,7 @@ fn prepared_return_rejects_capability_content_before_reserving_storage() {
     root.set_as_capability(crate::broken::new_cap(Error::failed(
         "test capability".into(),
     )));
+    let source = source.freeze();
     with_driver(|mut driver, messages| {
         let (call, target) = request(&mut driver, messages, Results::new());
         assert!(driver
@@ -555,6 +560,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
             .get(1)
             .set_as::<capnp::data::Owned>(&b"retained bytes"[..])
             .unwrap();
+        let source = source.freeze();
         with_driver(|mut driver, messages| {
             let (call, target) = request(&mut driver, messages, Results::new());
             let value = driver
@@ -571,7 +577,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                         7,
                         9,
                         &source,
-                        references,
+                        references.iter().copied(),
                         messages,
                         Default::default(),
                     )
@@ -584,7 +590,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                     7,
                     9,
                     &source,
-                    &references,
+                    references.iter().copied(),
                     messages,
                     capnp::message::ReaderOptions {
                         nesting_limit: 0,
@@ -598,7 +604,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                     7,
                     9,
                     &source,
-                    &references,
+                    references.iter().copied(),
                     messages,
                     capnp::message::ReaderOptions {
                         traversal_limit_in_words: Some(1),
@@ -617,7 +623,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                     7,
                     9,
                     &source,
-                    &references,
+                    references.iter().copied(),
                     messages,
                     Default::default(),
                 )
@@ -632,7 +638,7 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                         7,
                         9,
                         &source,
-                        &references,
+                        references.iter().copied(),
                         messages,
                         Default::default(),
                     )
@@ -657,6 +663,33 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                 result.release(messages, &mut driver.capabilities());
                 assert!(driver.prepare_answer_return(call.answer()).is_ok());
             }
+            // A successful publication under two capability slots does not
+            // authorize the same bytes against a smaller table on a later retry.
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    [Some(&value)].into_iter(),
+                    messages,
+                    Default::default(),
+                )
+                .is_err());
+            assert!(driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    references.iter().copied(),
+                    messages,
+                    capnp::message::ReaderOptions {
+                        nesting_limit: 0,
+                        ..Default::default()
+                    },
+                )
+                .is_err());
             driver.capabilities().release(value);
             driver.capabilities().release(target);
             driver.release_call(call, messages);
@@ -1123,7 +1156,7 @@ fn cancellation_keeps_non_cancellable_execution_and_result_context_alive() {
         if cancellable {
             assert!(executor.0.borrow().is_empty());
         } else {
-            assert!(weak.upgrade().unwrap().payload.borrow().is_some());
+            assert!(weak.upgrade().unwrap().payload.get().is_some());
             assert!(sender.send(()).is_ok());
             let mut task = executor.0.borrow_mut().pop().unwrap();
             assert!(matches!(poll(&mut task), Poll::Ready(Ok(()))));
@@ -1157,8 +1190,7 @@ fn tail_forwarding_preserves_child_results() {
         results
             .0
             .payload
-            .borrow()
-            .as_ref()
+            .get()
             .unwrap()
             .reader()
             .unwrap()
@@ -1183,4 +1215,77 @@ fn only_affine_protocol_retirement_notifies_running_worker() {
     results.unbind_protocol_waker();
     drop(results.into_producer());
     assert_eq!(queue.pop().map(|ready| ready.index()), None);
+}
+
+#[test]
+fn retained_results_preserve_payloads_without_blocking_segmented_worker_reuse() {
+    for segmented in [false, true] {
+        let cache = Cache::default();
+        let results = cache.acquire(None, None);
+        let address = Rc::as_ptr(&results.0);
+        let mut message = connection::PreparedReturn::from_template(
+            &connection::PreparedReturnTemplate::default(),
+            capnp::message::HeapAllocator::new().first_segment_words(16),
+        );
+        let bytes = vec![0xa5; if segmented { 8192 } else { 8 }];
+        message
+            .results()
+            .set_as::<capnp::data::Owned>(bytes.as_slice())
+            .unwrap();
+        drop(Hook {
+            results: results.clone(),
+            message: Some(message),
+            caps: vec![],
+            executor: None,
+        });
+        results.0.complete(Ok(()));
+        let retained = results.0.payload.get().unwrap().share(&results);
+        cache.recycle(results);
+        let next = cache.acquire(None, None);
+        assert_eq!(Rc::as_ptr(&next.0) == address, segmented,
+            "segmented output retains its message, while inline output retains its producing context");
+        assert_eq!(
+            retained
+                .reader()
+                .unwrap()
+                .get_as::<capnp::data::Reader>()
+                .unwrap(),
+            bytes
+        );
+        assert!(next.0.payload.get().is_none());
+    }
+}
+
+#[test]
+fn suspended_results_keep_one_waiter_inline_and_notify_distinct_observers() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let results = Results::new();
+    let counts = [Arc::new(Count::default()), Arc::new(Count::default())];
+    let wakes = counts.each_ref().map(|count| Waker::from(count.clone()));
+    let first = allocation_counter::measure(|| {
+        for _ in 0..3 {
+            assert!(results
+                .poll_completed(&mut Context::from_waker(&wakes[0]))
+                .is_pending());
+        }
+    });
+    assert_eq!(first.count_total, 0);
+    assert!(results
+        .poll_completed(&mut Context::from_waker(&wakes[1]))
+        .is_pending());
+    results.0.complete(Err(Error::failed("complete".into())));
+    for count in counts {
+        assert_eq!(count.0.load(Ordering::SeqCst), 1);
+    }
+    assert!(results.0.wake.borrow().is_empty());
 }

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "rpc",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-rpc",
+      "--lib"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "wire",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-rpc-wire",
+      "--features",
+      "std",
+      "--lib"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "secure",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto",
+      "--features",
+      "quic",
+      "--test",
+      "secure_rpc"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "rpc-clippy",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "clippy",
+      "-p",
+      "capntproto-rpc",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "format",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0
+  }
+]

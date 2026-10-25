@@ -1,0 +1,45 @@
+{
+  "final": [
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "peer": "client",
+      "allocations_per_operation": 2.0
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "peer": "service-0",
+      "allocations_per_operation": 6.0
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "peer": "client",
+      "allocations_per_operation": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "peer": "service-0",
+      "allocations_per_operation": 6.0
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "peer": "client",
+      "allocations_per_operation": 3.0
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "peer": "service-0",
+      "allocations_per_operation": 6.0
+    }
+  ],
+  "baseline_tls_pipeline": {
+    "client": 3,
+    "server": 7
+  },
+  "source": "DHAT stacks, marginal (500-50)/450. Full stacks and referenced baseline evidence are in the raw archive."
+}

@@ -1,6 +1,8 @@
 use crate::{broken, rpc, RpcSystem, VatNetwork};
+use alloc::boxed::Box;
+use alloc::rc::Weak;
 use capnp::{capability::FromClientHook, Error};
-use std::{cell::RefCell, rc::Weak};
+use core::cell::RefCell;
 
 /// Cloneable access to a running RPC system's typed bootstrap capabilities.
 ///

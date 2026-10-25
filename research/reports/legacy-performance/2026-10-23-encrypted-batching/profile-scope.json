@@ -1,0 +1,8561 @@
+{
+  "diagnostic": true,
+  "allocation_only": true,
+  "warmup": 10,
+  "environment_overrides": {
+    "CAPNTPROTO_BENCH_QUIC_IDLE_MS": "120000"
+  },
+  "allocation_workloads": [
+    {
+      "transport": "tls",
+      "case": "loopback-0",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-64",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-1024",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-65536",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "unary-empty",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "unary-1k",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "write-read",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-64k",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-256k",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "deep-8",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-0",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-64",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-1024",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-65536",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "unary-empty",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "unary-1k",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "write-read",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "callback",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-64k",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-256k",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "deep-8",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ]
+    }
+  ],
+  "workloads": [
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "points": [
+        50,
+        500
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "points": [
+        50,
+        500
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "points": [
+        50,
+        500
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "points": [
+        5,
+        50
+      ]
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ]
+    }
+  ],
+  "cpu_topology": "# The following is the parsable format, which can be fed to other\n# programs. Each different item in every column has an unique ID\n# starting usually from zero.\n# CPU,Core,Socket\n0,0,0\n1,1,0\n2,2,0\n3,3,0\n",
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "binaries": {
+    "legacy": {
+      "path": "/root/bench/driver",
+      "sha256": "574fbe33744c4cc65d6bd55212e9b8ea8c4b8e27ab9a37a8c64c62c27e2411f2"
+    },
+    "portable": {
+      "path": "/root/bench/driver",
+      "sha256": "574fbe33744c4cc65d6bd55212e9b8ea8c4b8e27ab9a37a8c64c62c27e2411f2"
+    },
+    "cpp": {
+      "path": "/root/bench/capnp-reference",
+      "sha256": "de32365a3fd25bda86a93bea0a50b4755e3953f5cf37073f5a6126ec415967bc"
+    },
+    "legacy-baseline": {
+      "path": "/root/bench/driver-legacy-baseline",
+      "sha256": "9766b5def6bcc8bd811c2f9474b5be693775b913d82735610f462d329e42225c"
+    }
+  },
+  "metric": "All peers: (long profile minus short profile) / difference in iterations, with per-workload points. Callgrind instructions/cache/branches are simulated. DHAT reports cumulative allocations.",
+  "trials": [
+    {
+      "path": "dhat-tls-loopback-0-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46129"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-0-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46303"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-0-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:44561"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-0-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36899"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-0-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38779"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-0-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39893"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-0-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33081"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-0-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-0",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33405"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38261"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44119"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40471"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41791"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37875"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38725"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45521"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-64-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-64",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37721"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41065"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44099"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40577"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:44325"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38591"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39385"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35723"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-1024-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-1024",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39959"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40293"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45617"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33971"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38849"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:45379"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42591"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38769"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-loopback-65536-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "loopback-65536",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37349"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38599"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46559"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40905"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37825"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38439"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:36395"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45787"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-empty-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-empty",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37849"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44979"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43479"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:44513"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36749"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35649"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:43501"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44555"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-small-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39391"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38739"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37897"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36663"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37335"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44689"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41475"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40273"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-unary-1k-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "unary-1k",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36235"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42785"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41251"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34327"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36413"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37377"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44369"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39675"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-fanout-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "fanout-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44049"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36883"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33385"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35623"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34023"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38185"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37303"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37659"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-dependent-read-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "dependent-read",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34355"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37131"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43981"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41965"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35781"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41775"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:45773"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43815"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-pipelined-read-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40109"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46295"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43909"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38527"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41003"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35123"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37675"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44535"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-write-read-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "write-read",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46821"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42685"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34167"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45549"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45461"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42725"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35411"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42925"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-callback-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "callback",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34873"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43481"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43429"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37111"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45449"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35445"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39933"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43505"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-64k-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-64k",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:44139"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34215"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42665"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38801"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35381"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44361"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:33755"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41557"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-256k-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-256k",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36923"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37641"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:32815"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33269"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40637"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42571"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38633"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34223"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-1m-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-1m",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37173"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46059"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38151"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35935"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45773"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:33735"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:33885"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35569"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-bulk-4m-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "bulk-4m",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36863"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33989"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35221"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37993"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41993"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42695"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:36177"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46181"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-8-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-8",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35113"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38617"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39315"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39647"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34121"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:34955"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42735"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33375"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42969"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43643"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41017"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36651"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46653"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38631"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38003"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35633"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-concurrent-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33995"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41873"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41435"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:42267"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41035"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:35357"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38715"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45191"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-deep-32-concurrent-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45707"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35235"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:34575"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:42047"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39925"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:35615"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:45359"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:32927"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33835"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34515"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:42699"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:33137"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45891"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:44037"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:34477"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:41127"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39707"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:45935"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:35969"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:42253"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:38191"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44747"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:36741"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:40381"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:34497"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36857"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:43523"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:44409"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41533"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45281"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:34837"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:42459"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38433"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36407"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:39625"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33283"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39975"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38143"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:36059"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46495"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43649"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:36381"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:46329"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:46123"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:42149"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37855"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:45711"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:46671"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39131"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:39445"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:38857"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:35397"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46213"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:46305"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:42127"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:40573"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:36377"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36881"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:42951"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:35531"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38813"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-concurrent-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43879"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:42389"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:43873"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39455"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38463"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:35097"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:43295"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40717"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38417"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:36725"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41931"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:32919"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33453"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:43411"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:43731"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38767"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40121"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:42315"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:34335"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41223"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37773"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:33469"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:45367"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37451"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:43693"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:33675"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:33305"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:43569"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45545"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:37277"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:33011"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36887"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-4-deep-16-clients-8-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:33673"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:46047"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:39377"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37239"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-legacy-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44273"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42825"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:38241"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44839"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36457"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:36993"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:40869"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41201"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-legacy-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:37811"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33679"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:40697"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:41073"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36687"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:35663"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45003"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42575"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-portable-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:33725"
+        },
+        {
+          "hop": 6,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39601"
+        },
+        {
+          "hop": 5,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:44309"
+        },
+        {
+          "hop": 4,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:43363"
+        },
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41697"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:36669"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:41065"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38235"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-portable-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:33389"
+        },
+        {
+          "hop": 6,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37099"
+        },
+        {
+          "hop": 5,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:38591"
+        },
+        {
+          "hop": 4,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:45123"
+        },
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37387"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:34987"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:41137"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43967"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-cpp-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "cpp",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:36735"
+        },
+        {
+          "hop": 6,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41403"
+        },
+        {
+          "hop": 5,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:40839"
+        },
+        {
+          "hop": 4,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:39787"
+        },
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:42681"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:43245"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:40939"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:41379"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-cpp-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "cpp",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:41729"
+        },
+        {
+          "hop": 6,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:37125"
+        },
+        {
+          "hop": 5,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:38897"
+        },
+        {
+          "hop": 4,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:33511"
+        },
+        {
+          "hop": 3,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44119"
+        },
+        {
+          "hop": 2,
+          "implementation": "cpp",
+          "cpu": 3,
+          "address": "127.0.0.1:39483"
+        },
+        {
+          "hop": 1,
+          "implementation": "cpp",
+          "cpu": 2,
+          "address": "127.0.0.1:39833"
+        },
+        {
+          "hop": 0,
+          "implementation": "cpp",
+          "cpu": 1,
+          "address": "127.0.0.1:44665"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:33529"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36791"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:36007"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:35227"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43057"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:44153"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:46445"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36203"
+        }
+      ]
+    },
+    {
+      "path": "dhat-tls-services-8-deep-16-clients-8-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:44683"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45789"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:36567"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:34443"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45291"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:35109"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:43333"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40607"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-0-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:40577"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-0-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42857"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-0-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:60321"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-0-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:50752"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-0-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46559"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-0-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-0",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:56738"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-64-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:58282"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-64-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37828"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-64-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35222"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-64-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:60884"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-64-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42932"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-64-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-64",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:58953"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-1024-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:50449"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-1024-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39416"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-1024-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:46521"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-1024-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:45330"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-1024-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:43756"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-1024-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-1024",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:51083"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-65536-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:51686"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-65536-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44010"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-65536-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:52236"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-65536-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:49696"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-65536-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40572"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-loopback-65536-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "loopback-65536",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42784"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-empty-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:55950"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-empty-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43427"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-empty-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43260"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-empty-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39118"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-empty-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41768"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-empty-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-empty",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:42188"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42642"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:54948"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:56949"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:47510"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39432"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-small-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-small",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34277"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-1k-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46074"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-1k-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33534"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-1k-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:52785"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-1k-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:40775"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-1k-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40919"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-unary-1k-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "unary-1k",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34055"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-fanout-32-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:55095"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-fanout-32-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:36221"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-fanout-32-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:33586"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-fanout-32-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:53222"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-fanout-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38353"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-fanout-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "fanout-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:46427"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-dependent-read-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41174"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-dependent-read-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:53051"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-dependent-read-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39547"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-dependent-read-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37574"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-dependent-read-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35328"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-dependent-read-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "dependent-read",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45674"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42466"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:57544"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:53457"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38470"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:54279"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-pipelined-read-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "pipelined-read",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34318"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-write-read-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:33743"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-write-read-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34684"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-write-read-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37143"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-write-read-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35592"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-write-read-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37105"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-write-read-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "write-read",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:52297"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-callback-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:53352"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-callback-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:56577"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-callback-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:52015"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-callback-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35338"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-callback-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:53016"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-callback-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "callback",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:58646"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-64k-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:41723"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-64k-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:45339"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-64k-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:56399"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-64k-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:48709"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-64k-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:50685"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-64k-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-64k",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39393"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-256k-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:58935"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-256k-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:51022"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-256k-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:52021"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-256k-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:58935"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-256k-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:48919"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-256k-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-256k",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59333"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-1m-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:56923"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-1m-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:38808"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-1m-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35765"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-1m-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:48913"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-1m-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39651"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-1m-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-1m",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:54476"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-4m-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37007"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-4m-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:49005"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-4m-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:60629"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-4m-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:50814"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-4m-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55838"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-bulk-4m-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "bulk-4m",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38639"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-8-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:37823"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-8-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:42544"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-8-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41802"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-8-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:54799"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-8-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55814"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-8-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-8",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:35256"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:51547"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:47670"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:58272"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:59652"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47052"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45557"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:53181"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:55917"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:56654"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:47603"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47468"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-concurrent-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:34995"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-concurrent-32-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:46479"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-concurrent-32-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:50222"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-concurrent-32-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39310"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-concurrent-32-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38066"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-concurrent-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:60728"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-deep-32-concurrent-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:38678"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:49854"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:49869"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:46660"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:56784"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34071"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:56524"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:60736"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:44164"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:43252"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:54583"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:47098"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:55577"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:48357"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:58587"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:45525"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35307"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:53697"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:49084"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:54693"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:36408"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:47621"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:54621"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:44409"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59360"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-concurrent-32-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:43821"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:47460"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:44082"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:39868"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-concurrent-32-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:47909"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:60672"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:58871"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:54474"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-concurrent-32-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35626"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:35543"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:34271"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:41424"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-concurrent-32-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37872"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:37118"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:45366"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:35729"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-concurrent-32-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:41153"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:36376"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:35873"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49240"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-concurrent-32-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:37184"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:38746"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:48565"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:55862"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-clients-8-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:53001"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:38360"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:33747"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:60525"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-clients-8-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:49793"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:58869"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:34461"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:49189"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-clients-8-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:53795"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:60104"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:54700"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:50639"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-clients-8-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:38396"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:47069"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:47698"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34193"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-clients-8-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45732"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:34387"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:42352"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39157"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-4-deep-16-clients-8-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40613"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:37271"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:38926"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:59528"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-8-deep-16-clients-8-legacy-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:48973"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:59505"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:49868"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:35728"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:34559"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:44755"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:57913"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:56135"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-8-deep-16-clients-8-legacy-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:52536"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:54917"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:43518"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:49152"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:47504"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy",
+          "cpu": 3,
+          "address": "127.0.0.1:38695"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy",
+          "cpu": 2,
+          "address": "127.0.0.1:45298"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy",
+          "cpu": 1,
+          "address": "127.0.0.1:57445"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-8-deep-16-clients-8-portable-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:34747"
+        },
+        {
+          "hop": 6,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:59686"
+        },
+        {
+          "hop": 5,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:58011"
+        },
+        {
+          "hop": 4,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:39627"
+        },
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:54216"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:46898"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:50624"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:32813"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-8-deep-16-clients-8-portable-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "portable",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:34420"
+        },
+        {
+          "hop": 6,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:34551"
+        },
+        {
+          "hop": 5,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:57743"
+        },
+        {
+          "hop": 4,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:43209"
+        },
+        {
+          "hop": 3,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:37062"
+        },
+        {
+          "hop": 2,
+          "implementation": "portable",
+          "cpu": 3,
+          "address": "127.0.0.1:51099"
+        },
+        {
+          "hop": 1,
+          "implementation": "portable",
+          "cpu": 2,
+          "address": "127.0.0.1:49677"
+        },
+        {
+          "hop": 0,
+          "implementation": "portable",
+          "cpu": 1,
+          "address": "127.0.0.1:39004"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-8-deep-16-clients-8-legacy-baseline-5",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 5,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:33452"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:45720"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:42280"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:55489"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:39979"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:50124"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:43577"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:54396"
+        }
+      ]
+    },
+    {
+      "path": "dhat-quic-services-8-deep-16-clients-8-legacy-baseline-50",
+      "mode": "dhat",
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "implementation": "legacy-baseline",
+      "iterations": 50,
+      "points": [
+        5,
+        50
+      ],
+      "services": [
+        {
+          "hop": 7,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:56124"
+        },
+        {
+          "hop": 6,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:40703"
+        },
+        {
+          "hop": 5,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:56295"
+        },
+        {
+          "hop": 4,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:34416"
+        },
+        {
+          "hop": 3,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:49907"
+        },
+        {
+          "hop": 2,
+          "implementation": "legacy-baseline",
+          "cpu": 3,
+          "address": "127.0.0.1:36688"
+        },
+        {
+          "hop": 1,
+          "implementation": "legacy-baseline",
+          "cpu": 2,
+          "address": "127.0.0.1:43209"
+        },
+        {
+          "hop": 0,
+          "implementation": "legacy-baseline",
+          "cpu": 1,
+          "address": "127.0.0.1:50164"
+        }
+      ]
+    }
+  ],
+  "failures": []
+}

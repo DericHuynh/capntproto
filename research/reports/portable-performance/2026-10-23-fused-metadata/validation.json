@@ -1,0 +1,65 @@
+{
+  "checks": [
+    {
+      "log": "test-core-direct.log",
+      "command": "cargo test -p capntproto-rpc-engine -p capntproto-rpc-wire -p capntproto-rpc --lib",
+      "passed": 737,
+      "groups": [
+        358,
+        219,
+        160
+      ],
+      "sha256": "966d5511141062f5594dc7e7cabacb4860d08f223973ed571e345f23cae0dadd"
+    },
+    {
+      "log": "test-fixed-direct.log",
+      "command": "cargo test --manifest-path verification/portable/Cargo.toml --lib",
+      "passed": 86,
+      "groups": [
+        86
+      ],
+      "sha256": "7117d5ce134764f984f96e5218ca04cad78df92e3d62ae32ef1288121220aeaa"
+    },
+    {
+      "log": "test-growing-direct.log",
+      "command": "cargo test --manifest-path verification/portable/Cargo.toml --lib --features growing",
+      "passed": 89,
+      "groups": [
+        89
+      ],
+      "sha256": "ebf4497d696aa00e4e7c94cc87292bcbc80a3ea800092558152d2ac94401029f"
+    },
+    {
+      "log": "test-integrations.log",
+      "command": "cargo test --release -p capntproto --features quic --test secure_rpc --test native_pipeline_migration --test scoped_unix --test scoped_vat",
+      "passed": 36,
+      "groups": [
+        5,
+        3,
+        6,
+        22
+      ],
+      "sha256": "7258be046deb122757d71febe01dd0fbfd385ecc749214fedc253f1bb23fa3c7"
+    },
+    {
+      "log": "check-embedded-direct.log",
+      "command": "cargo check --manifest-path verification/portable/Cargo.toml --target thumbv7em-none-eabi --lib",
+      "passed": true,
+      "sha256": "4b4c7ed614ce7550f3c7fd3eb1977a253e6d17c6257ef64790a31d028e86bb08"
+    },
+    {
+      "log": "clippy-direct.log",
+      "command": "cargo clippy --release -p capntproto -p capntproto-core -p capntproto-futures -p capntproto-rpc-engine -p capntproto-rpc-wire -p capntproto-rpc --all-targets --features capntproto/quic -- -D warnings",
+      "passed": true,
+      "sha256": "afcdd37f417ae157d197720631f1b0fa30be7a6bb909f28f7b2cd0282dbae7ce"
+    }
+  ],
+  "formatting": "cargo fmt --all -- --check passed",
+  "encrypted": {
+    "checks": 206,
+    "passed": true
+  },
+  "source_files_verified": 763,
+  "binary_sha256": "9913f7c4febb31d3a6a7238246c142f560755bcc5489e27e8ec9239a5502dee3",
+  "scope": "Targeted RPC validation; not a full-workspace coverage run. Embedded check has three existing dead-code warnings. Prototype test and memory-pressure build retry logs remain in the raw archive."
+}

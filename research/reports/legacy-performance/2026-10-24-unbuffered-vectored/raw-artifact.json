@@ -1,0 +1,12 @@
+{
+  "path": "/tmp/capntproto-api-switch-optimization-20261024-raw.tar.gz",
+  "size_bytes": 121582882,
+  "sha256": "017601ea4f54aabecc462f5003c496706fa6ce2577a7f6564357e2b4422d600a",
+  "entries": 7853,
+  "regular_files": 6925,
+  "excluded": [
+    "bin/ (binary hashes retained in provenance)",
+    "all generated certificate directories, including private keys"
+  ],
+  "contents": "Both native repetitions, all per-peer Callgrind/DHAT profiles and strace captures, scopes, host counters, validation/build logs, source patch, and analysis/orchestration scripts"
+}

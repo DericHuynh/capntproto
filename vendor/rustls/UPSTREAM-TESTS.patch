@@ -1,0 +1,76 @@
+--- a/rustls-test/src/lib.rs
++++ b/rustls-test/src/lib.rs
+@@ -1495,11 +1495,12 @@
+ 
+     /// Encrypt `msg` into a complete TLS record, including its header
+     pub fn encrypt(&mut self, msg: &PlainMessage) -> Vec<u8> {
+-        let data = self
+-            .encrypter
+-            .encrypt(msg.borrow_outbound(), self.enc_seq)
+-            .unwrap()
+-            .encode();
++        let mut data = vec![0; 5 + self.encrypter.encrypted_payload_len(msg.payload.bytes().len())];
++        let encrypted = self.encrypter.encrypt(msg.borrow_outbound(), self.enc_seq, &mut data[5..]).unwrap();
++        let version = encrypted.version.to_array();
++        let len = (encrypted.payload.len() as u16).to_be_bytes();
++        let header = [encrypted.typ.into(), version[0], version[1], len[0], len[1]];
++        data[..5].copy_from_slice(&header);
+         self.enc_seq += 1;
+         data
+     }
+@@ -1620,7 +1621,7 @@
+     use rustls::ConnectionTrafficSecrets;
+     use rustls::crypto::cipher::{
+         AeadKey, InboundOpaqueMessage, InboundPlainMessage, Iv, MessageDecrypter, MessageEncrypter,
+-        OutboundPlainMessage, PrefixedPayload, Tls13AeadAlgorithm, UnsupportedOperationError,
++        EncodedMessage, EncryptBuffer, OutboundPlainMessage, Tls13AeadAlgorithm, UnsupportedOperationError,
+     };
+ 
+     use super::*;
+@@ -1652,19 +1653,20 @@
+     struct Encrypter;
+ 
+     impl MessageEncrypter for Encrypter {
+-        fn encrypt(
++        fn encrypt<'a>(
+             &mut self,
+             msg: OutboundPlainMessage<'_>,
+             _seq: u64,
+-        ) -> Result<OutboundOpaqueMessage, Error> {
+-            let mut payload = PrefixedPayload::with_capacity(msg.payload.len());
++            out: &'a mut [u8],
++        ) -> Result<EncodedMessage<&'a [u8]>, Error> {
++            let mut payload = EncryptBuffer::new(out, msg.payload.len())?;
+             payload.extend_from_chunks(&msg.payload);
+ 
+-            Ok(OutboundOpaqueMessage::new(
+-                ContentType::ApplicationData,
+-                ProtocolVersion::TLSv1_2,
+-                payload,
+-            ))
++            Ok(EncodedMessage {
++                typ: ContentType::ApplicationData,
++                version: ProtocolVersion::TLSv1_2,
++                payload: payload.into_written(),
++            })
+         }
+ 
+         fn encrypted_payload_len(&self, payload_len: usize) -> usize {
+--- a/rustls/tests/api.rs
++++ b/rustls/tests/api.rs
+@@ -4699,12 +4699,9 @@
+         version: ProtocolVersion::TLSv1_2,
+         payload: Payload::new(remainder.to_vec()),
+     };
+-    output.extend(
+-        encrypter
+-            .encrypt(remainder.borrow_outbound(), 0)
+-            .unwrap()
+-            .encode(),
+-    );
++    let mut ciphertext = vec![0; encrypter.encrypted_payload_len(remainder.payload.bytes().len())];
++    let encrypted = encrypter.encrypt(remainder.borrow_outbound(), 0, &mut ciphertext).unwrap();
++    output.extend(encoding::message_framing(encrypted.typ, encrypted.version, encrypted.payload.to_vec()));
+     output
+ }
+ 

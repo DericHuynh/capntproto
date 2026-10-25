@@ -68,13 +68,11 @@ impl AsyncRead for Stream {
         if buffer.remaining() == 0 || state.read_closed.get() {
             return Poll::Ready(Ok(()));
         }
-        let result = state
-            .conn
-            .borrow_mut()
-            .stream_recv(0, buffer.initialize_unfilled());
+        // Tokio's BufMut implementation exposes the destination's spare
+        // capacity directly; quiche initializes and advances only bytes received.
+        let result = state.conn.borrow_mut().stream_recv_buf(0, &mut *buffer);
         match result {
-            Ok((n, fin)) => {
-                buffer.advance(n);
+            Ok((_n, fin)) => {
                 state.read_closed.set(fin);
                 // Reading returns flow-control credit to the packet engine.
                 state.request_flush();
@@ -218,7 +216,8 @@ pub async fn accept(incoming: Incoming, timeout: Duration) -> io::Result<Stream>
 pub type Network = twoparty::VatNetwork<Compat<tokio::io::ReadHalf<Stream>>>;
 pub fn network(stream: Stream, side: Side, options: ReaderOptions) -> Network {
     let (read, write) = tokio::io::split(stream);
-    let mut network = twoparty::VatNetwork::new(read.compat(), TokioIo(write), side, options);
+    let mut network =
+        twoparty::VatNetwork::new(read.compat(), TokioIo::encrypted(write), side, options);
     network.set_task_yield(super::io::defer);
     network
 }

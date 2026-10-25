@@ -1,0 +1,1410 @@
+{
+  "source": {
+    "headSha": "42eccc56f3c3b2207bf9adef0c1ebd581855e7ec",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40002634814",
+    "status": "analysis-before-upload",
+    "conclusion": null
+  },
+  "metric": "Cumulative allocation blocks per complete operation, summed across every peer.",
+  "expected_cases": 48,
+  "met": 10,
+  "gaps": 38,
+  "unmeasured": 0,
+  "allocation_target_met": false,
+  "measurement_outcome": "success",
+  "profile_failures": [],
+  "rows": [
+    {
+      "transport": "tls",
+      "case": "loopback-0",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 15.0,
+          "bytes": 1276.0222222222224
+        },
+        "legacy-baseline": {
+          "blocks": 28.0,
+          "bytes": 2635.9333333333334
+        },
+        "portable": {
+          "blocks": 12.0,
+          "bytes": 1292.111111111111
+        },
+        "cpp": {
+          "blocks": 91.4888888888889,
+          "bytes": 64798.600000000006
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 12.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-64",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 15.0,
+          "bytes": 1532.0222222222224
+        },
+        "legacy-baseline": {
+          "blocks": 28.0,
+          "bytes": 3019.8444444444444
+        },
+        "portable": {
+          "blocks": 12.0,
+          "bytes": 1548.1111111111113
+        },
+        "cpp": {
+          "blocks": 91.4888888888889,
+          "bytes": 64926.600000000006
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 12.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-1024",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 15.0,
+          "bytes": 5371.844444444445
+        },
+        "legacy-baseline": {
+          "blocks": 28.0,
+          "bytes": 8780.022222222222
+        },
+        "portable": {
+          "blocks": 12.0,
+          "bytes": 5388.2
+        },
+        "cpp": {
+          "blocks": 91.4888888888889,
+          "bytes": 66846.62222222223
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 12.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "loopback-65536",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 47.0,
+          "bytes": 387147.93333333335
+        },
+        "legacy-baseline": {
+          "blocks": 58.0,
+          "bytes": 388291.93333333335
+        },
+        "portable": {
+          "blocks": 56.0,
+          "bytes": 387979.93333333335
+        },
+        "cpp": {
+          "blocks": 261.22222222222223,
+          "bytes": 441074.8666666667
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 56.0,
+      "excess_blocks": -9.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-empty",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 15.0,
+          "bytes": 1276.2
+        },
+        "legacy-baseline": {
+          "blocks": 28.0,
+          "bytes": 2635.9333333333334
+        },
+        "portable": {
+          "blocks": 12.0,
+          "bytes": 1292.111111111111
+        },
+        "cpp": {
+          "blocks": 91.4888888888889,
+          "bytes": 64798.600000000006
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 12.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-small",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 15.0,
+          "bytes": 1532.0222222222224
+        },
+        "legacy-baseline": {
+          "blocks": 28.0,
+          "bytes": 3019.8444444444444
+        },
+        "portable": {
+          "blocks": 12.0,
+          "bytes": 1548.1111111111113
+        },
+        "cpp": {
+          "blocks": 91.4888888888889,
+          "bytes": 64926.600000000006
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 12.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "unary-1k",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 15.0,
+          "bytes": 5372.2
+        },
+        "legacy-baseline": {
+          "blocks": 28.0,
+          "bytes": 8780.022222222222
+        },
+        "portable": {
+          "blocks": 12.0,
+          "bytes": 5388.022222222222
+        },
+        "cpp": {
+          "blocks": 91.4888888888889,
+          "bytes": 66846.6
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 12.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "fanout-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 350.0,
+          "bytes": 304612.1111111111
+        },
+        "legacy-baseline": {
+          "blocks": 766.0,
+          "bytes": 413668.02222222224
+        },
+        "portable": {
+          "blocks": 374.0,
+          "bytes": 309796.1111111111
+        },
+        "cpp": {
+          "blocks": 2110.488888888889,
+          "bytes": 1695988.6
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 374.0,
+      "excess_blocks": -24.0
+    },
+    {
+      "transport": "tls",
+      "case": "dependent-read",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 86.0,
+          "bytes": 11769.111111111111
+        },
+        "legacy-baseline": {
+          "blocks": 118.0,
+          "bytes": 16680.933333333334
+        },
+        "portable": {
+          "blocks": 64.0,
+          "bytes": 10563.933333333334
+        },
+        "cpp": {
+          "blocks": 246.97777777777776,
+          "bytes": 166880.26666666666
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 64.0,
+      "excess_blocks": 22.0
+    },
+    {
+      "transport": "tls",
+      "case": "pipelined-read",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 106.0,
+          "bytes": 13801.111111111113
+        },
+        "legacy-baseline": {
+          "blocks": 135.0,
+          "bytes": 18241.022222222222
+        },
+        "portable": {
+          "blocks": 76.0,
+          "bytes": 11516.111111111111
+        },
+        "cpp": {
+          "blocks": 233.48888888888888,
+          "bytes": 155443.6222222222
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 76.0,
+      "excess_blocks": 30.0
+    },
+    {
+      "transport": "tls",
+      "case": "write-read",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 31.0,
+          "bytes": 7583.933333333333
+        },
+        "legacy-baseline": {
+          "blocks": 57.0,
+          "bytes": 12328.2
+        },
+        "portable": {
+          "blocks": 25.0,
+          "bytes": 7616.2
+        },
+        "cpp": {
+          "blocks": 180.9777777777778,
+          "bytes": 130549.22222222222
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 25.0,
+      "excess_blocks": 6.0
+    },
+    {
+      "transport": "tls",
+      "case": "callback",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 57.0,
+          "bytes": 4820.933333333333
+        },
+        "legacy-baseline": {
+          "blocks": 87.0,
+          "bytes": 7628.933333333333
+        },
+        "portable": {
+          "blocks": 47.0,
+          "bytes": 4480.111111111111
+        },
+        "cpp": {
+          "blocks": 204.9777777777778,
+          "bytes": 139392.24444444446
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 47.0,
+      "excess_blocks": 10.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-64k",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 47.0,
+          "bytes": 387148.1111111111
+        },
+        "legacy-baseline": {
+          "blocks": 58.0,
+          "bytes": 388291.8444444444
+        },
+        "portable": {
+          "blocks": 56.0,
+          "bytes": 387979.93333333335
+        },
+        "cpp": {
+          "blocks": 262.37777777777774,
+          "bytes": 441680.3777777778
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 56.0,
+      "excess_blocks": -9.0
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-256k",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 120.91111111111111,
+          "bytes": 2065686.7777777778
+        },
+        "legacy-baseline": {
+          "blocks": 132.0,
+          "bytes": 2068195.9333333333
+        },
+        "portable": {
+          "blocks": 128.17777777777778,
+          "bytes": 2070534.6
+        },
+        "cpp": {
+          "blocks": 684.7777777777778,
+          "bytes": 1558986.0
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 128.17777777777778,
+      "excess_blocks": -7.266666666666666
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-1m",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 325.5333333333333,
+          "bytes": 6980268.022222223
+        },
+        "legacy-baseline": {
+          "blocks": 335.73333333333335,
+          "bytes": 6969123.933333334
+        },
+        "portable": {
+          "blocks": 321.9555555555556,
+          "bytes": 6818545.355555556
+        },
+        "cpp": {
+          "blocks": 2415.6222222222223,
+          "bytes": 6049820.48888889
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 321.9555555555556,
+      "excess_blocks": 3.577777777777726
+    },
+    {
+      "transport": "tls",
+      "case": "bulk-4m",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 1153.177777777778,
+          "bytes": 26779222.777777776
+        },
+        "legacy-baseline": {
+          "blocks": 1195.0222222222224,
+          "bytes": 27254137.444444444
+        },
+        "portable": {
+          "blocks": 1202.8222222222223,
+          "bytes": 27435333.355555557
+        },
+        "cpp": {
+          "blocks": 8905.022222222222,
+          "bytes": 23785787.466666665
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 1202.8222222222223,
+      "excess_blocks": -49.64444444444439
+    },
+    {
+      "transport": "tls",
+      "case": "deep-8",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 16.0,
+          "bytes": 3252.022222222222
+        },
+        "legacy-baseline": {
+          "blocks": 29.0,
+          "bytes": 5523.844444444445
+        },
+        "portable": {
+          "blocks": 13.0,
+          "bytes": 3268.2
+        },
+        "cpp": {
+          "blocks": 96.4888888888889,
+          "bytes": 66838.6
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 13.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 16.0,
+          "bytes": 8628.022222222222
+        },
+        "legacy-baseline": {
+          "blocks": 29.0,
+          "bytes": 13588.2
+        },
+        "portable": {
+          "blocks": 13.0,
+          "bytes": 8644.022222222222
+        },
+        "cpp": {
+          "blocks": 96.4888888888889,
+          "bytes": 69526.62222222223
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 13.0,
+      "excess_blocks": 3.0
+    },
+    {
+      "transport": "tls",
+      "case": "concurrent-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 338.0,
+          "bytes": 82548.02222222222
+        },
+        "legacy-baseline": {
+          "blocks": 754.0,
+          "bytes": 130164.11111111111
+        },
+        "portable": {
+          "blocks": 362.0,
+          "bytes": 87732.11111111111
+        },
+        "cpp": {
+          "blocks": 2062.488888888889,
+          "bytes": 1585396.5777777778
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 362.0,
+      "excess_blocks": -24.0
+    },
+    {
+      "transport": "tls",
+      "case": "deep-32-concurrent-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 354.0,
+          "bytes": 403191.93333333335
+        },
+        "legacy-baseline": {
+          "blocks": 770.0,
+          "bytes": 561912.0222222223
+        },
+        "portable": {
+          "blocks": 378.0,
+          "bytes": 408376.02222222224
+        },
+        "cpp": {
+          "blocks": 2146.488888888889,
+          "bytes": 1782516.6444444444
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 378.0,
+      "excess_blocks": -24.0
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 93.37777777777778,
+          "bytes": 23123.933333333334
+        },
+        "legacy-baseline": {
+          "blocks": 155.0,
+          "bytes": 35248.2
+        },
+        "portable": {
+          "blocks": 73.0,
+          "bytes": 21560.37777777778
+        },
+        "cpp": {
+          "blocks": 360.6666666666667,
+          "bytes": 260756.53333333333
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 73.0,
+      "excess_blocks": 20.37777777777778
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-concurrent-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 2538.511111111111,
+          "bytes": 1264170.822222222
+        },
+        "legacy-baseline": {
+          "blocks": 4490.0,
+          "bytes": 1650432.2000000002
+        },
+        "portable": {
+          "blocks": 2343.0,
+          "bytes": 1251647.6666666665
+        },
+        "cpp": {
+          "blocks": 8303.977777777778,
+          "bytes": 6638009.222222223
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 2343.0,
+      "excess_blocks": 195.51111111111095
+    },
+    {
+      "transport": "tls",
+      "case": "services-4-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 2612.0,
+          "bytes": 1407188.3777777778
+        },
+        "legacy-baseline": {
+          "blocks": 4563.088888888889,
+          "bytes": 1790304.6
+        },
+        "portable": {
+          "blocks": 2344.6,
+          "bytes": 1310706.3333333335
+        },
+        "cpp": {
+          "blocks": 8564.466666666667,
+          "bytes": 6745146.288888889
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 2344.6,
+      "excess_blocks": 267.4000000000001
+    },
+    {
+      "transport": "tls",
+      "case": "services-8-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 5613.555555555556,
+          "bytes": 3001171.8888888895
+        },
+        "legacy-baseline": {
+          "blocks": 9593.666666666664,
+          "bytes": 3695493.755555555
+        },
+        "portable": {
+          "blocks": 5004.599999999999,
+          "bytes": 2695974.422222222
+        },
+        "cpp": {
+          "blocks": 16943.08888888889,
+          "bytes": 13380257.2
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 5004.599999999999,
+      "excess_blocks": 608.9555555555562
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-0",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 29.333333333333336,
+          "bytes": 2229.777777777778
+        },
+        "legacy-baseline": {
+          "blocks": 42.644444444444446,
+          "bytes": 3620.5333333333333
+        },
+        "portable": {
+          "blocks": 26.11111111111111,
+          "bytes": 2226.088888888889
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 26.11111111111111,
+      "excess_blocks": 3.222222222222225
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-64",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 29.933333333333334,
+          "bytes": 2546.866666666667
+        },
+        "legacy-baseline": {
+          "blocks": 42.28888888888889,
+          "bytes": 3972.222222222222
+        },
+        "portable": {
+          "blocks": 26.155555555555555,
+          "bytes": 2482.9333333333334
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 26.155555555555555,
+      "excess_blocks": 3.7777777777777786
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-1024",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 29.62222222222222,
+          "bytes": 6356.111111111111
+        },
+        "legacy-baseline": {
+          "blocks": 42.93333333333334,
+          "bytes": 9795.044444444444
+        },
+        "portable": {
+          "blocks": 25.8,
+          "bytes": 6291.155555555555
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 25.8,
+      "excess_blocks": 3.8222222222222193
+    },
+    {
+      "transport": "quic",
+      "case": "loopback-65536",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 122.33333333333334,
+          "bytes": 267973.7111111111
+        },
+        "legacy-baseline": {
+          "blocks": 133.6222222222222,
+          "bytes": 269148.0444444445
+        },
+        "portable": {
+          "blocks": 128.4,
+          "bytes": 268075.22222222225
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 128.4,
+      "excess_blocks": -6.066666666666663
+    },
+    {
+      "transport": "quic",
+      "case": "unary-empty",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 29.644444444444446,
+          "bytes": 2260.5333333333333
+        },
+        "legacy-baseline": {
+          "blocks": 42.46666666666667,
+          "bytes": 3600.8444444444444
+        },
+        "portable": {
+          "blocks": 25.8,
+          "bytes": 2194.9777777777776
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 25.8,
+      "excess_blocks": 3.844444444444445
+    },
+    {
+      "transport": "quic",
+      "case": "unary-small",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 29.8,
+          "bytes": 2528.5555555555557
+        },
+        "legacy-baseline": {
+          "blocks": 42.46666666666667,
+          "bytes": 3984.844444444445
+        },
+        "portable": {
+          "blocks": 26.11111111111111,
+          "bytes": 2481.911111111111
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 26.11111111111111,
+      "excess_blocks": 3.68888888888889
+    },
+    {
+      "transport": "quic",
+      "case": "unary-1k",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 29.822222222222223,
+          "bytes": 6368.977777777778
+        },
+        "legacy-baseline": {
+          "blocks": 42.48888888888889,
+          "bytes": 9745.266666666666
+        },
+        "portable": {
+          "blocks": 25.822222222222223,
+          "bytes": 6291.7555555555555
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 25.822222222222223,
+      "excess_blocks": 4.0
+    },
+    {
+      "transport": "quic",
+      "case": "fanout-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 499.22222222222223,
+          "bytes": 184196.7111111111
+        },
+        "legacy-baseline": {
+          "blocks": 914.8666666666666,
+          "bytes": 293220.4
+        },
+        "portable": {
+          "blocks": 456.4,
+          "bytes": 188758.95555555556
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 456.4,
+      "excess_blocks": 42.82222222222225
+    },
+    {
+      "transport": "quic",
+      "case": "dependent-read",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 118.17777777777778,
+          "bytes": 13550.288888888888
+        },
+        "legacy-baseline": {
+          "blocks": 150.22222222222223,
+          "bytes": 18463.48888888889
+        },
+        "portable": {
+          "blocks": 92.13333333333333,
+          "bytes": 12382.511111111111
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 92.13333333333333,
+      "excess_blocks": 26.04444444444445
+    },
+    {
+      "transport": "quic",
+      "case": "pipelined-read",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 128.46666666666667,
+          "bytes": 14765.844444444443
+        },
+        "legacy-baseline": {
+          "blocks": 157.48888888888888,
+          "bytes": 19206.444444444445
+        },
+        "portable": {
+          "blocks": 92.42222222222222,
+          "bytes": 12448.844444444445
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 92.42222222222222,
+      "excess_blocks": 36.04444444444445
+    },
+    {
+      "transport": "quic",
+      "case": "write-read",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 59.51111111111111,
+          "bytes": 9397.0
+        },
+        "legacy-baseline": {
+          "blocks": 85.2,
+          "bytes": 14109.88888888889
+        },
+        "portable": {
+          "blocks": 53.15555555555555,
+          "bytes": 9467.288888888888
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 53.15555555555555,
+      "excess_blocks": 6.355555555555561
+    },
+    {
+      "transport": "quic",
+      "case": "callback",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 87.2,
+          "bytes": 6603.2444444444445
+        },
+        "legacy-baseline": {
+          "blocks": 117.53333333333333,
+          "bytes": 9442.777777777777
+        },
+        "portable": {
+          "blocks": 75.44444444444444,
+          "bytes": 6345.444444444445
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 75.44444444444444,
+      "excess_blocks": 11.75555555555556
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-64k",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 122.42222222222222,
+          "bytes": 267962.7555555556
+        },
+        "legacy-baseline": {
+          "blocks": 133.06666666666666,
+          "bytes": 269074.8
+        },
+        "portable": {
+          "blocks": 128.06666666666666,
+          "bytes": 268032.55555555556
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 128.06666666666666,
+      "excess_blocks": -5.644444444444446
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-256k",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 376.37777777777774,
+          "bytes": 1584069.0
+        },
+        "legacy-baseline": {
+          "blocks": 389.02222222222224,
+          "bytes": 1585563.7555555557
+        },
+        "portable": {
+          "blocks": 383.51111111111106,
+          "bytes": 1584898.1555555556
+        }
+      },
+      "missing": [],
+      "status": "met",
+      "target_variant": "portable",
+      "target_blocks": 383.51111111111106,
+      "excess_blocks": -7.133333333333326
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-1m",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 1405.088888888889,
+          "bytes": 6335634.711111112
+        },
+        "legacy-baseline": {
+          "blocks": 1395.6444444444444,
+          "bytes": 6337337.8
+        },
+        "portable": {
+          "blocks": 1383.8666666666668,
+          "bytes": 6337502.133333333
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 1383.8666666666668,
+      "excess_blocks": 21.22222222222217
+    },
+    {
+      "transport": "quic",
+      "case": "bulk-4m",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 5440.555555555555,
+          "bytes": 25332248.799999997
+        },
+        "legacy-baseline": {
+          "blocks": 5468.022222222222,
+          "bytes": 25337889.444444444
+        },
+        "portable": {
+          "blocks": 5377.888888888889,
+          "bytes": 25332532.04444444
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 5377.888888888889,
+      "excess_blocks": 62.66666666666606
+    },
+    {
+      "transport": "quic",
+      "case": "deep-8",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 30.955555555555556,
+          "bytes": 4267.288888888888
+        },
+        "legacy-baseline": {
+          "blocks": 43.93333333333334,
+          "bytes": 6539.044444444444
+        },
+        "portable": {
+          "blocks": 27.133333333333333,
+          "bytes": 4202.333333333333
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 27.133333333333333,
+      "excess_blocks": 3.822222222222223
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 30.933333333333334,
+          "bytes": 9642.68888888889
+        },
+        "legacy-baseline": {
+          "blocks": 43.62222222222222,
+          "bytes": 14572.111111111111
+        },
+        "portable": {
+          "blocks": 27.46666666666667,
+          "bytes": 9610.044444444444
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 27.46666666666667,
+      "excess_blocks": 3.466666666666665
+    },
+    {
+      "transport": "quic",
+      "case": "concurrent-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 472.9555555555555,
+          "bytes": 59055.13333333333
+        },
+        "legacy-baseline": {
+          "blocks": 888.9777777777779,
+          "bytes": 106671.55555555556
+        },
+        "portable": {
+          "blocks": 432.1333333333333,
+          "bytes": 64058.51111111111
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 432.1333333333333,
+      "excess_blocks": 40.822222222222194
+    },
+    {
+      "transport": "quic",
+      "case": "deep-32-concurrent-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 510.26666666666665,
+          "bytes": 283113.15555555554
+        },
+        "legacy-baseline": {
+          "blocks": 926.2444444444444,
+          "bytes": 441832.7333333333
+        },
+        "portable": {
+          "blocks": 467.44444444444446,
+          "bytes": 287710.35555555555
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 467.44444444444446,
+      "excess_blocks": 42.822222222222194
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 183.62222222222223,
+          "bytes": 25905.022222222222
+        },
+        "legacy-baseline": {
+          "blocks": 244.04444444444445,
+          "bytes": 37911.08888888889
+        },
+        "portable": {
+          "blocks": 162.44444444444443,
+          "bytes": 24361.62222222222
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 162.44444444444443,
+      "excess_blocks": 21.177777777777806
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-concurrent-32",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 3144.6222222222223,
+          "bytes": 778588.0666666667
+        },
+        "legacy-baseline": {
+          "blocks": 5097.155555555556,
+          "bytes": 1164951.111111111
+        },
+        "portable": {
+          "blocks": 2691.2444444444445,
+          "bytes": 765564.5777777778
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 2691.2444444444445,
+      "excess_blocks": 453.37777777777774
+    },
+    {
+      "transport": "quic",
+      "case": "services-4-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 3337.1777777777775,
+          "bytes": 778188.6888888889
+        },
+        "legacy-baseline": {
+          "blocks": 5298.177777777778,
+          "bytes": 1163600.3777777776
+        },
+        "portable": {
+          "blocks": 2836.0444444444443,
+          "bytes": 760840.9777777778
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 2836.0444444444443,
+      "excess_blocks": 501.1333333333332
+    },
+    {
+      "transport": "quic",
+      "case": "services-8-deep-16-clients-8",
+      "points": [
+        5,
+        50
+      ],
+      "variants": {
+        "legacy": {
+          "blocks": 6925.155555555555,
+          "bytes": 1592800.5111111111
+        },
+        "legacy-baseline": {
+          "blocks": 10984.444444444445,
+          "bytes": 2359212.0444444446
+        },
+        "portable": {
+          "blocks": 5903.866666666667,
+          "bytes": 1551310.6222222222
+        }
+      },
+      "missing": [],
+      "status": "gap",
+      "target_variant": "portable",
+      "target_blocks": 5903.866666666667,
+      "excess_blocks": 1021.2888888888883
+    }
+  ]
+}

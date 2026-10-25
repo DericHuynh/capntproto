@@ -450,6 +450,18 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
     /// Final peer release invalidates keys/wire lookup immediately; call leases
     /// can retain the owner until their own completion/cancellation.
     pub fn release(&mut self, id: ExportId, count: u32) -> Result<Option<T>, Error> {
+        let index = self.release_count(id, count)?;
+        Ok(self.take_retired(index))
+    }
+    /// Apply one peer release, retaining retired owners for explicit draining.
+    /// Underflow changes no published counts. This single-export transition
+    /// needs no scratch table and invokes no owner destructor.
+    pub fn release_deferred(&mut self, id: ExportId, count: u32) -> Result<(), Error> {
+        let index = self.release_count(id, count)?;
+        self.enqueue_retired(index);
+        Ok(())
+    }
+    fn release_count(&mut self, id: ExportId, count: u32) -> Result<usize, Error> {
         self.abort_pending();
         let index = self.live_index(id).ok_or(Error::Missing)?;
         let entry = self.slots[index].entry.as_mut().expect("live export");
@@ -459,7 +471,7 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         if refs.release(count).map_err(|_| Error::OverRelease)? {
             entry.state = State::Retired;
         }
-        Ok(self.take_retired(index))
+        Ok(index)
     }
     /// Drain at most one unpublished/retired owner, including a forgotten batch.
     /// Reclamation is impossible while a local call lease still owns the value.

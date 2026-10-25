@@ -386,3 +386,200 @@ fn published_answer_frame_survives_finish_and_wire_id_reuse_through_pipeline_lea
     });
     assert_eq!(measured.count_total, 0);
 }
+
+#[test]
+fn result_export_cleanup_is_atomic_for_repeats_promises_and_multiple_exports() {
+    use crate::rpc_capnp::api::{CapDescriptor, Message, Payload, Return};
+    for distinct in [1, 2] {
+        for promise in [false, true] {
+            for release in [false, true] {
+                let measured = allocation_counter::measure(|| {
+                    let mut bytes = [ZERO; 128];
+                    let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut bytes))];
+                    messages::with_messages(
+                        &mut buffers,
+                        &mut [messages::SendSlot::EMPTY],
+                        |messages| {
+                            answers::with_answers(&mut [answers::Slot::EMPTY], |answers| {
+                                exports::with_exports(
+                                    &mut [const { exports::Slot::EMPTY }; 2],
+                                    |exports| {
+                                        let id = AnswerId::from_wire(3);
+                                        let key = answers
+                                            .admit(id, State::new(41))
+                                            .unwrap_or_else(|_| panic!("answer"));
+                                        let mut queue_slots = [None];
+                                        let mut queue =
+                                            messages::Queue::new(&mut queue_slots).unwrap();
+                                        let mut batch = exports.batch();
+                                        let first = if promise {
+                                            batch.export_promise(42)
+                                        } else {
+                                            batch.export(42)
+                                        }
+                                        .unwrap();
+                                        let _ = batch.grant(first.key()).unwrap();
+                                        let second =
+                                            (distinct == 2).then(|| batch.export(43).unwrap());
+                                        let frame = Frame::build(
+                                            messages,
+                                            1024,
+                                            Default::default(),
+                                            |builder| {
+                                                let mut root =
+                                                    builder.try_init_root::<Message>()?;
+                                                let mut result =
+                                                    root.field(Message::RETURN).init()?;
+                                                result.scalar(Return::ANSWER_ID).set(id.to_wire());
+                                                result
+                                                    .scalar(Return::RELEASE_PARAM_CAPS)
+                                                    .set(false);
+                                                let mut payload =
+                                                    result.field(Return::RESULTS).init()?;
+                                                payload
+                                                    .field(Payload::CONTENT)
+                                                    .set_capability_index(0)?;
+                                                // An unused none descriptor contributes no export grant.
+                                                let mut table = payload
+                                                    .field(Payload::CAP_TABLE)
+                                                    .init(distinct + 2)?;
+                                                for i in 0..2 {
+                                                    if promise {
+                                                        table
+                                                            .get_mut(i)
+                                                            .unwrap()
+                                                            .scalar(CapDescriptor::SENDER_PROMISE)
+                                                            .set(first.id().to_wire());
+                                                    } else {
+                                                        table
+                                                            .get_mut(i)
+                                                            .unwrap()
+                                                            .scalar(CapDescriptor::SENDER_HOSTED)
+                                                            .set(first.id().to_wire());
+                                                    }
+                                                }
+                                                if let Some(second) = &second {
+                                                    table
+                                                        .get_mut(2)
+                                                        .unwrap()
+                                                        .scalar(CapDescriptor::SENDER_HOSTED)
+                                                        .set(second.id().to_wire());
+                                                }
+                                                Ok(())
+                                            },
+                                        )
+                                        .unwrap();
+                                        assert!(try_send_granting(
+                                            key,
+                                            answers,
+                                            batch,
+                                            messages,
+                                            frame,
+                                            &mut [0; 2],
+                                            queue.reserve().unwrap()
+                                        )
+                                        .unwrap_or_else(|_| panic!("publish"))
+                                        .is_none());
+                                        let window = queue.window(messages).unwrap().unwrap();
+                                        let length = window.bytes().len();
+                                        window.advance(length).unwrap();
+                                        let mut release_scratch = [0; 2];
+                                        let release_scratch = if distinct == 1 {
+                                            &mut release_scratch[..0]
+                                        } else {
+                                            &mut release_scratch[..]
+                                        };
+                                        if release {
+                                            // One explicit release makes the implicit two-count release
+                                            // invalid. Neither the answer nor the other export may change.
+                                            assert_eq!(
+                                                exports.release(first.id(), 1).unwrap(),
+                                                None
+                                            );
+                                            assert!(finished_parts(
+                                                id,
+                                                true,
+                                                messages,
+                                                answers,
+                                                exports,
+                                                release_scratch
+                                            )
+                                            .is_err());
+                                            assert_eq!(answers.lookup(id), Some(key));
+                                            assert_eq!(exports.resolve(first.key()), Some(&42));
+                                            if let Some(second) = &second {
+                                                assert_eq!(
+                                                    exports.resolve(second.key()),
+                                                    Some(&43)
+                                                );
+                                            }
+                                            let mut batch = exports.batch();
+                                            let _ = batch.grant(first.key()).unwrap();
+                                            batch.commit();
+                                        }
+                                        let done = finished_parts(
+                                            id,
+                                            release,
+                                            messages,
+                                            answers,
+                                            exports,
+                                            release_scratch,
+                                        )
+                                        .unwrap()
+                                        .unwrap();
+                                        assert_eq!(done.retired.unwrap().release(messages), 41);
+                                        assert!(finished_parts(
+                                            id,
+                                            release,
+                                            messages,
+                                            answers,
+                                            exports,
+                                            &mut []
+                                        )
+                                        .unwrap()
+                                        .is_none());
+                                        assert!(finished_parts(
+                                            AnswerId::from_wire(99),
+                                            true,
+                                            messages,
+                                            answers,
+                                            exports,
+                                            &mut []
+                                        )
+                                        .unwrap()
+                                        .is_none());
+                                        if release {
+                                            assert_eq!(exports.take_retired(0), Some(42));
+                                            if distinct == 2 {
+                                                assert_eq!(exports.take_retired(1), Some(43));
+                                            }
+                                        } else {
+                                            assert_eq!(
+                                                exports.release(first.id(), 2).unwrap(),
+                                                Some(42)
+                                            );
+                                            if let Some(second) = second {
+                                                assert_eq!(
+                                                    exports.release(second.id(), 1).unwrap(),
+                                                    Some(43)
+                                                );
+                                            }
+                                        }
+                                        assert!(answers.is_empty());
+                                        assert!(exports.is_empty());
+                                        let buffer = messages.reserve(1024).unwrap();
+                                        messages.discard(buffer);
+                                    },
+                                )
+                                .unwrap();
+                            })
+                            .unwrap();
+                        },
+                    )
+                    .unwrap();
+                });
+                assert_eq!(measured.count_total, 0);
+            }
+        }
+    }
+}

@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-incoming.elf",
+  "bytes": 1324184,
+  "sha256": "01e4bccabcc9c0386a3123367a4177cff96401ae279184670b5d8a28c025a348",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "5d1ee39ad366e6bac59bc6aae6ef990695f41d62808788e7964624b1a2175039",
+  "scope": "Link-only actual legacy IncomingMessage and concrete Params frame ownership through generated suspended dispatch, real wake, cancellation and 32 concurrent calls. No complete connection driver/conversation matrix, not board execution."
+}

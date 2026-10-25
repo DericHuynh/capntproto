@@ -1,0 +1,82 @@
+{
+  "runtime_changes": false,
+  "source_files_verified": 763,
+  "campaigns": [
+    {
+      "campaign": "native",
+      "trials": 120,
+      "warmup": 1000,
+      "iterations": 5000,
+      "repetitions": 5,
+      "passed": true
+    },
+    {
+      "campaign": "mixed",
+      "trials": 80,
+      "warmup": 1000,
+      "iterations": 5000,
+      "repetitions": 5,
+      "passed": true
+    },
+    {
+      "campaign": "trace-10",
+      "trials": 60,
+      "warmup": 2,
+      "iterations": 10,
+      "repetitions": 5,
+      "passed": true
+    },
+    {
+      "campaign": "trace-100",
+      "trials": 60,
+      "warmup": 2,
+      "iterations": 100,
+      "repetitions": 5,
+      "passed": true
+    },
+    {
+      "campaign": "callgrind-50",
+      "trials": 16,
+      "warmup": 10,
+      "iterations": 50,
+      "repetitions": 1,
+      "passed": true
+    },
+    {
+      "campaign": "callgrind-500",
+      "trials": 16,
+      "warmup": 10,
+      "iterations": 500,
+      "repetitions": 1,
+      "passed": true
+    },
+    {
+      "campaign": "dhat-50",
+      "trials": 16,
+      "warmup": 10,
+      "iterations": 50,
+      "repetitions": 1,
+      "passed": true
+    },
+    {
+      "campaign": "dhat-500",
+      "trials": 16,
+      "warmup": 10,
+      "iterations": 500,
+      "repetitions": 1,
+      "passed": true
+    }
+  ],
+  "validated_trials": 384,
+  "native_or_mixed_trials": 200,
+  "traced_trials": 120,
+  "callgrind_peer_profiles": 64,
+  "dhat_peer_profiles": 64,
+  "tests": "No runtime changes; unit/integration tests, coverage and Clippy were not rerun. Previous direct-path validation applies to this exact source.",
+  "limitations": [
+    "Native results have five run means and sample SD; no claimed confidence interval.",
+    "Instrumented timings are excluded from performance comparisons.",
+    "One Callgrind/DHAT profile per workload/variant/size; marginal estimates subtract 50 from 500 operations.",
+    "Counters are simulated, not hardware PMU. Mixed-peer latency is not an additive attribution of component time."
+  ]
+}

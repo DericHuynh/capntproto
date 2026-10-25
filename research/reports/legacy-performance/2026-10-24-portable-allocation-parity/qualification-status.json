@@ -1,0 +1,28 @@
+{
+  "run_id": 40078632826,
+  "checked_at": "2026-10-24",
+  "jobs": [
+    {
+      "id": 120827311310,
+      "name": "Preserve the preceding dedicated qualification",
+      "status": "in_progress",
+      "conclusion": null,
+      "run_id": 40078632826,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Wait until the preceding measurement owns the dedicated slot",
+          "status": "in_progress",
+          "conclusion": null,
+          "number": 2
+        }
+      ]
+    }
+  ]
+}

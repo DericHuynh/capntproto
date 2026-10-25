@@ -88,11 +88,14 @@ impl<'a> Reader<'a> {
     /// data, as with other recursive message operations.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// use capnp::{any_pointer, message, Equality};
     /// let mut message = message::Builder::new_default();
     /// let mut root = message.init_root::<any_pointer::Builder>();
     /// root.set_as::<capnp::text::Owned>("hello")?;
     /// assert_eq!(root.equals(root.as_reader())?, Equality::Equal);
+    /// # }
     /// # Ok::<(), capnp::Error>(())
     /// ```
     pub fn equals(&self, right: Reader<'_>) -> Result<crate::Equality> {

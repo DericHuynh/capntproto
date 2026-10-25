@@ -220,7 +220,9 @@ mod tests {
                 fills.set(fills.get() + 1);
                 37usize
             };
-            let mut value = policy.buffer::<usize, 0>(1, &mut fill).unwrap();
+            // Keep the receipt observable: fat LTO may otherwise remove the
+            // entire allocate/read/free sequence from this allocation test.
+            let mut value = core::hint::black_box(policy.buffer::<usize, 0>(1, &mut fill).unwrap());
             assert!(value.ensure(policy, 1, &mut fill));
             assert!(!value.ensure(policy, 2, &mut fill));
             assert_eq!(

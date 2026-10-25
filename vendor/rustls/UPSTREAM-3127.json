@@ -1,0 +1,35 @@
+{
+  "pull_request": "https://github.com/rustls/rustls/pull/3127",
+  "merge_commit": "73a793c90f2e8c8b651cd3f1131f4be27f41259b",
+  "upstream_base": "f04804fa13341a9b1dc02b5d1dd8a746f2c4b7fb",
+  "changed_files": [
+    "src/client/test.rs",
+    "src/common_state.rs",
+    "src/crypto/aws_lc_rs/tls12.rs",
+    "src/crypto/aws_lc_rs/tls13.rs",
+    "src/crypto/cipher.rs",
+    "src/crypto/ring/tls12.rs",
+    "src/crypto/ring/tls13.rs",
+    "src/msgs/message/mod.rs",
+    "src/msgs/message/outbound.rs",
+    "src/record_layer.rs"
+  ],
+  "adaptations": [
+    "0.23 OutboundPlainMessage input replaces 0.24 EncodedMessage<OutboundPlain> input",
+    "0.23 fixed-size Nonce.0 replaces 0.24 fallible to_array()",
+    "EncryptBuffer reports existing Error::EncryptError instead of 0.24 ApiMisuse::EncryptBufferTooSmall",
+    "Chunks iterator avoids split_at_checked to preserve rustls 0.23 MSRV",
+    "0.23 record-layer sequence/exhaustion and CommonState preflight/key-update ordering retained",
+    "0.23 buffered handshake plaintext representation retained; owned encryption returns encoded Vec through same provider method",
+    "Full 0.24 split-connection and buffered recycler are outside this targeted backport"
+  ],
+  "source_files": {
+    "rustls/src/crypto/cipher/messages.rs": "acf6831eec3373b2e26b1fb026b106e2151787b8dc075af3185d48619585731e",
+    "rustls/src/crypto/cipher/mod.rs": "f712c4cee5d10af6ae14e466e8bca755bf07bd204b59bf6c8565e2fac8c00871",
+    "rustls/src/crypto/cipher/record_layer.rs": "43425c547df24601371d5ddcfa61e0331598d457c72f2756e82f16401bde52d0",
+    "rustls-ring/src/tls12.rs": "c018286f770dea276cad243fa6f3f0ebe28a8de0b8b7a7c4dbc1c34f51e8fb87",
+    "rustls-ring/src/tls13.rs": "40e83479c2c4786b1d9a05023e9d8259f1509ed77f581efe7fc348313a86fc46",
+    "rustls-aws-lc-rs/src/tls12.rs": "a0d4a82e2e7724c458c56bb315177e619bae07d3a883cf41bf87dc6f31d1c817",
+    "rustls-aws-lc-rs/src/tls13.rs": "d46a907da24be1dd52de05715e5411f3e7e2f33d203415bdc198b2634264f72d"
+  }
+}

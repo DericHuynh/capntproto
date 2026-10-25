@@ -168,6 +168,27 @@ pub trait Service {
     ) -> impl core::future::Future<Output = Result<()>> + 'call;
 }
 
+/// Borrow an existing dispatcher as the concrete owner of one invocation.
+impl<S: Service + ?Sized> Service for &mut S {
+    fn method_info(&self, interface_id: u64, method_id: u16) -> Option<MethodInfo> {
+        (**self).method_info(interface_id, method_id)
+    }
+    async fn dispatch<'call>(
+        &'call mut self,
+        interface_id: u64,
+        method_id: u16,
+        params: crate::any_pointer::Reader<'call>,
+        results: crate::field_api::FixedField<
+            'call,
+            crate::field_api::Generic<crate::any_pointer::Owned>,
+        >,
+    ) -> Result<()> {
+        (**self)
+            .dispatch(interface_id, method_id, params, results)
+            .await
+    }
+}
+
 /// A borrowed service with an explicit application-selected call context.
 /// Generated adapters retain typed parameter/result schemas and inheritance.
 /// The context may provide admitted capability lookup, nested calls, time or
@@ -185,4 +206,25 @@ pub trait ContextService<C> {
         >,
         context: &'call mut C,
     ) -> impl core::future::Future<Output = Result<()>> + 'call;
+}
+
+impl<C, S: ContextService<C> + ?Sized> ContextService<C> for &mut S {
+    fn method_info(&self, interface_id: u64, method_id: u16) -> Option<MethodInfo> {
+        (**self).method_info(interface_id, method_id)
+    }
+    async fn dispatch_with_context<'call>(
+        &'call mut self,
+        interface_id: u64,
+        method_id: u16,
+        params: crate::any_pointer::Reader<'call>,
+        results: crate::field_api::FixedField<
+            'call,
+            crate::field_api::Generic<crate::any_pointer::Owned>,
+        >,
+        context: &'call mut C,
+    ) -> Result<()> {
+        (**self)
+            .dispatch_with_context(interface_id, method_id, params, results, context)
+            .await
+    }
 }

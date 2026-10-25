@@ -57,10 +57,10 @@ impl RequestHook for Hook {
             marker: PhantomData,
         };
         RemotePromise {
-            promise: Promise::from_future(async move {
+            promise: capnp::capability::ResponsePromise::new(Promise::from_future(async move {
                 gate.await.unwrap()?;
                 Ok(response)
-            }),
+            })),
             pipeline: any_pointer::Pipeline::new(Box::new(PipelineGuard(counts))),
         }
     }

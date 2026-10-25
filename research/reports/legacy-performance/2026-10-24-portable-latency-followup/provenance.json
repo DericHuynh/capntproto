@@ -1,0 +1,192 @@
+{
+  "runtime": "87be38e069b86b442cc36500f44e0e4907ce813e",
+  "restoration_commit": "ecdead57cfcf80a0c33879dccbd16ae2b9d80e1f",
+  "retained_source_tree": "5a7a101d1fc3da66f959961e5594e14cf0dd96dc",
+  "frozen_controls": {
+    "source": "b311711d715a09c8acd01ed414685e8ce3957486",
+    "path": "/tmp/capntproto-build-cache/portable-latency-step6/bin/candidate",
+    "bytes": 87928992,
+    "sha256": "5f11520e842bca2b55a22ba571c2bfed76da1008fb7078963c2d62e2bb06eb9c",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "build",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "benchmarks/rpc/Cargo.toml",
+      "--bin",
+      "capntproto-rpc-bench"
+    ],
+    "environment": {
+      "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+      "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+      "CARGO_PROFILE_RELEASE_LTO": "fat",
+      "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "TMPDIR": "/tmp/capntproto-build-cache",
+      "CC": "clang",
+      "CXX": "clang++"
+    }
+  },
+  "binaries": [
+    {
+      "source": "d238224501dbfec075d0d8625cd8491c06ce954d",
+      "path": "/tmp/capntproto-build-cache/portable-latency-step7/bin/candidate",
+      "bytes": 87935064,
+      "sha256": "18c7f83bdd068c144b707b02740069859368cabd33b0ad903ddd0de07df508b4",
+      "command": [
+        "/root/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ],
+      "environment": {
+        "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+        "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+        "CARGO_PROFILE_RELEASE_LTO": "fat",
+        "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "1",
+        "TMPDIR": "/tmp/capntproto-build-cache",
+        "CC": "clang",
+        "CXX": "clang++"
+      }
+    },
+    {
+      "source": "87be38e069b86b442cc36500f44e0e4907ce813e",
+      "path": "/tmp/capntproto-build-cache/portable-latency-step8/bin/candidate",
+      "bytes": 87929472,
+      "sha256": "43da289b24093d189c2e9fe2743e26c4012286bfd241479b751b5ba98ba469be",
+      "command": [
+        "/root/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ],
+      "environment": {
+        "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+        "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+        "CARGO_PROFILE_RELEASE_LTO": "fat",
+        "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "1",
+        "TMPDIR": "/tmp/capntproto-build-cache",
+        "CC": "clang",
+        "CXX": "clang++"
+      }
+    },
+    {
+      "source": "59e1b1ba9ff44b6431c3096e6371a0b2bf2efef3",
+      "path": "/tmp/capntproto-build-cache/portable-latency-step9/bin/candidate",
+      "bytes": 87929272,
+      "sha256": "f3a7f73f9f9c2c56801b3d5a5df8a5a24bb1b5fbccdd2ee3b8368e965d077599",
+      "command": [
+        "/root/.cargo/bin/cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "benchmarks/rpc/Cargo.toml",
+        "--bin",
+        "capntproto-rpc-bench"
+      ],
+      "environment": {
+        "CARGO_HTTP_CAINFO": "/run/ca-bundle.crt",
+        "CARGO_TARGET_DIR": "/tmp/capntproto-build-cache/bench",
+        "CARGO_PROFILE_RELEASE_LTO": "fat",
+        "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "1",
+        "TMPDIR": "/tmp/capntproto-build-cache",
+        "CC": "clang",
+        "CXX": "clang++"
+      }
+    }
+  ],
+  "final_binaries": {
+    "legacy": {
+      "path": "/tmp/capntproto-build-cache/portable-latency-step8/bin/candidate",
+      "sha256": "43da289b24093d189c2e9fe2743e26c4012286bfd241479b751b5ba98ba469be"
+    },
+    "portable": {
+      "path": "/tmp/capntproto-build-cache/portable-latency-step8/bin/candidate",
+      "sha256": "43da289b24093d189c2e9fe2743e26c4012286bfd241479b751b5ba98ba469be"
+    },
+    "cpp": {
+      "path": "/tmp/capntproto-build-cache/local-unbuffered-20261024/bin/cpp",
+      "sha256": "76fe3d435f15a60b6ab5820b480add1a46dd4a885016157a5a62d7a0fe3e82fc"
+    },
+    "portable-baseline": {
+      "path": "/tmp/capntproto-build-cache/portable-latency-step6/bin/candidate",
+      "sha256": "5f11520e842bca2b55a22ba571c2bfed76da1008fb7078963c2d62e2bb06eb9c"
+    },
+    "legacy-baseline": {
+      "path": "/tmp/capntproto-build-cache/portable-latency-step6/bin/candidate",
+      "sha256": "5f11520e842bca2b55a22ba571c2bfed76da1008fb7078963c2d62e2bb06eb9c"
+    }
+  },
+  "fixtures": {
+    "benchmarks/rpc/secure-runner.py": "7cab8ea16717b2cb950b8e117c5d37f56f07acd4c58e592c628c36ef217edb05",
+    "benchmarks/rpc/secure-profile.py": "00c39d4478b3b1637daafb3e9cf21d8092547819729ef44ec830798b55486cd2",
+    "benchmarks/rpc/workflows.json": "2c017c9dcec386c2617fab67de05c85da78877788e38b5df1cedf8f1ef599344",
+    "benchmarks/rpc/topologies.json": "e316a0acbcdf7e93b21ab995322470174b95cde75926c0829f458ec8ec4a2d1f",
+    "benchmarks/rpc/latency_stats.py": "a550c5e667abc8dc8f539ef6bc85cd52dd6e08bd91aaed218935080612799774",
+    "benchmarks/rpc/ciphertext-counts.py": "638e7b37026ab9276a969e8f1d522d687f55530175c901847c9facd4919c9e0b"
+  },
+  "cpp": {
+    "source": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+    "compiler": "clang 19 -O3 -DNDEBUG",
+    "tls": "OpenSSL 3.5.7"
+  },
+  "archive": {
+    "path": "/tmp/capntproto-portable-latency-steps7-9-20261024.tar.gz",
+    "bytes": 298891809,
+    "sha256": "a61925a671adc6c9bae0ae1a56064841f6c1aa3ca17e1d0ed6a6d15f598d4568",
+    "verified_files": 28097
+  },
+  "native": {
+    "repetitions": 5,
+    "warmup": 50,
+    "iterations": 500,
+    "rows": 48,
+    "trials": 1080,
+    "qualification": false
+  },
+  "diagnostics": {
+    "core_callgrind_trials": 30,
+    "service_callgrind_trials": 8,
+    "service_baseline": "87be38e069b86b442cc36500f44e0e4907ce813e",
+    "dhat_trials": 42,
+    "trace_trials": 300,
+    "all_peers": true,
+    "native_overlap": false,
+    "service_candidate": "59e1b1ba9ff44b6431c3096e6371a0b2bf2efef3",
+    "service_disposition": "rejected experiment; retained binary serves as the frozen portable control"
+  },
+  "qualification": {
+    "source": "ecdead57cfcf80a0c33879dccbd16ae2b9d80e1f",
+    "qualification": "62df942b69242e65b98ace9d1d206dac973ee5ef",
+    "branch": "codex/portable-latency-fast-qualification-20261024",
+    "portable_control": "b311711d715a09c8acd01ed414685e8ce3957486",
+    "control_runtime": "b311711d715a09c8acd01ed414685e8ce3957486",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40116177710",
+    "status": "release-bundle build in progress; dedicated measurement has not started",
+    "snapshot_utc": "2026-10-24T17:41:14.956721+00:00",
+    "prior_run": "40108765911 remains in progress"
+  },
+  "limitations": [
+    "Native timings are exploratory shared-host results, not droplet qualification.",
+    "C++ has no supported QUIC fixture.",
+    "Allocation and instruction diagnostics use one startup-subtracted pair per label/case, not five repetitions.",
+    "Socket counts use five startup-subtracted pairs; timing under instrumentation is excluded."
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "runtime_snapshot": "c6900f3210c7d8505d47ea8821e419c2f492b2ab",
+  "qualified_ci": 40205699992,
+  "ci_scope": "Full hosted checks,70 selected Miri executions,240 five-repeat work/allocation trials",
+  "local": {
+    "engine-test": {
+      "passed": 228
+    },
+    "engine-alloc-test": {
+      "passed": 275
+    },
+    "fixed-test": {
+      "passed": 8
+    },
+    "fixed-alloc-test": {
+      "passed": 8
+    },
+    "actual-test": {
+      "passed": 9
+    },
+    "parser-test": {
+      "passed": 5
+    }
+  },
+  "format": "workspace and isolated fixed fixture pass",
+  "provenance": "YAML and both workflow Python blocks parse",
+  "source_diff_check": "clean; historical raw logs/assembly are retained without whitespace editing",
+  "threshold_native_campaign": {
+    "run": 40214675223,
+    "conclusion": "cancelled before measurement"
+  }
+}

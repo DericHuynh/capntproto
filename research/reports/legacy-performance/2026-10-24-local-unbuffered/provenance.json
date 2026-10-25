@@ -1,0 +1,63 @@
+{
+  "scope": "exploratory local loopback, not a dedicated droplet qualification",
+  "source_commit": "ded9a9536ed317109ee90ce4e399889a5607a67c",
+  "implementation_commit": "bd60556f1d48fd38355fa0c17f4f304cec444bf8",
+  "dirty_files": "",
+  "frozen_source_commit": "867fb7863db47e559de521f90b743769fd390a68",
+  "cpp_revision": "0de72d8d8cec6b69edaa29de51d3bd490341f9c2",
+  "cpp_sources_match_manifest": true,
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "clang": "Debian clang version 19.1.7 (3+b1)",
+  "openssl": "OpenSSL 3.5.7 9 Jun 2026 (Library: OpenSSL 3.5.7 9 Jun 2026)",
+  "kernel": "6.18.55",
+  "architecture": "x86_64",
+  "rust_profile": {
+    "optimization": 3,
+    "lto": "fat",
+    "codegen_units": 1,
+    "debug": 1,
+    "overflow_checks": true
+  },
+  "cpp_profile": "clang++ -std=c++23 -O3 -DNDEBUG; pinned CMake Release libraries with OpenSSL enabled",
+  "rust_flag_overrides": null,
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "client_cpu": 0,
+  "service_cpus": [
+    1,
+    2,
+    3
+  ],
+  "placement_note": "The four-service case cycles over three service cores, identically for every variant.",
+  "measurement": {
+    "repetitions": 5,
+    "warmup": 50,
+    "iterations": 200,
+    "metric": "Established-connection whole-operation latency including result validation and cleanup; handshakes excluded",
+    "spread": "Sample standard deviation of the five repetition means; not a confidence interval"
+  },
+  "binaries": {
+    "pre-unbuffered": {
+      "sha256": "d23b7a1cb6581122fc4098554d120b8e052a672bb01d0a80a504c091617699ae",
+      "bytes": 87926936
+    },
+    "current": {
+      "sha256": "3d6509ba4af03eb01c8c65d109596d125edae2066443b427a23df19b359cf466",
+      "bytes": 87733768
+    },
+    "cpp": {
+      "sha256": "76fe3d435f15a60b6ab5820b480add1a46dd4a885016157a5a62d7a0fe3e82fc",
+      "bytes": 3112728
+    }
+  },
+  "build_logs": [
+    "current-build.log",
+    "baseline-build.log",
+    "cpp-build.log"
+  ],
+  "outer_cgroup_note": "Docker-visible cpu.max is unlimited; the enclosing execution environment has a four-CPU quota. Host-side snapshots are retained separately."
+}

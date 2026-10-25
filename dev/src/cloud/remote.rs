@@ -2,6 +2,14 @@
 use super::*;
 use std::{fs, net::Ipv4Addr};
 mod report;
+mod secure;
+
+pub(super) enum Campaign {
+    Workflows { trace_io: bool },
+    Secure,
+    Latency,
+    Allocations,
+}
 mod timing;
 mod trace;
 
@@ -312,7 +320,7 @@ pub(super) fn run(
     owner: &str,
     cancel: &Cancellation,
     commands: &impl Commands,
-    trace_io: bool,
+    campaign: Campaign,
 ) -> Result<()> {
     let manifest = crate::read_json(bundle.join("manifest.json"))?;
     for name in [
@@ -345,6 +353,8 @@ pub(super) fn run(
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(state, fs::Permissions::from_mode(0o700))?;
     }
+    let archive = state.join("bundle.tar.gz");
+    archive_bundle(bundle, &archive)?;
     let remote = output.join("remote");
     ensure!(
         !remote.exists(),
@@ -386,19 +396,24 @@ pub(super) fn run(
         // The quality importer requires that machine's provisioning receipt
         // beside its environment and trials, independently of remote topology.
         crate::write_json(output.join("droplet.json"), &client.receipt)?;
-        let archive = state.join("bundle.tar.gz");
-        let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
-            fs::File::create(&archive)?,
-            flate2::Compression::default(),
-        ));
-        for entry in fs::read_dir(bundle)? {
-            let entry = entry?;
-            ensure!(entry.file_type()?.is_file(), "unexpected bundle entry");
-            tar.append_path_with_name(entry.path(), entry.file_name())?;
-        }
-        tar.into_inner()?.finish()?;
         for host in &hosts {
             upload(commands, host, &archive, cancel)?;
+        }
+        if matches!(
+            campaign,
+            Campaign::Secure | Campaign::Latency | Campaign::Allocations
+        ) {
+            return secure::run(
+                commands,
+                client,
+                &output.join("secure"),
+                cancel,
+                match campaign {
+                    Campaign::Latency => secure::Phase::Latency,
+                    Campaign::Allocations => secure::Phase::Allocations,
+                    _ => secure::Phase::All,
+                },
+            );
         }
         // Bind only the VPC address; admit benchmark TCP only from this run's
         // client. Management SSH stays on the independently pinned public path.
@@ -462,7 +477,7 @@ pub(super) fn run(
                 cancel,
             )?;
         }
-        if trace_io {
+        if matches!(campaign, Campaign::Workflows { trace_io: true }) {
             // Tracing changes scheduling. Run it only after every untraced
             // timing and instruction control has been saved independently.
             trace::run(

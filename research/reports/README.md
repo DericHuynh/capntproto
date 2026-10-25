@@ -5,6 +5,32 @@ published as GitHub Actions artifacts. See [the quality guide](../../docs/wiki/Q
 for report generation, coverage gates, and the comparison charts in each report's
 README.
 
+The [legacy allocation and concurrency comparison](legacy-performance/2026-10-23-allocation-concurrency/README.md)
+records frozen legacy controls, portable/C++ comparisons, allocation stacks,
+concurrent service-chain profiles, and a reproduced duplicate-wake publication
+bug. Completed timing evidence and incomplete diagnostics remain explicitly
+separate; final-runtime measurements expose modest aggregate TLS gains, a QUIC
+regression and an unresolved QUIC service-chain profiling gap.
+
+The [CI droplet comparison and borrowed Return validation](portable-performance/2026-10-23-ci-droplets/README.md)
+records encrypted five-run measurements, syscall traces, instruction/allocation
+profiles, frozen portable controls and explicit remaining legacy gaps. All new
+performance evidence comes from the CI-provisioned DigitalOcean droplets.
+Earlier local campaigns below remain diagnostic history and do not qualify the
+current latency targets.
+
+The [portable path fusion and retained metadata](portable-performance/2026-10-23-fused-metadata/README.md)
+removes repeated capability ownership conversion and completion work, and retains
+validated cleanup facts. Five-run comparisons and profiles show fewer instructions
+and allocations, modest TLS gains, a QUIC latency regression, and remaining legacy
+gaps. Intermediate outcomes and complete measurement evidence are retained.
+
+The [current portable versus legacy gap diagnosis](portable-performance/2026-10-23-legacy-gap/README.md)
+adds five-run native and mixed-peer comparisons, ciphertext traces, CPU profiles
+and allocation stacks for the code on main. It locates remaining protocol and
+ownership overhead despite portable's lower allocation volume and matching
+steady socket-count growth in the traced workloads.
+
 The [portable direct-path redesign](portable-performance/2026-10-23-direct-paths/README.md)
 replaces shared pipeline drivers, eager result hooks and mutex-owned readiness
 with producer completion, direct payload ownership and local readiness. Five-run

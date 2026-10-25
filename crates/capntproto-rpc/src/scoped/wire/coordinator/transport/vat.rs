@@ -2,9 +2,10 @@
 //! The network's own driver must still run concurrently. This bridge owns no
 //! socket, executor or protocol state and never derives identity from wire IDs.
 use super::*;
+use alloc::boxed::Box;
 use capnp::capability::Promise;
+use core::task::ready;
 use io::IoError;
-use std::task::ready;
 
 pub(crate) type Shared<V> = Rc<RefCell<Box<dyn crate::Connection<V>>>>;
 
@@ -84,9 +85,9 @@ impl<V> Connection<V> {
                 remaining: 0,
                 maximum: maximum.get(),
                 ended: false,
-                #[cfg(unix)]
+                #[cfg(all(feature = "std", unix))]
                 fds: Vec::new(),
-                #[cfg(unix)]
+                #[cfg(all(feature = "std", unix))]
                 fds_loaded: false,
             },
             Writer {
@@ -138,9 +139,9 @@ pub struct Reader {
     remaining: usize,
     maximum: usize,
     ended: bool,
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fds: Vec<Option<Rc<std::os::fd::OwnedFd>>>,
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fds_loaded: bool,
 }
 impl Reader {
@@ -194,7 +195,7 @@ impl Reader {
         self.remaining -= count;
         Poll::Ready(Ok(count))
     }
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn load_fds(&mut self) {
         if !self.fds_loaded {
             self.fds_loaded = true;
@@ -247,7 +248,7 @@ impl ImportReceiver<resources::Import> for Reader {
         }
     }
     fn attach(&mut self, owner: Option<&mut resources::Import>, index: u8) {
-        #[cfg(unix)]
+        #[cfg(all(feature = "std", unix))]
         {
             if index == u8::MAX {
                 return;
@@ -259,12 +260,12 @@ impl ImportReceiver<resources::Import> for Reader {
                 }
             }
         }
-        #[cfg(not(unix))]
+        #[cfg(not(all(feature = "std", unix)))]
         let _ = (owner, index);
     }
 }
 impl Input<resources::Import> for Reader {
-    fn has_buffered_next_frame(&self) -> bool {
+    fn has_buffered_next_frame(&mut self) -> bool {
         !self.active && !self.ended && self.input.has_buffered_next_frame()
     }
     fn buffered_frame(&self) -> Option<&[u8]> {
@@ -343,7 +344,7 @@ impl Input<resources::Import> for Reader {
         self.ended |= self.remaining != 0 || !self.active;
         self.input.finish_frame();
         self.active = false;
-        #[cfg(unix)]
+        #[cfg(all(feature = "std", unix))]
         {
             self.fds.clear();
             self.fds_loaded = false;
@@ -421,7 +422,7 @@ impl messages::PublicationSink<Bundle> for PublicationSink {
             }
         };
         frame.credit = resources.credit.take();
-        #[cfg(unix)]
+        #[cfg(all(feature = "std", unix))]
         if let Some(fds) = resources.fds.take() {
             frame.set_fds(fds.iter().cloned().collect());
         }
@@ -485,7 +486,7 @@ impl io::Close for Writer {
 
 #[derive(Default)]
 pub struct Bundle {
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fds: Option<Box<capntproto_rpc_wire::attachments::Sender<Rc<std::os::fd::OwnedFd>, 4>>>,
     credit: Option<Rc<crate::admission::Permit>>,
 }
@@ -567,7 +568,7 @@ impl Writer {
         resources: Option<&Bundle>,
     ) -> Result<(), IoError<Error>> {
         frame.credit = resources.and_then(|resources| resources.credit.clone());
-        #[cfg(unix)]
+        #[cfg(all(feature = "std", unix))]
         if let Some(fds) = resources.and_then(|resources| resources.fds.as_ref()) {
             frame.set_fds(fds.iter().cloned().collect());
         }
@@ -581,19 +582,19 @@ impl Writer {
 /// Attachment policy for the existing VatNetwork transports. Byte-only
 /// transports explicitly discard optional descriptors at their send boundary.
 pub struct Resources {
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     maximum: usize,
 }
 impl Resources {
     pub fn new(maximum_fds: usize) -> Self {
-        #[cfg(not(unix))]
+        #[cfg(not(all(feature = "std", unix)))]
         let _ = maximum_fds;
         Self {
-            #[cfg(unix)]
+            #[cfg(all(feature = "std", unix))]
             maximum: maximum_fds.min(253),
         }
     }
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn attach_fd(&self, bundle: &mut Bundle, fd: Option<Rc<std::os::fd::OwnedFd>>) -> u8 {
         let Some(fd) = fd.filter(|_| self.maximum != 0) else {
             return u8::MAX;
@@ -636,7 +637,7 @@ impl Output<resources::Import> for Resources {
         imports: &Imports<'id, '_, resources::Import>,
         bundle: &mut Bundle,
     ) -> u8 {
-        #[cfg(unix)]
+        #[cfg(all(feature = "std", unix))]
         {
             self.attach_fd(
                 bundle,
@@ -649,7 +650,7 @@ impl Output<resources::Import> for Resources {
                 },
             )
         }
-        #[cfg(not(unix))]
+        #[cfg(not(all(feature = "std", unix)))]
         {
             let _ = (owner, imports, bundle);
             u8::MAX

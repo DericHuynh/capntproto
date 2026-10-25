@@ -4,7 +4,7 @@ use capntproto_rpc_engine::imports::Imports;
 use capntproto_rpc_wire::{attachments::ImportReceiver, clients::Route};
 pub mod vat;
 
-#[cfg(unix)]
+#[cfg(all(feature = "std", unix))]
 use capntproto_rpc_wire::{attachments::Sender, clients::Endpoint, Capacity};
 
 /// Reader of exactly one framed message at a time. Reads must never prefetch
@@ -25,7 +25,8 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
     }
     /// A complete next frame is buffered after finishing the previous one.
     /// Inspect only; do not read bytes or consume ancillary resources here.
-    fn has_buffered_next_frame(&self) -> bool {
+    /// Validated framing metadata may be retained for the next receive.
+    fn has_buffered_next_frame(&mut self) -> bool {
         false
     }
     /// Borrow an untouched complete frame after poll_frame_size, without IO.
@@ -157,11 +158,11 @@ impl<W: io::Write> io::WriteResources<()> for Writer<'_, W> {
 /// Unix descriptor policy; the original hook controls descriptor visibility.
 /// Inline capacity stays bounded even when alloc is enabled. Growing capacity
 /// must be explicitly selected and is additionally capped by the wire sentinel.
-#[cfg(unix)]
+#[cfg(all(feature = "std", unix))]
 pub struct FileDescriptors<const N: usize> {
     pub capacity: Capacity,
 }
-#[cfg(unix)]
+#[cfg(all(feature = "std", unix))]
 impl<const N: usize> Default for FileDescriptors<N> {
     fn default() -> Self {
         Self {
@@ -169,7 +170,7 @@ impl<const N: usize> Default for FileDescriptors<N> {
         }
     }
 }
-#[cfg(unix)]
+#[cfg(all(feature = "std", unix))]
 impl<T, const N: usize> Output<resources::Import<T>> for FileDescriptors<N> {
     type Bundle = Sender<Rc<std::os::fd::OwnedFd>, N>;
     fn bundle(&self) -> Self::Bundle {

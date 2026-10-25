@@ -407,8 +407,8 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
         "the retired Kani matrix must not run in CI"
     );
     ensure!(
-        jobs["performance"]["needs"] == json!(["cargo", "models", "fuzz", "extended"]),
-        "benchmark must follow every verification partition"
+        jobs["performance"]["needs"] == "workflows",
+        "benchmarks must start after workflow validation, alongside verification"
     );
     let trusted = "github.actor_id != '49699333' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
     let normalized = |v: &Value| {
@@ -422,6 +422,12 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
         jobs["cleanup"]["needs"] == "performance"
             && normalized(&jobs["cleanup"]["if"]) == format!("always() && {trusted}"),
         "cleanup must run after benchmarks, including failure, only for trusted events"
+    );
+    ensure!(
+        all["performance"]["on"]["workflow_call"]["inputs"]["campaign"]["default"] == "run-latency"
+            && all["performance"]["on"]["workflow_dispatch"]["inputs"]["campaign"]["default"]
+                == "run-latency",
+        "routine benchmarks must qualify latency; full profiling is opt-in"
     );
     let performance = &all["performance"]["jobs"];
     ensure!(

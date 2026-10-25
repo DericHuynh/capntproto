@@ -1,0 +1,126 @@
+{
+  "fusion-focused": {
+    "tls": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_means": 1,
+        "geometric_mean_latency_change_percent": 1.373089352072987
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_means": 0,
+        "geometric_mean_latency_change_percent": 31.551373253053193
+      },
+      "cpp": {
+        "cases": 4,
+        "lower_means": 3,
+        "geometric_mean_latency_change_percent": -20.856118595184913
+      }
+    },
+    "quic": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_means": 4,
+        "geometric_mean_latency_change_percent": -4.921115715280877
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_means": 0,
+        "geometric_mean_latency_change_percent": 16.338151052986948
+      }
+    }
+  },
+  "metadata-focused": {
+    "tls": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_means": 3,
+        "geometric_mean_latency_change_percent": -3.19311926426169
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_means": 0,
+        "geometric_mean_latency_change_percent": 20.08679333610852
+      },
+      "cpp": {
+        "cases": 4,
+        "lower_means": 3,
+        "geometric_mean_latency_change_percent": -24.831250758430645
+      }
+    },
+    "quic": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_means": 0,
+        "geometric_mean_latency_change_percent": 5.4800783310053
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_means": 0,
+        "geometric_mean_latency_change_percent": 30.385420216758806
+      }
+    }
+  },
+  "direct-focused": {
+    "tls": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_means": 1,
+        "geometric_mean_latency_change_percent": 4.512388965539049
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_means": 0,
+        "geometric_mean_latency_change_percent": 32.00034470334463
+      },
+      "cpp": {
+        "cases": 4,
+        "lower_means": 4,
+        "geometric_mean_latency_change_percent": -25.276395123853913
+      }
+    },
+    "quic": {
+      "portable-baseline": {
+        "cases": 4,
+        "lower_means": 3,
+        "geometric_mean_latency_change_percent": -0.9090751254721474
+      },
+      "legacy": {
+        "cases": 4,
+        "lower_means": 0,
+        "geometric_mean_latency_change_percent": 24.025838716898008
+      }
+    }
+  },
+  "final-full": {
+    "tls": {
+      "portable-baseline": {
+        "cases": 24,
+        "lower_means": 14,
+        "geometric_mean_latency_change_percent": -1.2989185640639667
+      },
+      "legacy": {
+        "cases": 24,
+        "lower_means": 9,
+        "geometric_mean_latency_change_percent": 5.156644465327687
+      },
+      "cpp": {
+        "cases": 24,
+        "lower_means": 24,
+        "geometric_mean_latency_change_percent": -30.92343130209345
+      }
+    },
+    "quic": {
+      "portable-baseline": {
+        "cases": 24,
+        "lower_means": 9,
+        "geometric_mean_latency_change_percent": 4.521498300694193
+      },
+      "legacy": {
+        "cases": 24,
+        "lower_means": 5,
+        "geometric_mean_latency_change_percent": 12.724137189520945
+      }
+    }
+  }
+}

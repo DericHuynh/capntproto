@@ -75,6 +75,8 @@ pub enum PlainReceived<'pool, T> {
 
 #[cfg(feature = "alloc")]
 mod plain_return;
+#[cfg(feature = "alloc")]
+mod retained;
 
 enum Exchange<'pool, 'id, I, const CAPS: usize> {
     Pending(Question<'pool, 'id>),
@@ -215,7 +217,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     control_waiting: u32,
     control_waits: [Option<resource_wait::Blocked<'id>>; 16],
     control_minimum: usize,
-    maintenance_published_retirement: bool,
+    maintenance_effects: MaintenanceEffects,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -245,6 +247,53 @@ pub enum Error {
     TailAlreadyUsed,
     InvalidInvocationTarget,
     UnknownInvocation,
+}
+
+/// Conservative scheduling effects of the work attempted in the last visit.
+/// They include transitions before a later Pending, resource wait or exhausted
+/// budget. Consumers apply them independently of the returned progress; a bit
+/// requests reconsideration of an owner, not proof that it changed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MaintenanceEffects(u8);
+impl MaintenanceEffects {
+    const ROUTES: u8 = 1;
+    const CALLS: u8 = 2;
+    const ANSWERS: u8 = 4;
+    const ADMISSION: u8 = 8;
+    const RESOURCES: u8 = 16;
+    const OUTPUT: u8 = 32;
+    pub fn routes(self) -> bool {
+        self.0 & Self::ROUTES != 0
+    }
+    pub fn calls(self) -> bool {
+        self.0 & Self::CALLS != 0
+    }
+    pub fn answers(self) -> bool {
+        self.0 & Self::ANSWERS != 0
+    }
+    pub fn admission(self) -> bool {
+        self.0 & Self::ADMISSION != 0
+    }
+    pub fn resources(self) -> bool {
+        self.0 & Self::RESOURCES != 0
+    }
+    /// Reconsider output/control readiness. This does not certify publication,
+    /// transport acceptance, flushing, or peer receipt.
+    pub fn output(self) -> bool {
+        self.0 & Self::OUTPUT != 0
+    }
+    fn selected(&mut self, work: u32) {
+        self.0 |= match work {
+            0 => Self::ADMISSION | Self::CALLS,
+            4..=7 => Self::RESOURCES,
+            9 | 10 => Self::RESOURCES | Self::OUTPUT,
+            11 => Self::ANSWERS | Self::RESOURCES | Self::OUTPUT,
+            // Resolution can change destinations, pipelines, deferred dispatch
+            // and descriptor ownership. Retain its full graph effect even when
+            // a resolver callback suspends or exhausts the shared allowance.
+            _ => Self::ROUTES | Self::CALLS | Self::ANSWERS | Self::ADMISSION | Self::OUTPUT,
+        };
+    }
 }
 
 /// One bounded maintenance result. Yield asks the caller to schedule another
@@ -503,7 +552,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             control_waiting: 0,
             control_waits: [None; 16],
             control_minimum: 0,
-            maintenance_published_retirement: false,
+            maintenance_effects: MaintenanceEffects::default(),
         })
     }
 
@@ -2063,7 +2112,11 @@ pub use local_result::{LocalPayload, LocalResult};
 #[cfg(feature = "alloc")]
 mod prepared_return;
 #[cfg(feature = "alloc")]
-pub use prepared_return::{PreparedReturn, PreparedReturnTemplate};
+pub use prepared_return::{FrozenReturn, PreparedReturn, PreparedReturnTemplate};
+#[cfg(feature = "alloc")]
+mod publication;
+#[cfg(feature = "alloc")]
+use publication::Validation;
 mod bootstrap;
 mod result_draft;
 mod server_output;

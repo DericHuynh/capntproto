@@ -1,7 +1,8 @@
+use alloc::boxed::Box;
+use alloc::rc::Rc;
 use capnp::capability::CallHints;
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
+use core::cell::RefCell;
+use core::marker::PhantomData;
 
 use capnp::capability::{FromClientHook, Promise};
 use capnp::private::capability::{ClientHook, RequestHook};
@@ -129,7 +130,7 @@ where
     fn wrap<T: 'static>(
         &self,
         generation: Rc<()>,
-        promise: Promise<T, capnp::Error>,
+        promise: impl futures::Future<Output = Result<T, capnp::Error>> + 'static,
     ) -> Promise<T, capnp::Error> {
         let c = self.clone();
         Promise::from_future(promise.map_err(move |err| {
@@ -322,7 +323,8 @@ where
     fn send(self: Box<Self>) -> capnp::capability::RemotePromise<capnp::any_pointer::Owned> {
         let parent = self.parent;
         let mut result = self.inner.send();
-        result.promise = parent.wrap(self.generation, result.promise);
+        result.promise =
+            capnp::capability::ResponsePromise::new(parent.wrap(self.generation, result.promise));
         result
     }
 

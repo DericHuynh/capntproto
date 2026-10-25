@@ -4,7 +4,7 @@
 use super::*;
 use capntproto_rpc_engine::{ids::ImportId, io};
 use capntproto_rpc_wire::owned::{pipelines, tasks, Frame};
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 mod bootstrap;
 pub(crate) mod multiparty;
 mod notified;
@@ -54,8 +54,8 @@ pub struct RunError<R, W> {
     pub cause: Option<Cause<R, W>>,
     pub cleanup: Option<connection::Error>,
 }
-impl<R: std::fmt::Debug, W: std::fmt::Debug> std::fmt::Display for RunError<R, W> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<R: core::fmt::Debug, W: core::fmt::Debug> core::fmt::Display for RunError<R, W> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "connection stopped: {:?}; cleanup: {:?}",
@@ -63,7 +63,7 @@ impl<R: std::fmt::Debug, W: std::fmt::Debug> std::fmt::Display for RunError<R, W
         )
     }
 }
-impl<R: std::fmt::Debug, W: std::fmt::Debug> std::error::Error for RunError<R, W> {}
+impl<R: core::fmt::Debug, W: core::fmt::Debug> core::error::Error for RunError<R, W> {}
 
 #[derive(Default)]
 struct Pump<'id> {
@@ -94,6 +94,7 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     notifications: Notifications,
     control_waker: Waker,
     worker_waker: Waker,
+    foreign_waker: Waker,
     enqueue_waker: Rc<EnqueueWake>,
     commands: Rc<handle::Commands>,
     output: io::Output,
@@ -141,7 +142,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         // Commands have one coordinator owner and retain this stable notifier.
         // Parent-task replacement is handled by WorkWake's registration, so
         // ordinary calls need not register the command inbox again.
-        commands.register(notifications.waker());
+        commands.register(notifications.producer(WorkSet::COMMANDS));
+        let foreign_waker = notifications.producer(WorkSet::FOREIGN);
         Ok(Self {
             driver,
             hooks,
@@ -156,6 +158,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             notifications,
             control_waker,
             worker_waker,
+            foreign_waker,
             enqueue_waker,
             commands,
             output: io::Output::new(),

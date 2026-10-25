@@ -10,6 +10,17 @@ on:
         description: Dedicated benchmark provisioning and cleanup credential
         required: false # Fork and Dependabot PRs only compile the bundle.
     inputs:
+      portable_base:
+        description: Optional full commit SHA to build as an interleaved portable control
+        default: ''
+        type: string
+      legacy_base:
+        description: Optional full commit SHA to build as an interleaved legacy control
+        default: ''
+        type: string
+      campaign:
+        default: run-latency
+        type: string
       region:
         default: auto
         type: string
@@ -18,6 +29,19 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      portable_base:
+        description: Optional full commit SHA to build as an interleaved portable control
+        default: ''
+        type: string
+      legacy_base:
+        description: Optional full commit SHA to build as an interleaved legacy control
+        default: ''
+        type: string
+      campaign:
+        description: Latency only (fast), full encrypted diagnostics, allocations, or VPC workflows
+        default: run-latency
+        type: choice
+        options: [run-latency, run-secure, run-allocations, run-remote]
       region:
         description: DigitalOcean region, or auto to select an available region
         default: auto
@@ -61,6 +85,9 @@ jobs:
           git submodule update --init --depth 1 -- vendor/capnproto
       - name: Compile individual release benchmarks without running them
         run: cargo run --locked -p capntproto-quality -- benchmark-build target/benchmark-build
+      - name: Test droplet packaging, orchestration and cleanup
+        run: |
+          cargo test --locked -p capntproto-dev --lib cloud::
       - name: Test benchmark identity, validation, and CPU placement
         run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
       - name: Test latency means and spread calculations
@@ -74,6 +101,56 @@ jobs:
             --cpp target/benchmark-build/bundle/capnp-reference \
             --upstream target/benchmark-build/bundle/capnp-rust \
             --output "$RUNNER_TEMP/benchmark-topology-smoke"
+      - name: Validate the optional frozen portable revision
+        if: inputs.portable_base != ''
+        env:
+          PORTABLE_BASE: ${{ inputs.portable_base }}
+        run: test "${#PORTABLE_BASE}" -eq 40 && test -z "${PORTABLE_BASE//[0-9a-f]/}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: inputs.portable_base != ''
+        with:
+          ref: ${{ inputs.portable_base }}
+          path: target/portable-baseline-source
+          persist-credentials: false
+      - name: Build the frozen portable control with the same compiler
+        if: inputs.portable_base != ''
+        env:
+          PORTABLE_BASE: ${{ inputs.portable_base }}
+        run: |
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path target/portable-baseline-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cp benchmarks/rpc/target/release/capntproto-rpc-bench target/benchmark-build/bundle/driver-baseline
+          python3 - <<'PYTHON'
+          import hashlib, json, os, tomllib
+          from pathlib import Path
+          bundle = Path('target/benchmark-build/bundle')
+          data = dict(commit=os.environ['PORTABLE_BASE'], sha256=hashlib.sha256((bundle/'driver-baseline').read_bytes()).hexdigest(), profile='release; settings from pinned Cargo manifests and compiler defaults', benchmark_manifest_release=tomllib.loads(Path('target/portable-baseline-source/benchmarks/rpc/Cargo.toml').read_text()).get('profile', {}).get('release', {}), profile_environment={key: os.environ[key] for key in ('CARGO_PROFILE_RELEASE_LTO', 'CARGO_PROFILE_RELEASE_CODEGEN_UNITS', 'CARGO_PROFILE_RELEASE_OPT_LEVEL', 'CARGO_PROFILE_RELEASE_DEBUG', 'CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS') if key in os.environ})
+          (bundle/'portable-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
+          PYTHON
+      - name: Validate the optional frozen legacy revision
+        if: inputs.legacy_base != ''
+        env:
+          LEGACY_BASE: ${{ inputs.legacy_base }}
+        run: test "${#LEGACY_BASE}" -eq 40 && test -z "${LEGACY_BASE//[0-9a-f]/}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: inputs.legacy_base != ''
+        with:
+          ref: ${{ inputs.legacy_base }}
+          path: target/legacy-baseline-source
+          persist-credentials: false
+      - name: Build the frozen legacy control with the same compiler
+        if: inputs.legacy_base != ''
+        env:
+          LEGACY_BASE: ${{ inputs.legacy_base }}
+        run: |
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/benchmarks/rpc/target" cargo build --locked --release --manifest-path target/legacy-baseline-source/benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          cp benchmarks/rpc/target/release/capntproto-rpc-bench target/benchmark-build/bundle/driver-legacy-baseline
+          python3 - <<'PYTHON'
+          import hashlib, json, os, tomllib
+          from pathlib import Path
+          bundle = Path('target/benchmark-build/bundle')
+          data = dict(commit=os.environ['LEGACY_BASE'], sha256=hashlib.sha256((bundle/'driver-legacy-baseline').read_bytes()).hexdigest(), profile='release; settings from pinned Cargo manifests and compiler defaults', benchmark_manifest_release=tomllib.loads(Path('target/legacy-baseline-source/benchmarks/rpc/Cargo.toml').read_text()).get('profile', {}).get('release', {}), profile_environment={key: os.environ[key] for key in ('CARGO_PROFILE_RELEASE_LTO', 'CARGO_PROFILE_RELEASE_CODEGEN_UNITS', 'CARGO_PROFILE_RELEASE_OPT_LEVEL', 'CARGO_PROFILE_RELEASE_DEBUG', 'CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS') if key in os.environ})
+          (bundle/'legacy-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
+          PYTHON
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -97,9 +174,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Explain benchmark scope
-        run: printf 'Release compilation and workflow smoke checks completed. Trusted runs next measure two dedicated VPC peers. Fork and Dependabot PRs stop after local validation; no remote latency result is claimed for them.\n' >> "$GITHUB_STEP_SUMMARY"
+        run: printf 'Release compilation and workflow smoke checks completed. Trusted runs next measure on dedicated droplets; the selected campaign records loopback or VPC topology. Fork and Dependabot PRs stop after local validation; no remote latency result is claimed for them.\n' >> "$GITHUB_STEP_SUMMARY"
   benchmark:
-    name: Measure two-peer workflows, validate, and clean up
+    name: Measure on dedicated droplets, validate, and clean up
     needs: build
     # 49699333 is Dependabot's immutable GitHub actor ID.
     if: >-
@@ -110,7 +187,7 @@ jobs:
       group: dedicated-benchmarks
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -121,7 +198,7 @@ jobs:
       - name: Install report validation prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev valgrind
       - name: Restore pinned sources for bundle identity validation
         run: git submodule update --init --depth 1 -- vendor/capnproto
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -140,25 +217,49 @@ jobs:
         run: |
           test -n "$DIGITALOCEAN_ACCESS_TOKEN"
           cargo run --locked -p capntproto-dev -- digitalocean-bench check --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
-      - name: Run VPC workflows across two dedicated droplets, then loopback controls
+      - name: Run encrypted benchmarks on dedicated droplets
         id: measure
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_REGION: ${{ inputs.region || 'auto' }}
           DO_SIZE: ${{ inputs.size || 'auto' }}
-        run: cargo run --locked -p capntproto-dev -- digitalocean-bench run-remote --trace-io --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
+          BENCHMARK_CAMPAIGN: ${{ inputs.campaign || 'run-latency' }}
+        run: cargo run --locked -p capntproto-dev -- digitalocean-bench "$BENCHMARK_CAMPAIGN" --trace-io --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-quality/benchmark" --state "$RUNNER_TEMP/capntproto-do"
+      - name: Extract dedicated encrypted evidence
+        if: always()
+        run: |
+          archive="$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure.tar.gz"
+          if test -f "$archive"; then
+            tar -xzf "$archive" -C "$RUNNER_TEMP/benchmark-quality/benchmark/secure"
+          fi
       - name: Always verify cleanup of both droplets and SSH keys
         if: always()
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
         run: cargo run --locked -p capntproto-dev -- digitalocean-bench cleanup --state "$RUNNER_TEMP/capntproto-do"
       - name: Validate downloaded samples
-        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign == 'run-remote' }}
         run: |
           cargo run --locked -p capntproto-quality -- benchmark "$RUNNER_TEMP/benchmark-quality/benchmark" target/benchmark-build/bundle
       - name: Generate validated README and comparison bar charts
-        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' && inputs.campaign == 'run-remote' }}
         run: cargo run --locked -p capntproto-quality -- report "$RUNNER_TEMP/benchmark-quality" benchmark
+      - name: Analyze saved encrypted evidence for the selected campaign
+        if: ${{ !cancelled() && inputs.campaign != 'run-remote' }}
+        env:
+          MEASUREMENT_OUTCOME: ${{ steps.measure.outcome }}
+          BENCHMARK_CAMPAIGN: ${{ inputs.campaign || 'run-latency' }}
+        run: |
+          analysis=()
+          if test "$BENCHMARK_CAMPAIGN" = run-latency; then analysis+=(--native-only); fi
+          python3 benchmarks/rpc/analyze-secure-ci.py "${analysis[@]}" "$GITHUB_RUN_ID" "$RUNNER_TEMP/benchmark-quality/analysis" --saved-root "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure" --measurement-outcome "$MEASUREMENT_OUTCOME"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: encrypted-benchmark-analysis
+          path: ${{ runner.temp }}/benchmark-quality/analysis/
+          if-no-files-found: warn
+          retention-days: 90
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
         run: cargo run --locked -p capntproto-dev -- reports collect --input "$RUNNER_TEMP/benchmark-quality" --kind benchmark --output target/readme-data/publication.json
@@ -190,4 +291,8 @@ jobs:
           if test -f "$RUNNER_TEMP/benchmark-quality/benchmark/remote/README.md"; then
             sed '/^!\[Remote workflow/d' "$RUNNER_TEMP/benchmark-quality/benchmark/remote/README.md" >> "$GITHUB_STEP_SUMMARY"
             printf '\n[Download remote raw samples, host evidence and workflow graph](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if test -f "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure/native/README.md"; then
+            cat "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure/native/README.md" >> "$GITHUB_STEP_SUMMARY"
+            printf '\n[Download dedicated TLS/QUIC samples, traces and profiles](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
           fi

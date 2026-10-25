@@ -1,0 +1,46 @@
+   Compiling capntproto v0.1.0 (/workspace/capntproto)
+    Finished `test` profile [unoptimized] target(s) in 23.01s
+     Running unittests src/lib.rs (/tmp/capntproto-build-cache/bench/debug/deps/capntproto-badd347a428f667f)
+
+running 32 tests
+test unix_rpc::ancillary::tests::closed_peer_write_reports_error_with_default_sigpipe_handler ... 
+running 1 test
+test unix_rpc::ancillary::tests::closed_peer_write_reports_error_with_default_sigpipe_handler ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 300 filtered out; finished in 0.00s
+
+ok
+test unix_rpc::ancillary::tests::configuration_failure_closes_earlier_and_later_received_descriptors ... ok
+test unix_rpc::ancillary::tests::fallback_cloexec_and_full_control_buffer_close_all_excess_fds ... ok
+test unix_rpc::ancillary::tests::truncated_control_length_never_reads_beyond_returned_bytes ... ok
+test unix_rpc::buffered_tests::buffered_ancillary_boundaries_and_limits_match_pinned_cpp ... ok
+test unix_rpc::buffered_tests::cancel_unpolled_read_closes_prefetched_descriptors ... ok
+test unix_rpc::buffered_tests::close_releases_prefetched_descriptors_with_connection_handles_alive ... ok
+test unix_rpc::buffered_tests::coalesced_bare_and_fd_frames_keep_descriptors_for_the_last_frame ... ok
+test unix_rpc::buffered_tests::frame_bounded_reads_keep_fds_on_their_frame_with_trailing_bare_messages ... ok
+test unix_rpc::buffered_tests::invalid_prefetched_frame_and_partial_eof_close_its_descriptors ... ok
+test unix_rpc::buffered_tests::many_bare_control_frames_share_one_recvmsg_and_reuse_storage ... ok
+test unix_rpc::buffered_tests::partial_ancillary_headers_and_bodies_do_not_spend_the_next_frames_limit ... ok
+test unix_rpc::buffered_tests::scratch::caller_slots_bound_receipts_and_keep_exactly_one_owner ... ok
+test unix_rpc::buffered_tests::scratch::caller_storage_and_fd_boundaries_match_pinned_cpp ... ok
+test unix_rpc::buffered_tests::scratch::canceled_partial_fd_reads_resume_or_close_on_reader_drop ... ok
+test unix_rpc::buffered_tests::scratch::fd_read_errors_close_staging_and_leave_caller_storage_untouched ... ok
+test unix_rpc::buffered_tests::scratch::fd_scratch_reads_a_buffered_single_segment_without_allocating ... ok
+test unix_rpc::buffered_tests::scratch::prefetched_descriptors_survive_rejected_reads_and_smaller_next_slots ... ok
+test unix_rpc::buffered_tests::tlc_buffered_fds_replays_boundaries_budgets_cancellation_and_eof ... ok
+test unix_rpc::buffered_tests::truncation_closes_excess_and_retained_descriptors_have_one_owner ... ok
+test unix_rpc::facade_tests::borrowed_partial_frame_cancellation_releases_ancillary_fds_without_shutdown ... ok
+test unix_rpc::facade_tests::unix_queue_metrics_exclude_active_io_and_cancellation_releases_queued_fds ... ok
+test unix_rpc::framed::tests::exclusive_frames_keep_descriptors_at_their_admission_boundary ... ok
+test unix_rpc::portable::tests::portable_close_signals_eof_without_closing_the_read_half ... ok
+test unix_rpc::portable::tests::portable_fifo_transfers_live_fd_once_across_forced_partial_writes ... ok
+test unix_rpc::portable::tests::resource_reader_isolates_frames_and_drops_duplicate_and_unused_descriptors ... ok
+test unix_rpc::tests::canceled_partial_read_closes_connection_and_received_fds ... ok
+test unix_rpc::tests::oversized_message_rejected_before_body_allocation ... ok
+test unix_rpc::tests::partial_writes_and_message_boundaries_keep_fds_once ... ok
+test unix_rpc::tests::queued_message_owns_fd_after_capability_and_send_promise_drop ... ok
+test unix_rpc::tests::queued_writer_reuses_storage_without_repeating_bytes_or_descriptors ... ok
+test unix_rpc::tests::replay_tlc_fd_framing_traces ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 269 filtered out; finished in 6.96s
+

@@ -316,3 +316,32 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-23-direct-paths/profile-attribution.json
 !/research/reports/portable-performance/2026-10-23-direct-paths/profiles.json
 !/research/reports/portable-performance/2026-10-23-direct-paths/validation.json
+
+# Current portable versus legacy gap diagnosis and trace summaries.
+!/research/reports/portable-performance/2026-10-23-legacy-gap/
+/research/reports/portable-performance/2026-10-23-legacy-gap/*
+!/research/reports/portable-performance/2026-10-23-legacy-gap/README.md
+!/research/reports/portable-performance/2026-10-23-legacy-gap/allocations.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/archive.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/attribution.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/evidence-index.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/latency.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/post-result-io.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/profiles.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/reader-arena-sites.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/traces.json
+!/research/reports/portable-performance/2026-10-23-legacy-gap/validation.json
+
+# Portable path fusion and retained cleanup metadata evidence.
+!/research/reports/portable-performance/2026-10-23-fused-metadata/
+/research/reports/portable-performance/2026-10-23-fused-metadata/*
+!/research/reports/portable-performance/2026-10-23-fused-metadata/README.md
+!/research/reports/portable-performance/2026-10-23-fused-metadata/aggregate.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/comparisons.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/profiles.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/allocations.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/traces.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/reader-arenas.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/validation.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/evidence-index.json
+!/research/reports/portable-performance/2026-10-23-fused-metadata/archive.json

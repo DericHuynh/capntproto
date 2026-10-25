@@ -18,38 +18,34 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use capntproto_rpc_engine::completion::shared as oneshot;
-use futures::{Future, Stream};
-use std::pin::Pin;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use alloc::sync::Arc;
+use alloc::{boxed::Box, vec::Vec};
+use capntproto_rpc_engine::{completion::shared as oneshot, scheduler};
+use core::pin::Pin;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
+use core::task::Context;
+use core::task::Poll;
+use futures::{
+    task::{waker_ref, ArcWake},
+    Future, Stream,
 };
-use std::task::{Context, Poll, Wake, Waker};
 
 mod queue;
 mod ready_set;
 use ready_set::ReadySet;
 
-enum EnqueuedTask<E> {
-    Task(Pin<Box<dyn Future<Output = Result<(), E>>>>),
-    Last(Pin<Box<dyn Future<Output = Result<(), E>>>>),
-    Connection(Pin<Box<dyn Future<Output = Result<(), E>>>>),
-    Terminate(Result<(), E>),
-    OnEmpty(oneshot::Sender<()>),
-}
+type EnqueuedTask<E> =
+    scheduler::Command<Pin<Box<dyn Future<Output = Result<(), E>>>>, E, oneshot::Sender<()>>;
 
 struct Activity {
     ready: AtomicBool,
     parent: futures::task::AtomicWaker,
 }
-impl Wake for Activity {
-    fn wake(self: Arc<Self>) {
-        self.wake_by_ref();
-    }
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.ready.store(true, Ordering::Release);
-        self.parent.wake();
+impl ArcWake for Activity {
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        arc_self.ready.store(true, Ordering::Release);
+        arc_self.parent.wake();
     }
 }
 
@@ -60,10 +56,7 @@ enum TaskInProgress<E> {
 
 impl<E> Unpin for TaskInProgress<E> {}
 
-enum TaskDone<E> {
-    Continue(Result<(), E>),
-    Terminate(Result<(), E>),
-}
+use scheduler::Done as TaskDone;
 
 impl<E> Future for TaskInProgress<E> {
     type Output = TaskDone<E>;
@@ -86,9 +79,7 @@ pub(crate) struct TaskSet<E> {
     in_progress: ReadySet<TaskInProgress<E>>,
     last: ReadySet<TaskInProgress<E>>,
     activity: Arc<Activity>,
-    activity_waker: Waker,
     last_activity: Arc<Activity>,
-    last_waker: Waker,
     deferred_last: bool,
     busy_turns: u8,
     defer: fn(&mut Context<'_>),
@@ -103,7 +94,7 @@ where
     pub(crate) fn new(reaper: Box<dyn TaskReaper<E>>) -> (TaskSetHandle<E>, Self)
     where
         E: 'static,
-        E: ::std::fmt::Debug,
+        E: ::core::fmt::Debug,
     {
         let (sender, receiver) = queue::channel();
         let activity = Arc::new(Activity {
@@ -120,9 +111,7 @@ where
             connection: None,
             in_progress: ReadySet::new(),
             last: ReadySet::new(),
-            activity_waker: Waker::from(activity.clone()),
             activity,
-            last_waker: Waker::from(last_activity.clone()),
             last_activity,
             deferred_last: false,
             busy_turns: 0,
@@ -143,22 +132,6 @@ where
 
     pub(crate) fn set_defer(&mut self, defer: fn(&mut Context<'_>)) {
         self.defer = defer;
-    }
-
-    fn update_on_empty_fulfillers(&mut self) {
-        if self.on_empty_fulfillers.is_empty() {
-            return;
-        }
-        // There is always the one pending() future that we added in `new()`.
-        if self.connection.is_none()
-            && self.in_progress.len() <= 1
-            && self.last.len() == 0
-            && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())
-        {
-            for f in std::mem::take(&mut self.on_empty_fulfillers) {
-                let _ = f.send(());
-            }
-        }
     }
 }
 
@@ -224,12 +197,23 @@ where
 
 /// For a specific kind of task, `TaskReaper` defines the procedure that should
 /// be invoked when it succeeds or fails.
-pub(crate) trait TaskReaper<E>
-where
-    E: 'static,
-{
+pub(crate) trait TaskReaper<E: 'static> {
     fn task_succeeded(&mut self) {}
     fn task_failed(&mut self, error: E);
+}
+
+// Keep the private hosted vtable at its allocation boundary. This statically
+// dispatched provider adds no second virtual call to the engine's policy loop.
+struct Reaper<'a, E: 'static>(&'a mut dyn TaskReaper<E>);
+impl<E: 'static> scheduler::Reaper<E> for Reaper<'_, E> {
+    #[inline(always)]
+    fn task_succeeded(&mut self) {
+        self.0.task_succeeded();
+    }
+    #[inline(always)]
+    fn task_failed(&mut self, error: E) {
+        self.0.task_failed(error);
+    }
 }
 
 impl<E> Future for TaskSet<E>
@@ -238,167 +222,123 @@ where
 {
     type Output = Result<(), E>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.activity.parent.register(cx.waker());
-        self.last_activity.parent.register(cx.waker());
-        let notified = self.activity.ready.swap(false, Ordering::AcqRel);
-        let wake = self.activity_waker.clone();
-        if let Poll::Ready(result) = self.poll_regular(&mut Context::from_waker(&wake)) {
-            return Poll::Ready(result);
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        scheduler::Parts {
+            enqueued: &mut Source(&mut this.enqueued),
+            connection: &mut this.connection,
+            in_progress: &mut this.in_progress,
+            last: &mut this.last,
+            activity: scheduler::Signal {
+                ready: &this.activity.ready,
+                parent: &Parent(&this.activity),
+            },
+            last_activity: scheduler::Signal {
+                ready: &this.last_activity.ready,
+                parent: &Parent(&this.last_activity),
+            },
+            deferred_last: &mut this.deferred_last,
+            busy_turns: &mut this.busy_turns,
+            defer: this.defer,
+            on_empty_fulfillers: &mut Empty(&mut this.on_empty_fulfillers),
+            reaper: &mut Reaper(&mut *this.reaper),
+            idle_regular: 1,
         }
-        if self.last.len() == 0 || !self.last_activity.ready.load(Ordering::Acquire) {
-            return Poll::Pending;
-        }
-        let busy = notified
-            || self.activity.ready.load(Ordering::Acquire)
-            || self
-                .enqueued
-                .as_ref()
-                .is_some_and(|queue| !queue.is_empty());
-        // Yield across the executor boundary too: a response consumer may be
-        // an application task outside this set. Bound deferral so a perpetually
-        // ready producer cannot starve transport progress.
-        if (busy && self.busy_turns < 32) || !self.deferred_last {
-            self.busy_turns = self.busy_turns.saturating_add(1);
-            self.deferred_last = true;
-            (self.defer)(cx);
-            return Poll::Pending;
-        }
-        self.busy_turns = 0;
-        self.deferred_last = false;
-        self.last_activity.ready.store(false, Ordering::Release);
-        let last_wake = self.last_waker.clone();
-        let mut last_cx = Context::from_waker(&last_wake);
-        while let Poll::Ready(Some(done)) = Pin::new(&mut self.last).poll_next(&mut last_cx) {
-            match done {
-                TaskDone::Continue(Ok(())) => self.reaper.task_succeeded(),
-                TaskDone::Continue(Err(error)) => self.reaper.task_failed(error),
-                TaskDone::Terminate(result) => return Poll::Ready(result),
-            }
-            self.update_on_empty_fulfillers();
-        }
-        if self.enqueued.is_none()
-            && self.connection.is_none()
-            && self.in_progress.len() <= 1
-            && self.last.len() == 0
-        {
-            Poll::Ready(Ok(()))
-        } else {
-            Poll::Pending
-        }
+        .poll(cx)
     }
 }
 
-impl<E: 'static> TaskSet<E> {
-    fn poll_regular(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), E>> {
-        let mut enqueued_stream_complete = false;
-        // Run newly admitted work once before allocating a FuturesUnordered
-        // node. Many RPC completions finish immediately. Pending work is then
-        // polled by the set to register its own wakeup; a wake during this first
-        // poll also wakes the parent, so no readiness can be lost in handoff.
-        // Bound admission because a completed task/reaper may enqueue more work.
-        for admission in 0..32 {
-            if let Some(enqueued) = &mut self.enqueued {
-                match enqueued.poll_next(cx) {
-                    Poll::Pending => break,
-                    Poll::Ready(None) => {
-                        enqueued_stream_complete = true;
-                        break;
-                    }
-                    Poll::Ready(Some(EnqueuedTask::Terminate(r))) => {
-                        self.in_progress.push(TaskInProgress::Terminate(Some(r)));
-                        break;
-                    }
-                    Poll::Ready(Some(EnqueuedTask::Task(mut f))) => match f.as_mut().poll(cx) {
-                        Poll::Ready(result) => {
-                            drop(f);
-                            match result {
-                                Ok(()) => self.reaper.task_succeeded(),
-                                Err(error) => self.reaper.task_failed(error),
-                            }
-                        }
-                        Poll::Pending => self.in_progress.push(TaskInProgress::Task(f)),
-                    },
-                    Poll::Ready(Some(EnqueuedTask::Last(f))) => {
-                        self.last.push(TaskInProgress::Task(f));
-                        self.last_activity.ready.store(true, Ordering::Release);
-                    }
-                    Poll::Ready(Some(EnqueuedTask::Connection(f))) => {
-                        if self.connection.is_none() {
-                            self.connection = Some(f);
-                        } else {
-                            self.in_progress.push(TaskInProgress::Task(f));
-                        }
-                    }
-                    Poll::Ready(Some(EnqueuedTask::OnEmpty(f))) => {
-                        self.on_empty_fulfillers.push(f);
-                    }
-                }
-                if admission == 31 {
-                    cx.waker().wake_by_ref();
-                }
-            } else {
-                break;
-            }
+struct Source<'a, E>(&'a mut Option<queue::Receiver<EnqueuedTask<E>>>);
+impl<E> scheduler::Source for Source<'_, E> {
+    type Error = E;
+    type Task = Pin<Box<dyn Future<Output = Result<(), E>>>>;
+    type Empty = oneshot::Sender<()>;
+    #[inline(always)]
+    fn poll_next(&mut self, cx: &mut Context<'_>, _: scheduler::Capacity) -> scheduler::Next<Self> {
+        let Some(source) = self.0.as_mut() else {
+            return Poll::Ready(None);
+        };
+        source.poll_next(cx)
+    }
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        self.0.as_ref().is_none_or(|q| q.is_empty())
+    }
+    #[inline(always)]
+    fn is_closed(&self) -> bool {
+        self.0.is_none()
+    }
+    #[inline(always)]
+    fn close(&mut self) {
+        drop(self.0.take());
+    }
+}
+impl<E> scheduler::Work<Pin<Box<dyn Future<Output = Result<(), E>>>>, E>
+    for ReadySet<TaskInProgress<E>>
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
+    }
+    #[inline(always)]
+    fn has_capacity(&self) -> bool {
+        true
+    }
+    #[inline(always)]
+    fn push(&mut self, future: Pin<Box<dyn Future<Output = Result<(), E>>>>) {
+        self.push(TaskInProgress::Task(future));
+    }
+    #[inline(always)]
+    fn terminate(&mut self, result: Result<(), E>) {
+        self.push(TaskInProgress::Terminate(Some(result)));
+    }
+    #[inline(always)]
+    fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<TaskDone<E>>> {
+        Pin::new(self).poll_next(cx)
+    }
+}
+struct Parent<'a>(&'a Arc<Activity>);
+struct Lease(Arc<Activity>);
+impl scheduler::Lease for Lease {
+    #[inline(always)]
+    fn waker(&self) -> impl core::ops::Deref<Target = core::task::Waker> {
+        waker_ref(&self.0)
+    }
+}
+impl scheduler::Parent for Parent<'_> {
+    type Lease = Lease;
+    #[inline(always)]
+    fn register(&self, parent: &core::task::Waker) {
+        self.0.parent.register(parent);
+    }
+    #[inline(always)]
+    fn retain(&self) -> Lease {
+        Lease(self.0.clone())
+    }
+}
+struct Empty<'a>(&'a mut Vec<oneshot::Sender<()>>);
+impl scheduler::Empty<oneshot::Sender<()>> for Empty<'_> {
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    #[inline(always)]
+    fn has_capacity(&self) -> bool {
+        true
+    }
+    #[inline(always)]
+    fn push(&mut self, f: oneshot::Sender<()>) {
+        self.0.push(f);
+    }
+    #[inline(always)]
+    fn fulfill(&mut self) {
+        for f in core::mem::take(self.0) {
+            let _ = f.send(());
         }
-        if enqueued_stream_complete {
-            drop(self.enqueued.take());
-        }
-
-        if let Some(future) = self.connection.as_mut() {
-            if let Poll::Ready(result) = future.as_mut().poll(cx) {
-                let finished = self.connection.take();
-                drop(finished);
-                match result {
-                    Ok(()) => self.reaper.task_succeeded(),
-                    Err(error) => self.reaper.task_failed(error),
-                }
-            }
-        }
-
-        // on_empty() must also complete when it was queued on an already
-        // empty set. The sentinel future is not an application task.
-        self.update_on_empty_fulfillers();
-        if self.enqueued.is_none()
-            && self.connection.is_none()
-            && self.in_progress.len() <= 1
-            && self.last.len() == 0
-        {
-            return Poll::Ready(Ok(()));
-        }
-        loop {
-            match Stream::poll_next(Pin::new(&mut self.in_progress), cx) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(v) => match v {
-                    None => return Poll::Ready(Ok(())),
-                    Some(TaskDone::Continue(result)) => {
-                        // FuturesUnordered has released the completed task.
-                        // Reap here instead of allocating a mapped future and
-                        // sharing the reaper with every task.
-                        match result {
-                            Ok(()) => self.reaper.task_succeeded(),
-                            Err(error) => self.reaper.task_failed(error),
-                        }
-                        self.update_on_empty_fulfillers();
-                        if self.enqueued.is_none()
-                            && self.connection.is_none()
-                            && self.in_progress.len() <= 1
-                            && self.last.len() == 0
-                        {
-                            return Poll::Ready(Ok(()));
-                        }
-                    }
-                    Some(TaskDone::Terminate(Ok(()))) => {
-                        self.on_empty_fulfillers.clear();
-                        return Poll::Ready(Ok(()));
-                    }
-                    Some(TaskDone::Terminate(Err(e))) => {
-                        self.on_empty_fulfillers.clear();
-                        return Poll::Ready(Err(e));
-                    }
-                },
-            }
-        }
+    }
+    #[inline(always)]
+    fn cancel(&mut self) {
+        self.0.clear();
     }
 }
 
@@ -730,5 +670,61 @@ mod tests {
         handle.terminate(Err(17));
         handle.add(async { panic!("work after termination must not run") });
         assert_eq!(poll(&mut tasks), Poll::Ready(Err(17)));
+    }
+
+    #[test]
+    fn retained_connection_and_deferred_wakers_are_safe_after_task_set_drop() {
+        use std::{sync::atomic::AtomicUsize, task::Waker};
+
+        struct Notify(AtomicUsize);
+        impl std::task::Wake for Notify {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        for deferred in [false, true] {
+            let results = Rc::new(RefCell::new(Vec::new()));
+            let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results)));
+            let registered = Rc::new(RefCell::new(None::<Waker>));
+            let future = std::future::poll_fn({
+                let registered = registered.clone();
+                move |cx| {
+                    *registered.borrow_mut() = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            });
+            if deferred {
+                handle.add_last(future);
+            } else {
+                handle.try_add_connection(future).unwrap();
+            }
+            let parent = Arc::new(Notify(AtomicUsize::new(0)));
+            let parent_weak = Arc::downgrade(&parent);
+            let parent_waker = Waker::from(parent.clone());
+            for _ in 0..3 {
+                assert!(Pin::new(&mut tasks)
+                    .poll(&mut Context::from_waker(&parent_waker))
+                    .is_pending());
+            }
+            let retained = registered.borrow_mut().take().unwrap();
+            let previous = parent.0.load(Ordering::SeqCst);
+            retained.wake_by_ref();
+            assert!(parent.0.load(Ordering::SeqCst) > previous);
+            assert!(Pin::new(&mut tasks)
+                .poll(&mut Context::from_waker(&parent_waker))
+                .is_pending());
+            drop(tasks);
+            drop(handle);
+            drop(parent_waker);
+            drop(parent);
+            assert!(parent_weak.upgrade().is_none());
+            std::thread::spawn(move || {
+                retained.wake_by_ref();
+                retained.wake();
+            })
+            .join()
+            .unwrap();
+        }
     }
 }

@@ -147,3 +147,89 @@ fn outgoing_notification_coalesces_without_losing_general_work() {
     }
     assert_eq!(second.0.load(Ordering::SeqCst), 2);
 }
+
+#[test]
+fn producer_notifications_preserve_identity_across_threads() {
+    let mut notifications = Notifications::default();
+    let calls = notifications.producer(WorkSet::CALLS);
+    let foreign = notifications.producer(WorkSet::FOREIGN);
+    let commands = notifications.producer(WorkSet::COMMANDS);
+    notifications.take(Waker::noop());
+    std::thread::spawn(move || {
+        calls.wake_by_ref();
+        calls.wake();
+    })
+    .join()
+    .unwrap();
+    assert_eq!(notifications.take(Waker::noop()), WorkSet::CALLS);
+    foreign.wake();
+    commands.wake();
+    assert_eq!(
+        notifications.take(Waker::noop()),
+        WorkSet::FOREIGN | WorkSet::COMMANDS
+    );
+    assert_eq!(notifications.pending(), WorkSet::NONE);
+}
+
+#[test]
+fn endpoint_release_and_metadata_wake_only_the_shared_ownership_consumer() {
+    use crate::scoped::{ClientHooks, EndpointMetadata, MetadataChanges};
+    use capntproto_rpc_engine::clients::{self, Location};
+    use std::rc::Rc;
+    clients::with_growing_graph::<Rc<MetadataChanges>, u8, _>(
+        0,
+        4,
+        clients::NotificationGrowth::bounded(4, 16),
+        |graph| {
+            let changes = Rc::new(MetadataChanges::default());
+            let route = graph
+                .endpoint(changes.clone(), Location::Local)
+                .unwrap_or_else(|_| panic!("capacity"));
+            let mut hooks = ClientHooks::new(4, 1);
+            let mut notifications = Notifications::default();
+            *hooks.inbox.enqueue_wake.borrow_mut() = Some(Rc::new(notifications.enqueue()));
+            *hooks.inbox.owners.wake.borrow_mut() = Some(notifications.producer(WorkSet::FOREIGN));
+            hooks
+                .inbox
+                .owners
+                .metadata
+                .register(&notifications.producer(WorkSet::FOREIGN));
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let alias = hooks.export_snapshot(graph, &route).unwrap();
+            hooks.collect_with_sources(
+                graph,
+                |_| EndpointMetadata::default(),
+                |_| None,
+                |owner| Some(owner.clone()),
+            );
+            notifications.take(Waker::noop());
+            // Registering ordinary calls must not replace the ownership consumer.
+            hooks.register_next(&notifications.producer(WorkSet::CALLS));
+            for _ in 0..3 {
+                changes.notify();
+                assert_eq!(notifications.take(Waker::noop()), WorkSet::FOREIGN);
+                hooks.collect_with_sources(
+                    graph,
+                    |_| EndpointMetadata::default(),
+                    |_| None,
+                    |owner| Some(owner.clone()),
+                );
+                assert!(!hooks.ownership_ready(graph));
+            }
+            notifications.take(Waker::noop());
+            hooks.inbox.notify();
+            assert_eq!(notifications.take(Waker::noop()), WorkSet::CALLS);
+            drop(alias);
+            assert_eq!(notifications.pending(), WorkSet::NONE);
+            drop(client);
+            assert_eq!(notifications.take(Waker::noop()), WorkSet::FOREIGN);
+            assert!(hooks.ownership_ready(graph));
+            hooks.reclaim_released(graph);
+            graph.release(route);
+            assert!(graph.take_retired().is_some());
+            assert!(graph.is_empty());
+            hooks.close(graph, capnp::Error::disconnected("done".into()));
+        },
+    )
+    .unwrap();
+}

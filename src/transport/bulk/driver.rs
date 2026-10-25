@@ -228,7 +228,7 @@ impl Driver {
             let result = if p.deadline <= now {
                 Err(invalid("bulk preface expired"))
             } else {
-                match conn.stream_recv(p.id, &mut p.bytes[p.used..]) {
+                match conn.stream_recv_buf(p.id, &mut p.bytes[p.used..]) {
                     Ok((n, fin)) => {
                         p.used += n;
                         Ok(Some(fin))
@@ -480,7 +480,7 @@ impl Producer {
         }
         // Read at most one bounded batch; coalesced receipts never allocate.
         for _ in 0..32 {
-            match conn.stream_recv(id, &mut self.ack[self.ack_used..]) {
+            match conn.stream_recv_buf(id, &mut self.ack[self.ack_used..]) {
                 Ok((n, fin)) => {
                     if self.final_ack && (n != 0 || !fin) {
                         return Err(invalid("data after final bulk receipt"));
@@ -602,7 +602,7 @@ impl Consumer {
             };
         }
         if self.start == self.end && !self.fin {
-            match conn.stream_recv(id, &mut *self.buffer) {
+            match conn.stream_recv_buf(id, &mut self.buffer[..]) {
                 Ok((n, fin)) => {
                     self.received += n as u64;
                     if self.received > length || (fin && self.received != length) {

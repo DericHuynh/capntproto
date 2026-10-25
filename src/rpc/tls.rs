@@ -13,7 +13,8 @@ pub use rustls;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
-pub use tokio_rustls::TlsStream;
+mod stream;
+pub use stream::TlsStream;
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 /// Private application protocol for ordinary Cap'n Proto two-party framing.
@@ -127,10 +128,8 @@ pub async fn connect(
     deadline(timeout, async move {
         let socket = TcpStream::connect(address).await?;
         socket.set_nodelay(true)?;
-        let stream = tokio_rustls::TlsConnector::from(config)
-            .connect(server_name, socket)
-            .await?;
-        check_alpn(stream.into())
+        let stream = TlsStream::connect(socket, config, server_name).await?;
+        check_alpn(stream)
     })
     .await
 }
@@ -144,10 +143,8 @@ pub async fn accept(
 ) -> io::Result<TlsStream<TcpStream>> {
     deadline(timeout, async move {
         socket.set_nodelay(true)?;
-        let stream = tokio_rustls::TlsAcceptor::from(config)
-            .accept(socket)
-            .await?;
-        check_alpn(stream.into())
+        let stream = TlsStream::accept(socket, config).await?;
+        check_alpn(stream)
     })
     .await
 }
@@ -163,7 +160,7 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
     let (read, write) = tokio::io::split(stream);
     let mut network = twoparty::VatNetwork::new_with_send_buffer(
         read.compat(),
-        TokioIo(write),
+        TokioIo::new(write),
         side,
         options,
         move |_| window,

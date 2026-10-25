@@ -1,0 +1,79 @@
+{
+  "runtime": "54f9c2e829c5274ef10c0703d402172ff25031b1",
+  "qualification_commit": "4d288698f2ec9593a9b92ab4b4a851c59fdbd433",
+  "baseline": "31f7a335773a6faae60b529aa178821daacff150",
+  "branch": "codex/legacy-noalloc-factoring",
+  "run": 40128516423,
+  "binaries": {
+    "legacy": {
+      "path": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench",
+      "sha256": "6ef7c98d7531c66aec94f1d7efb7a7b3a1ff44cfecadce8bfa5a9b84fc44212c",
+      "sections": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370824       8672\n.rela.plt                1296     379496\n.rodata                819813     380928\n.gcc_except_table      457116    1200744\n.debug_gdb_scripts         34    1657860\n.eh_frame_hdr          103980    1657896\n.eh_frame              842852    1761880\n.text                 9871399    2608832\n.init                      27   12480232\n.fini                      13   12480260\n.plt                      880   12480288\n.tdata                    112   12485264\n.tbss                     456   12485376\n.fini_array                 8   12485376\n.init_array                16   12485384\n.data.rel.ro           263168   12485408\n.dynamic                  464   12748576\n.got                     2648   12749040\n.got.plt                  456   12751688\n.relro_padding           2800   12752144\n.tm_clone_table             0   12756240\n.data                    3272   12756240\n.bss                     4684   12759520\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21701401          0\n.debug_aranges         167280          0\n.debug_ranges         6700720          0\n.debug_str           33735198          0\n.debug_line           6890795          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85347797\n\n\n"
+    },
+    "legacy-baseline": {
+      "path": "/home/runner/work/_temp/legacy-baseline",
+      "sha256": "155dfb4e1f942c323f88f2465239a94af1519bc8c5983047106322b1b328d42f",
+      "sections": "/home/runner/work/_temp/legacy-baseline  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370944       8672\n.rela.plt                1296     379616\n.rodata                828005     380928\n.gcc_except_table      457176    1208936\n.debug_gdb_scripts         34    1666112\n.eh_frame_hdr          103988    1666148\n.eh_frame              842988    1770136\n.text                 9872167    2617280\n.init                      27   12489448\n.fini                      13   12489476\n.plt                      880   12489504\n.tdata                    112   12494480\n.tbss                     456   12494592\n.fini_array                 8   12494592\n.init_array                16   12494600\n.data.rel.ro           263280   12494624\n.dynamic                  464   12757904\n.got                     2648   12758368\n.got.plt                  456   12761016\n.relro_padding           1664   12761472\n.tm_clone_table             0   12765568\n.data                    3272   12765568\n.bss                     4684   12768848\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703220          0\n.debug_aranges         167264          0\n.debug_ranges         6701536          0\n.debug_str           33720632          0\n.debug_line           6899945          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85353260\n\n\n"
+    }
+  },
+  "raw_archive": {
+    "path": "/tmp/legacy-factoring-diagnostics.zip",
+    "artifact_id": 12573862084,
+    "bytes": 15945289,
+    "sha256": "521ca39678b47d9b528b0dbf0ed3c6729809d2042a5beb97763ba5eba620f052",
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40128516423/artifacts/12573862084"
+  },
+  "embedded_probe": {
+    "target": "thumbv7em-none-eabi",
+    "artifact": "/tmp/legacy-factor-embedded.elf",
+    "bytes": 707156,
+    "sha256": "606138b9cc9b5546f7d54afa094890ac3b2efdf74ceb604be4535e85a02176cb",
+    "undefined_symbols": [],
+    "allocator_symbols": [],
+    "entry_present": true,
+    "source_sha256": "f68f139e0648a5543250e337e21a7df0d9d667beaf7b957219049ff560f90e7a",
+    "scope": "Link-only, not executed on a board. Borrowed payload and core-only direct completion; black-boxed owner references prevent eliminating the entire completion sequence."
+  },
+  "validation": {
+    "ci_run": 40128516423,
+    "job": 120975015707,
+    "conclusion": "success",
+    "tests": {
+      "engine_alloc": 225,
+      "engine_without_alloc": 179,
+      "hosted_rpc": 377,
+      "secure_tls_quic": 30
+    },
+    "checks": [
+      "engine Clippy warnings denied",
+      "RPC Clippy warnings denied",
+      "formatting",
+      "engine Cortex-M build without default features",
+      "RPC Cortex-M check without default features"
+    ],
+    "counting": "811 executions; engine profiles overlap. No full-workspace coverage or Miri rerun."
+  },
+  "latency_status": "qualification bundle build in progress; no latency acceptance claimed",
+  "environment": {
+    "docker": "daemon killed by OOM during hosted RPC compilation",
+    "uid": 1000,
+    "host_toolchain": "rustc 1.97.0",
+    "host_embedded_check": "passed",
+    "local_checks_completed": [
+      "engine alloc tests",
+      "engine no-alloc tests",
+      "engine Clippy",
+      "engine Cortex-M build",
+      "rpc Cortex-M check"
+    ],
+    "hosted_tests": "interrupted; CI repeats them",
+    "oom_before": {
+      "oom": 13,
+      "oom_kill": 11
+    },
+    "oom_after": {
+      "oom": 21,
+      "oom_kill": 13
+    }
+  }
+}

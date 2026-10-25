@@ -2,7 +2,7 @@
 mod support;
 use capnp::{
     any_pointer,
-    capability::{Client, Promise, Response},
+    capability::{Client, Response, ResponsePromise},
     private::capability::ResultsHook,
     traits::HasTypeId,
     Error, ErrorKind,
@@ -123,7 +123,7 @@ async fn settle() {
         tokio::task::yield_now().await;
     }
 }
-type PendingResponse = Pin<Box<Promise<Response<any_pointer::Owned>, Error>>>;
+type PendingResponse = Pin<Box<ResponsePromise<any_pointer::Owned>>>;
 struct Fixture {
     _hub: Rc<RefCell<Hub>>,
     drivers: Vec<tokio::task::JoinHandle<capnp::Result<()>>>,

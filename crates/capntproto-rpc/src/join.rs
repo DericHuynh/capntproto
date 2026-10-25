@@ -1,9 +1,11 @@
 //! Standard Join at a bilateral network boundary (rpc-twoparty.capnp).
 //! Multiparty share authentication is deliberately a different network contract.
 use super::*;
+use crate::collections::BTreeMap;
+use crate::collections::HashSet;
 use crate::rpc_twoparty_capnp::{join_key_part, join_result};
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::private::capability::JoinedCapability as Outcome;
-use std::collections::{BTreeMap, HashSet};
 
 /// Capability equality through local resolution and bilateral RPC boundaries.
 ///
@@ -269,7 +271,7 @@ pub(super) fn send<VatId>(
             let id = state.questions.borrow_mut().push(question);
             request.set_question_id(id.to_wire());
             let (tx, rx) = oneshot::channel();
-            let reference = Rc::new(RefCell::new(QuestionRef::new(state.clone(), id, tx)));
+            let reference = Rc::new(QuestionCell::new(QuestionRef::new(state.clone(), id, tx)));
             state.questions.borrow_mut().find(id).unwrap().self_ref =
                 Some(Rc::downgrade(&reference));
             let promise = rx
@@ -472,7 +474,7 @@ pub(super) fn receive<VatId>(
         let mut answers = owner.answers.borrow_mut();
         let a = answers.slots.get_mut(&id).unwrap();
         a.pipeline = Some(Box::new(pipeline));
-        a.call_completion_promise = Some(running);
+        a.call_task = Some(running.into());
     }
     if ready {
         let pending = mem::take(&mut group.state.borrow_mut().pending);

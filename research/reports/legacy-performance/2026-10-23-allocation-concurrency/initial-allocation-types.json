@@ -1,0 +1,754 @@
+[
+  {
+    "transport": "tls",
+    "case": "dependent-read",
+    "variant": "legacy",
+    "peer": "client",
+    "allocating_types": {
+      "QuestionRef": {
+        "blocks": 2.0,
+        "bytes": 128.0
+      },
+      "completion::Slot": {
+        "blocks": 2.0,
+        "bytes": 192.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "dependent-read",
+    "variant": "legacy",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 4.0,
+        "bytes": 512.0
+      },
+      "ReturnGuard": {
+        "blocks": 2.0,
+        "bytes": 80.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 12.0,
+        "bytes": 608.0
+      },
+      "RetainedResults": {
+        "blocks": 2.0,
+        "bytes": 144.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "dependent-read",
+    "variant": "legacy-baseline",
+    "peer": "client",
+    "allocating_types": {
+      "QuestionRef": {
+        "blocks": 2.0,
+        "bytes": 128.0
+      },
+      "completion::Slot": {
+        "blocks": 2.0,
+        "bytes": 192.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "dependent-read",
+    "variant": "legacy-baseline",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 4.0,
+        "bytes": 512.0
+      },
+      "ResultsVariant": {
+        "blocks": 2.0,
+        "bytes": 128.0
+      },
+      "ReturnGuard": {
+        "blocks": 4.0,
+        "bytes": 112.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 12.0,
+        "bytes": 608.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "pipelined-read",
+    "variant": "legacy",
+    "peer": "client",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 2.0,
+        "bytes": 192.0
+      },
+      "QuestionRef": {
+        "blocks": 2.0,
+        "bytes": 128.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "pipelined-read",
+    "variant": "legacy",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 5.0,
+        "bytes": 608.0
+      },
+      "ReturnGuard": {
+        "blocks": 2.0,
+        "bytes": 80.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 12.0,
+        "bytes": 608.0
+      },
+      "RetainedResults": {
+        "blocks": 2.0,
+        "bytes": 144.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "pipelined-read",
+    "variant": "legacy-baseline",
+    "peer": "client",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 2.0,
+        "bytes": 192.0
+      },
+      "QuestionRef": {
+        "blocks": 2.0,
+        "bytes": 128.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "pipelined-read",
+    "variant": "legacy-baseline",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 5.0,
+        "bytes": 608.0
+      },
+      "ResultsVariant": {
+        "blocks": 2.0,
+        "bytes": 128.0
+      },
+      "ReturnGuard": {
+        "blocks": 4.0,
+        "bytes": 112.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 12.0,
+        "bytes": 608.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "concurrent-32",
+    "variant": "legacy",
+    "peer": "client",
+    "allocating_types": {
+      "futures_unordered::task::Task": {
+        "blocks": 33.0,
+        "bytes": 7392.0
+      },
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 3072.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "concurrent-32",
+    "variant": "legacy",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 5376.0
+      },
+      "RetainedResults": {
+        "blocks": 32.0,
+        "bytes": 2304.0
+      },
+      "ReturnGuard": {
+        "blocks": 32.0,
+        "bytes": 1280.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "concurrent-32",
+    "variant": "legacy-baseline",
+    "peer": "client",
+    "allocating_types": {
+      "futures_unordered::task::Task": {
+        "blocks": 33.0,
+        "bytes": 7392.0
+      },
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 3072.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "concurrent-32",
+    "variant": "legacy-baseline",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 5376.0
+      },
+      "ReturnGuard": {
+        "blocks": 64.0,
+        "bytes": 1792.0
+      },
+      "ResultsVariant": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "deep-32-concurrent-32",
+    "variant": "legacy",
+    "peer": "client",
+    "allocating_types": {
+      "futures_unordered::task::Task": {
+        "blocks": 33.0,
+        "bytes": 7392.0
+      },
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 3072.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "deep-32-concurrent-32",
+    "variant": "legacy",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 5376.0
+      },
+      "RetainedResults": {
+        "blocks": 32.0,
+        "bytes": 2304.0
+      },
+      "ReturnGuard": {
+        "blocks": 32.0,
+        "bytes": 1280.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "deep-32-concurrent-32",
+    "variant": "legacy-baseline",
+    "peer": "client",
+    "allocating_types": {
+      "futures_unordered::task::Task": {
+        "blocks": 33.0,
+        "bytes": 7392.0
+      },
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 3072.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "deep-32-concurrent-32",
+    "variant": "legacy-baseline",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 5376.0
+      },
+      "ReturnGuard": {
+        "blocks": 64.0,
+        "bytes": 1792.0
+      },
+      "ResultsVariant": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy",
+    "peer": "client",
+    "allocating_types": {
+      "futures_unordered::task::Task": {
+        "blocks": 33.0,
+        "bytes": 7392.0
+      },
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 3072.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy",
+    "peer": "service-3",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 5376.0
+      },
+      "RetainedResults": {
+        "blocks": 32.0,
+        "bytes": 2304.0
+      },
+      "ReturnGuard": {
+        "blocks": 32.0,
+        "bytes": 1280.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy",
+    "peer": "service-2",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 128.0,
+        "bytes": 14080.0
+      },
+      "ReturnGuard": {
+        "blocks": 32.0,
+        "bytes": 1280.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 128.0,
+        "bytes": 5120.0
+      },
+      "futures_unordered::task::Task": {
+        "blocks": 64.0,
+        "bytes": 6144.0
+      },
+      "RetainedResults": {
+        "blocks": 32.0,
+        "bytes": 2304.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy",
+    "peer": "service-1",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 128.0,
+        "bytes": 14080.0
+      },
+      "ReturnGuard": {
+        "blocks": 32.0,
+        "bytes": 1280.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 128.0,
+        "bytes": 5120.0
+      },
+      "futures_unordered::task::Task": {
+        "blocks": 64.0,
+        "bytes": 6144.0
+      },
+      "RetainedResults": {
+        "blocks": 32.0,
+        "bytes": 2304.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 128.0,
+        "bytes": 14080.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 128.0,
+        "bytes": 5120.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "RetainedResults": {
+        "blocks": 32.0,
+        "bytes": 2304.0
+      },
+      "ReturnGuard": {
+        "blocks": 32.0,
+        "bytes": 1280.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy-baseline",
+    "peer": "client",
+    "allocating_types": {
+      "futures_unordered::task::Task": {
+        "blocks": 33.0,
+        "bytes": 7392.0
+      },
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 3072.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy-baseline",
+    "peer": "service-3",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 32.0,
+        "bytes": 5376.0
+      },
+      "ReturnGuard": {
+        "blocks": 64.0,
+        "bytes": 1792.0
+      },
+      "ResultsVariant": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy-baseline",
+    "peer": "service-2",
+    "allocating_types": {
+      "futures_util::future::future::shared": {
+        "blocks": 128.0,
+        "bytes": 5120.0
+      },
+      "completion::Slot": {
+        "blocks": 128.0,
+        "bytes": 14080.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_unordered::task::Task": {
+        "blocks": 64.02222222222223,
+        "bytes": 6146.133333333333
+      },
+      "ReturnGuard": {
+        "blocks": 64.0,
+        "bytes": 1792.0
+      },
+      "ResultsVariant": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy-baseline",
+    "peer": "service-1",
+    "allocating_types": {
+      "futures_util::future::future::shared": {
+        "blocks": 128.0,
+        "bytes": 5120.0
+      },
+      "completion::Slot": {
+        "blocks": 128.0,
+        "bytes": 14080.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_unordered::task::Task": {
+        "blocks": 64.0,
+        "bytes": 6144.0
+      },
+      "ReturnGuard": {
+        "blocks": 64.0,
+        "bytes": 1792.0
+      },
+      "ResultsVariant": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "ready_set::Notify": {
+        "blocks": 0.0,
+        "bytes": 0.0
+      }
+    }
+  },
+  {
+    "transport": "tls",
+    "case": "services-4-deep-16-clients-8",
+    "variant": "legacy-baseline",
+    "peer": "service-0",
+    "allocating_types": {
+      "completion::Slot": {
+        "blocks": 128.0,
+        "bytes": 14080.0
+      },
+      "ready_set::Notify": {
+        "blocks": 64.0,
+        "bytes": 2048.0
+      },
+      "ReturnGuard": {
+        "blocks": 64.0,
+        "bytes": 1792.0
+      },
+      "QuestionRef": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      },
+      "futures_util::future::future::shared": {
+        "blocks": 128.0,
+        "bytes": 5120.0
+      },
+      "ResultsVariant": {
+        "blocks": 32.0,
+        "bytes": 2048.0
+      }
+    }
+  }
+]

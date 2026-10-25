@@ -203,6 +203,32 @@ where
     }
 }
 
+/// Retain an immutable pool loan for the entire reader lifetime.
+impl<S: ReaderSegments + ?Sized> ReaderSegments for core::cell::Ref<'_, S> {
+    fn get_segment(&self, idx: u32) -> Option<&[u8]> {
+        (**self).get_segment(idx)
+    }
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+    fn is_empty(&self) -> bool {
+        (**self).is_empty()
+    }
+}
+/// An exclusive loan can also remain owned by a suspended reader. Exposing
+/// segments borrows this guard and does not permit concurrent buffer mutation.
+impl<S: ReaderSegments + ?Sized> ReaderSegments for core::cell::RefMut<'_, S> {
+    fn get_segment(&self, idx: u32) -> Option<&[u8]> {
+        (**self).get_segment(idx)
+    }
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+    fn is_empty(&self) -> bool {
+        (**self).is_empty()
+    }
+}
+
 /// An array of segments.
 pub struct SegmentArray<'a> {
     segments: &'a [&'a [u8]],
@@ -273,6 +299,13 @@ pub struct ReadBudget {
     pub(crate) limiter: crate::private::read_limiter::ReadLimiter,
 }
 impl ReadBudget {
+    /// Remaining traversal allowance, or `None` for an unlimited reader.
+    /// This is a snapshot; inspecting it does not consume or replenish words.
+    #[inline]
+    pub fn remaining_words(&self) -> Option<usize> {
+        self.limiter.remaining()
+    }
+
     pub fn new(words: Option<usize>) -> Self {
         Self {
             limiter: crate::private::read_limiter::ReadLimiter::new(words),
@@ -487,17 +520,43 @@ where
         )
             -> core::result::Result<Option<(any_pointer::Reader<'a>, T)>, E>,
     ) -> core::result::Result<Option<(CheckedPointerReader<S>, T)>, E> {
-        let (root, value) = {
+        self.try_select_pointer_or_else(select, drop)
+    }
+
+    /// Like `try_select_pointer`, but returns the original owner to `recover`
+    /// whenever selection declines or fails. Recovery preserves consumed read
+    /// limits, including failures while checking the selected pointer's arena.
+    #[inline(always)]
+    pub fn try_select_pointer_or_else<T, E: From<Error>>(
+        self,
+        select: impl for<'a> FnOnce(
+            any_pointer::Reader<'a>,
+        )
+            -> core::result::Result<Option<(any_pointer::Reader<'a>, T)>, E>,
+        recover: impl FnOnce(Self),
+    ) -> core::result::Result<Option<(CheckedPointerReader<S>, T)>, E> {
+        let selected = (|| {
             let arena = self.arena.cached()?;
             let pointer = layout::PointerReader::get_root_from_arena(&arena)?;
             let Some((selected, value)) = select(any_pointer::Reader::new(pointer))? else {
                 return Ok(None);
             };
             let root = layout::CachedPointerRoot::select(selected.reader, &arena)?;
-            (root, value)
-        };
-        let reader = self;
-        Ok(Some((CheckedPointerReader { root, reader }, value)))
+            Ok(Some((root, value)))
+        })();
+        match selected {
+            Ok(Some((root, value))) => {
+                Ok(Some((CheckedPointerReader { root, reader: self }, value)))
+            }
+            Ok(None) => {
+                recover(self);
+                Ok(None)
+            }
+            Err(error) => {
+                recover(self);
+                Err(error)
+            }
+        }
     }
 
     pub fn into_typed<T: Owned>(self) -> TypedReader<S, T> {
@@ -546,6 +605,11 @@ impl<S: ReaderSegments, B: core::borrow::Borrow<ReadBudget>> Reader<S, B> {
         let arena = self.arena.cached()?;
         let pointer = layout::PointerReader::get_root_from_arena(&arena)?;
         Ok(read(any_pointer::Reader::new(pointer)))
+    }
+
+    /// The authoritative traversal allowance shared by all views of this reader.
+    pub fn read_budget(&self) -> &ReadBudget {
+        self.arena.read_budget()
     }
 
     pub fn into_segments(self) -> S {
@@ -893,7 +957,10 @@ impl<A: Allocator> SelectedBuilder<A> {
     /// list checks use the ordinary reader arena, including on owned builders.
     #[inline(always)]
     pub fn validate_capability_indices(&self, count: u32, options: ReaderOptions) -> Result<()> {
-        let arena = ReaderArenaImpl::new(self.message.get_segments_for_output(), options);
+        // Borrow the builder directly: materializing its segment-reference list
+        // would allocate for every multi-segment validation. The reader arena
+        // still enforces the independent traversal and nesting policy.
+        let arena = ReaderArenaImpl::new(&self.message, options);
         let arena = arena.cached()?;
         let (start, _) = arena.get_segment(self.segment)?;
         // SAFETY: select validated this word's location in the owning arena.

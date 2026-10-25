@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "date": "2026-10-23",
+  "performance_execution": "DigitalOcean droplets provisioned by CI only",
+  "topology": "loopback peers on distinct guest-reported cores; other paired droplet idle; deep service chains share available server cores",
+  "commits": {
+    "main_before_work": "7993d5214ca133b8a4c524d7ec30030d41fe4622",
+    "portable_frozen": "719a694ac001ee89095485c8b65db32c249dfacc",
+    "candidate_measured": "ad54795a3e36ae8cbb255dbc6d38e9ad5e55a7cd",
+    "artifact_analysis": "fbe94ddcfe44f8689dcfe2b310ac5504d7f78b2e"
+  },
+  "measurement_artifacts": [
+    {
+      "id": 12481116715,
+      "name": "dedicated-benchmark-report",
+      "size_in_bytes": 52705764,
+      "url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12481116715",
+      "archive_download_url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12481116715/zip",
+      "expired": false,
+      "created_at": "2026-10-23T05:31:27Z",
+      "expires_at": "2026-11-22T05:31:20Z",
+      "updated_at": "2026-10-23T05:31:27Z",
+      "digest": "sha256:f62cca37828b8b6e794585f9da675d7f0aaff64a5525dfb4d415ad776860b2aa",
+      "workflow_run": {
+        "id": 39902949530,
+        "repository_id": 1396783637,
+        "head_repository_id": 1396783637,
+        "head_branch": "codex/portable-qualification",
+        "head_sha": "719a694ac001ee89095485c8b65db32c249dfacc"
+      }
+    },
+    {
+      "id": 12481234407,
+      "name": "dedicated-benchmark-report",
+      "size_in_bytes": 73965870,
+      "url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12481234407",
+      "archive_download_url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12481234407/zip",
+      "expired": false,
+      "created_at": "2026-10-23T06:01:51Z",
+      "expires_at": "2026-11-22T06:01:43Z",
+      "updated_at": "2026-10-23T06:01:51Z",
+      "digest": "sha256:e37dc5d135859efa02ff4ac45ab6edc484caf166bcaeecf55402dfc567d9eba6",
+      "workflow_run": {
+        "id": 39903830343,
+        "repository_id": 1396783637,
+        "head_repository_id": 1396783637,
+        "head_branch": "codex/portable-droplet-validation",
+        "head_sha": "ad54795a3e36ae8cbb255dbc6d38e9ad5e55a7cd"
+      }
+    },
+    {
+      "id": 12480655758,
+      "name": "benchmark-build-provenance",
+      "size_in_bytes": 992126,
+      "url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12480655758",
+      "archive_download_url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12480655758/zip",
+      "expired": false,
+      "created_at": "2026-10-23T05:19:54Z",
+      "expires_at": "2026-11-22T05:19:53Z",
+      "updated_at": "2026-10-23T05:19:54Z",
+      "digest": "sha256:71a6e42dec09de797a203b8fe3f58218f29391ad4b265428875fdaec3ac99ffd",
+      "workflow_run": {
+        "id": 39903830343,
+        "repository_id": 1396783637,
+        "head_repository_id": 1396783637,
+        "head_branch": "codex/portable-droplet-validation",
+        "head_sha": "ad54795a3e36ae8cbb255dbc6d38e9ad5e55a7cd"
+      }
+    }
+  ],
+  "analysis_artifacts": [
+    {
+      "id": 12482625647,
+      "name": "analyzed-droplet-39903830343",
+      "size_in_bytes": 4189107,
+      "url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12482625647",
+      "archive_download_url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12482625647/zip",
+      "expired": false,
+      "created_at": "2026-10-23T06:07:33Z",
+      "expires_at": "2026-11-22T06:07:31Z",
+      "updated_at": "2026-10-23T06:07:33Z",
+      "digest": "sha256:29c42b553261c19340d00328df0abeebb007a37bc52f419837dee856d700ad98",
+      "workflow_run": {
+        "id": 39909021760,
+        "repository_id": 1396783637,
+        "head_repository_id": 1396783637,
+        "head_branch": "codex/portable-droplet-analysis",
+        "head_sha": "fbe94ddcfe44f8689dcfe2b310ac5504d7f78b2e"
+      }
+    },
+    {
+      "id": 12481817224,
+      "name": "analyzed-droplet-39902949530",
+      "size_in_bytes": 2612373,
+      "url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12481817224",
+      "archive_download_url": "https://api.github.com/repos/DericHuynh/capntproto/actions/artifacts/12481817224/zip",
+      "expired": false,
+      "created_at": "2026-10-23T06:02:05Z",
+      "expires_at": "2026-11-22T06:02:04Z",
+      "updated_at": "2026-10-23T06:02:05Z",
+      "digest": "sha256:5ee8eb502556fec9852c3918ea98f5a21435c5a86b15e86db7a7776185350ada",
+      "workflow_run": {
+        "id": 39909021760,
+        "repository_id": 1396783637,
+        "head_repository_id": 1396783637,
+        "head_branch": "codex/portable-droplet-analysis",
+        "head_sha": "fbe94ddcfe44f8689dcfe2b310ac5504d7f78b2e"
+      }
+    }
+  ],
+  "binaries": {
+    "baseline": {
+      "legacy": {
+        "path": "/root/bench/driver",
+        "sha256": "44c3e5dfbb0f1d4710edb65a37da527b7067c8e846c0ae52506981498375f648"
+      },
+      "portable": {
+        "path": "/root/bench/driver",
+        "sha256": "44c3e5dfbb0f1d4710edb65a37da527b7067c8e846c0ae52506981498375f648"
+      },
+      "cpp": {
+        "path": "/root/bench/capnp-reference",
+        "sha256": "de32365a3fd25bda86a93bea0a50b4755e3953f5cf37073f5a6126ec415967bc"
+      }
+    },
+    "candidate": {
+      "legacy": {
+        "path": "/root/bench/driver",
+        "sha256": "ca77aa80004dbbc249b000bb50c7f5883e54cebd035a6960a42539bf34d710a7"
+      },
+      "portable": {
+        "path": "/root/bench/driver",
+        "sha256": "ca77aa80004dbbc249b000bb50c7f5883e54cebd035a6960a42539bf34d710a7"
+      },
+      "cpp": {
+        "path": "/root/bench/capnp-reference",
+        "sha256": "de32365a3fd25bda86a93bea0a50b4755e3953f5cf37073f5a6126ec415967bc"
+      },
+      "portable-baseline": {
+        "path": "/root/bench/driver-baseline",
+        "sha256": "b8498a216336c7760f23d256d65eea8b5297d3c2e9b49628250874e22c4f710d"
+      }
+    }
+  },
+  "cleanup": [
+    {
+      "run": 39902949530,
+      "job": 120251950500,
+      "result": "success",
+      "deleted_droplets": [
+        611806712,
+        611806856
+      ],
+      "ssh_key_cleanup": "success"
+    },
+    {
+      "run": 39903830343,
+      "job": 120255338108,
+      "result": "success",
+      "deleted_droplets": [
+        611810779,
+        611810924
+      ],
+      "ssh_key_cleanup": "success"
+    }
+  ],
+  "decision": "Experimental allocation/instruction reduction; mixed latency outcome; not promoted to main. Legacy lead on every case and complete C++ read-count parity remain unmet."
+}

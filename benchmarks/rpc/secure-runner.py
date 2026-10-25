@@ -30,7 +30,7 @@ def security(transport, protocol='tcp', name='localhost'):
                 setup_timed=False, alpn='capntproto-rpc/1' if transport == 'quic' else ('h2' if protocol == 'grpc' else None))
 
 def engine(label):
-    return 'portable' if label == 'portable-baseline' else label
+    return {'portable-baseline': 'portable', 'legacy-baseline': 'legacy'}.get(label, label)
 
 
 def validate(data, case, transport, label, warmup, iterations):
@@ -207,6 +207,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rust', type=Path, required=True)
     parser.add_argument('--portable', type=Path, help='Candidate portable executable; defaults to --rust.')
+    parser.add_argument('--legacy-baseline', type=Path, help='Frozen legacy control, separate from the candidate.')
     parser.add_argument('--portable-baseline', type=Path, help='Frozen portable control, separate from the candidate.')
     parser.add_argument('--cpp', type=Path, required=True)
     parser.add_argument('--upstream', type=Path)
@@ -227,6 +228,8 @@ def main():
         binaries['portable'] = args.portable.resolve(strict=True)
     if args.portable_baseline:
         binaries['portable-baseline'] = args.portable_baseline.resolve(strict=True)
+    if args.legacy_baseline:
+        binaries['legacy-baseline'] = args.legacy_baseline.resolve(strict=True)
     if args.comparators:
         binaries.update(grpc=binaries['legacy'], websocket=binaries['legacy'])
         if args.upstream:

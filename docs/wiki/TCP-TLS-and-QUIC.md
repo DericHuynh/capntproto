@@ -8,7 +8,11 @@ The public two-party RPC adapters support three ordinary network transports:
 | `capntproto::rpc::tls` | Cap'n Proto RPC on TLS 1.3/TCP | Server certificates, optional required client certificates |
 | `capntproto::rpc::quic` | Cap'n Proto RPC on standard QUIC v1 | TLS 1.3 server certificates, optional required client certificates |
 
-TLS/TCP uses Cargo-managed rustls and tokio-rustls. All QUIC uses quiche with
+TLS/TCP uses vendored rustls 0.23.46's Unbuffered API through the shared
+`tls::TlsStream<S>` Tokio adapter, including native multiparty TCP/TLS. Both
+maintained benchmark drivers use this same adapter. The independent published
+upstream RPC and framework-managed gRPC comparators retain tokio-rustls.
+All QUIC uses quiche with
 Cargo-managed BoringSSL, including standard two-party RPC and the authenticated
 [native multiparty profile](Native-Transports.md). The unmodified quiche 0.30.0 registry package and checksum are pinned in Cargo.lock.
 
@@ -18,6 +22,39 @@ authenticated native directory routes retain mutual TLS. `quic` and `quic-quiche
 both enable the single QUIC engine and native sessions. For TLS/TCP alone use
 `default-features = false, features = ["tls"]`. Plain TCP needs no feature.
 QUIC builds require a C/C++ compiler, CMake and libclang.
+
+## Record storage and receive APIs
+
+`tls::TlsStream<S>` owns `UnbufferedClientConnection` or
+`UnbufferedServerConnection`, retains ciphertext storage between records, and
+passes complete plaintext records directly to the caller's read buffer. Partial
+application reads keep their remaining plaintext in reusable storage. Receive
+storage is 82 KiB; the normal transmit buffer is 129 KiB for a maximum 128 KiB
+plaintext batch. Configured smaller TLS fragments can require a larger retained
+transmit buffer. Receive offsets avoid shifting ciphertext after every record;
+compaction happens only when socket refill needs room. This trades retained
+per-connection memory for fewer receive-buffer allocations.
+
+All production QUIC stream receives use `Connection::stream_recv_buf()`. The
+ordinary RPC stream passes Tokio's `ReadBuf` directly as `BufMut`, so the unused
+destination is not zeroed before reception. Native stream bridges already use
+bounded `BytesMut` destinations. Quiche 0.30 still copies from stream reassembly
+into `BufMut`; this is not ownership transfer of received packet storage.
+The [local rustls delta](../../vendor/rustls/README.capntproto.md) writes new
+Unbuffered application records directly into the retained transmit buffer with
+the ring TLS 1.3 provider. It backports upstream PR #3127 and removes the temporary ciphertext allocation and
+copy by using the same AEAD operation in caller-owned storage. Plaintext still
+enters that storage once; received plaintext and queued handshake/control
+records retain upstream allocation and copy behavior. Ring and AWS-LC now use the same caller-buffer encryption contract for TLS 1.2
+and TLS 1.3. Custom crypto providers must adapt to its changed `encrypt` signature.
+Neither transport provides end-to-end zero-copy IO.
+
+`TlsStream::connect(io, config, name)` and `TlsStream::accept(io, config)` expose
+the generic transport adapter for callers with their own deadline and ALPN
+policy. Ordinary RPC applications should use the timed `tls::connect` and
+`tls::accept` helpers below. Early data is unsupported. The adapter preserves
+partial IO across `Pending`, processes post-handshake records and key updates,
+and reports an underlying EOF without TLS `close_notify` as `UnexpectedEof`.
 
 ## Certificates and trust
 

@@ -1,0 +1,155 @@
+{
+  "scope": "Whole-peer positive UDP socket calls timestamped after the client begins writing its result JSON. This boundary is after measurement, not the end of each operation.",
+  "rows": [
+    {
+      "iterations": 10,
+      "variant": "legacy",
+      "repetition": 0,
+      "counts": {}
+    },
+    {
+      "iterations": 10,
+      "variant": "portable",
+      "repetition": 0,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 10,
+      "variant": "portable",
+      "repetition": 1,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 10,
+      "variant": "legacy",
+      "repetition": 1,
+      "counts": {}
+    },
+    {
+      "iterations": 10,
+      "variant": "portable",
+      "repetition": 2,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 10,
+      "variant": "legacy",
+      "repetition": 2,
+      "counts": {}
+    },
+    {
+      "iterations": 10,
+      "variant": "legacy",
+      "repetition": 3,
+      "counts": {}
+    },
+    {
+      "iterations": 10,
+      "variant": "portable",
+      "repetition": 3,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 10,
+      "variant": "legacy",
+      "repetition": 4,
+      "counts": {}
+    },
+    {
+      "iterations": 10,
+      "variant": "portable",
+      "repetition": 4,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 100,
+      "variant": "legacy",
+      "repetition": 0,
+      "counts": {}
+    },
+    {
+      "iterations": 100,
+      "variant": "portable",
+      "repetition": 0,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 100,
+      "variant": "portable",
+      "repetition": 1,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 100,
+      "variant": "legacy",
+      "repetition": 1,
+      "counts": {}
+    },
+    {
+      "iterations": 100,
+      "variant": "portable",
+      "repetition": 2,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 100,
+      "variant": "legacy",
+      "repetition": 2,
+      "counts": {}
+    },
+    {
+      "iterations": 100,
+      "variant": "legacy",
+      "repetition": 3,
+      "counts": {}
+    },
+    {
+      "iterations": 100,
+      "variant": "portable",
+      "repetition": 3,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    },
+    {
+      "iterations": 100,
+      "variant": "legacy",
+      "repetition": 4,
+      "counts": {}
+    },
+    {
+      "iterations": 100,
+      "variant": "portable",
+      "repetition": 4,
+      "counts": {
+        "write_after_result": 1,
+        "read_after_result": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "73a793c90f2e8c8b651cd3f1131f4be27f41259b",
+  "verified": [
+    "ring/tls12/GcmMessageEncrypter",
+    "ring/tls12/ChaCha20Poly1305MessageEncrypter",
+    "ring/tls13/Tls13MessageEncrypter",
+    "aws_lc_rs/tls12/GcmMessageEncrypter",
+    "aws_lc_rs/tls12/ChaCha20Poly1305MessageEncrypter",
+    "aws_lc_rs/tls13/AeadMessageEncrypter",
+    "aws_lc_rs/tls13/GcmMessageEncrypter"
+  ],
+  "normalization": "Whitespace, 0.23 input message type, fixed-size nonce access"
+}

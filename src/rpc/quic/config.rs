@@ -116,6 +116,12 @@ fn config(
     Ok(config)
 }
 impl ClientConfig {
+    /// Maximum idle time advertised to the peer, in milliseconds. Zero disables
+    /// the local idle timeout; QUIC still negotiates the peer's nonzero limit.
+    pub fn max_idle_timeout(&mut self, milliseconds: u64) {
+        self.0.set_max_idle_timeout(milliseconds);
+    }
+
     /// Override offered application protocols. RPC admission still requires the
     /// negotiated protocol to equal this crate's RPC ALPN.
     pub fn application_protocols(&mut self, protocols: &[&[u8]]) -> io::Result<()> {
@@ -126,6 +132,12 @@ impl ClientConfig {
 }
 
 impl ServerConfig {
+    /// Maximum idle time advertised to the peer, in milliseconds. Zero disables
+    /// the local idle timeout; QUIC still negotiates the peer's nonzero limit.
+    pub fn max_idle_timeout(&mut self, milliseconds: u64) {
+        self.0.set_max_idle_timeout(milliseconds);
+    }
+
     /// Require stateless address validation before allocating handshake state.
     pub fn require_retry(&mut self, enabled: bool) {
         self.1 = enabled;

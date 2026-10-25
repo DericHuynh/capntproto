@@ -3,12 +3,12 @@
 //! A ready bit is an obligation to poll a lane, not proof that it can progress.
 //! Only the lane may certify itself idle. Yield retains the bit and uses the
 //! executor waker directly; application notifications invalidate certificates.
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc,
-};
-use std::task::{Wake, Waker};
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
+use core::sync::atomic::AtomicU8;
+use core::sync::atomic::Ordering;
+use core::task::Waker;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -134,6 +134,7 @@ impl WorkWake {
         }
     }
 }
+#[cfg(test)]
 impl Wake for WorkWake {
     fn wake(self: Arc<Self>) {
         self.wake_by_ref();
@@ -145,22 +146,16 @@ impl Wake for WorkWake {
 
 // Local enqueue shares the notifier without a task-waker clone per request.
 pub(in crate::scoped) struct EnqueueWake(Arc<WorkWake>);
-struct ControlWake(Arc<WorkWake>);
-struct WorkerWake(Arc<WorkWake>);
-impl Wake for WorkerWake {
-    fn wake(self: Arc<Self>) {
-        self.wake_by_ref();
-    }
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.0.notify(WorkSet::WORKER);
-    }
+struct ProducerWake {
+    shared: Arc<WorkWake>,
+    work: WorkSet,
 }
-impl Wake for ControlWake {
+impl Wake for ProducerWake {
     fn wake(self: Arc<Self>) {
         self.wake_by_ref();
     }
     fn wake_by_ref(self: &Arc<Self>) {
-        self.0.notify(WorkSet::CONTROL);
+        self.shared.notify(self.work);
     }
 }
 impl EnqueueWake {
@@ -175,12 +170,21 @@ pub(super) struct Notifications {
     parent: Option<Waker>,
 }
 impl Notifications {
+    /// A notification retains its producer identity through the connection loop.
+    /// It never means that every parked operation should be polled again.
+    pub(super) fn producer(&self, work: WorkSet) -> Waker {
+        Waker::from(Arc::new(ProducerWake {
+            shared: self.wake.clone(),
+            work,
+        }))
+    }
     pub(super) fn worker_waker(&self) -> Waker {
-        Waker::from(Arc::new(WorkerWake(self.wake.clone())))
+        self.producer(WorkSet::WORKER)
     }
     pub(super) fn control_waker(&self) -> Waker {
-        Waker::from(Arc::new(ControlWake(self.wake.clone())))
+        self.producer(WorkSet::CONTROL)
     }
+    #[cfg(test)]
     pub(super) fn waker(&self) -> Waker {
         Waker::from(self.wake.clone())
     }

@@ -269,7 +269,20 @@ async fn half_close_preserves_large_payload_and_reverse_direction() {
         // full. Its queued FIN/data and our buffered final response must survive.
         task.await.unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
-        let mut response = Vec::new();
+        // BufMut must preserve an existing prefix, initialize only delivered
+        // bytes, and advance ReadBuf exactly once. The spare tail stays uninit.
+        let mut storage = vec![std::mem::MaybeUninit::uninit(); 200_000];
+        let mut buffer = tokio::io::ReadBuf::uninit(&mut storage);
+        buffer.put_slice(b"prefix!");
+        std::future::poll_fn(|cx| {
+            tokio::io::AsyncRead::poll_read(std::pin::Pin::new(&mut stream), cx, &mut buffer)
+        })
+        .await
+        .unwrap();
+        assert_eq!(&buffer.filled()[..7], b"prefix!");
+        assert!(buffer.filled().len() > 7);
+        assert_eq!(buffer.initialized().len(), buffer.filled().len());
+        let mut response = buffer.filled()[7..].to_vec();
         stream.read_to_end(&mut response).await.unwrap();
         assert_eq!(response, vec![0x72; 100_000]);
     })

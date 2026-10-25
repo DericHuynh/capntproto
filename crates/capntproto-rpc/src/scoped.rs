@@ -14,6 +14,10 @@
 //! this bridge does not replace `RpcSystem` yet.
 #![forbid(unsafe_code)]
 
+use crate::collections::VecDeque;
+use alloc::rc::Rc;
+use alloc::rc::Weak;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use capnp::{
     any_pointer,
     capability::{self, CallHints, Promise},
@@ -26,15 +30,14 @@ use capntproto_rpc_engine::{
     clients::{dispatch, Capabilities, Client},
     completion::{self, shared},
 };
+use core::cell::Cell;
+use core::cell::RefCell;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::Context;
+use core::task::Poll;
+use core::task::Waker;
 use futures::{future::Shared, FutureExt};
-use std::{
-    cell::{Cell, RefCell},
-    collections::VecDeque,
-    future::Future,
-    pin::Pin,
-    rc::{Rc, Weak},
-    task::{Context, Poll, Waker},
-};
 
 mod admission;
 mod bindings;
@@ -52,21 +55,20 @@ pub mod wire;
 pub struct EndpointMetadata {
     pub failure: Option<Error>,
     pub introduction: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     pub fd: Option<Rc<std::os::fd::OwnedFd>>,
 }
 
 type Shutdown = shutdown::Receiver;
 struct Inbox {
     completion_cache: response::Cache,
-    call_templates: [std::cell::OnceCell<Box<CallTemplate>>; 4],
-    message_pool: Option<capnp::message::SegmentPool>,
+    call_templates: [core::cell::OnceCell<Box<CallTemplate>>; 4],
+    message_pool: Option<crate::MessagePool>,
     admission: Option<Rc<crate::admission::Admission>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
     queue: RefCell<VecDeque<Box<Call>>>,
-    // One pre-reserved release record per registry slot. Endpoint destruction
-    // never allocates or borrows the graph; only the driver consumes records.
-    released: RefCell<VecDeque<usize>>,
+    owners: Ownership,
+
     wake: RefCell<Option<Waker>>,
     enqueue_wake: RefCell<Option<Rc<wire::coordinator::EnqueueWake>>>,
     shutdown: Shutdown,
@@ -74,6 +76,25 @@ struct Inbox {
     live_calls: Cell<usize>,
     maximum_calls: usize,
     maximum_clients: usize,
+}
+/// One shared work owner for endpoint destruction and metadata notifications.
+/// Hooks retain this through their inbox; the scoped registry consumes the same
+/// queue identities. A notification never scans or borrows the capability graph.
+#[derive(Default)]
+struct Ownership {
+    // Pre-reserved once per registry slot: final endpoint Drop cannot allocate.
+    released: RefCell<VecDeque<usize>>,
+    metadata: wire::ready::Queue,
+    wake: RefCell<Option<Waker>>,
+}
+impl Ownership {
+    fn register(&self) {
+        // AtomicWaker consumes its registration on wake. Rearm before observing
+        // or consuming work, including stale events from recycled slots.
+        if let Some(wake) = self.wake.borrow().as_ref() {
+            self.metadata.register(wake);
+        }
+    }
 }
 struct CallTemplate {
     interface: u64,
@@ -115,6 +136,13 @@ impl Inbox {
             None => self.notify(),
         }
     }
+    fn notify_ownership(&self) {
+        let signal = self.owners.wake.borrow().clone();
+        match signal {
+            Some(signal) => signal.wake(),
+            None => self.notify(),
+        }
+    }
     fn notify(&self) {
         let wake = self.wake.borrow_mut().take();
         if let Some(wake) = wake {
@@ -126,7 +154,7 @@ impl Inbox {
             return;
         }
         // Detach every callback-bearing owner before waking or destroying it.
-        let queue = std::mem::take(&mut *self.queue.borrow_mut());
+        let queue = core::mem::take(&mut *self.queue.borrow_mut());
         self.shutdown.close(error);
         drop(queue);
         self.notify();
@@ -141,10 +169,10 @@ struct Endpoint {
     binding_wakes: RefCell<Vec<Waker>>,
     settled: Cell<bool>,
     metadata_generation: Cell<u64>,
-    metadata_changes: std::cell::OnceCell<Rc<MetadataChanges>>,
+    metadata_changes: core::cell::OnceCell<Rc<MetadataChanges>>,
     failure: RefCell<Option<Error>>,
     resolution: RefCell<Option<Resolution>>,
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fd: RefCell<Option<Rc<std::os::fd::OwnedFd>>>,
 }
 impl Endpoint {
@@ -158,10 +186,10 @@ impl Endpoint {
             binding_wakes: RefCell::default(),
             settled: Cell::new(false),
             metadata_generation: Cell::new(0),
-            metadata_changes: std::cell::OnceCell::new(),
+            metadata_changes: core::cell::OnceCell::new(),
             failure: RefCell::default(),
             resolution: RefCell::default(),
-            #[cfg(unix)]
+            #[cfg(all(feature = "std", unix))]
             fd: RefCell::default(),
         })
     }
@@ -212,7 +240,7 @@ impl Endpoint {
         }
         self.notify_binding();
         if let Some(inbox) = self.inbox.upgrade() {
-            inbox.notify();
+            inbox.notify_ownership();
         }
     }
 }
@@ -223,13 +251,13 @@ struct Resolution {
 impl Drop for Endpoint {
     fn drop(&mut self) {
         if let Some(inbox) = self.inbox.upgrade() {
-            let mut released = inbox.released.borrow_mut();
+            let mut released = inbox.owners.released.borrow_mut();
             if let Some(index) = self.index.get() {
                 debug_assert!(released.len() < released.capacity());
                 released.push_back(index);
             }
             drop(released);
-            inbox.notify();
+            inbox.notify_ownership();
         }
     }
 }
@@ -260,7 +288,6 @@ pub struct ClientHooks<'id> {
     sources_bound: bool,
     listener: Option<capntproto_rpc_engine::clients::Listener<'id>>,
     metadata_work: capntproto_rpc_engine::work_queue::Queue,
-    metadata_ready: wire::ready::Queue,
     maximum_clients: usize,
 }
 impl<'id> ClientHooks<'id> {
@@ -273,13 +300,13 @@ impl<'id> ClientHooks<'id> {
     pub fn new(maximum_clients: usize, maximum_calls: usize) -> Self {
         Self {
             inbox: Rc::new(Inbox {
-                completion_cache: response::Cache::default(),
-                call_templates: std::array::from_fn(|_| std::cell::OnceCell::new()),
+                completion_cache: response::Cache::new(maximum_calls),
+                call_templates: core::array::from_fn(|_| core::cell::OnceCell::new()),
                 message_pool: None,
                 admission: None,
                 joins: None,
                 queue: RefCell::new(VecDeque::new()),
-                released: RefCell::new(VecDeque::new()),
+                owners: Ownership::default(),
                 wake: RefCell::new(None),
                 enqueue_wake: RefCell::new(None),
                 shutdown: shutdown::Receiver::new(),
@@ -295,7 +322,6 @@ impl<'id> ClientHooks<'id> {
             sources_bound: false,
             listener: None,
             metadata_work: capntproto_rpc_engine::work_queue::Queue::EMPTY,
-            metadata_ready: wire::ready::Queue::default(),
             maximum_clients,
         }
     }
@@ -310,7 +336,8 @@ impl<'id> ClientHooks<'id> {
     /// and builders keep exclusive ownership until their last owner drops.
     /// Configure this before exporting clients or attaching the coordinator.
     /// Panics if the hook inbox has already been shared.
-    pub(crate) fn with_message_pool(mut self, pool: capnp::message::SegmentPool) -> Self {
+    #[cfg(feature = "std")]
+    pub(crate) fn with_message_pool(mut self, pool: crate::MessagePool) -> Self {
         Rc::get_mut(&mut self.inbox)
             .expect("unpublished hook inbox")
             .message_pool = Some(pool);
@@ -341,6 +368,32 @@ impl<'id> ClientHooks<'id> {
     ) -> capnp::Result<capability::Client> {
         self.collect(graph);
         self.export_after_collect(graph, client)
+    }
+
+    /// Transfer an owned graph client into a public client. The endpoint takes
+    /// over its graph reference; failures release it before returning the error.
+    pub fn import_client(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        self.collect(graph);
+        self.import_after_collect(graph, client)
+    }
+
+    fn import_after_collect(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        client: Client<'id>,
+    ) -> capnp::Result<capability::Client> {
+        let pending = match graph.is_settled(&client) {
+            Ok(settled) => !settled,
+            Err(error) => {
+                graph.release(client);
+                return Err(Error::failed(error.to_string()));
+            }
+        };
+        self.bind_retained(graph, client, pending, false, None)
     }
 
     /// Export and publish hosted diagnostics before any resolution waiter can
@@ -444,7 +497,7 @@ impl<'id> ClientHooks<'id> {
             }
             // Pending records plus live endpoints can never exceed the slot
             // count. Reserve before publication so Drop cannot reject a release.
-            let mut released = self.inbox.released.borrow_mut();
+            let mut released = self.inbox.owners.released.borrow_mut();
             let additional = index + 1 - released.len();
             if released.try_reserve(additional).is_err() {
                 graph.release(client);
@@ -480,34 +533,39 @@ impl<'id> ClientHooks<'id> {
                 return Err(Error::overloaded(error.to_string()));
             }
         };
+        // Inspect the route once while the graph is exclusively borrowed.
+        let destination = graph.inspect(&client);
+        let remote = matches!(
+            destination,
+            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                location: capntproto_rpc_engine::clients::Location::Remote(_),
+                ..
+            })
+        );
+        let broken = matches!(
+            destination,
+            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                location: capntproto_rpc_engine::clients::Location::Broken,
+                ..
+            })
+        );
         let endpoint = existing.unwrap_or_else(|| {
             Rc::new(Endpoint {
                 introduction: RefCell::default(),
                 introduced: RefCell::default(),
-                remote: Cell::new(matches!(
-                    graph.inspect(&client),
-                    Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                        location: capntproto_rpc_engine::clients::Location::Remote(_),
-                        ..
-                    })
-                )),
+                remote: Cell::new(remote),
                 inbox: Rc::downgrade(&self.inbox),
                 index: Cell::new(None),
                 binding_wakes: RefCell::default(),
                 settled: Cell::new(!pending),
                 metadata_generation: Cell::new(0),
-                metadata_changes: std::cell::OnceCell::new(),
-                failure: RefCell::new(match graph.inspect(&client) {
-                    Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                        location: capntproto_rpc_engine::clients::Location::Broken,
-                        ..
-                    }) => Some(Error::failed(
-                        "capability resolved to a broken endpoint".into(),
-                    )),
-                    _ => None,
-                }),
+                metadata_changes: core::cell::OnceCell::new(),
+                failure: RefCell::new(
+                    broken
+                        .then(|| Error::failed("capability resolved to a broken endpoint".into())),
+                ),
                 resolution: RefCell::default(),
-                #[cfg(unix)]
+                #[cfg(all(feature = "std", unix))]
                 fd: RefCell::new(None),
             })
         });
@@ -515,13 +573,7 @@ impl<'id> ClientHooks<'id> {
             endpoint.index.replace(Some(index)).is_none(),
             "projection bound once"
         );
-        endpoint.remote.set(matches!(
-            graph.inspect(&client),
-            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
-                location: capntproto_rpc_engine::clients::Location::Remote(_),
-                ..
-            })
-        ));
+        endpoint.remote.set(remote);
         endpoint.settled.set(!pending);
         self.entries[index] = Some(Entry {
             endpoint: Rc::downgrade(&endpoint),
@@ -555,7 +607,7 @@ impl<'id> ClientHooks<'id> {
     pub fn reclaim_released(&mut self, graph: &mut impl Capabilities<'id>) {
         // Most synchronization points have no releases. Keep that test at the
         // call site instead of entering the graph-release loop on every turn.
-        if !self.inbox.released.borrow().is_empty() {
+        if !self.inbox.owners.released.borrow().is_empty() {
             self.drain_released(graph);
         }
     }
@@ -564,7 +616,7 @@ impl<'id> ClientHooks<'id> {
     fn drain_released(&mut self, graph: &mut impl Capabilities<'id>) {
         loop {
             // Release the queue borrow before touching graph ownership.
-            let index = self.inbox.released.borrow_mut().pop_front();
+            let index = self.inbox.owners.released.borrow_mut().pop_front();
             let Some(index) = index else { break };
             let key = self.entries[index]
                 .as_ref()
@@ -584,7 +636,7 @@ impl<'id> ClientHooks<'id> {
                 graph.unsubscribe(subscription);
             }
             if entry.metadata_watch.is_some() {
-                self.metadata_ready.remove(index);
+                self.inbox.owners.metadata.remove(index);
             }
             graph.release(entry.client);
         }
@@ -666,6 +718,7 @@ impl<'id> ClientHooks<'id> {
         project_metadata: bool,
         bind_sources: bool,
     ) {
+        self.inbox.owners.register();
         self.reclaim_released(graph);
         if bind_sources && !self.sources_bound {
             // One-time activation of the source contract. Admission thereafter
@@ -710,7 +763,7 @@ impl<'id> ClientHooks<'id> {
             }
         }
         if project_metadata && (!self.sources_bound || bind_sources) {
-            while let Some(ready) = self.metadata_ready.pop() {
+            while let Some(ready) = self.inbox.owners.metadata.pop() {
                 let index = ready.index();
                 let Some(entry) = self.entries.get_mut(index).and_then(Option::as_mut) else {
                     continue;
@@ -777,10 +830,12 @@ impl<'id> ClientHooks<'id> {
                     };
                     if !same {
                         if entry.metadata_watch.take().is_some() {
-                            self.metadata_ready.remove(index);
+                            self.inbox.owners.metadata.remove(index);
                         }
                         if let Some(source) = changed {
-                            let wake = self.metadata_ready.insert(index, true);
+                            // This watch is polled below; only a subsequent notification
+                            // should enqueue it. A pre-queued slot suppresses that wake.
+                            let wake = self.inbox.owners.metadata.insert(index, false);
                             let mut watch = source.subscribe();
                             let _ = watch.poll_changed(&mut Context::from_waker(&wake));
                             entry.metadata_watch = Some((watch, wake));
@@ -874,11 +929,28 @@ impl<'id> ClientHooks<'id> {
         }
     }
 
+    pub(super) fn ownership_ready(&self, graph: &impl Capabilities<'id>) -> bool {
+        self.inbox.owners.register();
+        !self.sources_bound
+            || !self.inbox.owners.released.borrow().is_empty()
+            || !self.metadata_work.is_empty()
+            || self
+                .listener
+                .as_ref()
+                .is_some_and(|listener| graph.has_events(listener))
+            || !self.inbox.owners.metadata.is_empty()
+    }
+
     /// Poll one owned call. Keep it on downstream capacity rejection before
     /// polling another call, so admission preserves the original order.
     /// The bridge has one consumer; the latest poll registers its wake.
     pub(super) fn register_next(&self, waker: &Waker) {
-        self.metadata_ready.register(waker);
+        // Standalone scoped users retain the combined polling contract. Hosted
+        // connections bind ownership to its own producer once, independently of
+        // application call futures and their wake registrations.
+        if self.inbox.owners.wake.borrow().is_none() {
+            self.inbox.owners.metadata.register(waker);
+        }
         if self
             .inbox
             .wake
@@ -1199,7 +1271,7 @@ impl CallParams {
         }
     }
 }
-impl std::ops::Deref for CallParams {
+impl core::ops::Deref for CallParams {
     type Target = dyn ParamsHook;
     fn deref(&self) -> &Self::Target {
         match self {
@@ -1219,7 +1291,7 @@ impl capnp::private::capability::RequestHook for Call {
     fn set_hints(&mut self, hints: CallHints) {
         self.hints = hints;
     }
-    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
+    fn third_party_tail_target(&self) -> Option<Box<dyn core::any::Any>> {
         tail_target(&Hook(self.endpoint.clone(), self.credit.clone()))
     }
     fn set_third_party_tail_target(
@@ -1333,7 +1405,7 @@ impl Call {
         let context = self
             .credit
             .clone()
-            .map(|credit| credit as Rc<dyn std::any::Any>);
+            .map(|credit| credit as Rc<dyn core::any::Any>);
         Box::new(request.into_request(
             self.interface,
             self.method,
@@ -1589,11 +1661,11 @@ impl ClientHook for Hook {
             .as_ref()
             .map(|joins| joins.join(self.add_ref(), part))
     }
-    #[cfg(unix)]
+    #[cfg(all(feature = "std", unix))]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
         self.0.fd.borrow().clone()
     }
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
+    fn as_any(&self) -> Option<&dyn core::any::Any> {
         Some(self)
     }
     fn debug_info(&self, info: &mut DebugInfo) {
@@ -1635,6 +1707,7 @@ impl ClientHook for Hook {
             }
         }
         let allocator = crate::local::result_allocator(size);
+        #[cfg(feature = "std")]
         let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
             Some(pool) => allocator.segment_pool(pool.clone()),
             None => allocator,
@@ -1826,7 +1899,7 @@ impl Drop for Reply {
 mod tests;
 
 // Exact private hook types carry authority; public brands and wrappers do not.
-pub(crate) fn tail_target(client: &dyn ClientHook) -> Option<Box<dyn std::any::Any>> {
+pub(crate) fn tail_target(client: &dyn ClientHook) -> Option<Box<dyn core::any::Any>> {
     let hook = client.as_any()?.downcast_ref::<Hook>()?;
     // A settled remote endpoint cannot resolve into a different connection
     // after its authenticated destination metadata has been committed.

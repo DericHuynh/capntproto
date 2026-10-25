@@ -873,6 +873,8 @@ mod error_context_tests {
 /// in the single-segment case.
 pub enum OutputSegments<'a> {
     SingleSegment([&'a [u8]; 1]),
+    /// Two borrowed segments, without allocating a segment-reference vector.
+    TwoSegments([&'a [u8]; 2]),
 
     #[cfg(feature = "alloc")]
     MultiSegment(alloc::vec::Vec<&'a [u8]>),
@@ -883,6 +885,7 @@ impl<'a> core::ops::Deref for OutputSegments<'a> {
     fn deref(&self) -> &[&'a [u8]] {
         match self {
             OutputSegments::SingleSegment(s) => s,
+            OutputSegments::TwoSegments(s) => s,
 
             #[cfg(feature = "alloc")]
             OutputSegments::MultiSegment(v) => v,
@@ -894,6 +897,7 @@ impl message::ReaderSegments for OutputSegments<'_> {
     fn get_segment(&self, id: u32) -> Option<&[u8]> {
         match self {
             OutputSegments::SingleSegment(s) => s.get(id as usize).copied(),
+            OutputSegments::TwoSegments(s) => s.get(id as usize).copied(),
 
             #[cfg(feature = "alloc")]
             OutputSegments::MultiSegment(v) => v.get(id as usize).copied(),

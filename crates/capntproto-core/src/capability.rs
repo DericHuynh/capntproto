@@ -22,33 +22,49 @@
 //! Hooks for the RPC system.
 //!
 //! Roughly corresponds to capability.h in the C++ implementation.
+//! Parameters and responses can retain concrete frame owners in every profile.
+//! Requests can retain concrete parameter/publication owners in every profile.
+//! Clients can retain borrowed capability contexts and create concrete requests.
+//! Dynamic client and dispatch hooks are enabled by `alloc`.
 
-#[cfg(feature = "alloc")]
 use core::future::Future;
-#[cfg(feature = "alloc")]
 use core::marker::PhantomData;
-#[cfg(feature = "alloc")]
 use core::pin::Pin;
-#[cfg(feature = "alloc")]
 use core::task::Poll;
 
 use crate::any_pointer;
 #[cfg(feature = "alloc")]
-use crate::private::capability::{ClientHook, ParamsHook, RequestHook, ResponseHook, ResultsHook};
+use crate::private::capability::{ClientHook, RequestHook, ResultsHook};
+pub use crate::private::capability::{ParamsHook, ResponseHook};
+use crate::traits::Owned;
 #[cfg(feature = "alloc")]
-use crate::traits::{Owned, Pipelined};
+use crate::traits::Pipelined;
 #[cfg(feature = "alloc")]
 use crate::{Error, MessageSize};
+
+mod client_storage;
+#[cfg(test)]
+mod owner_views;
+mod payload_storage;
+#[cfg(test)]
+mod promise_owners;
+mod request_storage;
+pub use client_storage::ClientStorage;
+pub use payload_storage::PayloadStorage;
+pub use request_storage::{PreparedRequest, RequestStorage};
 
 #[cfg(feature = "alloc")]
 mod reply;
 #[cfg(feature = "alloc")]
 pub use reply::{PublishedReply, Reply, ReplyBuilder};
 
-#[cfg(feature = "alloc")]
 mod call;
 #[cfg(feature = "alloc")]
-pub use call::{CallContext, ReplyContext};
+pub use call::ReplyContext;
+pub use call::{
+    dispatch_call, dispatch_call_with_context, CallContext, CallStorage, DispatchResults,
+    PreparedCall,
+};
 
 /// Type alias for `dyn ClientHook`. We define this here because so that generated code
 /// can avoid needing to refer to `dyn` types directly; in Rust 2015 the syntax for
@@ -56,8 +72,13 @@ pub use call::{CallContext, ReplyContext};
 #[cfg(feature = "alloc")]
 pub type DynClientHook = dyn ClientHook;
 
-/// A computation that might eventually resolve to a value of type `T` or to an error
-///  of type `E`. Dropping the promise cancels the computation.
+/// A computation that might eventually resolve to a value of type `T` or an error
+/// of type `E`. Dropping the promise drops its future owner.
+///
+/// `from_owner` retains an unpinned owner or a caller-pinned future reference
+/// without allocation or a `'static` bound. Under `alloc`, the default future
+/// owner remains boxed and `from_future` allocates it. Synchronous errors are
+/// boxed only in that profile to retain the hosted representation.
 ///
 /// The nightly-only `rpc_try` feature allows `?` on a `Result` inside a function
 /// returning `Promise<T, Error>`, converting the error with `Error::from`.
@@ -65,66 +86,70 @@ pub type DynClientHook = dyn ClientHook;
 /// in async code. `Promise` itself does not implement `Try`.
 #[cfg(feature = "alloc")]
 #[must_use = "futures do nothing unless polled"]
-pub struct Promise<T, E> {
-    inner: PromiseInner<T, E>,
+pub struct Promise<
+    T,
+    E,
+    F = Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>,
+> {
+    inner: PromiseInner<T, E, F>,
+}
+#[cfg(not(feature = "alloc"))]
+#[must_use = "futures do nothing unless polled"]
+pub struct Promise<T, E, F = core::future::Ready<core::result::Result<T, E>>> {
+    inner: PromiseInner<T, E, F>,
 }
 
 #[cfg(feature = "alloc")]
-enum PromiseInner<T, E> {
-    // Keep potentially large error context off every deferred promise. Success
-    // stays inline; only a synchronously rejected promise allocates its error.
-    Immediate(Result<T, alloc::boxed::Box<E>>),
-    Deferred(Pin<alloc::boxed::Box<dyn Future<Output = core::result::Result<T, E>> + 'static>>),
-    Response(
-        ResponsePromiseOwner<E>,
-        fn(alloc::boxed::Box<dyn ResponseHook>) -> T,
-    ),
+type ImmediateError<E> = alloc::boxed::Box<E>;
+#[cfg(not(feature = "alloc"))]
+type ImmediateError<E> = E;
+
+enum PromiseInner<T, E, F> {
+    // Keep potentially large error context off every hosted deferred promise.
+    // Fixed profiles retain their error inline without a fallback allocator.
+    Immediate(Result<T, ImmediateError<E>>),
+    Deferred(F),
     Empty,
 }
 
-/// Reusable storage for one response receiver. The owner detaches producer state
-/// before cancellation, so producer caches may safely retain this empty slot.
-#[cfg(feature = "alloc")]
-#[doc(hidden)]
-pub struct ResponseReceiver<E> {
-    state: core::cell::RefCell<
-        Option<
-            alloc::rc::Rc<
-                dyn crate::private::capability::SharedPromise<
-                    alloc::boxed::Box<dyn ResponseHook>,
-                    alloc::boxed::Box<E>,
-                >,
-            >,
-        >,
-    >,
-}
-#[cfg(feature = "alloc")]
-impl<E> Default for ResponseReceiver<E> {
-    fn default() -> Self {
+// Only the deferred owner is projected for polling. Immediate results are moved,
+// never pinned, so their output/error types need not implement Unpin.
+impl<T, E, F: Unpin> Unpin for PromiseInner<T, E, F> {}
+
+impl<T, E, F> Promise<T, E, F> {
+    /// Retain the original future owner. For a !Unpin future, pass the
+    /// `Pin<&mut F>` returned by `core::pin::pin!` instead of moving the future.
+    /// The returned promise cannot outlive that borrow. A borrowed Pin does not
+    /// own destruction of the original future; use a task-place owner when
+    /// dropping the promise must destroy the stored operation immediately.
+    ///
+    /// ```
+    /// use capnp::capability::Promise;
+    /// let value = 17;
+    /// let future = core::pin::pin!(async { Ok::<_, ()>(&value) });
+    /// let _promise = Promise::from_owner(future);
+    /// ```
+    ///
+    /// ```compile_fail,E0597
+    /// use capnp::capability::Promise;
+    /// let promise;
+    /// {
+    ///     let value = 17;
+    ///     let future = core::pin::pin!(async { Ok::<_, ()>(&value) });
+    ///     promise = Promise::from_owner(future);
+    /// }
+    /// drop(promise);
+    /// ```
+    pub fn from_owner(future: F) -> Self
+    where
+        F: Future<Output = core::result::Result<T, E>> + Unpin,
+    {
         Self {
-            state: core::cell::RefCell::new(None),
-        }
-    }
-}
-#[cfg(feature = "alloc")]
-struct ResponsePromiseOwner<E>(alloc::rc::Rc<ResponseReceiver<E>>);
-#[cfg(feature = "alloc")]
-impl<E> Drop for ResponsePromiseOwner<E> {
-    fn drop(&mut self) {
-        // End the borrow before arbitrary cancellation code runs. In particular,
-        // a completion may recycle itself together with this now-empty receiver.
-        let state = self.0.state.borrow_mut().take();
-        if let Some(state) = state {
-            state.cancel();
+            inner: PromiseInner::Deferred(future),
         }
     }
 }
 
-// Allow Promise<T,E> to be Unpin, regardless of whether T and E are.
-#[cfg(feature = "alloc")]
-impl<T, E> Unpin for PromiseInner<T, E> {}
-
-#[cfg(feature = "alloc")]
 impl<T, E> Promise<T, E> {
     pub fn ok(value: T) -> Self {
         Self {
@@ -133,33 +158,14 @@ impl<T, E> Promise<T, E> {
     }
 
     pub fn err(error: E) -> Self {
+        #[cfg(feature = "alloc")]
+        let error = alloc::boxed::Box::new(error);
         Self {
-            inner: PromiseInner::Immediate(Err(alloc::boxed::Box::new(error))),
+            inner: PromiseInner::Immediate(Err(error)),
         }
     }
 
-    /// Preserve the unique receiver while generated APIs select a result type.
-    #[doc(hidden)]
-    pub fn from_shared_response(
-        receiver: alloc::rc::Rc<ResponseReceiver<E>>,
-        state: alloc::rc::Rc<
-            dyn crate::private::capability::SharedPromise<
-                alloc::boxed::Box<dyn ResponseHook>,
-                alloc::boxed::Box<E>,
-            >,
-        >,
-        convert: fn(alloc::boxed::Box<dyn ResponseHook>) -> T,
-    ) -> Self {
-        {
-            let mut slot = receiver.state.borrow_mut();
-            assert!(slot.is_none(), "response receiver is already active");
-            *slot = Some(state);
-        }
-        Self {
-            inner: PromiseInner::Response(ResponsePromiseOwner(receiver), convert),
-        }
-    }
-
+    #[cfg(feature = "alloc")]
     pub fn from_future<F>(f: F) -> Self
     where
         F: Future<Output = core::result::Result<T, E>> + 'static,
@@ -170,8 +176,10 @@ impl<T, E> Promise<T, E> {
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<T, E> Future for Promise<T, E> {
+impl<T, E, F> Future for Promise<T, E, F>
+where
+    F: Future<Output = core::result::Result<T, E>> + Unpin,
+{
     type Output = core::result::Result<T, E>;
 
     #[inline(always)]
@@ -180,28 +188,25 @@ impl<T, E> Future for Promise<T, E> {
             PromiseInner::Empty => panic!("Promise polled after done."),
             ref mut imm @ PromiseInner::Immediate(_) => {
                 match core::mem::replace(imm, PromiseInner::Empty) {
-                    PromiseInner::Immediate(r) => Poll::Ready(r.map_err(|error| *error)),
+                    PromiseInner::Immediate(r) => {
+                        #[cfg(feature = "alloc")]
+                        let r = r.map_err(|error| *error);
+                        Poll::Ready(r)
+                    }
                     _ => unreachable!(),
                 }
             }
-            PromiseInner::Deferred(ref mut f) => f.as_mut().poll(cx),
-            PromiseInner::Response(ref state, convert) => state
-                .0
-                .state
-                .borrow()
-                .as_ref()
-                .expect("live response receiver")
-                .poll(cx)
-                .map(|result| result.map(convert).map_err(|error| *error)),
+            PromiseInner::Deferred(ref mut f) => Pin::new(f).poll(cx),
         }
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<T, E> From<Result<T, E>> for Promise<T, E> {
     fn from(value: Result<T, E>) -> Self {
+        #[cfg(feature = "alloc")]
+        let value = value.map_err(alloc::boxed::Box::new);
         Self {
-            inner: PromiseInner::Immediate(value.map_err(alloc::boxed::Box::new)),
+            inner: PromiseInner::Immediate(value),
         }
     }
 }
@@ -249,7 +254,7 @@ pub struct RemotePromise<Results>
 where
     Results: Pipelined + Owned + 'static,
 {
-    pub promise: Promise<Response<Results>, crate::Error>,
+    pub promise: ResponsePromise<Results>,
     pub pipeline: Results::Pipeline,
 }
 
@@ -270,56 +275,212 @@ impl<T: Pipelined + Owned + 'static> Future for RemotePromise<T> {
 impl<T: Pipelined + Owned + 'static> RemotePromise<T> {
     /// Split completion and pipeline ownership explicitly. A derived pipeline
     /// capability owns its own reference and can outlive either returned part.
-    pub fn into_parts(self) -> (Promise<Response<T>, Error>, T::Pipeline) {
+    pub fn into_parts(self) -> (ResponsePromise<T>, T::Pipeline) {
         (self.promise, self.pipeline)
     }
 }
 
-/// A response from a method call, as seen by the client.
+/// A response retaining its concrete owner until all borrowed readers end.
+/// Hosted callers default to an owned boxed hook; caller-backed profiles supply
+/// their frame guard directly with `from_owner`.
 #[cfg(feature = "alloc")]
-pub struct Response<Results> {
+pub struct Response<Results, H = alloc::boxed::Box<dyn ResponseHook>> {
     pub marker: PhantomData<Results>,
-    pub hook: alloc::boxed::Box<dyn ResponseHook>,
+    pub hook: H,
 }
-
+#[cfg(not(feature = "alloc"))]
+pub struct Response<Results, H> {
+    pub marker: PhantomData<Results>,
+    pub hook: H,
+}
 #[cfg(feature = "alloc")]
-impl<Results> Response<Results>
-where
-    Results: Pipelined + Owned,
-{
+impl<Results: Pipelined + Owned> Response<Results> {
     pub fn new(hook: alloc::boxed::Box<dyn ResponseHook>) -> Self {
         Self {
             marker: PhantomData,
             hook,
         }
     }
+}
+impl<Results, H: ResponseHook> Response<Results, H> {
+    /// Transfer the caller's owner without boxing or changing its lifetime.
+    pub fn from_owner(hook: H) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
     #[inline(always)]
-    pub fn get(&self) -> crate::Result<Results::Reader<'_>> {
+    pub fn get(&self) -> crate::Result<Results::Reader<'_>>
+    where
+        Results: Owned,
+    {
         self.hook.get()?.get_as()
+    }
+    /// Borrow the generated field-operation view with the original read budget.
+    pub fn view(
+        &self,
+    ) -> crate::Result<
+        <<Results as crate::field_api::FixedSchema>::Schema as crate::field_api::Schema>::Ref<'_>,
+    >
+    where
+        Results: crate::field_api::FixedSchema,
+    {
+        let raw = self.hook.get()?.get_as::<crate::any_struct::Reader<'_>>()?;
+        Ok(crate::traits::IntoInternalStructReader::into_internal_struct_reader(raw).into())
+    }
+    /// Retain the same owner while selecting a generated schema. Reading still
+    /// validates the wire type and normal traversal/nesting limits.
+    pub fn into_typed<T>(self) -> Response<T, H> {
+        Response {
+            marker: PhantomData,
+            hook: self.hook,
+        }
     }
 }
 
+/// A response future whose generated result type is selected without allocating
+/// a forwarding future. Dropping it cancels the original driver completion.
 #[cfg(feature = "alloc")]
-impl<E: 'static> Promise<Response<any_pointer::Owned>, E> {
-    fn into_typed_response<R: Pipelined + Owned + 'static>(self) -> Promise<Response<R>, E> {
-        match self.inner {
-            PromiseInner::Response(state, _) => Promise {
-                inner: PromiseInner::Response(state, Response::<R>::new),
-            },
-            other => Promise::from_future(async move {
-                let response = Promise { inner: other }.await?;
-                Ok(Response::new(response.hook))
-            }),
+#[must_use = "a response future must be polled"]
+pub struct ResponsePromise<R, E = Error> {
+    inner: ResponseFuture<E>,
+    marker: PhantomData<R>,
+}
+// Keep response-only ownership out of the ubiquitous Promise<(), E>. This flat
+// representation also avoids a second discriminant around a general Promise.
+#[cfg(feature = "alloc")]
+enum ResponseFuture<E> {
+    Immediate(Result<Response<any_pointer::Owned>, alloc::boxed::Box<E>>),
+    Deferred(Pin<alloc::boxed::Box<dyn Future<Output = Result<Response<any_pointer::Owned>, E>>>>),
+    Direct(DirectResponseOwner<E>),
+    Empty,
+}
+#[cfg(feature = "alloc")]
+struct DirectResponseOwner<E>(
+    Option<
+        alloc::rc::Rc<
+            dyn crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, E>,
+        >,
+    >,
+);
+#[cfg(feature = "alloc")]
+impl<E> Drop for DirectResponseOwner<E> {
+    fn drop(&mut self) {
+        if let Some(state) = self.0.take() {
+            state.cancel();
         }
+    }
+}
+#[cfg(feature = "alloc")]
+impl<R, E> Unpin for ResponsePromise<R, E> {}
+#[cfg(feature = "alloc")]
+impl<R: Pipelined + Owned, E> ResponsePromise<R, E> {
+    #[doc(hidden)]
+    pub fn new(inner: Promise<Response<any_pointer::Owned>, E>) -> Self {
+        let inner = match inner.inner {
+            PromiseInner::Immediate(result) => ResponseFuture::Immediate(result),
+            PromiseInner::Deferred(future) => ResponseFuture::Deferred(future),
+            PromiseInner::Empty => ResponseFuture::Empty,
+        };
+        Self {
+            inner,
+            marker: PhantomData,
+        }
+    }
+    /// Own the single response interest in an existing producer allocation.
+    /// Completion or abandonment calls cancel once, as specified by SharedPromise.
+    #[doc(hidden)]
+    pub fn from_shared(
+        state: alloc::rc::Rc<
+            dyn crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, E>,
+        >,
+    ) -> Self {
+        Self {
+            inner: ResponseFuture::Direct(DirectResponseOwner(Some(state))),
+            marker: PhantomData,
+        }
+    }
+    fn into_typed_response<T: Pipelined + Owned>(self) -> ResponsePromise<T, E> {
+        ResponsePromise {
+            inner: self.inner,
+            marker: PhantomData,
+        }
+    }
+}
+#[cfg(feature = "alloc")]
+impl<R: Pipelined + Owned, E> Future for ResponsePromise<R, E> {
+    type Output = Result<Response<R>, E>;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+        let result = match &mut self.inner {
+            ResponseFuture::Empty => panic!("ResponsePromise polled after completion"),
+            immediate @ ResponseFuture::Immediate(_) => {
+                let ResponseFuture::Immediate(result) =
+                    core::mem::replace(immediate, ResponseFuture::Empty)
+                else {
+                    unreachable!()
+                };
+                Poll::Ready(result.map(|response| response.hook).map_err(|error| *error))
+            }
+            ResponseFuture::Deferred(future) => future
+                .as_mut()
+                .poll(cx)
+                .map(|result| result.map(|response| response.hook)),
+            ResponseFuture::Direct(owner) => {
+                owner.0.as_ref().expect("live response interest").poll(cx)
+            }
+        };
+        let Poll::Ready(result) = result else {
+            return Poll::Pending;
+        };
+        // Release completed request ownership even if this future is retained.
+        let completed = core::mem::replace(&mut self.inner, ResponseFuture::Empty);
+        drop(completed);
+        Poll::Ready(result.map(Response::new))
     }
 }
 
 /// A method call that has not been sent yet.
 #[cfg(feature = "alloc")]
 #[must_use = "an unsent request does nothing; send or forward it"]
-pub struct Request<Params, Results> {
+pub struct Request<Params, Results, H = alloc::boxed::Box<dyn RequestHook>> {
     pub marker: PhantomData<(Params, Results)>,
-    pub hook: alloc::boxed::Box<dyn RequestHook>,
+    pub hook: H,
+}
+#[cfg(not(feature = "alloc"))]
+#[must_use = "an unsent request does nothing; send or forward it"]
+pub struct Request<Params, Results, H> {
+    pub marker: PhantomData<(Params, Results)>,
+    pub hook: H,
+}
+impl<P, R, H> Request<P, R, H> {
+    /// Keep the concrete owner, including its borrow and cancellation guards.
+    pub fn from_owner(hook: H) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
+    pub fn try_get(&mut self) -> crate::Result<H::Builder<'_>>
+    where
+        H: PayloadStorage<P>,
+    {
+        self.hook.try_get(None)
+    }
+    pub fn try_init(&mut self) -> crate::Result<H::Builder<'_>>
+    where
+        H: PayloadStorage<P>,
+    {
+        self.hook.try_init(None)
+    }
+    // Leave aggregate-return lowering to the optimizer. Forcing this wrapper
+    // into the caller's MIR adds copies before awaiting only the response.
+    pub fn send(self) -> H::Sent
+    where
+        H: RequestStorage<R>,
+    {
+        RequestStorage::<R>::publish(self.hook)
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -379,17 +540,6 @@ where
     pub fn send_for_pipeline(self) -> Results::Pipeline {
         FromTypelessPipeline::new(self.hook.send_for_pipeline())
     }
-
-    pub fn send(self) -> RemotePromise<Results> {
-        let RemotePromise {
-            promise, pipeline, ..
-        } = self.hook.send();
-        let typed_promise = promise.into_typed_response();
-        RemotePromise {
-            promise: typed_promise,
-            pipeline: FromTypelessPipeline::new(pipeline),
-        }
-    }
 }
 
 /// A method call that has not been sent yet.
@@ -424,16 +574,41 @@ where
     }
 }
 
-/// The values of the parameters passed to a method call, as seen by the server.
+/// The parameters of a method call, retaining the caller's concrete owner.
 #[cfg(feature = "alloc")]
-pub struct Params<T> {
+pub struct Params<T, H = alloc::boxed::Box<dyn ParamsHook>> {
     pub marker: PhantomData<T>,
-    pub hook: alloc::boxed::Box<dyn ParamsHook>,
+    pub hook: H,
 }
-
+#[cfg(not(feature = "alloc"))]
+pub struct Params<T, H> {
+    pub marker: PhantomData<T>,
+    pub hook: H,
+}
 #[cfg(feature = "alloc")]
 impl<T> Params<T> {
     pub fn new(hook: alloc::boxed::Box<dyn ParamsHook>) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
+}
+impl<T, H: ParamsHook> Params<T, H> {
+    /// Retain a borrowed frame guard or another concrete owner without boxing.
+    ///
+    /// ```compile_fail,E0597
+    /// use capnp::{capability::Params, message, text};
+    /// let params;
+    /// {
+    ///     let words = [capnp::word(0,0,0,0,0,0,0,0)];
+    ///     let segments = [capnp::Word::words_to_bytes(&words)];
+    ///     let reader = message::Reader::new(&segments[..], Default::default());
+    ///     params = Params::<text::Owned, _>::from_owner(reader);
+    /// }
+    /// let _ = params.get();
+    /// ```
+    pub fn from_owner(hook: H) -> Self {
         Self {
             marker: PhantomData,
             hook,
@@ -446,13 +621,64 @@ impl<T> Params<T> {
     {
         self.hook.get()?.get_as()
     }
+    /// Borrow the generated field-operation view with the original read budget.
+    pub fn view(
+        &self,
+    ) -> crate::Result<
+        <<T as crate::field_api::FixedSchema>::Schema as crate::field_api::Schema>::Ref<'_>,
+    >
+    where
+        T: crate::field_api::FixedSchema,
+    {
+        let raw = self.hook.get()?.get_as::<crate::any_struct::Reader<'_>>()?;
+        Ok(crate::traits::IntoInternalStructReader::into_internal_struct_reader(raw).into())
+    }
+    pub fn into_typed<U>(self) -> Params<U, H> {
+        Params {
+            marker: PhantomData,
+            hook: self.hook,
+        }
+    }
 }
 
 /// The return values of a method, written in-place by the method body.
 #[cfg(feature = "alloc")]
-pub struct Results<T> {
+pub struct Results<T, H = alloc::boxed::Box<dyn ResultsHook>> {
     pub marker: PhantomData<T>,
-    pub hook: alloc::boxed::Box<dyn ResultsHook>,
+    pub hook: H,
+}
+#[cfg(not(feature = "alloc"))]
+pub struct Results<T, H> {
+    pub marker: PhantomData<T>,
+    pub hook: H,
+}
+impl<T, H: PayloadStorage<T>> Results<T, H> {
+    pub fn from_owner(hook: H) -> Self {
+        Self {
+            marker: PhantomData,
+            hook,
+        }
+    }
+    /// Borrow a typed editor; a fixed provider has no heap fallback.
+    #[inline(always)]
+    pub fn try_get(&mut self) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_get(None)
+    }
+    pub fn try_get_with_size_hint(
+        &mut self,
+        hint: Option<crate::MessageSize>,
+    ) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_get(hint)
+    }
+    pub fn try_init(&mut self) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_init(None)
+    }
+    pub fn try_init_with_size_hint(
+        &mut self,
+        hint: Option<crate::MessageSize>,
+    ) -> crate::Result<H::Builder<'_>> {
+        self.hook.try_init(hint)
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -641,10 +867,42 @@ pub struct CallHints {
     pub only_promise_pipeline: bool,
 }
 
-/// An untyped client.
+/// An untyped client retaining its concrete capability owner.
 #[cfg(feature = "alloc")]
-pub struct Client {
-    pub hook: alloc::boxed::Box<dyn ClientHook>,
+pub struct Client<H = alloc::boxed::Box<dyn ClientHook>> {
+    pub hook: H,
+}
+#[cfg(not(feature = "alloc"))]
+pub struct Client<H> {
+    pub hook: H,
+}
+
+impl<H> Client<H> {
+    /// Retain the caller's original context/capability lease. This does not
+    /// register a capability, allocate storage or extend the owner's lifetime.
+    pub fn from_owner(hook: H) -> Self {
+        Self { hook }
+    }
+    pub fn into_owner(self) -> H {
+        self.hook
+    }
+    /// Reserve concrete request storage through this capability's provider.
+    /// Rejection must leave the capability usable and retain the provider's
+    /// capacity and protocol-ID invariants. Sending uses RequestStorage.
+    pub fn try_new_call<P, R>(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        size_hint: Option<crate::MessageSize>,
+        hints: CallHints,
+    ) -> crate::Result<Request<P, R, H::Request<'_>>>
+    where
+        H: ClientStorage<P, R>,
+    {
+        self.hook
+            .try_new_call(interface_id, method_id, size_hint, hints)
+            .map(Request::from_owner)
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -764,11 +1022,10 @@ impl FromClientHook for Client {
     }
 }
 
-#[cfg(feature = "alloc")]
-impl Clone for Client {
+impl<H: Clone> Clone for Client<H> {
     fn clone(&self) -> Self {
         Self {
-            hook: self.hook.add_ref(),
+            hook: self.hook.clone(),
         }
     }
 }
@@ -923,38 +1180,142 @@ mod promise_tests {
         }
     }
     #[test]
-    fn typed_shared_response_errors_release_the_receiver_and_allow_reuse() {
-        struct Failed(Rc<ResponseReceiver<Error>>, Rc<Cell<usize>>);
-        impl
-            crate::private::capability::SharedPromise<
-                alloc::boxed::Box<dyn ResponseHook>,
-                alloc::boxed::Box<Error>,
-            > for Failed
+    fn direct_response_preserves_unique_receiver_release_and_compact_storage() {
+        assert!(core::mem::size_of::<Promise<(), Error>>() <= 3 * core::mem::size_of::<usize>());
+        assert!(
+            core::mem::size_of::<ResponsePromise<any_pointer::Owned>>()
+                <= 4 * core::mem::size_of::<usize>()
+        );
+        struct Hook(Rc<Cell<usize>>);
+        impl ResponseHook for Hook {
+            fn get(&self) -> crate::Result<any_pointer::Reader<'_>> {
+                Err(Error::failed(alloc::string::String::from("direct hook")))
+            }
+        }
+        impl Drop for Hook {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+        struct State {
+            ready: Cell<bool>,
+            observed: Cell<bool>,
+            cancels: Cell<usize>,
+            value: core::cell::RefCell<Option<Result<alloc::boxed::Box<dyn ResponseHook>, Error>>>,
+        }
+        impl crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, Error>
+            for State
         {
             fn poll(
                 &self,
                 _: &mut core::task::Context<'_>,
-            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, alloc::boxed::Box<Error>>>
-            {
-                Poll::Ready(Err(alloc::boxed::Box::new(Error::failed(
-                    alloc::string::String::from("injected completion failure"),
+            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, Error>> {
+                assert!(!self.observed.get());
+                if self.ready.get() {
+                    self.observed.set(true);
+                    Poll::Ready(self.value.borrow_mut().take().unwrap())
+                } else {
+                    Poll::Pending
+                }
+            }
+            fn cancel(self: Rc<Self>) {
+                self.cancels.set(self.cancels.get() + 1);
+                let value = self.value.borrow_mut().take();
+                drop(value);
+            }
+        }
+        for completion in 0..3 {
+            let drops = Rc::new(Cell::new(0));
+            let value: Result<alloc::boxed::Box<dyn ResponseHook>, Error> = if completion == 2 {
+                Err(Error::failed(alloc::string::String::from("direct error")))
+            } else {
+                Ok(alloc::boxed::Box::new(Hook(drops.clone())))
+            };
+            let state = Rc::new(State {
+                ready: Cell::new(false),
+                observed: Cell::new(false),
+                cancels: Cell::new(0),
+                value: core::cell::RefCell::new(Some(value)),
+            });
+            let mut response = ResponsePromise::<any_pointer::Owned>::from_shared(state.clone())
+                .into_typed_response::<any_pointer::Owned>();
+            assert_eq!(Rc::strong_count(&state), 2);
+            let mut cx = core::task::Context::from_waker(Waker::noop());
+            assert!(Pin::new(&mut response).poll(&mut cx).is_pending());
+            if completion != 0 {
+                state.ready.set(true);
+                let Poll::Ready(result) = Pin::new(&mut response).poll(&mut cx) else {
+                    panic!("ready response")
+                };
+                if completion == 1 {
+                    let result = result.unwrap();
+                    assert_eq!(result.hook.get().err().unwrap().extra, "direct hook");
+                    assert_eq!(drops.get(), 0);
+                    drop(result);
+                    assert_eq!(drops.get(), 1);
+                } else {
+                    assert_eq!(result.err().unwrap().extra, "direct error");
+                }
+                assert_eq!(state.cancels.get(), 1);
+                assert_eq!(Rc::strong_count(&state), 1);
+            }
+            drop(response);
+            assert_eq!(state.cancels.get(), 1);
+            assert_eq!(Rc::strong_count(&state), 1);
+            assert!(state.value.borrow().is_none());
+            assert_eq!(drops.get(), usize::from(completion != 2));
+        }
+    }
+
+    #[test]
+    fn typed_response_releases_deferred_owner_at_completion() {
+        struct F(Rc<Cell<usize>>);
+        impl Future for F {
+            type Output = Result<Response<any_pointer::Owned>, Error>;
+            fn poll(self: Pin<&mut Self>, _: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+                Poll::Ready(Err(Error::failed(alloc::string::String::from("done"))))
+            }
+        }
+        impl Drop for F {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+        let drops = Rc::new(Cell::new(0));
+        let mut response =
+            ResponsePromise::<any_pointer::Owned>::new(Promise::from_future(F(drops.clone())));
+        assert!(Pin::new(&mut response)
+            .poll(&mut core::task::Context::from_waker(Waker::noop()))
+            .is_ready());
+        assert_eq!(drops.get(), 1);
+        drop(response);
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn typed_shared_response_errors_release_the_owner_once() {
+        struct Failed(Rc<Cell<usize>>);
+        impl crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, Error>
+            for Failed
+        {
+            fn poll(
+                &self,
+                _: &mut core::task::Context<'_>,
+            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, Error>> {
+                Poll::Ready(Err(Error::failed(alloc::string::String::from(
+                    "injected completion failure",
                 ))))
             }
             fn cancel(self: Rc<Self>) {
-                assert!(self.0.state.borrow().is_none());
-                self.1.set(self.1.get() + 1);
+                self.0.set(self.0.get() + 1);
             }
         }
-        let receiver = Rc::new(ResponseReceiver::default());
         let canceled = Rc::new(Cell::new(0));
         for expected in 1..=2 {
-            let untyped: Promise<Response<any_pointer::Owned>, Error> =
-                Promise::from_shared_response(
-                    receiver.clone(),
-                    Rc::new(Failed(receiver.clone(), canceled.clone())),
-                    Response::new,
-                );
-            let mut typed = untyped.into_typed_response::<any_pointer::Owned>();
+            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared(Rc::new(Failed(
+                canceled.clone(),
+            )))
+            .into_typed_response::<any_pointer::Owned>();
             let Poll::Ready(Err(error)) =
                 Pin::new(&mut typed).poll(&mut core::task::Context::from_waker(Waker::noop()))
             else {
@@ -963,7 +1324,6 @@ mod promise_tests {
             assert_eq!(error.extra, "injected completion failure");
             drop(typed);
             assert_eq!(canceled.get(), expected);
-            assert!(receiver.state.borrow().is_none());
         }
     }
     #[test]
@@ -979,19 +1339,14 @@ mod promise_tests {
         struct State {
             ready: Cell<bool>,
             cancels: Cell<usize>,
-            receiver: Rc<ResponseReceiver<Error>>,
         }
-        impl
-            crate::private::capability::SharedPromise<
-                alloc::boxed::Box<dyn ResponseHook>,
-                alloc::boxed::Box<Error>,
-            > for State
+        impl crate::private::capability::SharedPromise<alloc::boxed::Box<dyn ResponseHook>, Error>
+            for State
         {
             fn poll(
                 &self,
                 _: &mut core::task::Context<'_>,
-            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, alloc::boxed::Box<Error>>>
-            {
+            ) -> Poll<Result<alloc::boxed::Box<dyn ResponseHook>, Error>> {
                 if self.ready.get() {
                     Poll::Ready(Ok(alloc::boxed::Box::new(Hook)))
                 } else {
@@ -999,23 +1354,17 @@ mod promise_tests {
                 }
             }
             fn cancel(self: Rc<Self>) {
-                // Cancellation may reenter the slot; it must already be empty
-                // with no outstanding borrow or retained producer cycle.
-                assert!(self.receiver.state.borrow_mut().is_none());
                 self.cancels.set(self.cancels.get() + 1);
             }
         }
-        let receiver = Rc::new(ResponseReceiver::default());
         for completed in [false, true] {
             let state = Rc::new(State {
                 ready: Cell::new(false),
                 cancels: Cell::new(0),
-                receiver: receiver.clone(),
             });
-            let untyped: Promise<Response<any_pointer::Owned>, Error> =
-                Promise::from_shared_response(receiver.clone(), state.clone(), Response::new);
-            let mut typed = untyped.into_typed_response::<any_pointer::Owned>();
-            assert!(matches!(&typed.inner, PromiseInner::Response(_, _)));
+            let mut typed = ResponsePromise::<any_pointer::Owned, _>::from_shared(state.clone())
+                .into_typed_response::<any_pointer::Owned>();
+            assert!(matches!(&typed.inner, ResponseFuture::Direct(_)));
             assert_eq!(Rc::strong_count(&state), 2);
             let mut cx = core::task::Context::from_waker(Waker::noop());
             assert!(Pin::new(&mut typed).poll(&mut cx).is_pending());
@@ -1029,7 +1378,6 @@ mod promise_tests {
             drop(typed);
             assert_eq!(state.cancels.get(), 1);
             assert_eq!(Rc::strong_count(&state), 1);
-            assert!(receiver.state.borrow().is_none());
             let weak = Rc::downgrade(&state);
             drop(state);
             assert!(weak.upgrade().is_none());

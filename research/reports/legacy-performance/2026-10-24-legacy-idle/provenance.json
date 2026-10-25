@@ -1,0 +1,55 @@
+{
+  "repetitions": 5,
+  "points": [
+    10,
+    50
+  ],
+  "warmup": 2,
+  "failures": [],
+  "cpus": [
+    0,
+    2
+  ],
+  "cpu_topology": "# The following is the parsable format, which can be fed to other\n# programs. Each different item in every column has an unique ID\n# starting usually from zero.\n# CPU,Core,Socket\n0,0,0\n1,0,0\n2,1,0\n3,1,0\n",
+  "binaries": {
+    "frozen": {
+      "path": "/home/runner/work/_temp/legacy-baseline",
+      "sha256": "269736f097cea99dce7c28c7819136b3acce317e6f4f8b0f6fabe0b870f0d404",
+      "sections": "/home/runner/work/_temp/legacy-baseline  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370776       8672\n.rela.plt                1296     379448\n.rodata                828005     380928\n.gcc_except_table      457156    1208936\n.debug_gdb_scripts         34    1666092\n.eh_frame_hdr          103988    1666128\n.eh_frame              842932    1770120\n.text                 9872167    2617152\n.init                      27   12489320\n.fini                      13   12489348\n.plt                      880   12489376\n.tdata                    112   12494352\n.tbss                     456   12494464\n.fini_array                 8   12494464\n.init_array                16   12494472\n.data.rel.ro           263120   12494496\n.dynamic                  464   12757616\n.got                     2648   12758080\n.got.plt                  456   12760728\n.relro_padding           1952   12761184\n.tm_clone_table             0   12765280\n.data                    3272   12765280\n.bss                     4684   12768560\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703195          0\n.debug_aranges         167264          0\n.debug_ranges         6702608          0\n.debug_str           33737519          0\n.debug_line           6891597          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85362730\n\n\n"
+    },
+    "factored": {
+      "path": "/home/runner/work/_temp/legacy-factored",
+      "sha256": "f9b5e24915b713ce3ed26cdc0b8dea5a6d3df09cb94bb9230e7bea9c8aeb51b0",
+      "sections": "/home/runner/work/_temp/legacy-factored  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370752       8672\n.rela.plt                1296     379424\n.rodata                828005     380928\n.gcc_except_table      457132    1208936\n.debug_gdb_scripts         34    1666068\n.eh_frame_hdr          103988    1666104\n.eh_frame              842932    1770096\n.text                 9872167    2617152\n.init                      27   12489320\n.fini                      13   12489348\n.plt                      880   12489376\n.tdata                    112   12494352\n.tbss                     456   12494464\n.fini_array                 8   12494464\n.init_array                16   12494472\n.data.rel.ro           263088   12494496\n.dynamic                  464   12757584\n.got                     2648   12758048\n.got.plt                  456   12760696\n.relro_padding           1984   12761152\n.tm_clone_table             0   12765248\n.data                    3272   12765248\n.bss                     4684   12768528\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703987          0\n.debug_aranges         167264          0\n.debug_ranges         6703312          0\n.debug_str           33737868          0\n.debug_line           6891828          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85364758\n\n\n"
+    },
+    "candidate": {
+      "path": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench",
+      "sha256": "766b7e950b1a27e7d4be5bbee4013370368630a081244962f6c33b0fa858f412",
+      "sections": "/home/runner/work/capntproto/capntproto/target/legacy-factoring/release/capntproto-rpc-bench  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370728       8672\n.rela.plt                1296     379400\n.rodata                828005     380928\n.gcc_except_table      457112    1208936\n.debug_gdb_scripts         34    1666048\n.eh_frame_hdr          103988    1666084\n.eh_frame              842932    1770072\n.text                 9872167    2617152\n.init                      27   12489320\n.fini                      13   12489348\n.plt                      880   12489376\n.tdata                    112   12494352\n.tbss                     456   12494464\n.fini_array                 8   12494464\n.init_array                16   12494472\n.data.rel.ro           263056   12494496\n.dynamic                  464   12757552\n.got                     2648   12758016\n.got.plt                  456   12760664\n.relro_padding           2016   12761120\n.tm_clone_table             0   12765216\n.data                    3272   12765216\n.bss                     4684   12768496\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21704031          0\n.debug_aranges         167264          0\n.debug_ranges         6703328          0\n.debug_str           33737868          0\n.debug_line           6891900          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85364846\n\n\n"
+    },
+    "repeat": {
+      "path": "/home/runner/work/_temp/legacy-factored",
+      "sha256": "f9b5e24915b713ce3ed26cdc0b8dea5a6d3df09cb94bb9230e7bea9c8aeb51b0",
+      "sections": "/home/runner/work/_temp/legacy-factored  :\nsection                  size       addr\n.interp                    28        736\n.note.ABI-tag              32        764\n.note.gnu.build-id         36        796\n.dynsym                  4296        832\n.gnu.version              358       5128\n.gnu.version_r            464       5488\n.gnu.hash                  28       5952\n.dynstr                  2689       5980\n.rela.dyn              370752       8672\n.rela.plt                1296     379424\n.rodata                828005     380928\n.gcc_except_table      457132    1208936\n.debug_gdb_scripts         34    1666068\n.eh_frame_hdr          103988    1666104\n.eh_frame              842932    1770096\n.text                 9872167    2617152\n.init                      27   12489320\n.fini                      13   12489348\n.plt                      880   12489376\n.tdata                    112   12494352\n.tbss                     456   12494464\n.fini_array                 8   12494464\n.init_array                16   12494472\n.data.rel.ro           263088   12494496\n.dynamic                  464   12757584\n.got                     2648   12758048\n.got.plt                  456   12760696\n.relro_padding           1984   12761152\n.tm_clone_table             0   12765248\n.data                    3272   12765248\n.bss                     4684   12768528\n.comment                  223          0\n.debug_abbrev          393237          0\n.debug_info          21703987          0\n.debug_aranges         167264          0\n.debug_ranges         6703312          0\n.debug_str           33737868          0\n.debug_line           6891828          0\n.debug_loclists       1352432          0\n.debug_rnglists        212695          0\n.debug_str_offsets     596096          0\n.debug_addr            384960          0\n.debug_line_str         59278          0\n.debug_loc             396354          0\n.dep-v0                  2879          0\nTotal                85364758\n\n\n"
+    }
+  },
+  "workflow_sha": "6a86d30713a4393d19bdea7586e5224ff71d8363",
+  "method": "Rotate variant order each repetition and reverse short/long order on alternate repetitions. All peers use legacy; repeat and factored use an identical executable path. Cryptographic randomness is not replaced or seeded.",
+  "run_id": 40142420136,
+  "job_id": 121016737156,
+  "trial_count": 480,
+  "peer_capture_count": 960,
+  "artifact_id": 12580955997,
+  "qualification": "6a86d30713a4393d19bdea7586e5224ff71d8363",
+  "candidate_runtime": "1b4b94bee09874e7c688616a8771983af217eaf6",
+  "decision": "Rejected and reverted: task-set self instructions rose 14\u201335 per operation and branch-miss changes were mixed.",
+  "verification": {
+    "rust_test_executions": 832,
+    "python_tests_at_run": 2,
+    "python_tests_after_summary_test": 19,
+    "clippy": "passed with warnings denied",
+    "formatting": "passed",
+    "cortex_m_engine_rpc": "passed",
+    "standalone_no_allocator_link": "passed"
+  }
+}

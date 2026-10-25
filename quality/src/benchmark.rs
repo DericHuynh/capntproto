@@ -437,6 +437,20 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         root().join("benchmarks/rpc/generate-certificates.py"),
         bundle.join("generate-certificates.py"),
     )?;
+    for script in [
+        "secure-runner.py",
+        "secure-profile.py",
+        "topology-runner.py",
+        "ciphertext-counts.py",
+        "latency_stats.py",
+        "workflows.json",
+        "topologies.json",
+    ] {
+        fs::copy(
+            root().join("benchmarks/rpc").join(script),
+            bundle.join(script),
+        )?;
+    }
     let mut hashes = std::collections::BTreeMap::new();
     for name in [
         "tcp",

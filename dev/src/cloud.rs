@@ -19,6 +19,12 @@ pub enum Action {
     Run,
     /// Run application workflows between two dedicated VPC peers, then controls.
     RunRemote,
+    /// Measure TLS/QUIC and profile legacy/portable on the dedicated client.
+    RunSecure,
+    /// Measure all TLS/QUIC latency cases without tracing or profiling.
+    RunLatency,
+    /// Trace cumulative TLS/QUIC allocations on dedicated hosts without timing.
+    RunAllocations,
     /// Exercise every workflow locally without credentials or performance claims.
     Smoke,
     Cleanup,
@@ -646,6 +652,8 @@ fn benchmark(
         !state.join("client").exists() && !state.join("host").exists(),
         "state contains existing keys; clean up the previous run first"
     );
+    let archive = state.join("bundle.tar.gz");
+    archive_bundle(bundle, &archive)?;
     crate::write_json(state.join("receipt.json"), &json!({"name":name}))?;
     let client = state.join("client");
     let host = state.join("host");
@@ -745,18 +753,6 @@ fn benchmark(
             120,
             cancel,
         )?;
-        let archive = state.join("bundle.tar.gz");
-        let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
-            std::fs::File::create(&archive)?,
-            flate2::Compression::default(),
-        ));
-        let mut entries = std::fs::read_dir(bundle)?.collect::<std::io::Result<Vec<_>>>()?;
-        entries.sort_by_key(|e| e.file_name());
-        for entry in entries {
-            ensure!(entry.file_type()?.is_file(), "Unexpected bundle entry");
-            tar.append_path_with_name(entry.path(), entry.file_name())?;
-        }
-        tar.into_inner()?.finish()?;
         println!(
             "Uploading precompiled bundle: {} bytes",
             std::fs::metadata(&archive)?.len()
@@ -808,6 +804,42 @@ fn benchmark(
         _ => Ok(()),
     }
 }
+/// Package certificate fixtures too, without following symlinks or accepting
+/// special files. Validate and archive before any billable host is created.
+fn archive_bundle(bundle: &Path, output: &Path) -> Result<()> {
+    let entries = walkdir::WalkDir::new(bundle)
+        .min_depth(1)
+        .sort_by_file_name();
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(bundle)?;
+        ensure!(
+            entry.file_type().is_file()
+                || (entry.file_type().is_dir() && relative == Path::new("certificates")),
+            "unexpected bundle entry: {}",
+            relative.display()
+        );
+        if entry.file_type().is_file() {
+            ensure!(
+                relative.components().count() == 1
+                    || relative.parent() == Some(Path::new("certificates")),
+                "unexpected nested bundle file"
+            );
+            files.push((entry.path().to_owned(), relative.to_owned()));
+        }
+    }
+    let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
+        std::fs::File::create(output)?,
+        flate2::Compression::default(),
+    ));
+    for (path, relative) in files {
+        tar.append_path_with_name(path, relative)?;
+    }
+    tar.into_inner()?.finish()?;
+    Ok(())
+}
+
 pub fn run(args: Args) -> Result<()> {
     if matches!(&args.action, Action::Smoke) {
         return remote::smoke(
@@ -835,19 +867,31 @@ pub fn run(args: Args) -> Result<()> {
             Ok(())
         }
         Action::Janitor => janitor(&api, &owner),
-        Action::RunRemote => remote::run(
-            &api,
-            &args
-                .bundle
-                .context("run-remote requires --bundle")?
-                .canonicalize()?,
-            &std::path::absolute(args.output.context("run-remote requires --output")?)?,
-            &std::path::absolute(args.state)?,
-            &owner,
-            &cancel,
-            &SystemCommands,
-            args.trace_io,
-        ),
+        Action::RunRemote | Action::RunSecure | Action::RunLatency | Action::RunAllocations => {
+            remote::run(
+                &api,
+                &args
+                    .bundle
+                    .context("run-remote requires --bundle")?
+                    .canonicalize()?,
+                &std::path::absolute(args.output.context("run-remote requires --output")?)?,
+                &std::path::absolute(args.state)?,
+                &owner,
+                &cancel,
+                &SystemCommands,
+                if matches!(args.action, Action::RunAllocations) {
+                    remote::Campaign::Allocations
+                } else if matches!(args.action, Action::RunLatency) {
+                    remote::Campaign::Latency
+                } else if matches!(args.action, Action::RunSecure) {
+                    remote::Campaign::Secure
+                } else {
+                    remote::Campaign::Workflows {
+                        trace_io: args.trace_io,
+                    }
+                },
+            )
+        }
         Action::Run => benchmark(
             &api,
             &args
@@ -868,6 +912,37 @@ mod tests {
     fn size(slug: &str, price: Value) -> Value {
         json!({"slug":slug,"price_hourly":price,"available":true,"regions":["nyc3","tor1"],"vcpus":4})
     }
+    #[test]
+    fn bundle_archives_certificates_and_rejects_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        std::fs::create_dir_all(bundle.join("certificates")).unwrap();
+        crate::write(bundle.join("driver"), "binary").unwrap();
+        crate::write(bundle.join("certificates/server.der"), "certificate").unwrap();
+        let output = dir.path().join("bundle.tar.gz");
+        archive_bundle(&bundle, &output).unwrap();
+        let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(
+            std::fs::File::open(output).unwrap(),
+        ));
+        let names: Vec<_> = tar
+            .entries()
+            .unwrap()
+            .map(|e| e.unwrap().path().unwrap().into_owned())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                PathBuf::from("certificates/server.der"),
+                PathBuf::from("driver")
+            ]
+        );
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("driver", bundle.join("alias")).unwrap();
+            assert!(archive_bundle(&bundle, &dir.path().join("bad.tar.gz")).is_err());
+        }
+    }
+
     #[test]
     fn bounded_capacity_and_explicit_choices() {
         let sizes = vec![

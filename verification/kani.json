@@ -378,8 +378,8 @@
     {
       "name": "dispatch-newest-first",
       "source": "src/clients/dispatch.rs",
-      "from": "queued.sequence < sequence",
-      "to": "queued.sequence > sequence",
+      "from": "let Some(index) = self.ready.head else {",
+      "to": "let Some(index) = self.ready.tail else {",
       "harness": "clients::dispatch::proofs::oldest_ready_call_survives_rejection_and_slot_reuse",
       "expected_check": "dispatch preserves the oldest ready call"
     },

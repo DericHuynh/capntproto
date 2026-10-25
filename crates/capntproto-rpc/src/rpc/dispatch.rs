@@ -21,6 +21,50 @@
 
 //! Incoming RPC dispatch and peer message validation.
 use super::*;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
+
+// Keep immediate invocations on the receive stack. Only taking ownership
+// creates the completion channel and the two type-erased application hooks.
+struct InboundCall<VatId: 'static> {
+    params: Option<Box<dyn ParamsHook>>,
+    results: Option<Results<VatId>>,
+    completion: Option<oneshot::Receiver<ResultsInner<VatId>>>,
+}
+impl<VatId> capnp::private::capability::CallContextHook for InboundCall<VatId> {
+    fn borrow(&mut self) -> (&dyn ParamsHook, &mut dyn ResultsHook) {
+        (
+            &**self.params.as_ref().expect("consumed call"),
+            self.results.as_mut().expect("consumed call"),
+        )
+    }
+    fn results(&self) -> &dyn ResultsHook {
+        self.results.as_ref().expect("consumed call")
+    }
+    fn take(&mut self) -> (Box<dyn ParamsHook>, Box<dyn ResultsHook>) {
+        let mut results = self.results.take().expect("consumed call");
+        let (sender, receiver) = oneshot::channel();
+        results.results_done_fulfiller = Some(sender);
+        self.completion = Some(receiver);
+        (
+            self.params.take().expect("consumed call"),
+            Box::new(results),
+        )
+    }
+}
+impl<VatId> InboundCall<VatId> {
+    fn into_completion(mut self) -> impl Future<Output = capnp::Result<ResultsInner<VatId>>> {
+        match self.completion.take() {
+            Some(receiver) => future::Either::Left(receiver.map_err(crate::canceled_to_error)),
+            None => future::Either::Right(future::ready(Ok(self
+                .results
+                .as_mut()
+                .expect("unconsumed results")
+                .inner
+                .take()
+                .unwrap()))),
+        }
+    }
+}
 
 impl<VatId: 'static> ConnectionState<VatId> {
     pub(super) fn send_unimplemented(
@@ -181,7 +225,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     exports = result_exports;
                 }
                 pipeline = answer.pipeline.take();
-                task = answer.call_completion_promise.take();
+                task = answer.call_task.take();
                 pipeline_only_guard = answer.pipeline_only_guard.take();
                 join = answer.join.take();
                 if answer.status.return_has_been_sent.get() {
@@ -456,7 +500,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
         let mut answers = state.answers.borrow_mut();
         let answer = answers.slots.get_mut(&id).unwrap();
         answer.pipeline = Some(Box::new(pipeline));
-        answer.call_completion_promise = Some(running);
+        answer.call_task = Some(running.into());
         Ok(())
     }
 
@@ -490,7 +534,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 if let call::send_results_to::ThirdParty(_) = call.get_send_results_to().which()? {
                     return answer_adoption::receive_call(&connection_state, message, &mut fds);
                 }
-                let capability = connection_state.get_message_target(call.get_target()?)?;
+                let capability = connection_state.get_dispatch_target(call.get_target()?)?;
                 let (interface_id, method_id, question_id, cap_table_array, redirect_results) = {
                     let redirect_results = match call.get_send_results_to().which()? {
                         call::send_results_to::Caller(()) => false,
@@ -536,14 +580,10 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     no_promise_pipelining: call.get_no_promise_pipelining(),
                 };
                 let allow_third_party = call.get_allow_third_party_tail_call();
-                let params = Params::new(message, cap_table_array);
-                let mut answer = Answer::new();
+                let params = message.into_params(cap_table_array);
+                let mut answer = Answer::for_call(&connection_state);
                 answer.request_words = request_words;
                 connection_state.call_words.set(total);
-
-                let (results_inner_fulfiller, results_inner_promise) = oneshot::channel();
-                let mut results_inner_promise =
-                    results_inner_promise.map_err(crate::canceled_to_error);
 
                 let (pipeline_sender, pipeline) =
                     if hints.no_promise_pipelining && !only_promise_pipeline && !redirect_results {
@@ -556,7 +596,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     &connection_state,
                     question_id,
                     redirect_results,
-                    results_inner_fulfiller,
+                    None,
                     answer.status.clone(),
                     Some(pipeline_sender.weak_clone()),
                 );
@@ -565,7 +605,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                 inner.allow_third_party = allow_third_party;
                 inner.only_promise_pipeline = only_promise_pipeline;
                 if only_promise_pipeline {
-                    Rc::get_mut(&mut inner.return_guard).unwrap().only_pipeline = true;
+                    inner.return_guard.only_pipeline = true;
                     answer.pipeline_only_guard = Some(inner.return_guard.clone());
                 }
 
@@ -578,6 +618,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
                         (None, None)
                     };
 
+                // A synchronous handler may reenter RPC and project its own
+                // answer. Publish the queued pipeline before application entry;
+                // completion can then resolve it without a scheduled wrapper.
+                answer.pipeline = pipeline
+                    .as_ref()
+                    .map(|pipeline| Box::new(pipeline.clone()) as Box<dyn PipelineHook>);
                 {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
                     if slots.contains_key(&question_id) {
@@ -588,14 +634,16 @@ impl<VatId: 'static> ConnectionState<VatId> {
 
                 // No table borrow spans application code. Immediate ordinary
                 // calls need no independently scheduled cancellation owner.
-                results.permits_immediate_poll = pipeline.is_none();
-                let call_promise = capability.call_with_hints(
-                    interface_id,
-                    method_id,
-                    Box::new(params),
-                    Box::new(results),
-                    hints,
-                );
+                let permits_immediate_poll = !redirect_results && !only_promise_pipeline;
+                results.permits_immediate_poll = permits_immediate_poll;
+                let mut context = InboundCall {
+                    params: Some(params),
+                    results: Some(results),
+                    completion: None,
+                };
+                let call_promise =
+                    capability.call_during_dispatch(interface_id, method_id, &mut context, hints);
+                let mut results_inner_promise = context.into_completion();
 
                 // Keep completion in one future. Chained Then adapters move the
                 // result owner between states even for immediately ready calls.
@@ -626,12 +674,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     Poll::Ready(Ok(()))
                 });
 
-                // A non-pipelined call may complete on its first poll. Drive
-                // that bounded step before allocating a background task and
-                // two cancellation/completion channels. No table borrow may
-                // span application code. Pending work is always enqueued and
-                // polled again with the task set's real waker.
-                let completed = pipeline.is_none() && (&mut promise).now_or_never().is_some();
+                // Ordinary calls, including capability-bearing replies, may
+                // complete on their first poll. The published answer pipeline
+                // preserves reentrant projection. Pending work is enqueued and
+                // polled again with the task set's real waker; redirected and
+                // pipeline-only execution keep their independent owners.
+                let completed = permits_immediate_poll && (&mut promise).now_or_never().is_some();
                 if !completed {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
                     let Some(answer) = slots.get_mut(&question_id) else {
@@ -641,13 +689,12 @@ impl<VatId: 'static> ConnectionState<VatId> {
                     if redirect_results {
                         answer.redirected_results = redirected_results_done_promise;
                     }
-                    answer.call_completion_promise = Some(if let Some(mut pipeline) = pipeline {
+                    answer.call_task = Some(if let Some(mut pipeline) = pipeline {
                         let fork = promise.shared();
                         pipeline.drive(fork.clone());
-                        answer.pipeline = Some(Box::new(pipeline));
-                        connection_state.eagerly_evaluate(fork)
+                        connection_state.run_answer_task(&answer.status, fork)
                     } else {
-                        connection_state.eagerly_evaluate(promise)
+                        connection_state.run_answer_task(&answer.status, promise)
                     });
                 }
             }
@@ -764,11 +811,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                                     Error::failed("takeFromOtherQuestion: invalid answer".into())
                                 })?;
                                 let response = answer.redirected_results.take().ok_or_else(|| Error::failed("takeFromOtherQuestion: already adopted or not redirected".into()))?;
-                                (
-                                    response,
-                                    answer.status.clone(),
-                                    answer.call_completion_promise.take(),
-                                )
+                                (response, answer.status.clone(), answer.call_task.take())
                             };
                             // Taking the response also takes ownership of its producer.
                             // Finish may release the old answer before the adopted call
@@ -783,7 +826,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             )?;
                         }
                         return_::AwaitFromThirdParty(token) => {
-                            let pipeline = reference.borrow().pipeline.clone();
+                            let pipeline = reference.borrow().record().pipeline().cloned();
                             let response =
                                 answer_adoption::await_answer(&connection_state, token, pipeline);
                             QuestionRef::fulfill(&reference, response);
@@ -800,7 +843,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             answers.slots.get_mut(&id).map(|answer| {
                                 (
                                     answer.redirected_results.take(),
-                                    answer.call_completion_promise.take(),
+                                    answer.call_task.take(),
                                     answer.status.clone(),
                                 )
                             })

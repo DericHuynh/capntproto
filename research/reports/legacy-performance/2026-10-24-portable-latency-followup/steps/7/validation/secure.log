@@ -1,0 +1,115 @@
+   Compiling syn v2.0.119
+   Compiling getrandom v0.2.17
+   Compiling ring v0.17.14
+   Compiling nom v7.1.3
+   Compiling libloading v0.8.9
+   Compiling clang-sys v1.9.1
+   Compiling cexpr v0.6.0
+   Compiling bindgen v0.72.1
+   Compiling futures-channel v0.3.34
+   Compiling rand_core v0.6.4
+   Compiling cmake v0.1.58
+   Compiling boring-sys v5.2.0
+   Compiling futures-util v0.3.34
+   Compiling synstructure v0.13.2
+   Compiling corosensei v0.3.4
+   Compiling thiserror-impl v2.0.20
+   Compiling rustix v1.1.5
+   Compiling thiserror v2.0.20
+   Compiling asn1-rs-derive v0.6.0
+   Compiling rusticata-macros v4.1.0
+   Compiling rand_chacha v0.3.1
+   Compiling asn1-rs-impl v0.2.0
+   Compiling displaydoc v0.2.7
+   Compiling asn1-rs v0.7.2
+   Compiling rand v0.8.8
+   Compiling futures-executor v0.3.34
+   Compiling rand_pcg v0.3.1
+   Compiling num-integer v0.1.47
+   Compiling memoffset v0.9.1
+   Compiling tokio-macros v2.7.2
+   Compiling foreign-types-macros v0.2.4
+   Compiling rustls v0.23.46 (/workspace/capntproto/vendor/rustls)
+   Compiling shuttle-engine v0.1.2
+   Compiling foreign-types v0.5.0
+   Compiling nix v0.31.3
+   Compiling tokio v1.53.1
+   Compiling num-bigint v0.4.8
+   Compiling futures v0.3.34
+   Compiling capntproto-futures v0.25.2 (/workspace/capntproto/crates/capntproto-futures)
+   Compiling rustls-webpki v0.103.15
+   Compiling openssl-macros v0.1.1
+   Compiling serde_derive v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling quiche v0.30.0
+   Compiling tempfile v3.27.0
+   Compiling serde v1.0.229
+   Compiling boring v5.2.0
+   Compiling capntproto-rpc v0.25.1 (/workspace/capntproto/crates/capntproto-rpc)
+   Compiling der-parser v10.0.0
+   Compiling oid-registry v0.8.1
+   Compiling capntproto v0.1.0 (/workspace/capntproto)
+   Compiling enum_dispatch v0.3.13
+   Compiling fs2 v0.4.3
+   Compiling errno v0.3.14
+   Compiling miniz_oxide v0.9.1
+   Compiling x509-parser v0.18.1
+   Compiling signal-hook-registry v1.4.8
+   Compiling rcgen v0.14.10
+   Compiling crc32fast v1.5.2
+   Compiling tokio-util v0.7.19
+   Compiling shuttle-schedulers v0.1.1
+   Compiling shuttle-std v0.1.2
+   Compiling xattr v1.6.1
+   Compiling capntproto-test-support v0.1.0 (/workspace/capntproto/test-support)
+   Compiling pulldown-cmark v0.13.4
+   Compiling memmap2 v0.9.11
+   Compiling tar v0.4.46
+   Compiling pulldown-cmark-to-cmark v22.0.1
+   Compiling shuttle v0.9.4
+   Compiling flate2 v1.1.10
+   Compiling signal-hook v0.3.18
+   Compiling rand_chacha v0.9.0
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.5
+   Compiling proptest v1.11.0
+   Compiling capntproto-codegen v0.25.3 (/workspace/capntproto/crates/capntproto-codegen)
+   Compiling tokio-rustls v0.26.6
+   Compiling capntproto-compiler v0.1.0 (/workspace/capntproto/crates/capntproto-compiler)
+    Finished `test` profile [unoptimized] target(s) in 3m 52s
+     Running tests/secure_rpc.rs (/tmp/capntproto-build-cache/bench/debug/deps/secure_rpc-b9ff3d0bf9cc7c98)
+
+running 30 tests
+test quic_tests::drop_cancels_session_and_releases_routes ... ok
+test quic_tests::portable_quic_preserves_a_140_call_batch_and_orderly_shutdown ... ok
+test quic_tests::quic_rejects_mismatched_rpc_alpn ... ok
+test quic_tests::quic_mtls_rejects_missing_untrusted_expired_and_wrong_usage_clients ... ok
+test quic_tests::quic_v1_mtls_authenticates_both_peers ... ok
+test quic_tests::quic_rejects_untrusted_wrong_name_expired_and_wrong_usage_servers ... ok
+test quic_tests::quic_v2_is_rejected_without_silent_downgrade ... ok
+test quic_tests::portable_quic_wakes_only_one_of_32_parked_calls ... ok
+test quic_tests::quic_v1_rpc_capabilities_pipeline_large_messages_and_shutdown ... ok
+test quic_tests::listener_accepts_while_peer_stalls_and_preserves_established_rpc_after_cancel ... ok
+test quic_tests::half_close_preserves_large_payload_and_reverse_direction ... ok
+test rustls_direct::direct_records_match_owned_records_without_allocating ... ok
+test quic_tests::quic_validates_ip_subject_alternative_names ... ok
+test tls_tests::listener_isolates_invalid_and_stalled_handshakes_and_cancellation ... ok
+test tls_tests::mtls_rejects_missing_untrusted_expired_and_wrong_usage_clients ... ok
+test tls_tests::mtls_rpc_authenticates_both_peers ... ok
+test rustls_direct::direct_records_interoperate_across_automatic_key_updates_for_every_cipher ... ok
+test tls_tests::rejects_missing_or_mismatched_rpc_alpn ... ok
+test quic_tests::stalled_reader_resumes_large_transfer_without_starving_runtime ... ok
+test tls_tests::handshake_deadlines_release_stalled_sockets ... ok
+test unbuffered::corrupted_application_record_is_rejected ... ok
+test tls_tests::tls_rpc_capabilities_pipeline_large_messages_and_shutdown ... ok
+test tls_tests::rejects_untrusted_wrong_name_expired_and_wrong_usage_servers ... ok
+test unbuffered::unbuffered_client_interoperates_with_buffered_server_and_key_updates ... ok
+test tls_tests::portable_tls_wakes_only_one_of_32_parked_calls ... ok
+test unbuffered::unbuffered_server_interoperates_with_buffered_client_and_rejects_truncation ... ok
+test unbuffered::simultaneous_fragmented_records_survive_backpressure_and_partial_reads ... ok
+test unbuffered::tiny_record_configuration_and_half_close_preserve_reverse_traffic ... ok
+test quic_tests::setup_deadline_closes_authenticated_peer_without_rpc_stream ... ok
+test unbuffered::vectored_records_preserve_order_under_bidirectional_backpressure ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+

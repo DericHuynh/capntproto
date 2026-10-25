@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 mod support;
 use capnp::{
-    capability::Promise,
+    capability::ResponsePromise,
     traits::{HasTypeId, ImbueMut},
 };
 use capnp_rpc::rpc_capnp::{cap_descriptor, message, return_};
@@ -305,8 +305,7 @@ struct Caller {
     relay: Endpoint,
     callee: Endpoint,
     question: u32,
-    pending:
-        Option<Promise<capnp::capability::Response<harness::pending_results::Owned>, capnp::Error>>,
+    pending: Option<ResponsePromise<harness::pending_results::Owned>>,
     pipeline: Option<harness::pending_results::Pipeline>,
     calls: Vec<(bool, u32)>,
     response: Option<capnp::capability::Response<harness::pending_results::Owned>>,
@@ -1364,6 +1363,7 @@ async fn third_party_tail_returns_over_authenticated_native() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for portable in [false, true] {
+                let stage = Cell::new("connect");
                 tokio::time::timeout(Duration::from_secs(10), async {
                     let ids = [
                         Identity::generate(),
@@ -1395,12 +1395,15 @@ async fn third_party_tail_returns_over_authenticated_native() {
                     let mut a = support::driver::System::new(portable, Box::new(an), None);
                     let relay: harness::Client = a.bootstrap(ids[1].public_key());
                     let tasks = [a, b, c].map(|system| tokio::task::spawn_local(system.run()));
+                    stage.set("resolve host");
                     ready.await.unwrap();
+                    stage.set("dispatch parent");
                     let mut request = relay.pending_request().send();
                     let early = request.pipeline.get_cap();
                     while count.get() == 0 {
                         tokio::task::yield_now().await;
                     }
+                    stage.set("resolve early pipeline");
                     early
                         .client
                         .hook
@@ -1409,6 +1412,7 @@ async fn third_party_tail_returns_over_authenticated_native() {
                         .await
                         .unwrap();
                     assert!((&mut request.promise).now_or_never().is_none());
+                    stage.set("early child reply");
                     assert_eq!(
                         early
                             .echo_request()
@@ -1440,6 +1444,7 @@ async fn third_party_tail_returns_over_authenticated_native() {
                         73
                     );
                     assert!((&mut request.promise).now_or_never().is_none());
+                    stage.set("parent reply");
                     gate.send(()).unwrap();
                     let cap = request
                         .promise
@@ -1454,6 +1459,7 @@ async fn third_party_tail_returns_over_authenticated_native() {
                         bh.disconnect(ids[0].public_key());
                         bh.disconnect(ids[2].public_key());
                     }
+                    stage.set("direct child reply");
                     assert_eq!(
                         cap.echo_request()
                             .send()
@@ -1470,7 +1476,7 @@ async fn third_party_tail_returns_over_authenticated_native() {
                     }
                 })
                 .await
-                .unwrap();
+                .unwrap_or_else(|_| panic!("portable={portable}: stalled at {}", stage.get()));
             }
         })
         .await;

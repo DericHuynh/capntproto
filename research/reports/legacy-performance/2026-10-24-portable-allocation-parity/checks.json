@@ -1,0 +1,242 @@
+[
+  {
+    "name": "core",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-core",
+      "--lib"
+    ],
+    "exit_code": 0,
+    "log": "core.log"
+  },
+  {
+    "name": "rpc-clippy",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "clippy",
+      "-p",
+      "capntproto-rpc",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "log": "rpc-clippy.log"
+  },
+  {
+    "name": "core-selected",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-core",
+      "--test",
+      "selected_builder",
+      "--test",
+      "selected_struct",
+      "--test",
+      "root_budget"
+    ],
+    "exit_code": 0,
+    "log": "core-selected.log"
+  },
+  {
+    "name": "wire",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-rpc-wire",
+      "--features",
+      "std",
+      "--lib"
+    ],
+    "exit_code": 0,
+    "log": "wire.log"
+  },
+  {
+    "name": "rpc",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-rpc",
+      "--lib"
+    ],
+    "exit_code": 0,
+    "log": "rpc.log"
+  },
+  {
+    "name": "wire-clippy",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "clippy",
+      "-p",
+      "capntproto-rpc-wire",
+      "--features",
+      "std",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "log": "wire-clippy.log"
+  },
+  {
+    "name": "core-clippy",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "clippy",
+      "-p",
+      "capntproto-core",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "log": "core-clippy.log"
+  },
+  {
+    "name": "core-no-alloc",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "check",
+      "-p",
+      "capntproto-core",
+      "--no-default-features"
+    ],
+    "exit_code": 0,
+    "log": "core-no-alloc.log"
+  },
+  {
+    "name": "wire-no-alloc",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "check",
+      "-p",
+      "capntproto-rpc-wire",
+      "--no-default-features"
+    ],
+    "exit_code": 0,
+    "log": "wire-no-alloc.log"
+  },
+  {
+    "name": "secure",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto",
+      "--features",
+      "quic",
+      "--test",
+      "secure_rpc"
+    ],
+    "exit_code": 0,
+    "log": "secure.log"
+  },
+  {
+    "name": "format",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0,
+    "log": "format.log"
+  },
+  {
+    "name": "native",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto",
+      "--features",
+      "quic",
+      "--test",
+      "identity",
+      "--test",
+      "native",
+      "--test",
+      "native_multiparty",
+      "--test",
+      "native_shutdown"
+    ],
+    "exit_code": 101,
+    "log": "native-missing-jar.log",
+    "disposition": "Setup-only failure: omitted TLA2TOOLS_JAR; corrected native run below passed."
+  },
+  {
+    "name": "native",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto",
+      "--features",
+      "quic",
+      "--test",
+      "identity",
+      "--test",
+      "native",
+      "--test",
+      "native_multiparty",
+      "--test",
+      "native_shutdown"
+    ],
+    "exit_code": 0,
+    "log": "native.log",
+    "environment": {
+      "TLA2TOOLS_JAR": "/workspace/scratch/tla2tools.jar"
+    }
+  },
+  {
+    "name": "core-doc",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-core",
+      "--doc"
+    ],
+    "exit_code": 0,
+    "log": "core-doc.log"
+  },
+  {
+    "name": "rpc-doc",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "test",
+      "-p",
+      "capntproto-rpc",
+      "--doc"
+    ],
+    "exit_code": 0,
+    "log": "rpc-doc.log"
+  },
+  {
+    "name": "root-clippy",
+    "command": [
+      "/root/.cargo/bin/cargo",
+      "clippy",
+      "-p",
+      "capntproto",
+      "--all-targets",
+      "--features",
+      "quic",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "log": "root-clippy.log"
+  }
+]

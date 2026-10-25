@@ -167,6 +167,21 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
             json!({"runs-on":"ubuntu-24.04"}),
         ),
         ("ci", "/jobs/performance/needs", json!(["cargo"])),
+        (
+            "ci",
+            "/jobs/performance/needs",
+            json!(["cargo", "models", "fuzz", "extended"]),
+        ),
+        (
+            "performance",
+            "/on/workflow_call/inputs/campaign/default",
+            json!("run-secure"),
+        ),
+        (
+            "performance",
+            "/on/workflow_dispatch/inputs/campaign/default",
+            json!("run-secure"),
+        ),
         ("ci", "/jobs/report/needs", json!(["platforms"])),
         (
             "verification-fuzz",

@@ -394,7 +394,7 @@ fn response_completion_keeps_question_alive_across_forwarding_and_cancellation()
         let (reference, response, _) =
             Request::send_internal(&fixture.state, message, &[], false, permit, false).unwrap();
         let weak = Rc::downgrade(&reference);
-        let id = reference.borrow().id;
+        let id = *reference.borrow().record().id();
         let (sender, receiver) = oneshot::channel::<()>();
         if stage != 0 {
             QuestionRef::fulfill(
@@ -618,7 +618,7 @@ fn direct_pipeline_settles_before_application_poll_and_survives_response_cancell
         let permit = fixture.state.admission.reserve().unwrap();
         let (reference, response, pipeline) =
             Request::send_internal(&fixture.state, message, &[], false, permit, true).unwrap();
-        let id = reference.borrow().id;
+        let id = *reference.borrow().record().id();
         let weak = Rc::downgrade(&reference);
         let pipeline = pipeline.unwrap();
         let projected = pipeline.get_pipelined_cap(&[]);
@@ -1343,7 +1343,7 @@ fn unobserved_results_publish_answer_state_and_keep_capabilities_through_driven_
     struct Inspect {
         inner: Box<dyn crate::OutgoingMessage>,
         state: Rc<ConnectionState<Side>>,
-        status: Rc<AnswerStatus>,
+        status: AnswerStatusRef,
         driven: Rc<Cell<bool>>,
     }
     impl crate::OutgoingMessage for Inspect {
@@ -1489,4 +1489,471 @@ fn import_metadata_changes_signal_late_fd_and_disconnect_without_polling() {
         "metadata connection failure"
     );
     drop((alias, duplicate, hook));
+}
+
+#[test]
+fn shared_cancellation_context_retains_abandoned_results_until_final_guard() {
+    struct HeldPipeline(Rc<()>);
+    impl PipelineHook for HeldPipeline {
+        fn add_ref(&self) -> Box<dyn PipelineHook> {
+            Box::new(Self(self.0.clone()))
+        }
+        fn get_pipelined_cap(&self, _: &[PipelineOp]) -> Box<dyn ClientHook> {
+            unreachable!()
+        }
+    }
+    for boxed in [false, true] {
+        let mut fixture = Fixture::new();
+        let answer_id = AnswerId::from_wire(33);
+        let answer = Answer::new();
+        let status = answer.status.clone();
+        fixture
+            .state
+            .answers
+            .borrow_mut()
+            .slots
+            .insert(answer_id, answer);
+        let (sender, receiver) = oneshot::channel();
+        let mut results = Results::new(
+            &fixture.state,
+            answer_id,
+            false,
+            sender,
+            status.clone(),
+            None,
+        );
+        let owner = Rc::new(());
+        let weak = Rc::downgrade(&owner);
+        results.inner.as_mut().unwrap().variant =
+            Some(ResultsVariant::Transferred(Box::new(HeldPipeline(owner))));
+        let first = results.cancellation_context().unwrap();
+        assert!(matches!(
+            &first,
+            capnp::private::capability::CancellationGuard::Shared(_)
+        ));
+        let last = if boxed {
+            capnp::private::capability::CancellationGuard::Owned(
+                results.cancellation_guard().unwrap(),
+            )
+        } else {
+            results.cancellation_context().unwrap()
+        };
+        drop(results);
+        drop(receiver); // Caller abandoned results before protected execution completed.
+        drop(first);
+        assert!(weak.upgrade().is_some());
+        assert!(!status.return_has_been_sent.get());
+        drop(last);
+        assert!(weak.upgrade().is_none());
+        assert!(status.return_has_been_sent.get());
+        let messages = fixture.drain();
+        let replies: Vec<_> = messages
+            .iter()
+            .filter_map(
+                |m| match m.get_root::<message::Reader>().unwrap().which().unwrap() {
+                    message::Return(ret) => Some(ret.unwrap()),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].get_answer_id(), 33);
+        assert!(matches!(replies[0].which().unwrap(), return_::Canceled(())));
+    }
+}
+
+#[test]
+fn borrowed_capability_completion_publishes_pipeline_before_reentrant_projection() {
+    #[derive(Clone)]
+    struct Service {
+        state: Weak<ConnectionState<Side>>,
+        target: Rc<dyn ClientHook>,
+        projection: Rc<RefCell<Option<Box<dyn ClientHook>>>>,
+        initially_pending: bool,
+        entered: Rc<Cell<bool>>,
+    }
+    impl ClientHook for Service {
+        fn call_during_dispatch(
+            &self,
+            _: u64,
+            _: u16,
+            context: &mut dyn capnp::private::capability::CallContextHook,
+            _: CallHints,
+        ) -> Promise<(), Error> {
+            assert!(context.results().permits_immediate_poll());
+            let state = self.state.upgrade().unwrap();
+            assert!(state.answers.try_borrow_mut().is_ok());
+            // Reenter target resolution before this handler publishes results.
+            let mut target = capnp::message::Builder::new_default();
+            target
+                .init_root::<message_target::Builder>()
+                .init_promised_answer()
+                .set_question_id(42);
+            *self.projection.borrow_mut() = Some(
+                state
+                    .get_message_target(target.get_root_as_reader().unwrap())
+                    .unwrap(),
+            );
+            context
+                .borrow()
+                .1
+                .get()
+                .unwrap()
+                .set_as_capability(self.target.add_ref());
+            assert!(!self.entered.replace(true));
+            let mut pending = self.initially_pending;
+            Promise::from_future(future::poll_fn(move |cx| {
+                if std::mem::take(&mut pending) {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Ok(()))
+                }
+            }))
+        }
+        fn call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Box<dyn ParamsHook>,
+            _: Box<dyn ResultsHook>,
+        ) -> Promise<(), Error> {
+            panic!("the inbound call must borrow its original context")
+        }
+        fn add_ref(&self) -> Box<dyn ClientHook> {
+            Box::new(self.clone())
+        }
+        fn new_call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Option<capnp::MessageSize>,
+        ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+            unreachable!()
+        }
+        fn get_ptr(&self) -> usize {
+            Rc::as_ptr(&self.entered) as usize
+        }
+        fn get_brand(&self) -> usize {
+            0
+        }
+        fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+            None
+        }
+        fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+            None
+        }
+        fn when_resolved(&self) -> Promise<(), Error> {
+            Promise::ok(())
+        }
+    }
+    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Incoming {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    for initially_pending in [false, true] {
+        let mut fixture = Fixture::new();
+        fixture.drain();
+        fixture.bytes.borrow_mut().clear();
+        let service = Service {
+            state: Rc::downgrade(&fixture.state),
+            target: Rc::from(local_cap()),
+            projection: Rc::default(),
+            initially_pending,
+            entered: Rc::default(),
+        };
+        let export = fixture.export(&service);
+        let mut message = capnp::message::Builder::new_default();
+        let mut call = message.init_root::<message::Builder>().init_call();
+        call.set_question_id(42);
+        call.reborrow()
+            .init_target()
+            .set_imported_cap(export.to_wire());
+        call.init_params();
+        ConnectionState::handle_message(
+            &Rc::downgrade(&fixture.state),
+            Box::new(Incoming(message)),
+        )
+        .unwrap();
+        assert!(service.entered.get());
+        {
+            let answers = fixture.state.answers.borrow();
+            let answer = answers.slots.get(&AnswerId::from_wire(42)).unwrap();
+            assert_eq!(answer.call_task.is_some(), initially_pending);
+            assert_eq!(answer.status.return_has_been_sent.get(), !initially_pending);
+        }
+        let messages = fixture.drain();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| matches!(
+                    message
+                        .get_root::<message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap(),
+                    message::Return(_)
+                ))
+                .count(),
+            1
+        );
+        let projection = service.projection.borrow();
+        let projected = projection
+            .as_ref()
+            .unwrap()
+            .get_resolved()
+            .expect("early projection resolves");
+        assert_eq!(projected.get_ptr(), service.target.get_ptr());
+        assert_eq!(fixture.state.call_words.get(), 0);
+    }
+}
+
+#[test]
+fn consumed_request_boxes_reuse_only_empty_bounded_storage() {
+    let mut fixture = Fixture::new();
+    fixture.drain();
+    let weak = Rc::downgrade(&fixture.state);
+    let make = |fixture: &Fixture| {
+        fixture._bootstrap.hook.new_call_with_hints(
+            0,
+            0,
+            None,
+            CallHints {
+                no_promise_pipelining: true,
+                only_promise_pipeline: false,
+            },
+        )
+    };
+    // Prepare a burst before consuming any box so this exercises the bound.
+    let requests: Vec<_> = (0..65).map(|_| make(&fixture)).collect();
+    let addresses: std::collections::HashSet<_> = requests
+        .iter()
+        .map(|request| &*request.hook as *const dyn RequestHook as *const () as usize)
+        .collect();
+    assert_eq!(addresses.len(), 65);
+    assert!(fixture.state.request_cache.borrow().is_empty());
+    for request in requests {
+        drop(request.send());
+    }
+    fixture.drain();
+    {
+        let cache = fixture.state.request_cache.borrow();
+        assert_eq!(cache.len(), 64);
+        assert!(cache.iter().all(|request| request.data.is_none()));
+    }
+    let reused: Vec<_> = (0..64).map(|_| make(&fixture)).collect();
+    assert!(fixture.state.request_cache.borrow().is_empty());
+    for request in &reused {
+        let address = &*request.hook as *const dyn RequestHook as *const () as usize;
+        assert!(addresses.contains(&address));
+    }
+    drop(reused); // Unsent requests release their messages and admission credits.
+    drop(make(&fixture).send());
+    assert_eq!(fixture.state.request_cache.borrow().len(), 1);
+    drop(fixture);
+    assert!(
+        weak.upgrade().is_none(),
+        "empty cached requests cannot retain a connection"
+    );
+}
+
+#[test]
+fn answer_task_cancellation_wakes_pending_work_and_clears_cached_interests() {
+    struct Work {
+        polls: Rc<Cell<usize>>,
+        dropped: Rc<Cell<bool>>,
+        ready: bool,
+    }
+    impl Future for Work {
+        type Output = capnp::Result<()>;
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            self.polls.set(self.polls.get() + 1);
+            if self.ready {
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+    impl Drop for Work {
+        fn drop(&mut self) {
+            assert!(!self.dropped.replace(true));
+        }
+    }
+    #[derive(Default)]
+    struct Wakes(std::sync::atomic::AtomicUsize);
+    impl futures::task::ArcWake for Wakes {
+        fn wake_by_ref(wakes: &std::sync::Arc<Self>) {
+            wakes.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    // Cancellation before polling, cancellation while parked, completion, and
+    // driver shutdown while the answer owner still lives.
+    for mode in 0..4 {
+        let cache = AnswerStatusCache::default();
+        let status = AnswerStatusRef::acquire(&cache);
+        let mut owner = Some(CancelAnswerTask(status.clone()));
+        let polls = Rc::new(Cell::new(0));
+        let dropped = Rc::new(Cell::new(false));
+        let mut driver = Box::pin(AnswerTaskDriver {
+            status: status.clone(),
+            future: Work {
+                polls: polls.clone(),
+                dropped: dropped.clone(),
+                ready: mode == 2,
+            },
+        });
+        let wakes = std::sync::Arc::new(Wakes::default());
+        let waker = futures::task::waker(wakes.clone());
+        let mut cx = Context::from_waker(&waker);
+        if mode == 0 {
+            drop(owner.take());
+        }
+        assert_eq!(
+            driver.as_mut().poll(&mut cx).is_ready(),
+            mode == 0 || mode == 2
+        );
+        if mode == 1 {
+            drop(owner.take());
+            assert!(driver.as_mut().poll(&mut cx).is_ready());
+        }
+        assert!(!dropped.get());
+        drop(driver);
+        assert!(dropped.get());
+        assert!(status.task_waker.borrow().is_none());
+        drop(owner);
+        assert_eq!(polls.get(), usize::from(mode != 0));
+        assert_eq!(
+            wakes.0.load(std::sync::atomic::Ordering::Relaxed),
+            usize::from(mode == 1)
+        );
+        drop(status);
+        assert_eq!(cache.borrow().len(), 1);
+        let reused = AnswerStatusRef::acquire(&cache);
+        assert!(!reused.task_canceled.get());
+        assert!(reused.task_waker.borrow().is_none());
+    }
+}
+
+#[test]
+fn incoming_call_retains_export_without_cloning_a_hook_or_borrowing_the_table() {
+    struct Life(Rc<Cell<bool>>);
+    impl Drop for Life {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+    #[derive(Clone)]
+    struct Service {
+        life: Rc<Life>,
+        clones: Rc<Cell<usize>>,
+        id: Rc<Cell<u32>>,
+        state: Weak<ConnectionState<Side>>,
+    }
+    impl ClientHook for Service {
+        fn call_during_dispatch(
+            &self,
+            _: u64,
+            _: u16,
+            _: &mut dyn capnp::private::capability::CallContextHook,
+            _: CallHints,
+        ) -> Promise<(), Error> {
+            let state = self.state.upgrade().unwrap();
+            assert!(state.exports.try_borrow_mut().is_ok());
+            state
+                .release_export(ExportId::from_wire(self.id.get()), 1)
+                .unwrap();
+            assert!(
+                !self.life.0.get(),
+                "dispatch must retain a released export until entry returns"
+            );
+            Promise::ok(())
+        }
+        fn call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Box<dyn ParamsHook>,
+            _: Box<dyn ResultsHook>,
+        ) -> Promise<(), Error> {
+            unreachable!()
+        }
+        fn add_ref(&self) -> Box<dyn ClientHook> {
+            self.clones.set(self.clones.get() + 1);
+            Box::new(self.clone())
+        }
+        fn new_call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Option<capnp::MessageSize>,
+        ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+            unreachable!()
+        }
+        fn get_ptr(&self) -> usize {
+            Rc::as_ptr(&self.life) as usize
+        }
+        fn get_brand(&self) -> usize {
+            0
+        }
+        fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+            None
+        }
+        fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
+            None
+        }
+        fn when_resolved(&self) -> Promise<(), Error> {
+            Promise::ok(())
+        }
+    }
+    struct Incoming(capnp::message::Builder<capnp::message::HeapAllocator>);
+    impl crate::IncomingMessage for Incoming {
+        fn size_in_words(&self) -> usize {
+            self.0.size_in_words()
+        }
+        fn get_body(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get_root_as_reader()
+        }
+    }
+    let mut fixture = Fixture::new();
+    fixture.drain();
+    let dropped = Rc::new(Cell::new(false));
+    let clones = Rc::new(Cell::new(0));
+    let id = Rc::new(Cell::new(0));
+    let service = Service {
+        life: Rc::new(Life(dropped.clone())),
+        clones: clones.clone(),
+        id: id.clone(),
+        state: Rc::downgrade(&fixture.state),
+    };
+    let export = fixture.export(&service);
+    id.set(export.to_wire());
+    drop(service);
+    let before = clones.get();
+    let mut message = capnp::message::Builder::new_default();
+    let mut call = message.init_root::<message::Builder>().init_call();
+    call.set_question_id(42);
+    call.set_no_promise_pipelining(true);
+    call.reborrow()
+        .init_target()
+        .set_imported_cap(export.to_wire());
+    call.init_params();
+    ConnectionState::handle_message(&Rc::downgrade(&fixture.state), Box::new(Incoming(message)))
+        .unwrap();
+    assert_eq!(
+        clones.get(),
+        before,
+        "ordinary dispatch must not allocate another hook clone"
+    );
+    assert!(
+        dropped.get(),
+        "the dispatch reference releases the final capability owner"
+    );
+    fixture.drain();
+    assert_eq!(fixture.state.call_words.get(), 0);
 }

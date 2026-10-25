@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/home/runner/work/_temp/legacy-results.elf",
+  "bytes": 880000,
+  "sha256": "2b1620e16f9eac1d704ca623c06bc8d349a460b94da2a95e3bc85618cb7604b3",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "eee0054db640725a6f51f884e3e4741d03f090e8b43fc32fb5166741485458b6",
+  "scope": "Link-only caller-owned legacy result storage in a fixed Return envelope; not a complete RPC conversation, not executed on a board."
+}

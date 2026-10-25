@@ -1,0 +1,24 @@
+[package]
+name = "capntproto-legacy-alloc-check"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+# Do not unify std features through the hosted application or its executor.
+[workspace]
+resolver = "2"
+
+[dependencies]
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core", default-features = false, features = ["alloc"] }
+capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+allocation-counter = "=0.8.1"
+
+[build-dependencies]
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
+
+[profile.dev]
+debug = 0
+incremental = false
