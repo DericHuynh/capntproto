@@ -498,6 +498,7 @@ name = "capntproto-rpc-engine"
 version = "0.1.0"
 dependencies = [
  "allocation-counter",
+ "capntproto-task",
 ]
 
 [[package]]
@@ -528,6 +529,13 @@ dependencies = [
  "signal-hook",
  "tar",
  "tempfile",
+]
+
+[[package]]
+name = "capntproto-task"
+version = "0.1.0"
+dependencies = [
+ "allocation-counter",
 ]
 
 [[package]]

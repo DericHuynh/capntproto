@@ -304,6 +304,9 @@ dependencies = [
 [[package]]
 name = "capntproto-rpc-engine"
 version = "0.1.0"
+dependencies = [
+ "capntproto-task",
+]
 
 [[package]]
 name = "capntproto-rpc-wire"
@@ -333,6 +336,10 @@ checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
 dependencies = [
  "nom",
 ]
+
+[[package]]
+name = "capntproto-task"
+version = "0.1.0"
 
 [[package]]
 name = "cfg-if"

@@ -7,9 +7,9 @@ Completion requires a no-std/no-alloc legacy RPC path exercising unary, dependen
 ## Work in progress
 
 - Qualified base: `4888f89215b92e88b163bb0be6ceb0985d7f1de3`, readiness notifications extracted with exact component work parity.
-- Admission: shared core transitions with sealed fixed-ring and hosted VecDeque backing; borrowed endpoints preserve ownership on full/closed rejection. Hosted adapter now delegates directly. Initial bounded and hosted tests pass; full engine/hosted checks and repeated qualification pending.
-- Task storage: caller-pinned future slots, explicit admission failure, and the same ready polling/retirement algorithm as hosted legacy. Pending.
-- Wake ownership: caller/static notification storage and explicit wake-provider contract; retain safe standard-Waker lifetimes for the hosted adapter. Pending.
+- Admission: shared core transitions with sealed fixed-ring and hosted VecDeque backing; borrowed endpoints preserve ownership on full/closed rejection. Hosted adapter now delegates directly. Qualified by run 40158026841: 853 test executions, exact combined component Ir/Bi parity; branch prediction/layout deltas retained in the admission report.
+- Task storage: caller-pinned owned future slots (including !Unpin), explicit admission failure, immediate in-place destruction and the same ready polling/retirement algorithm as hosted legacy. Local engine tests and hosted checks pass; repeated CI/Miri qualification pending.
+- Wake ownership: implemented static notification identities with standard Wakers, containing no task pointer; old escaping wakes can only poll a replacement. Small audited core-only capntproto-task crate owns raw-waker construction and pin projection. Engine remains unsafe-free. CI/Miri qualification pending.
 - Protocol/hook/message storage: eliminate mandatory Box/Rc/Vec ownership from the legacy core, preserving retained frames, pipelines, cleanup publication and ID reuse. Pending.
 - Profiles/API: make legacy's core available in the no-default profile, separate allocating/OS adapters, and remove any need to select another protocol driver. Pending.
 - End-to-end proof and repeated hosted regressions: pending.

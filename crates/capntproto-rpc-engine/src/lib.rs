@@ -14,6 +14,9 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+/// Allocator-free standard wakers for statically retained wake targets.
+pub use capntproto_task as wake;
+
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
@@ -42,6 +45,8 @@ pub mod readiness;
 pub mod references;
 #[doc(hidden)]
 pub mod storage;
+#[cfg(all(target_has_atomic = "ptr", target_has_atomic = "8"))]
+pub mod tasks;
 pub mod waiting;
 #[doc(hidden)]
 pub mod work_queue;
