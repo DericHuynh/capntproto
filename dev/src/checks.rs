@@ -225,6 +225,22 @@ pub fn unsafe_inventory(text: &str, root: &Path) -> Result<Value> {
     }
     Ok(files)
 }
+fn compiler_errors(output: &[u8]) -> String {
+    output
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
+        .filter(|event| {
+            event["reason"] == "compiler-message" && event["message"]["level"] == "error"
+        })
+        .filter_map(|event| {
+            event["message"]["rendered"]
+                .as_str()
+                .or_else(|| event["message"]["message"].as_str())
+                .map(str::to_owned)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 pub fn unsafe_code() -> Result<()> {
     let args = [
         "clippy",
@@ -249,7 +265,8 @@ pub fn unsafe_code() -> Result<()> {
     write(directory.join("clippy.jsonl"), &output.stdout)?;
     ensure!(
         output.code == 0,
-        "Clippy failed: {}",
+        "Clippy failed:\n{}\n{}",
+        compiler_errors(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let actual = unsafe_inventory(std::str::from_utf8(&output.stdout)?, &root())?;

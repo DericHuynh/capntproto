@@ -1,5 +1,23 @@
 use super::*;
 #[test]
+fn clippy_failures_show_errors_from_json_stdout() {
+    let messages = [
+        json!({"reason":"compiler-artifact"}),
+        json!({"reason":"compiler-message","message":{"level":"warning","rendered":"warning"}}),
+        json!({"reason":"compiler-message","message":{"level":"error","rendered":"error[E0432]: unresolved import `crate::collections`"}}),
+        json!({"reason":"compiler-message","message":{"level":"error","message":"could not compile test"}}),
+    ];
+    let output = messages
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        compiler_errors(format!("cargo progress\n{output}\n").as_bytes()),
+        "error[E0432]: unresolved import `crate::collections`\ncould not compile test"
+    );
+}
+#[test]
 fn nextest_reports_are_distinct_and_failures_propagate() {
     let dir = tempfile::tempdir().unwrap();
     write(

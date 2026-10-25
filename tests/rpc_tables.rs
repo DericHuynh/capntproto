@@ -2,6 +2,7 @@
 //! duplicate implementation or a test-only runtime API. Wire behavior is exercised
 //! separately by the ordinary RPC, Join and third-party integration tests.
 use capntproto_rpc_engine::ids as rpc_ids;
+use std::collections;
 #[allow(dead_code)]
 #[path = "../crates/capntproto-rpc/src/rpc_tables.rs"]
 mod rpc_tables;

@@ -614,7 +614,7 @@ fn rpc_identifier_and_table_compile_contracts() {
     // Compile hosted tables with the shared engine's identifiers. The parent
     // has the same visibility as rpc.rs; no test-only runtime API is needed.
     let prelude = format!(
-        "#![allow(dead_code)]\nuse capntproto_rpc_engine::ids as rpc_ids;\nuse capntproto_rpc_engine::peer_table as bounded;\n#[path = {:?}] mod rpc_tables;\nuse rpc_ids::*;\nuse rpc_tables::*;\n",
+        "#![allow(dead_code)]\nuse std::collections;\nuse capntproto_rpc_engine::ids as rpc_ids;\nuse capntproto_rpc_engine::peer_table as bounded;\n#[path = {:?}] mod rpc_tables;\nuse rpc_ids::*;\nuse rpc_tables::*;\n",
         root().join("crates/capntproto-rpc/src/rpc_tables.rs")
     );
     let mut cases = vec![(
