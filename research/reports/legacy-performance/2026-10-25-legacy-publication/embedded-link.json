@@ -1,0 +1,11 @@
+{
+  "target": "thumbv7em-none-eabi",
+  "artifact": "/tmp/legacy-publication.elf",
+  "bytes": 724192,
+  "sha256": "938193c31e2a880407afc4e23e20def5eb48aa7e7d68c803ae0a3370e89b752d",
+  "undefined_symbols": [],
+  "allocator_symbols": [],
+  "entry_present": true,
+  "source_sha256": "fd3dd37096bdb1dbaca399e767cd76f2cfc8eba4724319f81037e91ffee52758",
+  "scope": "Link-only shared legacy scheduler, compact publication state, fixed owned pinned tasks and borrowed queues. Not complete noalloc connection, native latency or board execution."
+}

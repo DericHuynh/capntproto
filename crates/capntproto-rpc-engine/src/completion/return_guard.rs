@@ -43,11 +43,7 @@ impl<'a> ReturnOwnership<'a> {
             .checked_sub(1)
             .expect("return guard underflow");
         self.guards.set(remaining);
-        // A nonfinal release preserves the claim flag. Select its next value
-        // without branching, then report whether this release first claimed it.
-        let last = remaining == 0;
-        let was_claimed = self.claimed.replace(self.claimed.get() | last);
-        last & !was_claimed
+        remaining == 0 && !self.claimed.replace(true)
     }
 
     /// Record explicit completion without waiting for retained guards to end.

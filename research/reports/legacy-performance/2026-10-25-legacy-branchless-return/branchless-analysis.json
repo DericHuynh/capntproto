@@ -1,0 +1,4497 @@
+{
+  "scope": "Exclusive self work of selected TaskSet::poll and ReturnGuard functions; five paired 50-minus-10 slopes. Memory events are whole-program and retain startup/crypto noise. Branch misses are simulated. Static assembly is the actual CI benchmark binary; counts include all retained instantiated bodies, not execution frequency. No native latency inference.",
+  "groups": [
+    {
+      "case": "unary-small",
+      "metric": "Ir",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0
+        ],
+        "mean": 2193.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0
+        ],
+        "mean": 2193.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Ir",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          101.0,
+          101.0,
+          101.0,
+          101.0,
+          101.0
+        ],
+        "mean": 101.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          117.0,
+          117.0,
+          117.0,
+          117.0,
+          117.0
+        ],
+        "mean": 117.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0
+        ],
+        "mean": 16.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bc",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          412.0,
+          412.0,
+          412.0,
+          412.0,
+          412.0
+        ],
+        "mean": 412.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          412.0,
+          412.0,
+          412.0,
+          412.0,
+          412.0
+        ],
+        "mean": 412.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bc",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          16.0,
+          16.0,
+          16.0,
+          16.0,
+          16.0
+        ],
+        "mean": 16.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          15.0,
+          15.0,
+          15.0,
+          15.0,
+          15.0
+        ],
+        "mean": 15.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "mean": -1.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bcm",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          35.025,
+          35.0,
+          35.025,
+          34.975,
+          35.0
+        ],
+        "mean": 35.005,
+        "sd": 0.0209165006633507
+      },
+      "candidate": {
+        "samples": [
+          27.0,
+          27.0,
+          27.0,
+          27.0,
+          27.0
+        ],
+        "mean": 27.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -8.024999999999999,
+          -8.0,
+          -8.024999999999999,
+          -7.975000000000001,
+          -8.0
+        ],
+        "mean": -8.004999999999999,
+        "sd": 0.0209165006633507
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bcm",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "mean": 2.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean": 1.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "mean": -1.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bi",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          12.0,
+          12.0,
+          12.0,
+          12.0,
+          12.0
+        ],
+        "mean": 12.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          12.0,
+          12.0,
+          12.0,
+          12.0,
+          12.0
+        ],
+        "mean": 12.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bi",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bim",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          9.0,
+          9.0,
+          9.0,
+          9.0,
+          9.0
+        ],
+        "mean": 9.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          8.0,
+          8.0,
+          8.0,
+          8.0,
+          8.0
+        ],
+        "mean": 8.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "mean": -1.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Bim",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Ir",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          4386.0,
+          4386.0,
+          4386.0,
+          4386.0,
+          4386.0
+        ],
+        "mean": 4386.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          4386.0,
+          4386.0,
+          4386.0,
+          4386.0,
+          4386.0
+        ],
+        "mean": 4386.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Ir",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          202.0,
+          202.0,
+          202.0,
+          202.0,
+          202.0
+        ],
+        "mean": 202.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          234.0,
+          234.0,
+          234.0,
+          234.0,
+          234.0
+        ],
+        "mean": 234.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          32.0,
+          32.0,
+          32.0,
+          32.0,
+          32.0
+        ],
+        "mean": 32.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bc",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          824.0,
+          824.0,
+          824.0,
+          824.0,
+          824.0
+        ],
+        "mean": 824.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          824.0,
+          824.0,
+          824.0,
+          824.0,
+          824.0
+        ],
+        "mean": 824.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bc",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          32.0,
+          32.0,
+          32.0,
+          32.0,
+          32.0
+        ],
+        "mean": 32.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          30.0,
+          30.0,
+          30.0,
+          30.0,
+          30.0
+        ],
+        "mean": 30.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -2.0,
+          -2.0,
+          -2.0,
+          -2.0,
+          -2.0
+        ],
+        "mean": -2.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bcm",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          74.975,
+          75.0,
+          75.025,
+          75.0,
+          74.9
+        ],
+        "mean": 74.98,
+        "sd": 0.048088460154177476
+      },
+      "candidate": {
+        "samples": [
+          54.0,
+          54.0,
+          54.0,
+          54.025,
+          54.0
+        ],
+        "mean": 54.005,
+        "sd": 0.011180339887498314
+      },
+      "paired_delta": {
+        "samples": [
+          -20.974999999999994,
+          -21.0,
+          -21.025000000000006,
+          -20.975,
+          -20.900000000000006
+        ],
+        "mean": -20.975,
+        "sd": 0.04677071733467351
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bcm",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          6.0,
+          6.0,
+          6.0,
+          6.0,
+          6.0
+        ],
+        "mean": 6.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "mean": 2.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -4.0,
+          -4.0,
+          -4.0,
+          -4.0,
+          -4.0
+        ],
+        "mean": -4.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bi",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          24.0,
+          24.0,
+          24.0,
+          24.0,
+          24.0
+        ],
+        "mean": 24.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          24.0,
+          24.0,
+          24.0,
+          24.0,
+          24.0
+        ],
+        "mean": 24.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bi",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bim",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          18.0,
+          18.0,
+          18.0,
+          18.0,
+          18.0
+        ],
+        "mean": 18.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          18.0,
+          18.0,
+          18.0,
+          18.0,
+          18.0
+        ],
+        "mean": 18.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Bim",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Ir",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0
+        ],
+        "mean": 2193.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0,
+          2193.0
+        ],
+        "mean": 2193.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Ir",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          202.0,
+          202.0,
+          202.0,
+          202.0,
+          202.0
+        ],
+        "mean": 202.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          234.0,
+          234.0,
+          234.0,
+          234.0,
+          234.0
+        ],
+        "mean": 234.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          32.0,
+          32.0,
+          32.0,
+          32.0,
+          32.0
+        ],
+        "mean": 32.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bc",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          412.0,
+          412.0,
+          412.0,
+          412.0,
+          412.0
+        ],
+        "mean": 412.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          412.0,
+          412.0,
+          412.0,
+          412.0,
+          412.0
+        ],
+        "mean": 412.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bc",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          32.0,
+          32.0,
+          32.0,
+          32.0,
+          32.0
+        ],
+        "mean": 32.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          30.0,
+          30.0,
+          30.0,
+          30.0,
+          30.0
+        ],
+        "mean": 30.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -2.0,
+          -2.0,
+          -2.0,
+          -2.0,
+          -2.0
+        ],
+        "mean": -2.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bcm",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          48.0,
+          48.025,
+          48.0,
+          48.025,
+          47.975
+        ],
+        "mean": 48.005,
+        "sd": 0.0209165006633507
+      },
+      "candidate": {
+        "samples": [
+          33.25,
+          33.25,
+          33.275,
+          33.25,
+          33.25
+        ],
+        "mean": 33.255,
+        "sd": 0.011180339887498314
+      },
+      "paired_delta": {
+        "samples": [
+          -14.75,
+          -14.774999999999999,
+          -14.725000000000001,
+          -14.774999999999999,
+          -14.725000000000001
+        ],
+        "mean": -14.75,
+        "sd": 0.02499999999999858
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bcm",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          4.0,
+          4.0,
+          4.0,
+          4.0,
+          3.725
+        ],
+        "mean": 3.945,
+        "sd": 0.12298373876248839
+      },
+      "candidate": {
+        "samples": [
+          3.0,
+          3.0,
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean": 3.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          -0.7250000000000001
+        ],
+        "mean": -0.9450000000000001,
+        "sd": 0.12298373876248839
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bi",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          12.0,
+          12.0,
+          12.0,
+          12.0,
+          12.0
+        ],
+        "mean": 12.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          12.0,
+          12.0,
+          12.0,
+          12.0,
+          12.0
+        ],
+        "mean": 12.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bi",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bim",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          9.0,
+          9.0,
+          9.0,
+          9.0,
+          9.0
+        ],
+        "mean": 9.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          10.0,
+          10.0,
+          10.0,
+          10.0,
+          10.0
+        ],
+        "mean": 10.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean": 1.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Bim",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Ir",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0
+        ],
+        "mean": 2538.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0
+        ],
+        "mean": 2538.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Ir",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          3232.0,
+          3232.0,
+          3232.0,
+          3232.0,
+          3232.0
+        ],
+        "mean": 3232.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          3744.0,
+          3744.0,
+          3744.0,
+          3744.0,
+          3744.0
+        ],
+        "mean": 3744.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          512.0,
+          512.0,
+          512.0,
+          512.0,
+          512.0
+        ],
+        "mean": 512.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bc",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          472.0,
+          472.0,
+          472.0,
+          472.0,
+          472.0
+        ],
+        "mean": 472.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          472.0,
+          472.0,
+          472.0,
+          472.0,
+          472.0
+        ],
+        "mean": 472.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bc",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          512.0,
+          512.0,
+          512.0,
+          512.0,
+          512.0
+        ],
+        "mean": 512.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          480.0,
+          480.0,
+          480.0,
+          480.0,
+          480.0
+        ],
+        "mean": 480.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -32.0,
+          -32.0,
+          -32.0,
+          -32.0,
+          -32.0
+        ],
+        "mean": -32.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bcm",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          39.95,
+          39.975,
+          39.925,
+          39.975,
+          39.975
+        ],
+        "mean": 39.96,
+        "sd": 0.022360679774999406
+      },
+      "candidate": {
+        "samples": [
+          23.05,
+          23.05,
+          23.05,
+          23.05,
+          23.05
+        ],
+        "mean": 23.05,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -16.900000000000002,
+          -16.925,
+          -16.874999999999996,
+          -16.925,
+          -16.925
+        ],
+        "mean": -16.91,
+        "sd": 0.022360679774999406
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bcm",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "mean": 2.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "mean": 2.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bi",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          17.0,
+          17.0,
+          17.0,
+          17.0,
+          17.0
+        ],
+        "mean": 17.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          17.0,
+          17.0,
+          17.0,
+          17.0,
+          17.0
+        ],
+        "mean": 17.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bi",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bim",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          13.0,
+          13.0,
+          13.0,
+          13.0,
+          13.0
+        ],
+        "mean": 13.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          12.0,
+          12.0,
+          12.0,
+          12.0,
+          12.0
+        ],
+        "mean": 12.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "mean": -1.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Bim",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Ir",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          5477.0,
+          5477.0,
+          5477.0,
+          5477.0,
+          5477.0
+        ],
+        "mean": 5477.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          5477.0,
+          5477.0,
+          5477.0,
+          5477.0,
+          5477.0
+        ],
+        "mean": 5477.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Ir",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          202.0,
+          202.0,
+          202.0,
+          202.0,
+          202.0
+        ],
+        "mean": 202.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          234.0,
+          234.0,
+          234.0,
+          234.0,
+          234.0
+        ],
+        "mean": 234.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          32.0,
+          32.0,
+          32.0,
+          32.0,
+          32.0
+        ],
+        "mean": 32.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bc",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          993.0,
+          993.0,
+          993.0,
+          993.0,
+          993.0
+        ],
+        "mean": 993.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          993.0,
+          993.0,
+          993.0,
+          993.0,
+          993.0
+        ],
+        "mean": 993.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bc",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          32.0,
+          32.0,
+          32.0,
+          32.0,
+          32.0
+        ],
+        "mean": 32.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          30.0,
+          30.0,
+          30.0,
+          30.0,
+          30.0
+        ],
+        "mean": 30.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -2.0,
+          -2.0,
+          -2.0,
+          -2.0,
+          -2.0
+        ],
+        "mean": -2.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bcm",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          81.0,
+          81.05,
+          81.0,
+          81.07499999999999,
+          81.025
+        ],
+        "mean": 81.03,
+        "sd": 0.03259601202600867
+      },
+      "candidate": {
+        "samples": [
+          60.0,
+          60.0,
+          60.0,
+          60.0,
+          60.0
+        ],
+        "mean": 60.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -21.0,
+          -21.049999999999997,
+          -21.0,
+          -21.07499999999999,
+          -21.025000000000006
+        ],
+        "mean": -21.029999999999998,
+        "sd": 0.03259601202600867
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bcm",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>",
+        "core::ptr::drop_glue::<core::option::Option<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>"
+      ],
+      "baseline": {
+        "samples": [
+          5.025,
+          4.975,
+          4.975,
+          5.0,
+          5.0
+        ],
+        "mean": 4.995,
+        "sd": 0.020916500663352187
+      },
+      "candidate": {
+        "samples": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean": 1.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -4.025,
+          -3.9749999999999996,
+          -3.9749999999999996,
+          -4.0,
+          -4.0
+        ],
+        "mean": -3.995,
+        "sd": 0.020916500663352187
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bi",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          45.0,
+          45.0,
+          45.0,
+          45.0,
+          45.0
+        ],
+        "mean": 45.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          45.0,
+          45.0,
+          45.0,
+          45.0,
+          45.0
+        ],
+        "mean": 45.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bi",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bim",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          26.0,
+          26.0,
+          26.0,
+          26.0,
+          26.0
+        ],
+        "mean": 26.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          26.0,
+          26.0,
+          26.0,
+          26.0,
+          26.0
+        ],
+        "mean": 26.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Bim",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Ir",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0
+        ],
+        "mean": 2538.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0,
+          2538.0
+        ],
+        "mean": 2538.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Ir",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          3232.0,
+          3232.0,
+          3232.0,
+          3232.0,
+          3232.0
+        ],
+        "mean": 3232.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          3744.0,
+          3744.0,
+          3744.0,
+          3744.0,
+          3744.0
+        ],
+        "mean": 3744.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          512.0,
+          512.0,
+          512.0,
+          512.0,
+          512.0
+        ],
+        "mean": 512.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bc",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          472.0,
+          472.0,
+          472.0,
+          472.0,
+          472.0
+        ],
+        "mean": 472.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          472.0,
+          472.0,
+          472.0,
+          472.0,
+          472.0
+        ],
+        "mean": 472.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bc",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          512.0,
+          512.0,
+          512.0,
+          512.0,
+          512.0
+        ],
+        "mean": 512.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          480.0,
+          480.0,
+          480.0,
+          480.0,
+          480.0
+        ],
+        "mean": 480.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -32.0,
+          -32.0,
+          -32.0,
+          -32.0,
+          -32.0
+        ],
+        "mean": -32.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bcm",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          41.0,
+          40.975,
+          41.0,
+          40.95,
+          40.975
+        ],
+        "mean": 40.980000000000004,
+        "sd": 0.0209165006633507
+      },
+      "candidate": {
+        "samples": [
+          33.025,
+          33.025,
+          33.025,
+          33.025,
+          33.025
+        ],
+        "mean": 33.025,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -7.975000000000001,
+          -7.950000000000003,
+          -7.975000000000001,
+          -7.925000000000004,
+          -7.950000000000003
+        ],
+        "mean": -7.955000000000003,
+        "sd": 0.0209165006633507
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bcm",
+      "group": "return_guard",
+      "functions": [
+        "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>"
+      ],
+      "baseline": {
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "mean": 2.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "mean": 2.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bi",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          17.0,
+          17.0,
+          17.0,
+          17.0,
+          17.0
+        ],
+        "mean": 17.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          17.0,
+          17.0,
+          17.0,
+          17.0,
+          17.0
+        ],
+        "mean": 17.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bi",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bim",
+      "group": "scheduler_poll",
+      "functions": [
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+        "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll'2"
+      ],
+      "baseline": {
+        "samples": [
+          13.0,
+          13.0,
+          13.0,
+          13.0,
+          13.0
+        ],
+        "mean": 13.0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          12.0,
+          12.0,
+          12.0,
+          12.0,
+          12.0
+        ],
+        "mean": 12.0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "mean": -1.0,
+        "sd": 0.0
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Bim",
+      "group": "return_guard",
+      "functions": [],
+      "baseline": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "candidate": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mean": 0,
+        "sd": 0.0
+      }
+    }
+  ],
+  "memory": [
+    {
+      "case": "callback",
+      "metric": "Dr",
+      "baseline": {
+        "samples": [
+          28269.8,
+          28266.225,
+          28266.0,
+          28257.375,
+          28264.525
+        ],
+        "mean": 28264.785,
+        "sd": 4.573722499233741
+      },
+      "candidate": {
+        "samples": [
+          28268.925,
+          28272.7,
+          28286.25,
+          28278.025,
+          28271.625
+        ],
+        "mean": 28275.505,
+        "sd": 6.856096739399409
+      },
+      "paired_delta": {
+        "samples": [
+          -0.875,
+          6.475000000002183,
+          20.25,
+          20.650000000001455,
+          7.099999999998545
+        ],
+        "mean": 10.720000000000436,
+        "sd": 9.420645545821435
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "Dw",
+      "baseline": {
+        "samples": [
+          21919.325,
+          21919.45,
+          21919.45,
+          21914.2,
+          21917.125
+        ],
+        "mean": 21917.91,
+        "sd": 2.298137833116257
+      },
+      "candidate": {
+        "samples": [
+          21921.275,
+          21923.725,
+          21930.35,
+          21926.825,
+          21922.925
+        ],
+        "mean": 21925.02,
+        "sd": 3.597151650958819
+      },
+      "paired_delta": {
+        "samples": [
+          1.9500000000007276,
+          4.274999999997817,
+          10.899999999997817,
+          12.625,
+          5.799999999999272
+        ],
+        "mean": 7.109999999999127,
+        "sd": 4.504393688388878
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "I1mr",
+      "baseline": {
+        "samples": [
+          6943.25,
+          6943.7,
+          6943.6,
+          6943.675,
+          6943.8
+        ],
+        "mean": 6943.6050000000005,
+        "sd": 0.21095023109732436
+      },
+      "candidate": {
+        "samples": [
+          6996.65,
+          6996.65,
+          6996.55,
+          6996.825,
+          6996.7
+        ],
+        "mean": 6996.675,
+        "sd": 0.09999999999990905
+      },
+      "paired_delta": {
+        "samples": [
+          53.399999999999636,
+          52.94999999999982,
+          52.94999999999982,
+          53.149999999999636,
+          52.899999999999636
+        ],
+        "mean": 53.06999999999971,
+        "sd": 0.20796634343080173
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "ILmr",
+      "baseline": {
+        "samples": [
+          0.05,
+          -0.075,
+          -0.1,
+          0.0,
+          0.075
+        ],
+        "mean": -0.01,
+        "sd": 0.07623975340988454
+      },
+      "candidate": {
+        "samples": [
+          0.05,
+          0.0,
+          -0.1,
+          -0.025,
+          0.0
+        ],
+        "mean": -0.015000000000000001,
+        "sd": 0.05477225575051661
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.075,
+          0.0,
+          -0.025,
+          -0.075
+        ],
+        "mean": -0.005,
+        "sd": 0.054198708471697
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "D1mr",
+      "baseline": {
+        "samples": [
+          561.325,
+          552.7,
+          552.675,
+          555.675,
+          555.825
+        ],
+        "mean": 555.64,
+        "sd": 3.5280837575091857
+      },
+      "candidate": {
+        "samples": [
+          506.2,
+          508.975,
+          506.125,
+          506.45,
+          506.075
+        ],
+        "mean": 506.765,
+        "sd": 1.2438096719353946
+      },
+      "paired_delta": {
+        "samples": [
+          -55.12500000000006,
+          -43.72500000000002,
+          -46.549999999999955,
+          -49.224999999999966,
+          -49.75000000000006
+        ],
+        "mean": -48.875000000000014,
+        "sd": 4.239066819478102
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "D1mw",
+      "baseline": {
+        "samples": [
+          430.9,
+          431.275,
+          431.35,
+          431.2,
+          431.275
+        ],
+        "mean": 431.2,
+        "sd": 0.1758905909933883
+      },
+      "candidate": {
+        "samples": [
+          407.025,
+          409.475,
+          407.325,
+          408.175,
+          406.975
+        ],
+        "mean": 407.795,
+        "sd": 1.055106629682528
+      },
+      "paired_delta": {
+        "samples": [
+          -23.875,
+          -21.799999999999955,
+          -24.025000000000034,
+          -23.024999999999977,
+          -24.299999999999955
+        ],
+        "mean": -23.404999999999983,
+        "sd": 1.0157201878470423
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "DLmr",
+      "baseline": {
+        "samples": [
+          0.0,
+          -0.05,
+          -0.05,
+          -0.025,
+          0.0
+        ],
+        "mean": -0.025,
+        "sd": 0.025
+      },
+      "candidate": {
+        "samples": [
+          -0.025,
+          0.0,
+          0.05,
+          0.0,
+          0.025
+        ],
+        "mean": 0.01,
+        "sd": 0.02850438562747845
+      },
+      "paired_delta": {
+        "samples": [
+          -0.025,
+          0.05,
+          0.1,
+          0.025,
+          0.025
+        ],
+        "mean": 0.035,
+        "sd": 0.04541475531146238
+      }
+    },
+    {
+      "case": "callback",
+      "metric": "DLmw",
+      "baseline": {
+        "samples": [
+          0.575,
+          0.6,
+          0.575,
+          0.55,
+          0.525
+        ],
+        "mean": 0.565,
+        "sd": 0.02850438562747842
+      },
+      "candidate": {
+        "samples": [
+          0.575,
+          0.575,
+          0.575,
+          0.6,
+          0.525
+        ],
+        "mean": 0.57,
+        "sd": 0.027386127875258286
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          -0.025000000000000022,
+          0.0,
+          0.04999999999999993,
+          0.0
+        ],
+        "mean": 0.004999999999999982,
+        "sd": 0.027386127875258286
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Dr",
+      "baseline": {
+        "samples": [
+          184286.425,
+          184285.025,
+          184298.025,
+          184285.525,
+          184284.85
+        ],
+        "mean": 184287.97,
+        "sd": 5.654102492879514
+      },
+      "candidate": {
+        "samples": [
+          184342.1,
+          184342.775,
+          184348.3,
+          184348.925,
+          184349.65
+        ],
+        "mean": 184346.35,
+        "sd": 3.6113103577457992
+      },
+      "paired_delta": {
+        "samples": [
+          55.67500000001746,
+          57.75,
+          50.27499999999418,
+          63.39999999999418,
+          64.79999999998836
+        ],
+        "mean": 58.37999999999884,
+        "sd": 5.912312364882965
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "Dw",
+      "baseline": {
+        "samples": [
+          145142.075,
+          145134.575,
+          145132.8,
+          145141.45,
+          145141.1
+        ],
+        "mean": 145138.4,
+        "sd": 4.3614432817654905
+      },
+      "candidate": {
+        "samples": [
+          145189.525,
+          145196.7,
+          145198.275,
+          145198.725,
+          145198.925
+        ],
+        "mean": 145196.43,
+        "sd": 3.9575244787630126
+      },
+      "paired_delta": {
+        "samples": [
+          47.44999999998254,
+          62.125,
+          65.47500000000582,
+          57.27499999999418,
+          57.82499999998254
+        ],
+        "mean": 58.02999999999302,
+        "sd": 6.796055841450836
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "I1mr",
+      "baseline": {
+        "samples": [
+          26753.55,
+          26755.8,
+          26755.9,
+          26753.625,
+          26753.4
+        ],
+        "mean": 26754.455,
+        "sd": 1.2765187033491219
+      },
+      "candidate": {
+        "samples": [
+          26352.4,
+          26352.125,
+          26351.975,
+          26349.2,
+          26349.125
+        ],
+        "mean": 26350.965,
+        "sd": 1.652706114225898
+      },
+      "paired_delta": {
+        "samples": [
+          -401.1499999999978,
+          -403.6749999999993,
+          -403.9250000000029,
+          -404.4249999999993,
+          -404.27500000000146
+        ],
+        "mean": -403.4900000000001,
+        "sd": 1.3406621498361735
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "ILmr",
+      "baseline": {
+        "samples": [
+          -0.025,
+          0.05,
+          0.0,
+          0.075,
+          -0.025
+        ],
+        "mean": 0.015,
+        "sd": 0.04541475531146238
+      },
+      "candidate": {
+        "samples": [
+          0.025,
+          0.025,
+          0.025,
+          0.025,
+          0.05
+        ],
+        "mean": 0.030000000000000002,
+        "sd": 0.011180339887498949
+      },
+      "paired_delta": {
+        "samples": [
+          0.05,
+          -0.025,
+          0.025,
+          -0.049999999999999996,
+          0.07500000000000001
+        ],
+        "mean": 0.015000000000000003,
+        "sd": 0.051841103383319306
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "D1mr",
+      "baseline": {
+        "samples": [
+          2716.6,
+          2689.75,
+          2686.125,
+          2716.8,
+          2716.325
+        ],
+        "mean": 2705.12,
+        "sd": 15.738581178111307
+      },
+      "candidate": {
+        "samples": [
+          2733.425,
+          2737.825,
+          2738.2,
+          2753.525,
+          2754.15
+        ],
+        "mean": 2743.425,
+        "sd": 9.69144274605185
+      },
+      "paired_delta": {
+        "samples": [
+          16.825000000000273,
+          48.07499999999982,
+          52.07499999999982,
+          36.72499999999991,
+          37.82500000000027
+        ],
+        "mean": 38.30500000000002,
+        "sd": 13.685603749926232
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "D1mw",
+      "baseline": {
+        "samples": [
+          2249.95,
+          2250.25,
+          2250.825,
+          2248.625,
+          2249.35
+        ],
+        "mean": 2249.7999999999997,
+        "sd": 0.8453919209454948
+      },
+      "candidate": {
+        "samples": [
+          2246.65,
+          2248.75,
+          2248.45,
+          2257.375,
+          2257.2
+        ],
+        "mean": 2251.685,
+        "sd": 5.177402823810367
+      },
+      "paired_delta": {
+        "samples": [
+          -3.299999999999727,
+          -1.5,
+          -2.375,
+          8.75,
+          7.849999999999909
+        ],
+        "mean": 1.8850000000000364,
+        "sd": 5.899141886749209
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "DLmr",
+      "baseline": {
+        "samples": [
+          0.025,
+          0.025,
+          0.025,
+          0.0,
+          -0.075
+        ],
+        "mean": 1.3877787807814458e-18,
+        "sd": 0.04330127018922193
+      },
+      "candidate": {
+        "samples": [
+          -0.075,
+          0.0,
+          -0.05,
+          0.0,
+          -0.025
+        ],
+        "mean": -0.03,
+        "sd": 0.03259601202601324
+      },
+      "paired_delta": {
+        "samples": [
+          -0.1,
+          -0.025,
+          -0.07500000000000001,
+          0.0,
+          0.049999999999999996
+        ],
+        "mean": -0.030000000000000006,
+        "sd": 0.059686681931566614
+      }
+    },
+    {
+      "case": "concurrent-32",
+      "metric": "DLmw",
+      "baseline": {
+        "samples": [
+          -0.125,
+          -0.25,
+          -0.275,
+          -0.15,
+          -0.2
+        ],
+        "mean": -0.2,
+        "sd": 0.06373774391990981
+      },
+      "candidate": {
+        "samples": [
+          -0.225,
+          -0.225,
+          -0.225,
+          -0.225,
+          -0.225
+        ],
+        "mean": -0.225,
+        "sd": 0.0
+      },
+      "paired_delta": {
+        "samples": [
+          -0.1,
+          0.024999999999999994,
+          0.05000000000000002,
+          -0.07500000000000001,
+          -0.024999999999999994
+        ],
+        "mean": -0.025,
+        "sd": 0.06373774391990981
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Dr",
+      "baseline": {
+        "samples": [
+          1195321.2,
+          1195307.625,
+          1195295.4,
+          1195314.075,
+          1195307.8
+        ],
+        "mean": 1195309.22,
+        "sd": 9.521610289243018
+      },
+      "candidate": {
+        "samples": [
+          1195419.15,
+          1195433.075,
+          1195435.65,
+          1195441.45,
+          1195431.25
+        ],
+        "mean": 1195432.115,
+        "sd": 8.206696960421983
+      },
+      "paired_delta": {
+        "samples": [
+          97.94999999995343,
+          125.44999999995343,
+          140.25,
+          127.375,
+          123.44999999995343
+        ],
+        "mean": 122.89499999997206,
+        "sd": 15.413918223492312
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "Dw",
+      "baseline": {
+        "samples": [
+          902923.6,
+          902918.45,
+          902924.9,
+          902920.975,
+          902918.65
+        ],
+        "mean": 902921.315,
+        "sd": 2.8939376289157948
+      },
+      "candidate": {
+        "samples": [
+          903045.725,
+          903057.25,
+          903052.45,
+          903061.05,
+          903056.275
+        ],
+        "mean": 903054.55,
+        "sd": 5.805304686260925
+      },
+      "paired_delta": {
+        "samples": [
+          122.125,
+          138.80000000004657,
+          127.54999999993015,
+          140.07500000006985,
+          137.625
+        ],
+        "mean": 133.2350000000093,
+        "sd": 7.9495007705243355
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "I1mr",
+      "baseline": {
+        "samples": [
+          28978.9,
+          28978.95,
+          28978.575,
+          28978.5,
+          28977.925
+        ],
+        "mean": 28978.57,
+        "sd": 0.41056363696827175
+      },
+      "candidate": {
+        "samples": [
+          28910.35,
+          28910.675,
+          28910.675,
+          28910.95,
+          28909.95
+        ],
+        "mean": 28910.52,
+        "sd": 0.3829980417703986
+      },
+      "paired_delta": {
+        "samples": [
+          -68.55000000000291,
+          -68.27500000000146,
+          -67.90000000000146,
+          -67.54999999999927,
+          -67.97499999999854
+        ],
+        "mean": -68.05000000000072,
+        "sd": 0.3803781013689124
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "ILmr",
+      "baseline": {
+        "samples": [
+          0.025,
+          0.025,
+          0.05,
+          0.0,
+          0.05
+        ],
+        "mean": 0.030000000000000002,
+        "sd": 0.02091650066335189
+      },
+      "candidate": {
+        "samples": [
+          0.0,
+          0.0,
+          0.075,
+          -0.025,
+          -0.025
+        ],
+        "mean": 0.004999999999999999,
+        "sd": 0.04107919181288746
+      },
+      "paired_delta": {
+        "samples": [
+          -0.025,
+          -0.025,
+          0.024999999999999994,
+          -0.025,
+          -0.07500000000000001
+        ],
+        "mean": -0.025000000000000005,
+        "sd": 0.035355339059327376
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "D1mr",
+      "baseline": {
+        "samples": [
+          13471.425,
+          13474.4,
+          13553.075,
+          13472.9,
+          13473.425
+        ],
+        "mean": 13489.045,
+        "sd": 35.81000820301555
+      },
+      "candidate": {
+        "samples": [
+          13649.925,
+          13674.425,
+          13638.9,
+          13669.45,
+          13659.525
+        ],
+        "mean": 13658.445,
+        "sd": 14.424235248359084
+      },
+      "paired_delta": {
+        "samples": [
+          178.5,
+          200.02499999999964,
+          85.82499999999891,
+          196.5500000000011,
+          186.10000000000036
+        ],
+        "mean": 169.4,
+        "sd": 47.49077212996287
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "D1mw",
+      "baseline": {
+        "samples": [
+          17171.325,
+          17173.925,
+          16948.95,
+          17178.925,
+          17182.425
+        ],
+        "mean": 17131.11,
+        "sd": 101.92170953727128
+      },
+      "candidate": {
+        "samples": [
+          16992.875,
+          16966.35,
+          16994.85,
+          16967.5,
+          16935.825
+        ],
+        "mean": 16971.48,
+        "sd": 24.06937499188489
+      },
+      "paired_delta": {
+        "samples": [
+          -178.45000000000073,
+          -207.57500000000073,
+          45.89999999999782,
+          -211.42499999999927,
+          -246.59999999999854
+        ],
+        "mean": -159.63000000000028,
+        "sd": 117.4116681275746
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "DLmr",
+      "baseline": {
+        "samples": [
+          0.0,
+          0.025,
+          0.0,
+          0.05,
+          0.025
+        ],
+        "mean": 0.02,
+        "sd": 0.02091650066335189
+      },
+      "candidate": {
+        "samples": [
+          -0.05,
+          0.025,
+          0.0,
+          0.025,
+          0.05
+        ],
+        "mean": 0.01,
+        "sd": 0.037914377220257756
+      },
+      "paired_delta": {
+        "samples": [
+          -0.05,
+          0.0,
+          0.0,
+          -0.025,
+          0.025
+        ],
+        "mean": -0.01,
+        "sd": 0.02850438562747845
+      }
+    },
+    {
+      "case": "deep-32-concurrent-32",
+      "metric": "DLmw",
+      "baseline": {
+        "samples": [
+          -0.15,
+          -0.15,
+          -0.225,
+          -0.15,
+          -0.175
+        ],
+        "mean": -0.16999999999999998,
+        "sd": 0.03259601202601325
+      },
+      "candidate": {
+        "samples": [
+          -0.2,
+          -0.25,
+          -0.2,
+          -0.25,
+          -0.25
+        ],
+        "mean": -0.23,
+        "sd": 0.0273861278752583
+      },
+      "paired_delta": {
+        "samples": [
+          -0.05000000000000002,
+          -0.1,
+          0.024999999999999994,
+          -0.1,
+          -0.07500000000000001
+        ],
+        "mean": -0.06000000000000001,
+        "sd": 0.0518411033833193
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Dr",
+      "baseline": {
+        "samples": [
+          30924.8,
+          30929.35,
+          30925.6,
+          30927.875,
+          30928.95
+        ],
+        "mean": 30927.315,
+        "sd": 2.0245061126114874
+      },
+      "candidate": {
+        "samples": [
+          30926.35,
+          30932.025,
+          30931.525,
+          30934.025,
+          30940.975
+        ],
+        "mean": 30932.98,
+        "sd": 5.291455376358948
+      },
+      "paired_delta": {
+        "samples": [
+          1.5499999999992724,
+          2.6750000000029104,
+          5.92500000000291,
+          6.150000000001455,
+          12.024999999997817
+        ],
+        "mean": 5.665000000000873,
+        "sd": 4.081229900408814
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "Dw",
+      "baseline": {
+        "samples": [
+          23425.525,
+          23429.55,
+          23426.05,
+          23427.375,
+          23427.95
+        ],
+        "mean": 23427.29,
+        "sd": 1.5971263256231754
+      },
+      "candidate": {
+        "samples": [
+          23429.65,
+          23431.425,
+          23431.075,
+          23430.85,
+          23433.825
+        ],
+        "mean": 23431.365,
+        "sd": 1.528540970991584
+      },
+      "paired_delta": {
+        "samples": [
+          4.125,
+          1.875,
+          5.025000000001455,
+          3.474999999998545,
+          5.875
+        ],
+        "mean": 4.075,
+        "sd": 1.5284796367636462
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "I1mr",
+      "baseline": {
+        "samples": [
+          7083.075,
+          7083.075,
+          7082.95,
+          7083.025,
+          7082.925
+        ],
+        "mean": 7083.01,
+        "sd": 0.06982120021872422
+      },
+      "candidate": {
+        "samples": [
+          7093.575,
+          7093.675,
+          7093.75,
+          7093.75,
+          7093.65
+        ],
+        "mean": 7093.68,
+        "sd": 0.0737394060188618
+      },
+      "paired_delta": {
+        "samples": [
+          10.5,
+          10.600000000000364,
+          10.800000000000182,
+          10.725000000000364,
+          10.724999999999454
+        ],
+        "mean": 10.670000000000073,
+        "sd": 0.11911129249569113
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "ILmr",
+      "baseline": {
+        "samples": [
+          -0.025,
+          -0.15,
+          -0.05,
+          -0.075,
+          -0.05
+        ],
+        "mean": -0.07,
+        "sd": 0.04808846015417836
+      },
+      "candidate": {
+        "samples": [
+          -0.05,
+          -0.05,
+          0.0,
+          0.025,
+          -0.075
+        ],
+        "mean": -0.03,
+        "sd": 0.04107919181288746
+      },
+      "paired_delta": {
+        "samples": [
+          -0.025,
+          0.09999999999999999,
+          0.05,
+          0.1,
+          -0.024999999999999994
+        ],
+        "mean": 0.04,
+        "sd": 0.06274950199005566
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "D1mr",
+      "baseline": {
+        "samples": [
+          817.6,
+          818.925,
+          815.275,
+          821.8,
+          820.65
+        ],
+        "mean": 818.85,
+        "sd": 2.563749695270569
+      },
+      "candidate": {
+        "samples": [
+          770.575,
+          767.9,
+          767.3,
+          786.45,
+          764.6
+        ],
+        "mean": 771.365,
+        "sd": 8.69593295742328
+      },
+      "paired_delta": {
+        "samples": [
+          -47.02499999999998,
+          -51.02499999999998,
+          -47.97500000000002,
+          -35.34999999999991,
+          -56.049999999999955
+        ],
+        "mean": -47.48499999999997,
+        "sd": 7.642001537555481
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "D1mw",
+      "baseline": {
+        "samples": [
+          741.65,
+          743.225,
+          743.225,
+          738.825,
+          737.9
+        ],
+        "mean": 740.965,
+        "sd": 2.48285370088534
+      },
+      "candidate": {
+        "samples": [
+          736.8,
+          736.275,
+          735.85,
+          734.95,
+          735.325
+        ],
+        "mean": 735.84,
+        "sd": 0.7362489388786523
+      },
+      "paired_delta": {
+        "samples": [
+          -4.850000000000023,
+          -6.9500000000000455,
+          -7.375,
+          -3.875,
+          -2.574999999999932
+        ],
+        "mean": -5.125,
+        "sd": 2.0330857089655923
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "DLmr",
+      "baseline": {
+        "samples": [
+          0.0,
+          0.0,
+          0.025,
+          -0.025,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.017677669529663688
+      },
+      "candidate": {
+        "samples": [
+          -0.075,
+          0.0,
+          0.0,
+          -0.025,
+          0.025
+        ],
+        "mean": -0.015,
+        "sd": 0.037914377220257756
+      },
+      "paired_delta": {
+        "samples": [
+          -0.075,
+          0.0,
+          -0.025,
+          0.0,
+          0.025
+        ],
+        "mean": -0.015,
+        "sd": 0.037914377220257756
+      }
+    },
+    {
+      "case": "dependent-read",
+      "metric": "DLmw",
+      "baseline": {
+        "samples": [
+          0.725,
+          0.675,
+          0.7,
+          0.75,
+          0.65
+        ],
+        "mean": 0.7,
+        "sd": 0.03952847075210472
+      },
+      "candidate": {
+        "samples": [
+          0.7,
+          0.7,
+          0.65,
+          0.7,
+          0.65
+        ],
+        "mean": 0.6799999999999999,
+        "sd": 0.02738612787525827
+      },
+      "paired_delta": {
+        "samples": [
+          -0.025000000000000022,
+          0.02499999999999991,
+          -0.04999999999999993,
+          -0.050000000000000044,
+          0.0
+        ],
+        "mean": -0.020000000000000018,
+        "sd": 0.032596012026013206
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Dr",
+      "baseline": {
+        "samples": [
+          25210.775,
+          25211.225,
+          25211.625,
+          25210.75,
+          25215.4
+        ],
+        "mean": 25211.955,
+        "sd": 1.959224974320759
+      },
+      "candidate": {
+        "samples": [
+          25220.125,
+          25214.025,
+          25226.575,
+          25226.15,
+          25219.85
+        ],
+        "mean": 25221.345,
+        "sd": 5.1900565989207825
+      },
+      "paired_delta": {
+        "samples": [
+          9.349999999998545,
+          2.8000000000029104,
+          14.950000000000728,
+          15.400000000001455,
+          4.44999999999709
+        ],
+        "mean": 9.390000000000146,
+        "sd": 5.806612609775516
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "Dw",
+      "baseline": {
+        "samples": [
+          19109.575,
+          19109.85,
+          19110.225,
+          19108.7,
+          19108.425
+        ],
+        "mean": 19109.355,
+        "sd": 0.7655471899231209
+      },
+      "candidate": {
+        "samples": [
+          19113.4,
+          19110.175,
+          19117.975,
+          19116.275,
+          19114.2
+        ],
+        "mean": 19114.405,
+        "sd": 2.965921020526254
+      },
+      "paired_delta": {
+        "samples": [
+          3.8250000000007276,
+          0.3250000000007276,
+          7.75,
+          7.575000000000728,
+          5.775000000001455
+        ],
+        "mean": 5.050000000000727,
+        "sd": 3.082916638509592
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "I1mr",
+      "baseline": {
+        "samples": [
+          5324.825,
+          5324.7,
+          5324.95,
+          5324.0,
+          5324.6
+        ],
+        "mean": 5324.615,
+        "sd": 0.3681032463860377
+      },
+      "candidate": {
+        "samples": [
+          5314.725,
+          5314.925,
+          5314.7,
+          5316.45,
+          5314.5
+        ],
+        "mean": 5315.06,
+        "sd": 0.791478047705578
+      },
+      "paired_delta": {
+        "samples": [
+          -10.099999999999454,
+          -9.774999999999636,
+          -10.25,
+          -7.550000000000182,
+          -10.100000000000364
+        ],
+        "mean": -9.554999999999927,
+        "sd": 1.134184729221712
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "ILmr",
+      "baseline": {
+        "samples": [
+          0.0,
+          -0.025,
+          -0.05,
+          0.025,
+          0.075
+        ],
+        "mean": 0.004999999999999999,
+        "sd": 0.048088460154178364
+      },
+      "candidate": {
+        "samples": [
+          0.175,
+          0.125,
+          0.025,
+          0.1,
+          0.025
+        ],
+        "mean": 0.09,
+        "sd": 0.06519202405202648
+      },
+      "paired_delta": {
+        "samples": [
+          0.175,
+          0.15,
+          0.07500000000000001,
+          0.07500000000000001,
+          -0.049999999999999996
+        ],
+        "mean": 0.085,
+        "sd": 0.0876783895837509
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "D1mr",
+      "baseline": {
+        "samples": [
+          646.1,
+          649.7,
+          650.8,
+          651.575,
+          655.825
+        ],
+        "mean": 650.8000000000001,
+        "sd": 3.5053976236655453
+      },
+      "candidate": {
+        "samples": [
+          617.6,
+          617.775,
+          614.275,
+          614.175,
+          614.425
+        ],
+        "mean": 615.65,
+        "sd": 1.863129088388691
+      },
+      "paired_delta": {
+        "samples": [
+          -28.5,
+          -31.925000000000068,
+          -36.52499999999998,
+          -37.40000000000009,
+          -41.40000000000009
+        ],
+        "mean": -35.15000000000005,
+        "sd": 5.015943331019626
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "D1mw",
+      "baseline": {
+        "samples": [
+          612.225,
+          613.875,
+          611.425,
+          614.55,
+          613.275
+        ],
+        "mean": 613.0699999999999,
+        "sd": 1.255039840005086
+      },
+      "candidate": {
+        "samples": [
+          601.3,
+          599.625,
+          602.3,
+          603.9,
+          606.125
+        ],
+        "mean": 602.65,
+        "sd": 2.48665186546087
+      },
+      "paired_delta": {
+        "samples": [
+          -10.925000000000068,
+          -14.25,
+          -9.125,
+          -10.649999999999977,
+          -7.149999999999977
+        ],
+        "mean": -10.420000000000005,
+        "sd": 2.6147060064183223
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "DLmr",
+      "baseline": {
+        "samples": [
+          0.05,
+          0.05,
+          0.05,
+          -0.025,
+          -0.05
+        ],
+        "mean": 0.015000000000000001,
+        "sd": 0.048733971724044825
+      },
+      "candidate": {
+        "samples": [
+          0.025,
+          -0.025,
+          0.025,
+          -0.025,
+          -0.025
+        ],
+        "mean": -0.005,
+        "sd": 0.027386127875258306
+      },
+      "paired_delta": {
+        "samples": [
+          -0.025,
+          -0.07500000000000001,
+          -0.025,
+          0.0,
+          0.025
+        ],
+        "mean": -0.020000000000000004,
+        "sd": 0.03708099243547832
+      }
+    },
+    {
+      "case": "pipelined-read",
+      "metric": "DLmw",
+      "baseline": {
+        "samples": [
+          0.625,
+          0.7,
+          0.7,
+          0.65,
+          0.675
+        ],
+        "mean": 0.67,
+        "sd": 0.03259601202601322
+      },
+      "candidate": {
+        "samples": [
+          0.6,
+          0.625,
+          0.7,
+          0.625,
+          0.675
+        ],
+        "mean": 0.645,
+        "sd": 0.04107919181288746
+      },
+      "paired_delta": {
+        "samples": [
+          -0.025000000000000022,
+          -0.07499999999999996,
+          0.0,
+          -0.025000000000000022,
+          0.0
+        ],
+        "mean": -0.025,
+        "sd": 0.030618621784789708
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Dr",
+      "baseline": {
+        "samples": [
+          12416.2,
+          12409.675,
+          12409.3,
+          12412.175,
+          12408.75
+        ],
+        "mean": 12411.22,
+        "sd": 3.077610680382222
+      },
+      "candidate": {
+        "samples": [
+          12417.5,
+          12411.4,
+          12423.425,
+          12408.275,
+          12409.125
+        ],
+        "mean": 12413.945,
+        "sd": 6.410279830085271
+      },
+      "paired_delta": {
+        "samples": [
+          1.2999999999992724,
+          1.7250000000003638,
+          14.125,
+          -3.899999999999636,
+          0.375
+        ],
+        "mean": 2.725,
+        "sd": 6.752846621980921
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "Dw",
+      "baseline": {
+        "samples": [
+          9616.2,
+          9612.85,
+          9613.775,
+          9615.9,
+          9614.825
+        ],
+        "mean": 9614.710000000001,
+        "sd": 1.412732281785972
+      },
+      "candidate": {
+        "samples": [
+          9616.825,
+          9616.05,
+          9621.25,
+          9614.575,
+          9615.625
+        ],
+        "mean": 9616.865,
+        "sd": 2.5824286050149476
+      },
+      "paired_delta": {
+        "samples": [
+          0.625,
+          3.1999999999989086,
+          7.475000000000364,
+          -1.3249999999989086,
+          0.7999999999992724
+        ],
+        "mean": 2.1549999999999274,
+        "sd": 3.3794137805245144
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "I1mr",
+      "baseline": {
+        "samples": [
+          3199.15,
+          3199.05,
+          3199.05,
+          3198.9,
+          3199.075
+        ],
+        "mean": 3199.045,
+        "sd": 0.09082951062290473
+      },
+      "candidate": {
+        "samples": [
+          3226.55,
+          3226.675,
+          3226.75,
+          3226.525,
+          3226.875
+        ],
+        "mean": 3226.675,
+        "sd": 0.14469796128481496
+      },
+      "paired_delta": {
+        "samples": [
+          27.40000000000009,
+          27.625,
+          27.699999999999818,
+          27.625,
+          27.800000000000182
+        ],
+        "mean": 27.630000000000017,
+        "sd": 0.14726676475022676
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "ILmr",
+      "baseline": {
+        "samples": [
+          0.025,
+          0.125,
+          0.0,
+          0.025,
+          -0.05
+        ],
+        "mean": 0.025,
+        "sd": 0.06373774391990981
+      },
+      "candidate": {
+        "samples": [
+          0.1,
+          0.05,
+          -0.05,
+          0.075,
+          0.025
+        ],
+        "mean": 0.04,
+        "sd": 0.057554322166106696
+      },
+      "paired_delta": {
+        "samples": [
+          0.07500000000000001,
+          -0.075,
+          -0.05,
+          0.049999999999999996,
+          0.07500000000000001
+        ],
+        "mean": 0.015000000000000003,
+        "sd": 0.07202430145443967
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "D1mr",
+      "baseline": {
+        "samples": [
+          230.575,
+          233.2,
+          230.7,
+          233.625,
+          230.8
+        ],
+        "mean": 231.78,
+        "sd": 1.4999374986978622
+      },
+      "candidate": {
+        "samples": [
+          198.325,
+          197.05,
+          196.775,
+          198.475,
+          196.975
+        ],
+        "mean": 197.52,
+        "sd": 0.8113260750154585
+      },
+      "paired_delta": {
+        "samples": [
+          -32.25,
+          -36.14999999999998,
+          -33.92499999999998,
+          -35.150000000000006,
+          -33.82500000000002
+        ],
+        "mean": -34.26,
+        "sd": 1.475275398018953
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "D1mw",
+      "baseline": {
+        "samples": [
+          205.975,
+          209.15,
+          205.975,
+          207.725,
+          205.475
+        ],
+        "mean": 206.85999999999999,
+        "sd": 1.5392368238838405
+      },
+      "candidate": {
+        "samples": [
+          217.825,
+          214.1,
+          213.1,
+          217.875,
+          213.3
+        ],
+        "mean": 215.24,
+        "sd": 2.4118587230598694
+      },
+      "paired_delta": {
+        "samples": [
+          11.849999999999994,
+          4.949999999999989,
+          7.125,
+          10.150000000000006,
+          7.825000000000017
+        ],
+        "mean": 8.38,
+        "sd": 2.6842946000765284
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "DLmr",
+      "baseline": {
+        "samples": [
+          0.025,
+          -0.05,
+          0.0,
+          -0.025,
+          0.0
+        ],
+        "mean": -0.01,
+        "sd": 0.02850438562747845
+      },
+      "candidate": {
+        "samples": [
+          0.025,
+          0.05,
+          -0.025,
+          -0.05,
+          0.0
+        ],
+        "mean": 0.0,
+        "sd": 0.03952847075210474
+      },
+      "paired_delta": {
+        "samples": [
+          0.0,
+          0.1,
+          -0.025,
+          -0.025,
+          0.0
+        ],
+        "mean": 0.01,
+        "sd": 0.051841103383319306
+      }
+    },
+    {
+      "case": "unary-small",
+      "metric": "DLmw",
+      "baseline": {
+        "samples": [
+          0.525,
+          0.55,
+          0.525,
+          0.575,
+          0.625
+        ],
+        "mean": 0.56,
+        "sd": 0.04183300132670376
+      },
+      "candidate": {
+        "samples": [
+          0.5,
+          0.525,
+          0.6,
+          0.5,
+          0.55
+        ],
+        "mean": 0.535,
+        "sd": 0.04183300132670377
+      },
+      "paired_delta": {
+        "samples": [
+          -0.025000000000000022,
+          -0.025000000000000022,
+          0.07499999999999996,
+          -0.07499999999999996,
+          -0.07499999999999996
+        ],
+        "mean": -0.025,
+        "sd": 0.061237243569579415
+      }
+    }
+  ],
+  "assembly": [
+    {
+      "function": "<capnp_rpc::rpc::ReturnGuard<[u8; 32]> as core::clone::Clone>::clone",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 32,
+        "instructions_excluding_nop": 32,
+        "conditional_jumps": 4,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 32,
+        "instructions_excluding_nop": 32,
+        "conditional_jumps": 4,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "<capnp_rpc::rpc::ReturnGuard<[u8; 32]> as core::ops::drop::Drop>::drop",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 186,
+        "instructions_excluding_nop": 186,
+        "conditional_jumps": 19,
+        "conditional_moves": 0,
+        "indirect_calls": 5,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 293,
+        "instructions_excluding_nop": 293,
+        "conditional_jumps": 26,
+        "conditional_moves": 0,
+        "indirect_calls": 8,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "<capnp_rpc::rpc::ReturnGuard<[u8; 32]> as core::ops::drop::Drop>::drop::{closure#1}",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 27,
+        "instructions_excluding_nop": 27,
+        "conditional_jumps": 2,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 27,
+        "instructions_excluding_nop": 27,
+        "conditional_jumps": 2,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "<capnp_rpc::rpc::ReturnGuard<[u8; 32]>>::new",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 38,
+        "instructions_excluding_nop": 38,
+        "conditional_jumps": 2,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 38,
+        "instructions_excluding_nop": 38,
+        "conditional_jumps": 2,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side> as core::ops::drop::Drop>::drop",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 186,
+        "instructions_excluding_nop": 186,
+        "conditional_jumps": 19,
+        "conditional_moves": 0,
+        "indirect_calls": 5,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 293,
+        "instructions_excluding_nop": 293,
+        "conditional_jumps": 26,
+        "conditional_moves": 0,
+        "indirect_calls": 8,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "<capnp_rpc::task_set::TaskSet<capnp::Error> as core::future::future::Future>::poll",
+      "group": "scheduler_poll",
+      "baseline": {
+        "instructions": 1203,
+        "instructions_excluding_nop": 1169,
+        "conditional_jumps": 177,
+        "conditional_moves": 4,
+        "indirect_calls": 35,
+        "indirect_jumps": 1
+      },
+      "candidate": {
+        "instructions": 1203,
+        "instructions_excluding_nop": 1169,
+        "conditional_jumps": 177,
+        "conditional_moves": 4,
+        "indirect_calls": 35,
+        "indirect_jumps": 1
+      }
+    },
+    {
+      "function": "core::ptr::drop_glue::<<capnp_rpc::rpc::ReturnGuard<[u8; 32]> as core::ops::drop::Drop>::drop::{closure#1}>",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 8,
+        "instructions_excluding_nop": 8,
+        "conditional_jumps": 1,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 8,
+        "instructions_excluding_nop": 8,
+        "conditional_jumps": 1,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "core::ptr::drop_glue::<<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side> as core::ops::drop::Drop>::drop::{closure#1}>",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 8,
+        "instructions_excluding_nop": 8,
+        "conditional_jumps": 1,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 8,
+        "instructions_excluding_nop": 8,
+        "conditional_jumps": 1,
+        "conditional_moves": 0,
+        "indirect_calls": 0,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<[u8; 32]>>",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 230,
+        "instructions_excluding_nop": 230,
+        "conditional_jumps": 25,
+        "conditional_moves": 0,
+        "indirect_calls": 7,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 277,
+        "instructions_excluding_nop": 277,
+        "conditional_jumps": 28,
+        "conditional_moves": 0,
+        "indirect_calls": 8,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "core::ptr::drop_glue::<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 230,
+        "instructions_excluding_nop": 230,
+        "conditional_jumps": 25,
+        "conditional_moves": 0,
+        "indirect_calls": 7,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 277,
+        "instructions_excluding_nop": 277,
+        "conditional_jumps": 28,
+        "conditional_moves": 0,
+        "indirect_calls": 8,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "core::ptr::drop_glue::<core::option::Option<capnp_rpc::rpc::ReturnGuard<[u8; 32]>>>",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 58,
+        "instructions_excluding_nop": 58,
+        "conditional_jumps": 7,
+        "conditional_moves": 0,
+        "indirect_calls": 2,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 58,
+        "instructions_excluding_nop": 58,
+        "conditional_jumps": 7,
+        "conditional_moves": 0,
+        "indirect_calls": 2,
+        "indirect_jumps": 0
+      }
+    },
+    {
+      "function": "core::ptr::drop_glue::<core::option::Option<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>>",
+      "group": "return_guard",
+      "baseline": {
+        "instructions": 58,
+        "instructions_excluding_nop": 58,
+        "conditional_jumps": 7,
+        "conditional_moves": 0,
+        "indirect_calls": 2,
+        "indirect_jumps": 0
+      },
+      "candidate": {
+        "instructions": 58,
+        "instructions_excluding_nop": 58,
+        "conditional_jumps": 7,
+        "conditional_moves": 0,
+        "indirect_calls": 2,
+        "indirect_jumps": 0
+      }
+    }
+  ],
+  "added_symbols": [],
+  "removed_symbols": [
+    "<capnp_rpc::rpc::ConnectionState<[u8; 32]>>::add_task::<<capnp_rpc::rpc::ReturnGuard<[u8; 32]> as core::ops::drop::Drop>::drop::{closure#1}>",
+    "<capnp_rpc::rpc::ConnectionState<capntproto_rpc_wire::rpc_twoparty_capnp::Side>>::add_task::<<capnp_rpc::rpc::ReturnGuard<capntproto_rpc_wire::rpc_twoparty_capnp::Side> as core::ops::drop::Drop>::drop::{closure#1}>"
+  ]
+}
