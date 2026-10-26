@@ -1,6 +1,6 @@
 //! Record-layer correctness: these are bounded data-integrity tests, not benchmarks.
 use super::common::{Pki, TIMEOUT};
-use capntproto::rpc::tls::TlsStream;
+use capntproto::rpc::tcp::tls::TlsStream;
 use std::{io, sync::Arc};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream};
 

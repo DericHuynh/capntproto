@@ -3,6 +3,9 @@
 mod io;
 #[cfg(target_os = "linux")]
 mod low_water;
+/// TLS 1.3 authentication and encryption layered over TCP.
+#[cfg(feature = "tls")]
+pub mod tls;
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
 pub use io::ReadHalf;
@@ -11,7 +14,7 @@ use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
 /// Dial a plaintext TCP peer with Nagle's algorithm disabled for RPC latency.
 /// Wrap this future in `tokio::time::timeout` to bound DNS and connection setup.
-/// Use `rpc::tls` (with the `tls` feature) for authenticated encryption.
+/// Use `rpc::tcp::tls` (with the `tls` feature) for authenticated encryption.
 pub async fn connect(
     address: impl ToSocketAddrs,
     bootstrap: Option<Client>,

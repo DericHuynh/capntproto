@@ -13,7 +13,7 @@ The [runtime status](../wiki/Runtime-Status.md) and [RPC application guide](../w
 | Area | Current Capntproto foundation | Capnt Actors work still required |
 | --- | --- | --- |
 | RPC ownership | `capntproto::rpc::Connection` for two-party connections; `capntproto::native_rpc::Vat` for authenticated multiparty RPC, both on a Tokio `LocalSet` | Actor host, activations, exclusive turns and bounded actor mailboxes |
-| Transport | Plain `rpc::tcp`; conventional CA-validated `rpc::tls` and `rpc::quic`; native pinned mutual-TLS sessions over TCP or quiche QUIC v1 | Actor service registration and deployment policy; production actor peers use authenticated sessions |
+| Transport | Plain `rpc::tcp`; conventional CA-validated `rpc::tcp::tls` and `rpc::quic`; native pinned mutual-TLS sessions over TCP or quiche QUIC v1 | Actor service registration and deployment policy; production actor peers use authenticated sessions |
 | Capabilities and pipelines | Generated clients, `RemotePromise`, field-API `PendingCall`, `with_params`, `send().await`, `into_parts`, capability pipelines, typed tail calls and structured server replies | Lazy actor invocation builders, method modes and durable operation observation |
 | Three-party RPC | Native introductions, authenticated Join, answer adoption and pipeline migration with ordering fences | Actor ownership/placement protocol and storage fencing; capability handoff alone does not transfer an activation |
 | Authority and restoration | Authority grants and revocation; `persistence::Realm`, owner-sealed `persistence::SturdyRef`, factories and authenticated restore | Tenant/actor bindings, typed actor restoration wrappers and operation tokens |
@@ -932,7 +932,7 @@ Actor traffic uses the maintained TCP and quiche profiles:
 | Profile | Current integration | Actor contract |
 | --- | --- | --- |
 | Authenticated multiparty host traffic | `native_rpc::Vat` over `transport::tcp` with `Backend::Tcp`, or quiche with `Backend::Quiche` (QUIC v1) | Pinned Ed25519 mutual TLS 1.3, authorized native routes and supported three-party capability operations |
-| Conventional two-party client/service traffic | Owned `rpc::Connection` over `rpc::tls` or `rpc::quic`, with CA/name validation and configured client authentication | Actor capabilities remain application-authorized; this connection alone does not become a native multiparty vat |
+| Conventional two-party client/service traffic | Owned `rpc::Connection` over `rpc::tcp::tls` or `rpc::quic`, with CA/name validation and configured client authentication | Actor capabilities remain application-authorized; this connection alone does not become a native multiparty vat |
 | Local explicit test traffic | Plain `rpc::tcp` | Unauthenticated; never silently selected for an authenticated actor deployment |
 
 Quiche is the sole QUIC engine and supports QUIC v1. `rpc::QuicVersion::V2` is reserved and configuration rejects it; QUIC v2 is not supported. Native QUIC uses ALPN `capntproto/3`; native TCP retains `reproto/2` for wire compatibility. Conventional two-party TLS/QUIC uses `capntproto-rpc/1`. A future actor layer must reuse these implemented transport contracts rather than assume v2 support. Native reservation `psk` parameters mean an optional admission secret bound to the authenticated session, not another transport encryption protocol. Application 0-RTT is disabled, and reconnect does not restore ephemeral capabilities or deduplicate commands.

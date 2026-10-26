@@ -405,7 +405,7 @@ control stream or authenticated close reason, using upstream Quiche public APIs.
 ## Transport transitions and buffers
 
 `rpc::tcp` adapts ordinary TCP connections to the two-party RPC engine.
-`rpc::tls` uses rustls/Tokio for TLS 1.3 over TCP, and `rpc::quic` uses
+`rpc::tcp::tls` uses rustls/Tokio for TLS 1.3 over TCP, and `rpc::quic` uses
 the quiche engine for standard QUIC v1 with TLS 1.3. Both secure transports use
 the `capntproto-rpc/1` ALPN, explicit trust roots, and optional mandatory client
 certificate verification. Connection setup completes before a bootstrap is

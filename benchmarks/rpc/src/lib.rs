@@ -146,7 +146,7 @@ enum Client {
         capnp_rpc::portable::RpcSystem<capnp_rpc::rpc_twoparty_capnp::Side>,
     ),
     Grpc(grpc::echo_client::EchoClient<tonic::transport::Channel>),
-    WebSocket(Box<WebSocketStream<capntproto::rpc::tls::TlsStream<TcpStream>>>),
+    WebSocket(Box<WebSocketStream<capntproto::rpc::tcp::tls::TlsStream<TcpStream>>>),
 }
 impl Client {
     async fn connect(protocol: &str, address: &str, public: &str) -> Result<Self> {
@@ -230,7 +230,7 @@ impl Roundtrip for grpc::echo_client::EchoClient<tonic::transport::Channel> {
         Ok(())
     }
 }
-impl Roundtrip for WebSocketStream<capntproto::rpc::tls::TlsStream<TcpStream>> {
+impl Roundtrip for WebSocketStream<capntproto::rpc::tcp::tls::TlsStream<TcpStream>> {
     async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
         let mut frame = sequence.to_le_bytes().to_vec();
         frame.extend_from_slice(payload);

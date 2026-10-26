@@ -1,0 +1,22 @@
+[package]
+name = "capntproto-kv-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[features]
+default = []
+quic = ["capntproto/quic"]
+
+[dependencies]
+capntproto = { path = "../..", default-features = false, features = ["tls"] }
+clap = { version = "4", features = ["derive"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "signal"] }
+
+[build-dependencies]
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
+capntproto-compiler = { path = "../../crates/capntproto-compiler" }

@@ -1,6 +1,6 @@
 //! Differential records use the original owned ring sealing operation as the oracle.
 use super::common::{Pki, TIMEOUT};
-use capntproto::rpc::tls::{rustls, TlsStream};
+use capntproto::rpc::{security::rustls, tcp::tls::TlsStream};
 use rustls::{
     crypto::cipher::{
         make_tls13_aad, Iv, MessageEncrypter, Nonce, OutboundChunks, OutboundPlainMessage,

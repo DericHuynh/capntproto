@@ -50,7 +50,7 @@ jobs:
         with:
           key: release-packages
       - name: Check transport interoperability before packaging
-        run: cargo test --locked --no-default-features --features tls --test secure_rpc
+        run: cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc --test service_examples
       - name: Prepare the package workspace
         # The vendor stays outside the development workspace. Cargo's package
         # workspace stages unpublished dependencies in its temporary registry.
@@ -68,8 +68,6 @@ jobs:
             -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures \
             -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
           cargo run --locked --example message_basic
-          cargo run --locked --example rpc_simple
-          cargo run --locked --example rpc_deep
           sha256sum target/package/*.crate > target/package/SHA256SUMS
       - name: Retain verified release packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -150,7 +150,7 @@ pub(super) async fn spawn(
         _endpoint: core.clone(),
     };
     tokio::task::spawn_local(run(core, route, state, ready, canceled));
-    let ready = tls::deadline(timeout, async {
+    let ready = security::deadline(timeout, async {
         wait.await
             .map_err(|_| io::Error::other("QUIC driver stopped during setup"))?
     })
@@ -242,7 +242,7 @@ async fn pump(
         {
             let mut conn = state.conn.borrow_mut();
             if conn.is_established() {
-                if ready.is_some() && conn.application_proto() != tls::ALPN {
+                if ready.is_some() && conn.application_proto() != ALPN {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         "RPC ALPN was not negotiated",
@@ -372,7 +372,7 @@ mod tests {
                     let cert =
                         rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
                     let mut config = server_config(
-                        tls::Identity {
+                        Identity {
                             certificates: vec![cert.cert.der().clone()],
                             private_key: rustls::pki_types::PrivatePkcs8KeyDer::from(
                                 cert.signing_key.serialize_der(),
@@ -456,7 +456,7 @@ mod tests {
         tokio::task::LocalSet::new().run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
                 let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-                let server = Endpoint::server(server_config(tls::Identity {
+                let server = Endpoint::server(server_config(Identity {
                     certificates: vec![cert.cert.der().clone()],
                     private_key: rustls::pki_types::PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der()).into(),
                 }, None).unwrap(), "127.0.0.1:0".parse().unwrap()).unwrap();

@@ -16,7 +16,7 @@ Start with the [runtime status](Runtime-Status.md) for supported boundaries and
 | Build a checkout or source bundle | [Getting started](Getting-Started.md) |
 | Write a client or server | [RPC applications](RPC-Applications.md) |
 | Prevent reply lifecycle mistakes at compile time | [Structured replies](RPC-Applications.md#structured-server-replies) |
-| Configure certificates, mTLS or QUIC | [TCP, TLS and QUIC](TCP-TLS-and-QUIC.md) |
+| Configure certificates, mTLS or QUIC | [TCP and QUIC](TCP-TLS-and-QUIC.md) |
 | Connect authenticated vats and pass capabilities | [Native transports](Native-Transports.md), [RPC applications](RPC-Applications.md#three-party-capability-transfer) |
 | Generate Rust from schemas | [Schema compiler](Schema-Compiler.md), [Rust generator](Rust-Generator.md) |
 | Choose a storage layout | [Storage and ORM](Storage-and-ORM.md), [component storage](Component-Storage.md) |

@@ -2,7 +2,7 @@
 #[path = "../tls_policy.rs"]
 mod policy;
 use crate::Result;
-use capntproto::rpc::tls::{rustls, TlsStream};
+use capntproto::rpc::{tcp::tls::TlsStream, security::rustls};
 pub use policy::*;
 use rustls::pki_types::ServerName;
 use std::sync::Arc;

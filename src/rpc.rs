@@ -1,8 +1,10 @@
-//! Scoped RPC connections over TCP, TLS, QUIC and generic Tokio streams.
+//! Scoped RPC connections over TCP, QUIC and generic Tokio streams.
 //!
 //! Retain [`Connection`] while using its bootstrap capabilities. Its drop cancels
 //! the driver; [`Connection::shutdown`] completes bounded graceful cleanup. Use
-//! [`tcp`] or [`tls`] explicitly to choose a transport, and [`raw`] only when an
+//! [`tcp`] or [`quic`] to choose a transport. TLS secures TCP through
+//! [`tcp::tls`]; QUIC includes TLS 1.3. [`security`] holds shared certificates.
+//! Use [`raw`] only when an
 //! integration deliberately manages detached task handles.
 mod connection;
 mod io;
@@ -28,9 +30,29 @@ pub type Completion = futures::future::Shared<capnp::capability::Promise<(), cap
 
 #[cfg(feature = "quic")]
 pub mod quic;
-pub mod tcp;
 #[cfg(feature = "tls")]
-pub mod tls;
+pub mod security;
+pub mod tcp;
+
+/// Private RPC ALPN identifier, shared by TCP with TLS and QUIC.
+pub const ALPN: &[u8] = b"capntproto-rpc/1";
+
+/// Bounds simultaneous unauthenticated sessions and their setup time.
+#[derive(Clone, Copy, Debug)]
+pub struct AcceptOptions {
+    /// Includes authentication and, for QUIC, arrival of the first RPC stream.
+    pub timeout: std::time::Duration,
+    pub max_pending: std::num::NonZeroUsize,
+}
+
+impl Default for AcceptOptions {
+    fn default() -> Self {
+        Self {
+            timeout: std::time::Duration::from_secs(10),
+            max_pending: std::num::NonZeroUsize::new(64).unwrap(),
+        }
+    }
+}
 /// QUIC wire protocol, selected explicitly without automatic downgrade.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum QuicVersion {

@@ -7,13 +7,13 @@ use tokio::net::{TcpListener, TcpStream};
 
 pub type Network = Box<dyn capnp_rpc::VatNetwork<Side>>;
 pub enum Stream {
-    Tls(Box<capntproto::rpc::tls::TlsStream<TcpStream>>),
+    Tls(Box<capntproto::rpc::tcp::tls::TlsStream<TcpStream>>),
     Quic(quic::Stream),
 }
 impl Stream {
     pub fn network(self, side: Side) -> Network {
         match self {
-            Self::Tls(stream) => Box::new(capntproto::rpc::tls::network(
+            Self::Tls(stream) => Box::new(capntproto::rpc::tcp::tls::network(
                 *stream,
                 side,
                 Default::default(),
@@ -37,9 +37,9 @@ pub fn metadata() -> Result<serde_json::Value> {
     }
     Ok(metadata)
 }
-fn identity() -> Result<capntproto::rpc::tls::Identity> {
+fn identity() -> Result<capntproto::rpc::security::Identity> {
     let (certificates, private_key) = tls::identity()?;
-    Ok(capntproto::rpc::tls::Identity {
+    Ok(capntproto::rpc::security::Identity {
         certificates,
         private_key,
     })
@@ -55,7 +55,7 @@ fn profile_idle_timeout() -> Result<u64> {
     }
 }
 pub enum Listener {
-    Tls(TcpListener, Arc<capntproto::rpc::tls::rustls::ServerConfig>),
+    Tls(TcpListener, Arc<capntproto::rpc::security::rustls::ServerConfig>),
     Quic(quic::Endpoint),
 }
 impl Listener {

@@ -9,7 +9,7 @@ readme = "README.md"
 rust-version = "1.97"
 publish = true
 build = "build.rs"
-include = ["src/**", "schemas/**", "build.rs", "examples/*.rs", "examples/*.capnp", "examples/support/**", "examples/README.md", "tests/interop/quic_peer.rs", "README.md", "LICENSE"]
+include = ["src/**", "schemas/**", "build.rs", "examples/*.rs", "examples/support/**", "examples/README.md", "tests/interop/quic_peer.rs", "README.md", "LICENSE"]
 
 [workspace]
 resolver = "2"
@@ -25,6 +25,7 @@ exclude = [
     "benchmarks/instructions",
     "benchmarks/concurrency",
     "examples/downstream",
+    "examples/kv",
     "fuzz",
     "verification/miri",
     "verification/portable",
@@ -71,7 +72,7 @@ capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntpro
 [dev-dependencies]
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 allocation-counter = "=0.8.1"
-rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["test-util"] }
 capntproto-test-support = { path = "test-support" }
@@ -84,14 +85,6 @@ path = "src/bin/model.rs"
 
 [[example]]
 name = "message_basic"
-
-[[example]]
-name = "rpc_simple"
-required-features = ["services"]
-
-[[example]]
-name = "rpc_deep"
-required-features = ["services"]
 
 [[example]]
 name = "storage_probe"

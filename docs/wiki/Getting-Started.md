@@ -214,5 +214,5 @@ trusted publisher is configured.
 
 The `capntproto-rustls` package preserves our direct-output record encryption
 backport and the upstream rustls licenses. Configure it through
-`capntproto::rpc::tls::rustls`; the official `rustls` crate has distinct config
+`capntproto::rpc::security::rustls`; the official `rustls` crate has distinct config
 types. See the [fork's provenance and API differences](../../vendor/rustls/README.capntproto.md).

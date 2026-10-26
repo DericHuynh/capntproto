@@ -1,5 +1,8 @@
 use capnp_rpc::twoparty::TwoPartyClient;
-use capntproto::rpc::tls::{self, rustls, Identity};
+use capntproto::rpc::{
+    security::{rustls, Identity},
+    tcp::tls,
+};
 use capntproto_test_support::structured::runtime_test_capnp::harness;
 use rcgen::{
     BasicConstraints, CertificateParams, CertifiedIssuer, ExtendedKeyUsagePurpose, IsCa, KeyPair,
@@ -79,7 +82,7 @@ impl Pki {
             .with_no_client_auth()
             .with_single_cert(identity.certificates, identity.private_key)
             .unwrap();
-        client.alpn_protocols = vec![tls::ALPN.to_vec()];
+        client.alpn_protocols = vec![capntproto::rpc::ALPN.to_vec()];
         server.alpn_protocols = client.alpn_protocols.clone();
         client.enable_secret_extraction = true;
         server.enable_secret_extraction = true;

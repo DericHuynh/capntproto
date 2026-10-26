@@ -39,20 +39,6 @@ fn main() {
         .output_directory(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"))
         .run(bytes.as_slice())
         .expect("generate service bindings");
-    if cfg!(feature = "services") {
-        let compiled = capntproto_compiler::FileCompiler::new()
-            .src_prefix("examples")
-            .compile_with_dependencies(&["examples/rpc_examples.capnp"])
-            .expect("compile RPC example schema");
-        for dependency in compiled.dependencies {
-            println!("cargo:rerun-if-changed={}", dependency.display());
-        }
-        capnpc::codegen::CodeGenerationCommand::new()
-            .capnp_root("::capntproto::capnp")
-            .output_directory(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"))
-            .run(capnp::serialize::write_message_to_words(&compiled.message).as_slice())
-            .expect("generate RPC example bindings");
-    }
 }
 #[cfg(not(any(feature = "native", feature = "storage", feature = "services")))]
 fn main() {

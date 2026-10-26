@@ -250,7 +250,7 @@ schema tools are needed only by the commands that exercise those systems.
 
 Append `--help` to any command for its required paths and options. The independent
 QUIC check is `cargo run --locked -p capntproto-dev --features quic-interop -- check-quic-interop`;
-first build the `quic-interop` example as documented in [TCP, TLS and QUIC](TCP-TLS-and-QUIC.md).
+first build the `quic-interop` example as documented in [TCP and QUIC](TCP-TLS-and-QUIC.md).
 The existing `capntproto-quality` commands still drive source-bound verification lanes.
 
 Research probes record the runner, source and lockfile hashes and reject source

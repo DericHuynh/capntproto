@@ -5,44 +5,20 @@
 //! Inspect the authenticated peer's certificates before choosing a bootstrap
 //! when different identities should receive different capabilities.
 
-use super::io::TokioIo;
+use super::super::io::TokioIo;
+use super::super::{
+    security::{deadline, invalid_config, rustls, Identity},
+    AcceptOptions, ALPN,
+};
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
 use futures::{stream::FuturesUnordered, StreamExt};
-pub use rustls;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
-use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
+use rustls::pki_types::ServerName;
+use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 mod stream;
 pub use stream::TlsStream;
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
-
-/// Private application protocol for ordinary Cap'n Proto two-party framing.
-/// This is not HTTP/3 or an upstream-assigned Cap'n Proto ALPN identifier.
-pub const ALPN: &[u8] = b"capntproto-rpc/1";
-
-/// A leaf-first certificate chain and its matching private key, in DER form.
-pub struct Identity {
-    pub certificates: Vec<CertificateDer<'static>>,
-    pub private_key: PrivateKeyDer<'static>,
-}
-
-/// Bounds concurrent unauthenticated sessions and their setup time.
-#[derive(Clone, Copy, Debug)]
-pub struct AcceptOptions {
-    /// Includes the handshake and, for QUIC, arrival of the first RPC stream.
-    pub timeout: Duration,
-    pub max_pending: NonZeroUsize,
-}
-
-impl Default for AcceptOptions {
-    fn default() -> Self {
-        Self {
-            timeout: Duration::from_secs(10),
-            max_pending: NonZeroUsize::new(64).unwrap(),
-        }
-    }
-}
 
 /// Trust only the supplied roots; optionally present a client identity for mTLS.
 /// TLS 1.3 and this crate's RPC ALPN are selected; early data is disabled.
@@ -90,21 +66,6 @@ pub fn server_config(
     config.alpn_protocols = vec![ALPN.to_vec()];
     config.max_early_data_size = 0;
     Ok(Arc::new(config))
-}
-
-pub(super) fn invalid_config(
-    error: impl Into<Box<dyn std::error::Error + Send + Sync>>,
-) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, error)
-}
-
-pub(super) async fn deadline<T>(
-    timeout: Duration,
-    future: impl std::future::Future<Output = io::Result<T>>,
-) -> io::Result<T> {
-    tokio::time::timeout(timeout, future)
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC connection setup timed out"))?
 }
 
 fn check_alpn(stream: TlsStream<TcpStream>) -> io::Result<TlsStream<TcpStream>> {
@@ -165,7 +126,7 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
         options,
         move |_| window,
     );
-    network.set_task_yield(super::io::defer);
+    network.set_task_yield(super::super::io::defer);
     network
 }
 

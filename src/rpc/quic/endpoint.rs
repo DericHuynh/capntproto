@@ -423,7 +423,7 @@ mod tests {
                     let cert =
                         rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
                     let config = server_config(
-                        tls::Identity {
+                        Identity {
                             certificates: vec![cert.cert.der().clone()],
                             private_key: rustls::pki_types::PrivatePkcs8KeyDer::from(
                                 cert.signing_key.serialize_der(),

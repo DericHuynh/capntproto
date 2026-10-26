@@ -7,7 +7,7 @@
 
 **RPC and transport**
 
-- [TCP, TLS and QUIC](TCP-TLS-and-QUIC.md)
+- [TCP and QUIC](TCP-TLS-and-QUIC.md)
 - [Native Transports](Native-Transports.md)
 - [Split Planes](Split-Plane.md)
 - [Third-Party Answers](Third-Party-Answers.md)

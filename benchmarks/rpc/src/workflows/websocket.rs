@@ -11,7 +11,7 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
-pub(super) struct Client(WebSocketStream<capntproto::rpc::tls::TlsStream<TcpStream>>);
+pub(super) struct Client(WebSocketStream<capntproto::rpc::tcp::tls::TlsStream<TcpStream>>);
 fn config() -> WebSocketConfig {
     WebSocketConfig::default()
         .max_message_size(Some(super::MAX_MESSAGE_BYTES))

@@ -54,7 +54,7 @@ pub async fn connect_bound(
         socket.bind(bind)?;
         let socket = socket.connect(address).await?;
         socket.set_nodelay(true)?;
-        let stream = crate::rpc::tls::TlsStream::connect(
+        let stream = crate::rpc::tcp::tls::TlsStream::connect(
             socket,
             Arc::new(client),
             "reproto.invalid".try_into().unwrap(),
@@ -78,7 +78,7 @@ pub async fn accept(
     let (_, server) = identity.tls_configs(peer, secret, context)?;
     socket.set_nodelay(true)?;
     tokio::time::timeout(timeout, async {
-        let stream = crate::rpc::tls::TlsStream::accept(socket, Arc::new(server)).await?;
+        let stream = crate::rpc::tcp::tls::TlsStream::accept(socket, Arc::new(server)).await?;
         if stream.get_ref().1.alpn_protocol() != Some(b"reproto/2") {
             return Err(io::Error::other("native ALPN mismatch"));
         }

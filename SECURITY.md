@@ -40,7 +40,7 @@ integration still require independent production security review. Provision peer
 with pinned Ed25519 identities, configured resource limits and trusted local
 storage. Treat introduction tickets and SturdyRefs as secrets.
 
-`rpc::tcp` is plaintext and unauthenticated. Use `rpc::tls` or native TCP
+`rpc::tcp` is plaintext and unauthenticated. Use `rpc::tcp::tls` or native TCP
 for TLS 1.3. Quiche uses standard QUIC v1/v2 with TLS 1.3.
 Native sessions require mutual peer-key authentication and reject application
 0-RTT. Reservation secrets authenticate admission; they do not independently

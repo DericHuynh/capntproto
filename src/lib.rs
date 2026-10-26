@@ -1,11 +1,12 @@
-//! Cap'n Proto messages and scoped RPC over TCP, TLS and QUIC.
+//! Cap'n Proto messages and scoped RPC over TCP or QUIC. TLS secures TCP;
+//! QUIC includes TLS 1.3.
 //!
 //! [`capnp`] provides messages and generated capability types; [`capnp_rpc`]
 //! provides protocol drivers. [`rpc::Connection`] owns a running connection and
 //! cancels it on drop. Storage, services and native networking are optional.
 //!
-//! Start with the `message_basic` and `rpc_simple` examples; `rpc_deep` shows
-//! concurrent calls through a 32-level capability pipeline.
+//! Start with `message_basic`, then run the separate `kv_server` and `kv_client`
+//! examples. `kv_deep_client` exercises concurrent directory capability pipelines.
 
 pub use capnp;
 pub use capnp_futures;

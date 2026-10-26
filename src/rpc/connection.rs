@@ -34,7 +34,7 @@ impl Connection {
         Self::spawn(TwoPartyClient::from_network(network, bootstrap))
     }
 
-    /// Start a configured TCP, TLS, QUIC or other owned two-party driver.
+    /// Start a configured TCP (optionally secured with TLS), QUIC or other owned two-party driver.
     /// Panics outside a Tokio local executor, like `spawn_local`.
     pub fn spawn(mut driver: TwoPartyClient<'static>) -> Self {
         Self {

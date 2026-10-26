@@ -66,7 +66,10 @@ impl Identity {
         self.public
     }
 
-    pub(super) fn credential(&self, binding: &str) -> std::io::Result<crate::rpc::tls::Identity> {
+    pub(super) fn credential(
+        &self,
+        binding: &str,
+    ) -> std::io::Result<crate::rpc::security::Identity> {
         // RFC 8410 OneAsymmetricKey: Ed25519 seed wrapped in two OCTET STRINGs.
         let mut der = Zeroizing::new(vec![
             0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22,
@@ -88,7 +91,7 @@ impl Identity {
             rcgen::ExtendedKeyUsagePurpose::ClientAuth,
         ];
         let certificate = params.self_signed(&key).map_err(std::io::Error::other)?;
-        Ok(crate::rpc::tls::Identity {
+        Ok(crate::rpc::security::Identity {
             certificates: vec![certificate.der().clone()],
             private_key: PrivateKeyDer::Pkcs8(private),
         })

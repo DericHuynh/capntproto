@@ -1,12 +1,16 @@
-# TCP, TLS and standard QUIC
+# TCP and QUIC
 
-The public two-party RPC adapters support three ordinary network transports:
+Select the network transport independently of certificate configuration:
 
-| API | Wire protocol | Authentication |
+| Transport | API | Security |
 | --- | --- | --- |
-| `capntproto::rpc::tcp` | Cap'n Proto RPC on TCP | Plaintext; no peer authentication |
-| `capntproto::rpc::tls` | Cap'n Proto RPC on TLS 1.3/TCP | Server certificates, optional required client certificates |
-| `capntproto::rpc::quic` | Cap'n Proto RPC on standard QUIC v1 | TLS 1.3 server certificates, optional required client certificates |
+| TCP | `capntproto::rpc::tcp` | Plain TCP, or TLS 1.3 through `rpc::tcp::tls` |
+| QUIC | `capntproto::rpc::quic` | TLS 1.3 is part of QUIC; it cannot be disabled |
+
+`rpc::security` owns shared certificate material, PEM loading and the rustls
+configuration types. TLS is a security layer for TCP, not a third transport.
+The [key/value service](../../examples/README.md) demonstrates independent client
+and server processes using the same schema on either transport.
 
 TLS/TCP uses vendored rustls 0.23.46's Unbuffered API through the shared
 `tls::TlsStream<S>` Tokio adapter, including native multiparty TCP/TLS. Both
@@ -58,15 +62,17 @@ and reports an underlying EOF without TLS `close_notify` as `UnexpectedEof`.
 
 ## Certificates and trust
 
-`tls::Identity` takes a leaf-first chain of `CertificateDer<'static>` values
+`security::Identity` takes a leaf-first chain of `CertificateDer<'static>` values
 and its matching `PrivateKeyDer<'static>`. These are the standard rustls types;
-`tls::rustls` re-exports rustls for configuration. Keys and certificates can be
-loaded from DER, or from PEM using `rustls::pki_types::pem::PemObject`.
+`security::rustls` re-exports rustls for configuration. Use `security::Identity::from_pem_files(cert, key)` for PEM identities,
+`security::roots_from_pem_file(ca)` for TCP trust, and
+`security::certificates_from_pem_file(ca)` for QUIC trust. DER construction is
+also available.
 
 Build configurations once and share their `Arc`s:
 
 ```rust
-use capntproto::rpc::tls;
+use capntproto::rpc::{security, tcp::tls};
 
 // RootCertStore values contain the application's trusted CA certificates.
 let client = tls::client_config(server_roots, Some(client_identity))?;
@@ -106,7 +112,7 @@ For TLS, connect first, then construct the RPC driver:
 
 ```rust
 use capnp_rpc::rpc_twoparty_capnp::Side;
-use capntproto::rpc::tls;
+use capntproto::rpc::tcp::tls;
 use std::time::Duration;
 
 let stream = tls::connect(
@@ -115,9 +121,10 @@ let stream = tls::connect(
     client_config,
     Duration::from_secs(10),
 ).await?;
-let mut rpc = tls::client(stream, None, Side::Client, Default::default());
-let remote: my_schema::service::Client = rpc.bootstrap();
-let driver = tokio::task::spawn_local(rpc);
+let connection = capntproto::rpc::Connection::spawn(
+    tls::client(stream, None, Side::Client, Default::default()),
+);
+let remote: my_schema::service::Client = connection.bootstrap();
 ```
 
 Run RPC drivers inside a Tokio `LocalSet`. TLS's setup deadline includes DNS,
@@ -136,7 +143,7 @@ with their ServerDriver. Dropping that driver cancels its owned sessions.
 ## Standard QUIC connections
 
 Create endpoints inside a Tokio `LocalSet`. QUIC configuration takes DER root
-certificates and `tls::Identity` values directly. TCP's rustls configuration
+certificates and `security::Identity` values directly. TCP's rustls configuration
 objects are specific to TCP and are not passed to the QUIC engine.
 
 ```rust
@@ -180,7 +187,7 @@ explicit validated path migration and CID rotation.
 
 `quic::accept(incoming, timeout)` bounds both TLS and arrival of the first RPC
 stream. `quic::listen` performs concurrent bounded setup with the same
-`tls::AcceptOptions` as TCP/TLS. Canceling the listener stops new admission and
+`capntproto::rpc::AcceptOptions` as TCP/TLS. Canceling the listener stops new admission and
 cancels pending setup while established streams retain their packet router.
 The endpoint also bounds its incoming queue, route count and per-route packets.
 

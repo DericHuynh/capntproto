@@ -14,14 +14,14 @@ pub struct ServerConfig(pub(super) quiche::Config, pub(super) bool);
 /// Trust only these DER certificates, optionally presenting a client identity.
 pub fn client_config(
     roots: Vec<CertificateDer<'static>>,
-    identity: Option<tls::Identity>,
+    identity: Option<Identity>,
 ) -> io::Result<ClientConfig> {
     client_config_for_version(roots, identity, Version::V1)
 }
 /// Select a wire version. Unsupported versions fail; no downgrade or 0-RTT.
 pub fn client_config_for_version(
     roots: Vec<CertificateDer<'static>>,
-    identity: Option<tls::Identity>,
+    identity: Option<Identity>,
     version: Version,
 ) -> io::Result<ClientConfig> {
     if !quiche::version_is_supported(version.wire_id()) {
@@ -34,7 +34,7 @@ pub fn client_config_for_version(
 }
 /// A supplied client trust store makes client authentication mandatory.
 pub fn server_config(
-    identity: tls::Identity,
+    identity: Identity,
     client_roots: Option<Vec<CertificateDer<'static>>>,
 ) -> io::Result<ServerConfig> {
     Ok(ServerConfig(
@@ -43,51 +43,59 @@ pub fn server_config(
     ))
 }
 fn config(
-    identity: Option<tls::Identity>,
+    identity: Option<Identity>,
     roots: Option<Vec<CertificateDer<'static>>>,
     server: bool,
     version: Version,
 ) -> io::Result<quiche::Config> {
-    let mut builder = SslContextBuilder::new(SslMethod::tls()).map_err(tls::invalid_config)?;
+    let mut builder = SslContextBuilder::new(SslMethod::tls()).map_err(security::invalid_config)?;
     builder
         .set_min_proto_version(Some(SslVersion::TLS1_3))
-        .map_err(tls::invalid_config)?;
+        .map_err(security::invalid_config)?;
     builder
         .set_max_proto_version(Some(SslVersion::TLS1_3))
-        .map_err(tls::invalid_config)?;
+        .map_err(security::invalid_config)?;
     builder.set_session_cache_mode(SslSessionCacheMode::OFF);
     builder.set_options(SslOptions::NO_TICKET);
     if let Some(identity) = identity {
         let mut chain = identity.certificates.into_iter();
         let leaf = chain
             .next()
-            .ok_or_else(|| tls::invalid_config("empty identity chain"))?;
+            .ok_or_else(|| security::invalid_config("empty identity chain"))?;
         builder
-            .set_certificate(X509::from_der(&leaf).map_err(tls::invalid_config)?.as_ref())
-            .map_err(tls::invalid_config)?;
+            .set_certificate(
+                X509::from_der(&leaf)
+                    .map_err(security::invalid_config)?
+                    .as_ref(),
+            )
+            .map_err(security::invalid_config)?;
         for certificate in chain {
             builder
-                .add_extra_chain_cert(X509::from_der(&certificate).map_err(tls::invalid_config)?)
-                .map_err(tls::invalid_config)?;
+                .add_extra_chain_cert(
+                    X509::from_der(&certificate).map_err(security::invalid_config)?,
+                )
+                .map_err(security::invalid_config)?;
         }
         builder
             .set_private_key(
                 PKey::private_key_from_der(identity.private_key.secret_der())
-                    .map_err(tls::invalid_config)?
+                    .map_err(security::invalid_config)?
                     .as_ref(),
             )
-            .map_err(tls::invalid_config)?;
-        builder.check_private_key().map_err(tls::invalid_config)?;
+            .map_err(security::invalid_config)?;
+        builder
+            .check_private_key()
+            .map_err(security::invalid_config)?;
     }
     if let Some(roots) = roots {
         if roots.is_empty() {
-            return Err(tls::invalid_config("empty trust store"));
+            return Err(security::invalid_config("empty trust store"));
         }
         for root in roots {
             builder
                 .cert_store_mut()
-                .add_cert(X509::from_der(&root).map_err(tls::invalid_config)?)
-                .map_err(tls::invalid_config)?;
+                .add_cert(X509::from_der(&root).map_err(security::invalid_config)?)
+                .map_err(security::invalid_config)?;
         }
         builder.set_verify(if server {
             SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT
@@ -99,10 +107,10 @@ fn config(
         builder.set_verify(SslVerifyMode::NONE);
     }
     let mut config = quiche::Config::with_boring_ssl_ctx_builder(version.wire_id(), builder)
-        .map_err(tls::invalid_config)?;
+        .map_err(security::invalid_config)?;
     config
-        .set_application_protos(&[tls::ALPN])
-        .map_err(tls::invalid_config)?;
+        .set_application_protos(&[ALPN])
+        .map_err(security::invalid_config)?;
     config.set_max_idle_timeout(10_000);
     config.set_max_recv_udp_payload_size(crate::rpc::packet_mtu::RECEIVE_MAX);
     config.set_max_send_udp_payload_size(crate::rpc::packet_mtu::SEND_MAX);
@@ -127,7 +135,7 @@ impl ClientConfig {
     pub fn application_protocols(&mut self, protocols: &[&[u8]]) -> io::Result<()> {
         self.0
             .set_application_protos(protocols)
-            .map_err(tls::invalid_config)
+            .map_err(security::invalid_config)
     }
 }
 

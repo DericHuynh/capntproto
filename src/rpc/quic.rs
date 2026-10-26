@@ -8,8 +8,11 @@ mod driver;
 mod endpoint;
 mod retry;
 use super::io::TokioIo;
-use super::tls::{self, AcceptOptions};
 pub use super::QuicVersion as Version;
+use super::{
+    security::{self, Identity},
+    AcceptOptions, ALPN,
+};
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
 pub use config::{
@@ -167,14 +170,14 @@ pub async fn connect(
     server_name: &str,
     timeout: Duration,
 ) -> io::Result<Stream> {
-    rustls::pki_types::ServerName::try_from(server_name).map_err(tls::invalid_config)?;
+    rustls::pki_types::ServerName::try_from(server_name).map_err(security::invalid_config)?;
     let ip = server_name.parse::<std::net::IpAddr>().ok();
     let id = crate::transport::cid();
     let conn = {
         let mut config = endpoint.0.client.borrow_mut();
         let config = config
             .as_mut()
-            .ok_or_else(|| tls::invalid_config("missing QUIC client configuration"))?;
+            .ok_or_else(|| security::invalid_config("missing QUIC client configuration"))?;
         quiche::connect(
             ip.is_none().then_some(server_name),
             &quiche::ConnectionId::from_ref(&id),
@@ -192,13 +195,14 @@ pub async fn connect(
         let certificate = stream
             .certificates
             .first()
-            .ok_or_else(|| tls::invalid_config("missing server certificate"))?;
-        let certificate = boring::x509::X509::from_der(certificate).map_err(tls::invalid_config)?;
+            .ok_or_else(|| security::invalid_config("missing server certificate"))?;
+        let certificate =
+            boring::x509::X509::from_der(certificate).map_err(security::invalid_config)?;
         if !certificate
             .check_ip_asc(&ip.to_string())
-            .map_err(tls::invalid_config)?
+            .map_err(security::invalid_config)?
         {
-            return Err(tls::invalid_config(
+            return Err(security::invalid_config(
                 "server certificate does not match the IP address",
             ));
         }

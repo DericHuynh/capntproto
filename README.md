@@ -21,12 +21,23 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
 ## Start small, then go deeper
 
 - [Message round trip](examples/message_basic.rs): `cargo run --no-default-features --example message_basic`.
-- [One scoped RPC](examples/rpc_simple.rs): `cargo run --no-default-features --features services --example rpc_simple`.
-- [Deep concurrent RPC](examples/rpc_deep.rs): `cargo run --no-default-features --features services --example rpc_deep` runs 32 concurrent pipelines of depth 32.
+- [Key/value server](examples/kv/src/bin/server.rs) and [independent client](examples/kv/src/bin/client.rs), using a shared [Cap'n Proto schema](examples/kv/key_value.capnp).
+- [Deep concurrent client](examples/kv/src/bin/deep-client.rs): concurrent writes and reads through 32 levels of remote directory capabilities.
 
-The facade re-exports `capnp`, `capnp_rpc` and `capnp_futures`. Retain an
-`rpc::Connection` to own its driver; select TCP, TLS or QUIC explicitly. See the
-[example guide](examples/README.md) for ownership, generation and larger applications.
+```sh
+# Terminal 1
+cargo run --manifest-path examples/kv/Cargo.toml --bin server
+# Terminal 2: separate processes share the server's state
+cargo run --manifest-path examples/kv/Cargo.toml --bin client -- put greeting hello
+cargo run --manifest-path examples/kv/Cargo.toml --bin client -- get greeting
+cargo run --manifest-path examples/kv/Cargo.toml --bin deep-client
+```
+
+Choose TCP or QUIC as the transport. TLS secures TCP; QUIC includes TLS 1.3.
+Certificate configuration lives in `rpc::security`, TCP's TLS adapter in
+`rpc::tcp::tls`, and QUIC in `rpc::quic`. The facade re-exports `capnp`,
+`capnp_rpc` and `capnp_futures`. Retain an `rpc::Connection` while using its
+capabilities. See the [example guide](examples/README.md) for TLS and QUIC setup.
 
 ## What is here
 
@@ -36,7 +47,7 @@ The facade re-exports `capnp`, `capnp_rpc` and `capnp_futures`. Retain an
   `capnp-rpc` crates, with generated Rust APIs and C++ interoperability tests.
   [Runtime scope](docs/wiki/Runtime-Status.md) · [C++ parity](docs/wiki/Cpp-Parity.md).
   Local small-call TCP qualification: [portable instructions within 1.05× of legacy on both peers](docs/wiki/Quality-and-Benchmarks.md#portable-and-legacy-instruction-qualification).
-- **Adapters and transport:** TCP, TLS 1.3 and standard QUIC v1 with optional mutual
+- **Adapters and transport:** TCP with optional TLS 1.3 and standard QUIC v1 with optional mutual
   TLS; JSON/text codecs, ByteStream, HTTP, WebSockets and JSON-RPC; encrypted
   multiparty sessions through quiche and durable storage. [TCP, TLS and QUIC guide](docs/wiki/TCP-TLS-and-QUIC.md).
   [Compatibility adapters](docs/wiki/Compatibility-Adapters.md) · [Architecture](docs/wiki/Architecture.md).

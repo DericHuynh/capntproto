@@ -103,7 +103,7 @@ fn unsafe_debt_cannot_grow_change_or_cover_application_code() {
         json!({}),
         json!({path:{"sha256":"changed-source","diagnostics":{"unsafe_op_in_unsafe_fn":1}}}),
         json!({path:{"sha256":"old-source","diagnostics":{}}}),
-        json!({path:item,"src/rpc/tls.rs":item}),
+        json!({path:item,"src/rpc/tcp/tls.rs":item}),
     ] {
         assert!(validate_unsafe(&invalid, &baseline).is_err());
     }

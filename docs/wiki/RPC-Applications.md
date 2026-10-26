@@ -83,7 +83,7 @@ connection.shutdown(std::time::Duration::from_secs(3)).await?;
 ```
 
 `rpc::tcp` is plaintext. For encryption, establish and authenticate a stream
-with `rpc::tls` or `rpc::quic`, then pass its `client(...)` driver to the same
+with `rpc::tcp::tls` or `rpc::quic`, then pass its `client(...)` driver to the same
 `Connection::spawn`. This preserves socket-aware flow control, reader limits
 and transport configuration. `Connection::new` also accepts generic Tokio byte
 IO with default settings. See the [TLS/mTLS and QUIC guide](TCP-TLS-and-QUIC.md).

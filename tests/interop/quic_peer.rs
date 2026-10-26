@@ -1,7 +1,7 @@
 //! Controlled quiche peer for the capntproto-dev s2n-quic interoperability check.
 use capntproto::rpc::{
     quic::{self, Endpoint, Version},
-    tls::{rustls, Identity},
+    security::{rustls, Identity},
 };
 use std::{
     io::{self, Write},

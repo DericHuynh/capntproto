@@ -1,6 +1,6 @@
 use super::common::*;
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyServer};
-use capntproto::rpc::tls::{self, rustls};
+use capntproto::rpc::{security::rustls, tcp::tls};
 use std::{cell::RefCell, io, rc::Rc, sync::Arc, time::Duration};
 use tokio::{
     io::AsyncReadExt,
@@ -35,7 +35,10 @@ async fn roundtrip(mutual: bool) {
             stream.get_ref().1.protocol_version(),
             Some(rustls::ProtocolVersion::TLSv1_3)
         );
-        assert_eq!(stream.get_ref().1.alpn_protocol(), Some(tls::ALPN));
+        assert_eq!(
+            stream.get_ref().1.alpn_protocol(),
+            Some(capntproto::rpc::ALPN)
+        );
         assert_eq!(stream.get_ref().1.peer_certificates().unwrap().len(), 1);
         assert!(stream.get_ref().0.nodelay().unwrap());
         exercise(tls::client(stream, None, Side::Client, Default::default())).await;
@@ -143,7 +146,7 @@ async fn listener_isolates_invalid_and_stalled_handshakes_and_cancellation() {
             &listener,
             pki.server(true),
             Default::default(),
-            tls::AcceptOptions::default(),
+            capntproto::rpc::AcceptOptions::default(),
             move |_, error| errors.borrow_mut().push(error.kind()),
         ));
         // The first peer never sends ClientHello; a serial acceptor would block.
