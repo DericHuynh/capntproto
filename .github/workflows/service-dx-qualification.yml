@@ -1,0 +1,60 @@
+name: Qualify legacy and portable regression matrix
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-early-pipeline-trace
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+  TLA2TOOLS_JAR: /tmp/tla2tools.jar
+jobs:
+  stable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 044650e7294c29016857dd1f378c50f47530d877
+      - name: Install matched tools and formal trace input
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          cmake --version
+          clang --version
+          java -version
+          git submodule update --init --depth 1 -- vendor/capnproto
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$TLA2TOOLS_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLA2TOOLS_JAR" | sha256sum --check --strict
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Trace isolated pipeline progress
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          
+          def edit(file, old, new, count=1):
+              p=Path(file);s=p.read_text();assert s.count(old)>=count,(file,old);p.write_text(s.replace(old,new,count))
+          
+          edit('tests/result_pipeline.rs','for drivers in pipeline_cases() {','for drivers in [Some([false, true])] {')
+          edit('tests/result_pipeline.rs','panic!("early child stalled: drivers={drivers:?}, success={success}")','panic!("early child stalled: drivers={drivers:?}, success={success}, calls={}, failed={}, parent={}", f.calls.get(), f.failed, f.parent_result)')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs','let notified = self.notifications.take(cx.waker());','let notified = self.notifications.take(cx.waker());\n        eprintln!("TRACE coordinator notified={notified:?} active={:?}", self.schedule.active);')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs','if let Poll::Ready(result) = outcome {','eprintln!("TRACE lane={index:?} ready={} active={:?}", outcome.is_ready(), self.schedule.active);\n            if let Poll::Ready(result) = outcome {')
+          edit('crates/capntproto-rpc/src/scoped/wire/server/worker.rs','let Some(hook) = results.pipeline(path) else {','let available = results.pipeline(path);\n        eprintln!("TRACE server pipeline path={:?} available={}", path.fields(), available.is_some());\n        let Some(hook) = available else {')
+          edit('crates/capntproto-rpc/src/scoped/wire/server/worker.rs','entry.result_revision = entry.results.revision();','eprintln!("TRACE worker result revision changed");\n                entry.result_revision = entry.results.revision();',2)
+          edit('crates/capntproto-rpc/src/scoped/wire/server/results.rs','fn notify(&self) {','fn notify(&self) {\n        eprintln!("TRACE results notify revision={} waiter={}", self.revision.get(), self.wake.borrow().first.is_some());')
+          edit('crates/capntproto-rpc/src/scoped/wire/foreign.rs','let entry = Some(Entry {','eprintln!("TRACE foreign pending import index={index}");\n        let entry = Some(Entry {')
+          edit('crates/capntproto-rpc/src/scoped/wire/foreign.rs','graph.release(source);\n                match progress {','graph.release(source);\n                eprintln!("TRACE foreign index={index} outcome={progress:?}");\n                match progress {')
+          edit('crates/capntproto-rpc/src/scoped/wire/server/worker.rs','let prepared = hooks.prepare_received_server(entry.request(), driver, messages)?;','let prepared = hooks.prepare_received_server(entry.request(), driver, messages)?;\n                eprintln!("TRACE dispatch method={:?}", prepared.method());')
+          PY
+      - name: Diagnose early pipeline progress across driver pairs
+        run: |
+          cargo test --locked --features quic --test result_pipeline independent_publication_routes_before_return_with_local_and_wire_error_semantics -- --exact --nocapture
