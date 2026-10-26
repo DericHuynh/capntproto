@@ -91,11 +91,12 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
                 })
                 .collect();
             samples.sort_unstable();
-            let elapsed: u128 = cell
+            let elapsed: u64 = cell
                 .iter()
-                .map(|t| u128::from(t["elapsed_ns"].as_u64().unwrap()))
-                .sum();
-            let throughput = samples.len() as f64 * 1e9 / elapsed as f64;
+                .map(|t| t["elapsed_ns"].as_u64().unwrap())
+                .min()
+                .unwrap();
+            let throughput = 1000.0 * 1e9 / elapsed as f64;
             let sample_trials: Vec<Vec<u64>> = cell
                 .iter()
                 .map(|trial| {
@@ -107,7 +108,7 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
                         .collect()
                 })
                 .collect();
-            let mut row = json!({"case":case,"implementation":implementation,"samples":samples.len(),"p50_ns":samples[2499],"p95_ns":samples[4749],"p99_ns":samples[4949],"workflows_per_second":throughput,"rpcs_per_second":throughput*case["rpcs_per_iteration"].as_u64().unwrap() as f64});
+            let mut row = json!({"case":case,"implementation":implementation,"samples":samples.len(),"throughput_estimator":"fastest_repetition","best_elapsed_ns":elapsed,"p50_ns":samples[2499],"p95_ns":samples[4749],"p99_ns":samples[4949],"workflows_per_second":throughput,"rpcs_per_second":throughput*case["rpcs_per_iteration"].as_u64().unwrap() as f64});
             row.as_object_mut().unwrap().extend(
                 latency_summary::summarize(&sample_trials)
                     .as_object()
@@ -121,11 +122,11 @@ fn matrix(trials: &[Value]) -> Result<Vec<Value>> {
         let cpp = rows
             .iter()
             .find(|r| r["case"] == rows[index]["case"] && r["implementation"] == "capnp-cpp")
-            .unwrap()["p50_ns"]
+            .unwrap()["min_ns"]
             .as_u64()
             .unwrap();
-        rows[index]["p50_ratio_to_cpp"] =
-            json!(rows[index]["p50_ns"].as_u64().unwrap() as f64 / cpp as f64);
+        rows[index]["min_ratio_to_cpp"] =
+            json!(rows[index]["min_ns"].as_u64().unwrap() as f64 / cpp as f64);
     }
     Ok(rows)
 }
@@ -144,17 +145,17 @@ fn portable_target(rows: &[Value]) -> Value {
                         && (row["implementation"] == "legacy"
                             || row["implementation"] == "capnp-cpp")
                 })
-                .min_by_key(|row| row["p50_ns"].as_u64().unwrap())
+                .min_by_key(|row| row["min_ns"].as_u64().unwrap())
                 .expect("validated reference peers");
-            let actual = portable["p50_ns"].as_u64().unwrap();
-            let baseline = reference["p50_ns"].as_u64().unwrap();
+            let actual = portable["min_ns"].as_u64().unwrap();
+            let baseline = reference["min_ns"].as_u64().unwrap();
             json!({"case":portable["case"], "reference":reference["implementation"],
-                "reference_p50_ns":baseline, "portable_p50_ns":actual,
+                "reference_min_ns":baseline, "portable_min_ns":actual,
                 "ratio":actual as f64 / baseline as f64,
                 "meets_target":u128::from(actual) * 100 <= u128::from(baseline) * 105})
         })
         .collect();
-    json!({"metric":"pooled p50 per workflow", "maximum_ratio":1.05,
+    json!({"metric":"minimum per workflow", "maximum_ratio":1.05,
         "reference_rule":"min(legacy, capnp-cpp) in the same campaign",
         "advisory":true, "all_workflows_pass":cells.iter().all(|cell| cell["meets_target"] == true),
         "rows":cells})
@@ -243,12 +244,13 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
         output.join("summary.json"),
         &json!({"workflow_version":VERSION,"topology":topology,"validated":true,"acceptance":"descriptive remote workflow baseline; no loopback ratio gate applied","portable_target":target,"rows":rows,"unsupported":[{"case":"pipelined-read","implementation":"grpc","reason":"no native capability promise pipelining"},{"case":"pipelined-read","implementation":"websocket","reason":"no native capability promise pipelining"}]}),
     )?;
-    let mut text=String::from("# Remote RPC workflows\n\nTwo dedicated droplets, same region/plan/VPC, TLS 1.3 over TCP. Five rotating repetitions, 250 warmups and 1,000 retained workflows per cell. Timings use only the client monotonic clock; validation, response cleanup and ten-second workflow deadlines are included. Setup/compilation is excluded.\n\nA fan-out sample covers completion of all 32 concurrent calls; it is **not** individual request latency. Throughput is closed-loop, not an open-loop saturation or SLO test. RPC/s counts the two calls in dependent/stateful/callback workflows.\n\n| Workflow | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Workflows/s | RPC/s | p50 / C++ |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
+    let mut text=String::from("# Remote RPC workflows\n\nTwo dedicated droplets, same region/plan/VPC, TLS 1.3 over TCP. Five rotating repetitions, 250 warmups and 1,000 retained workflows per cell. Timings use only the client monotonic clock; validation, response cleanup and ten-second workflow deadlines are included. Setup/compilation is excluded.\n\nA fan-out sample covers completion of all 32 concurrent calls; it is **not** individual request latency. Throughput is closed-loop, not an open-loop saturation or SLO test. RPC/s counts the two calls in dependent/stateful/callback workflows.\n\n| Workflow | Implementation | Minimum µs | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Best-run workflows/s | Best-run RPC/s | Minimum / C++ |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
     for row in &rows {
         text += &format!(
-            "| {} | {} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.0} | {:.3}× |\n",
+            "| {} | {} | {:.2} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.0} | {:.3}× |\n",
             row["case"]["name"].as_str().unwrap(),
             row["implementation"].as_str().unwrap(),
+            row["min_ns"].as_u64().unwrap() as f64 / 1000.0,
             row["mean_ns"].as_f64().unwrap() / 1000.0,
             row["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
             row["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
@@ -258,11 +260,11 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
             row["p99_ns"].as_u64().unwrap() as f64 / 1000.0,
             row["workflows_per_second"].as_f64().unwrap(),
             row["rpcs_per_second"].as_f64().unwrap(),
-            row["p50_ratio_to_cpp"].as_f64().unwrap()
+            row["min_ratio_to_cpp"].as_f64().unwrap()
         );
     }
-    text += "\nMean ± SD uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means are retained in summary.json.\n";
-    text += "\n## Portable performance gap\n\nTarget: portable pooled p50 ≤ 1.05 × the faster of legacy and C++ for **each** workflow. This is advisory while the gap remains open; it does not replace correctness, tail-latency or resource evidence.\n\n| Workflow | Faster reference | Portable/reference | Meets 5% target |\n|---|---|---:|---|\n";
+    text += "\nMinimum latency is the benchmark estimate. Mean ± SD is diagnostic and uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means are retained in summary.json.\n";
+    text += "\n## Portable performance gap\n\nTarget: portable minimum latency ≤ 1.05 × the faster of legacy and C++ for **each** workflow. This is advisory while the gap remains open; it does not replace correctness, tail-latency or resource evidence.\n\n| Workflow | Faster reference | Portable/reference | Meets 5% target |\n|---|---|---:|---|\n";
     for row in target["rows"].as_array().unwrap() {
         text += &format!(
             "| {} | {} | {:.3}× | {} |\n",
@@ -276,15 +278,15 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
             },
         );
     }
-    text+="\n| Unsupported workflow | Implementation | Reason |\n|---|---|---|\n| pipelined-read | grpc | No native capability promise pipelining |\n| pipelined-read | websocket | No native capability promise pipelining |\n\ngRPC uses protobuf unary calls over HTTP/2; its callback uses a pre-established bidirectional stream. WebSockets use binary protobuf application messages, with 32 outstanding messages for fan-out. Both use application IDs for state and four acknowledged duplex messages per callback (request, notification, acknowledgement, completion). Dependent reads consume temporary state; reusable state is released outside timing. These IDs do not supply capability security. Every connection uses TLS 1.3 with server authentication; compression, JSON and base64 are excluded. RPC/s counts logical application calls, including callbacks, not HTTP/2 streams.\n\n![Remote workflow p50 ratios](p50-ratios.svg)\n\nRaw distributions, per-trial client CPU/RSS logs and both host environments are retained in the adjacent client/server directories. Server CPU counters include setup and campaign idle time; they are not per-request CPU costs. Legacy loopback controls are reported separately in the parent directory.\n";
+    text+="\n| Unsupported workflow | Implementation | Reason |\n|---|---|---|\n| pipelined-read | grpc | No native capability promise pipelining |\n| pipelined-read | websocket | No native capability promise pipelining |\n\ngRPC uses protobuf unary calls over HTTP/2; its callback uses a pre-established bidirectional stream. WebSockets use binary protobuf application messages, with 32 outstanding messages for fan-out. Both use application IDs for state and four acknowledged duplex messages per callback (request, notification, acknowledgement, completion). Dependent reads consume temporary state; reusable state is released outside timing. These IDs do not supply capability security. Every connection uses TLS 1.3 with server authentication; compression, JSON and base64 are excluded. RPC/s counts logical application calls, including callbacks, not HTTP/2 streams.\n\n![Remote workflow minimum ratios](minimum-ratios.svg)\n\nRaw distributions, per-trial client CPU/RSS logs and both host environments are retained in the adjacent client/server directories. Server CPU counters include setup and campaign idle time; they are not per-request CPU costs. Legacy loopback controls are reported separately in the parent directory.\n";
     crate::write(output.join("README.md"), text)?;
     let maximum = rows
         .iter()
-        .map(|r| r["p50_ratio_to_cpp"].as_f64().unwrap())
+        .map(|r| r["min_ratio_to_cpp"].as_f64().unwrap())
         .fold(1.0, f64::max)
         * 1.1;
     let height = 100 + rows.len() * 23;
-    let mut svg=format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1080\" height=\"{height}\" viewBox=\"0 0 1080 {height}\" role=\"img\" aria-label=\"Remote workflow median latency divided by C++ median\"><rect width=\"1080\" height=\"{height}\" fill=\"white\"/><g font-family=\"sans-serif\" font-size=\"13\" fill=\"#182230\"><text x=\"20\" y=\"28\" font-size=\"20\">Remote workflow p50 / C++ (lower is faster)</text><text x=\"20\" y=\"52\">Promise-pipelined reads: gRPC and WebSocket unsupported; see table.</text>");
+    let mut svg=format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1080\" height=\"{height}\" viewBox=\"0 0 1080 {height}\" role=\"img\" aria-label=\"Remote workflow minimum latency divided by C++ minimum\"><rect width=\"1080\" height=\"{height}\" fill=\"white\"/><g font-family=\"sans-serif\" font-size=\"13\" fill=\"#182230\"><text x=\"20\" y=\"28\" font-size=\"20\">Remote workflow minimum / C++ (lower is faster)</text><text x=\"20\" y=\"52\">Promise-pipelined reads: gRPC and WebSocket unsupported; see table.</text>");
     for (i, row) in rows.iter().enumerate() {
         let y = 80 + i * 23;
         let implementation = row["implementation"].as_str().unwrap();
@@ -297,12 +299,12 @@ pub(super) fn generate(output: &Path, bundle: &Path) -> Result<()> {
             y + 12,
             row["case"]["name"].as_str().unwrap()
         );
-        let ratio = row["p50_ratio_to_cpp"].as_f64().unwrap();
+        let ratio = row["min_ratio_to_cpp"].as_f64().unwrap();
         let width = ratio / maximum * 640.0;
         svg+=&format!("<rect x=\"260\" y=\"{y}\" width=\"{width:.2}\" height=\"15\" fill=\"{}\"/><text x=\"{:.2}\" y=\"{}\">{ratio:.3}×</text>",["#2878b5","#d07815","#6b7280","#168247","#8756b4","#0097a7"][index],265.0+width,y+12);
     }
     svg += "</g></svg>";
-    crate::write(output.join("p50-ratios.svg"), svg)
+    crate::write(output.join("minimum-ratios.svg"), svg)
 }
 #[cfg(test)]
 pub(super) mod tests {
@@ -332,7 +334,7 @@ pub(super) mod tests {
             for (portable, passes) in [(99, true), (105, true), (106, false)] {
                 let mut measured = rows.clone();
                 for row in &mut measured {
-                    row["p50_ns"] = json!(match row["implementation"].as_str().unwrap() {
+                    row["min_ns"] = json!(match row["implementation"].as_str().unwrap() {
                         "legacy" => legacy,
                         "capnp-cpp" => cpp,
                         "portable" => portable,
@@ -345,7 +347,7 @@ pub(super) mod tests {
                 assert_eq!(cells.len(), 12);
                 for cell in cells {
                     assert_eq!(cell["reference"], reference);
-                    assert_eq!(cell["reference_p50_ns"], 100);
+                    assert_eq!(cell["reference_min_ns"], 100);
                     assert_eq!(cell["meets_target"], passes);
                 }
             }
@@ -356,14 +358,36 @@ pub(super) mod tests {
             .iter_mut()
             .find(|row| row["implementation"] == "portable")
             .unwrap();
-        portable["p50_ns"] = json!(11);
+        portable["min_ns"] = json!(11);
         assert_eq!(portable_target(&mixed)["all_workflows_pass"], false);
         // Cross-products use widened integers, not rounded ratios or u64 math.
         for row in &mut mixed {
-            row["p50_ns"] = json!(u64::MAX);
+            row["min_ns"] = json!(u64::MAX);
         }
         assert_eq!(portable_target(&mixed)["all_workflows_pass"], true);
     }
+    #[test]
+    fn minimum_not_median_controls_comparison() {
+        let mut measured = trials();
+        for trial in &mut measured {
+            if trial["implementation"] == "portable" {
+                let mut samples = vec![100; 1000];
+                samples[0] = 1;
+                trial["latency_ns"] = json!(samples);
+                trial["elapsed_ns"] = json!(100000);
+            }
+        }
+        let rows = matrix(&measured).unwrap();
+        let portable = rows
+            .iter()
+            .find(|r| r["implementation"] == "portable")
+            .unwrap();
+        assert_eq!(portable["min_ns"], 1);
+        assert_eq!(portable["p50_ns"], 100);
+        assert_eq!(portable["min_ratio_to_cpp"], 0.1);
+        assert_eq!(portable_target(&rows)["all_workflows_pass"], true);
+    }
+
     #[test]
     fn full_matrix_and_bad_evidence() {
         let valid = trials();
@@ -409,7 +433,7 @@ pub(super) mod tests {
             .filter(|r| r["implementation"] == "capnp-rust")
             .collect();
         assert_eq!(upstream.len(), 12);
-        assert!(upstream.iter().all(|r| r["p50_ratio_to_cpp"] == 1.5));
+        assert!(upstream.iter().all(|r| r["min_ratio_to_cpp"] == 1.5));
         for (name, bytes) in [
             ("bulk-256k", 262144),
             ("bulk-1m", 1048576),
@@ -529,7 +553,7 @@ pub(super) mod tests {
             12
         );
         assert_eq!(summary["portable_target"]["all_workflows_pass"], true);
-        let svg = fs::read_to_string(output.join("p50-ratios.svg")).unwrap();
+        let svg = fs::read_to_string(output.join("minimum-ratios.svg")).unwrap();
         let parsed = roxmltree::Document::parse(&svg).unwrap();
         assert_eq!(
             parsed

@@ -290,14 +290,14 @@ def main():
             rows.append(row)
             (output / 'summary.json').write_text(json.dumps(dict(rows=rows, diagnostic=args.trace), indent=2) + '\n')
             print(transport, case['name'], flush=True)
-    lines = ['# Encrypted RPC comparison', '', 'Mean ± sample SD of repetition means, in microseconds. Handshakes are excluded.',
+    lines = ['# Encrypted RPC comparison', '', 'Minimum measured operation latency is the benchmark result. Handshakes are excluded. Raw repetitions, means and spread are retained.',
              'C++ QUIC is unsupported at the pinned revision; no plaintext or TCP substitute is included.', '',
-             '| Transport | Case | Implementation | Mean ± run SD µs | Run mean min–max µs |',
-             '| --- | --- | --- | ---: | ---: |']
+             '| Transport | Case | Implementation | Minimum µs | Mean ± run SD µs | Run mean min–max µs |',
+             '| --- | --- | --- | ---: | ---: | ---: |']
     for row in rows:
         for label, cell in row['variants'].items():
             lo, hi = cell['repetition_mean_range_ns']
-            lines.append(f'| {row["transport"]} | {row["case"]["name"]} | {label} | {cell["mean_ns"]/1000:.3f} ± {cell["repetition_mean_stddev_ns"]/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} |')
+            lines.append(f'| {row["transport"]} | {row["case"]["name"]} | {label} | {cell["min_ns"]/1000:.3f} | {cell["mean_ns"]/1000:.3f} ± {cell["repetition_mean_stddev_ns"]/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} |')
     if args.trace:
         lines += ['', 'Instrumented diagnostic timings do not qualify. Syscalls include setup, ciphertext, TLS records and QUIC control packets.']
     (output / 'README.md').write_text('\n'.join(lines) + '\n')

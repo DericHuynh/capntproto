@@ -113,13 +113,14 @@ def summarize(output):
                                         functions=changes))
     save(output / 'functions.json', attribution)
     lines = ['# Repeated legacy work comparison', '',
-             'Five repetitions, mean ± sample SD. Paired 50−10 slopes retain startup noise; branch events are simulated. '
+             'Minimum of five repetitions per metric. Means, sample SD and all samples remain in JSON. '
+             'Paired 50−10 slopes retain startup noise; branch events are simulated. '
              'No latency claim.', '']
     if 'repeat' in scope['binaries']:
         lines += ['The repeat control uses the exact factored executable and path.', '']
     for left, right in pairs:
         lines += [f'## {right} versus {left}', '',
-                  '| Transport | Case | Metric | Before | After | Change | Paired delta SD |',
+                  '| Transport | Case | Metric | Before minimum | After minimum | Change | Paired delta SD |',
                   '| --- | --- | --- | ---: | ---: | ---: | ---: |']
         for row in result['comparisons']:
             if (row['baseline'], row['candidate']) != (left, right):
@@ -130,7 +131,7 @@ def summarize(output):
                 pct = values['change_percent']
                 change = f'{pct:+.3f}%' if pct is not None else 'n/a'
                 lines.append(f"| {row['transport']} | {row['case']} | {metric} | "
-                             f"{a['mean']:,.3f} ± {a['sd']:,.3f} | {b['mean']:,.3f} ± {b['sd']:,.3f} | "
+                             f"{a['minimum']:,.3f} | {b['minimum']:,.3f} | "
                              f"{change} | {values['paired_delta']['sd']:,.3f} |")
         lines.append('')
     (output / 'comparison.md').write_text('\n'.join(lines))

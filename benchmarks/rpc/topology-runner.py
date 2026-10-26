@@ -254,15 +254,15 @@ def main():
     (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
     lines = ['# Deep/concurrent RPC comparison', '', f'Transport: {args.transport}. C++ QUIC is unsupported.', '',
              f'{args.repetitions} independent process repetitions per implementation/case. Times are microseconds per complete batch.',
-             'Mean ± SD reports the mean latency and sample standard deviation of the repetition means. It is not a confidence interval.',
+             'Minimum measured latency is the benchmark estimate. Mean ± SD is diagnostic and reports the mean latency and sample standard deviation of the repetition means. It is not a confidence interval.',
              'Per-sample SD, extrema, each run mean, run-mean range, p95/p99 and throughput are retained in summary.json.',
              'All repetitions and samples are included. Five repetitions cannot exactly balance all variant positions.', '',
-             '| Case | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs |',
-             '| --- | --- | ---: | ---: | ---: | ---: | ---: |']
+             '| Case | Implementation | Minimum µs | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs |',
+             '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |']
     for row in rows:
         for label, cell in row['variants'].items():
             lo, hi = cell['repetition_mean_range_ns']
-            lines.append(f"| {row['case']['name']} | {label} | {cell['mean_ns']/1000:.3f} ± {cell['repetition_mean_stddev_ns']/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} | {cell['p50_ns']/1000:.3f} | {cell['p95_ns']/1000:.3f} | {cell['p99_ns']/1000:.3f} |")
+            lines.append(f"| {row['case']['name']} | {label} | {cell['min_ns']/1000:.3f} | {cell['mean_ns']/1000:.3f} ± {cell['repetition_mean_stddev_ns']/1000:.3f} | {lo/1000:.3f}–{hi/1000:.3f} | {cell['p50_ns']/1000:.3f} | {cell['p95_ns']/1000:.3f} | {cell['p99_ns']/1000:.3f} |")
     lines += ['', 'Instrumented/short runs are diagnostic only.' if not qualifying else
               'The latency target remains portable pooled p50 ≤ the fastest reference on the same transport in every cell; C++ is unavailable for QUIC.']
     (out / 'README.md').write_text('\n'.join(lines) + '\n')

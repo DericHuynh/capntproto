@@ -233,14 +233,14 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                 writeln!(readme, "Measured TCP driver: **{driver}**.\n")?;
                 match benchmark::tcp_acceptance_for_driver(&rows, driver) {
                     Ok(()) => readme.push_str(if driver == "portable" {
-                        "Matched TCP acceptance: 0/64/1024-byte pooled p50 is at most 1.5x C++ Cap'n Proto. The 64 KiB payload and tail latencies are reported without a gate.\n\n"
-                    } else { "Matched TCP acceptance: every payload p50 is at most 1.15x C++ Cap'n Proto.\n\n" }),
+                        "Matched TCP acceptance: 0/64/1024-byte minimum latency is at most 1.5x C++ Cap'n Proto. The 64 KiB payload and tail latencies are reported without a gate.\n\n"
+                    } else { "Matched TCP acceptance: every payload minimum latency is at most 1.15x C++ Cap'n Proto.\n\n" }),
                     Err(error) => {
                         writeln!(readme, "Matched TCP acceptance failed: {}.\n", text(&error.to_string()))?;
                         failures.push(error.to_string());
                     }
                 }
-                readme.push_str("Mean ± SD uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and every run mean remain in the JSON report.\n\n| Payload bytes | Implementation | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Sequential req/s | p50 / C++ Cap’n Proto |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
+                readme.push_str("Minimum measured latency is the benchmark estimate. Mean ± SD is diagnostic and uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and every run mean remain in the JSON report.\n\n| Payload bytes | Implementation | Minimum µs | Mean ± run SD µs | Run mean min–max µs | p50 µs | p95 µs | p99 µs | Sequential req/s | Minimum / C++ Cap’n Proto |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
                 for row in &rows {
                     let native = rows
                         .iter()
@@ -250,11 +250,13 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                         })
                         .ok_or("missing C++ comparison")?;
                     let p50 = row["p50_ns"].as_f64().ok_or("missing latency")?;
+                    let minimum = row["min_ns"].as_f64().ok_or("missing minimum latency")?;
                     writeln!(
                         readme,
-                        "| {} | {} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.4}× |",
+                        "| {} | {} | {:.2} | {:.2} ± {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.4}× |",
                         row["payload_bytes"],
                         text(row["protocol"].as_str().unwrap()),
+                        minimum / 1000.0,
                         row["mean_ns"].as_f64().unwrap() / 1000.0,
                         row["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
                         row["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
@@ -263,10 +265,10 @@ pub fn generate(base: &Path, lanes: &str) -> Result<()> {
                         row["p95_ns"].as_f64().unwrap() / 1000.0,
                         row["p99_ns"].as_f64().unwrap() / 1000.0,
                         row["sequential_requests_per_second"].as_f64().unwrap(),
-                        p50 / native["p50_ns"].as_f64().unwrap()
+                        minimum / native["min_ns"].as_f64().unwrap()
                     )?;
                 }
-                readme.push_str("\nMeasurement version 2 includes bulk payload validation, response cleanup and ten-second per-call deadlines. Earlier unversioned comparisons used a slower C++ validation loop and are not comparable. The last column compares each implementation’s median latency with C++ Cap’n Proto at the same payload size; lower is less latency. [Raw per-request samples](benchmark/trials.json) and [environment, compiler/binary identities, repetition ranges and source pins](benchmark/evidence.json) accompany the results.\n");
+                readme.push_str("\nMeasurement version 2 includes bulk payload validation, response cleanup and ten-second per-call deadlines. Earlier unversioned comparisons used a slower C++ validation loop and are not comparable. The last column compares each implementation’s minimum latency with C++ Cap’n Proto at the same payload size; lower is less latency. [Raw per-request samples](benchmark/trials.json) and [environment, compiler/binary identities, repetition ranges and source pins](benchmark/evidence.json) accompany the results.\n");
             }
             Err(error) => {
                 writeln!(

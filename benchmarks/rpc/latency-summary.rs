@@ -1,4 +1,4 @@
-//! Descriptive latency statistics shared by runners and artifact validators.
+//! Minimum latency estimates and descriptive statistics shared by runners and validators.
 //! Call only after validating every trial and its equal sampling budget.
 use serde_json::{json, Value};
 
@@ -24,7 +24,8 @@ pub fn summarize(trials: &[Vec<u64>]) -> Value {
         .sum::<f64>()
         / run_means.len().saturating_sub(1).max(1) as f64;
     json!({
-        "statistics_version": 1,
+        "statistics_version": 2,
+        "estimator": "minimum",
         "mean_ns": mean,
         "stddev_ns": variance.sqrt(),
         "min_ns": trials.iter().flatten().min().unwrap(),
@@ -46,6 +47,7 @@ mod tests {
     fn separates_sample_spread_from_between_run_spread() {
         let value = summarize(&[vec![1, 3], vec![5, 7]]);
         assert_eq!(value["mean_ns"], 4.0);
+        assert_eq!(value["estimator"], "minimum");
         assert_eq!(value["min_ns"], 1);
         assert_eq!(value["max_ns"], 7);
         assert_eq!(value["repetition_mean_ns"], json!([2.0, 6.0]));

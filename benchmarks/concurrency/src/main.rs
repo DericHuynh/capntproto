@@ -16,6 +16,8 @@ fn metrics(operations: usize, elapsed: Duration, mut latency_ns: Vec<u64>) -> Va
         }
     };
     json!({
+        "estimator": "minimum",
+        "latency_min_ns": latency_ns.first().copied().unwrap_or(0),
         "operations": operations,
         "elapsed_ns": elapsed.as_nanos() as u64,
         "operations_per_second": operations as f64 / elapsed.as_secs_f64(),

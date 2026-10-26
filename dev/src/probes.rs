@@ -305,7 +305,7 @@ pub fn distribution(mut values: Vec<f64>) -> Result<Value> {
     } else {
         values[n / 2 - 1] / 2.0 + values[n / 2] / 2.0
     };
-    Ok(json!({"median":median,"min":values[0],"max":values[n-1]}))
+    Ok(json!({"estimator":"minimum","median":median,"min":values[0],"max":values[n-1]}))
 }
 fn metrics(rows: &[Value], fields: &[&str]) -> Result<Value> {
     let mut result = json!({});
@@ -433,6 +433,7 @@ pub fn summarize(kind: Kind, directory: &Path) -> Result<()> {
             Kind::Concurrency => [
                 "operations_per_second",
                 "ns_per_operation",
+                "latency_min_ns",
                 "elapsed_ns",
                 "latency_p50_ns",
                 "latency_p99_ns",
@@ -589,9 +590,9 @@ fn compare(base: &Path, output: &Path, trials: u32, iterations: u32) -> Result<(
                 writeln!(file, "{row}")?;
                 file.flush()?;
                 println!(
-                    "{}/{trials} {name} {backend}: {:.1} us median commit",
+                    "{}/{trials} {name} {backend}: {:.1} us minimum commit",
                     trial + 1,
-                    field(&row, "commits.p50_ns")? / 1000.0
+                    field(&row, "commits.min_ns")? / 1000.0
                 );
                 rows.push(row);
             }
@@ -607,11 +608,11 @@ fn compare(base: &Path, output: &Path, trials: u32, iterations: u32) -> Result<(
                 .collect();
             let mut values = json!({});
             for (label, path, scale) in [
-                ("commit_p50_us", "commits.p50_ns", 1000.0),
+                ("commit_min_us", "commits.min_ns", 1000.0),
                 ("commit_p99_us", "commits.p99_ns", 1000.0),
                 ("workload_ms", "workload_wall_ns", 1e6),
-                ("first_snapshot_us", "first_snapshots.p50_ns", 1000.0),
-                ("repeated_snapshot_us", "repeated_snapshots.p50_ns", 1000.0),
+                ("first_snapshot_us", "first_snapshots.min_ns", 1000.0),
+                ("repeated_snapshot_us", "repeated_snapshots.min_ns", 1000.0),
                 ("reopen_with_log_ms", "reopen_with_log_ns", 1e6),
                 ("reopen_checkpoint_ms", "reopen_checkpoint_ns", 1e6),
                 ("total_written_bytes", "total_written_bytes", 1.0),
@@ -623,7 +624,7 @@ fn compare(base: &Path, output: &Path, trials: u32, iterations: u32) -> Result<(
                         .map(|r| Ok(field(r, path)? / scale))
                         .collect::<Result<_>>()?,
                 )?;
-                values[label] = stats["median"].clone();
+                values[label] = stats["min"].clone();
                 if label == "workload_ms" {
                     values["workload_ms_range"] = json!([stats["min"], stats["max"]]);
                 }
@@ -635,7 +636,7 @@ fn compare(base: &Path, output: &Path, trials: u32, iterations: u32) -> Result<(
                         Ok(field(r, "total_written_bytes")? / field(r, "logical_changed_bytes")?)
                     })
                     .collect::<Result<_>>()?,
-            )?["median"]
+            )?["min"]
                 .clone();
             summary[name][backend] = values;
         }

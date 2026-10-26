@@ -93,7 +93,9 @@ totals: 31 5 2 4 2
                 for i, value in enumerate(values)]
         result = comparisons(rows, [('before', 'after')])[0]['metrics']['Ir']
         self.assertEqual(result['paired_delta']['samples'], [2, -2])
-        self.assertEqual(result['change_percent'], 0)
+        self.assertEqual(result['baseline']['minimum'], 10)
+        self.assertEqual(result['candidate']['minimum'], 12)
+        self.assertEqual(result['change_percent'], 20)
         self.assertAlmostEqual(result['paired_delta']['sd'], 2 ** 1.5)
         with self.assertRaises(KeyError):
             comparisons(rows[:-1], [('before', 'after')])

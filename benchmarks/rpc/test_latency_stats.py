@@ -7,6 +7,8 @@ from latency_stats import summarize
 class LatencyStatisticsTests(unittest.TestCase):
     def test_sample_and_between_run_spread_are_distinct(self):
         result = summarize([[1, 3], [5, 7]])
+        self.assertEqual(result['estimator'], 'minimum')
+        self.assertEqual(result['statistics_version'], 2)
         self.assertEqual(result['mean_ns'], 4)
         self.assertEqual(result['repetition_mean_ns'], [2, 6])
         self.assertEqual(result['repetition_mean_range_ns'], [2, 6])

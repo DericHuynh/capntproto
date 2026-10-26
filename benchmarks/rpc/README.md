@@ -14,7 +14,8 @@ gh workflow run performance.yml --ref codex/portable-qualification -f campaign=r
 ```
 
 The default `run-latency` campaign measures all 48 TLS/QUIC case combinations,
-with five fresh-process repetitions, means and spread. It skips instrumented
+with five fresh-process repetitions. The minimum measured operation latency is
+the primary comparison; raw samples, means and spread remain available. It skips instrumented
 workloads so timing results are available without waiting for profiling.
 `run-secure` explicitly requests the full timing, tracing and profiling campaign;
 `run-allocations` requests DHAT only. Both latency and full campaigns use the
@@ -250,3 +251,12 @@ read/write counts, protocol message counts, and any unread teardown frames.
 It pairs sockets between adjacent services using a unique match of both complete
 byte streams, so it also works when strace exposes only socket inodes. Missing
 or ambiguous peers and unconsumed calls or responses fail validation.
+
+## Benchmark estimates
+
+Latency comparisons, acceptance ratios and primary plots use the lowest valid
+measured value for each case and implementation. Instruction, branch and
+allocation comparisons use the minimum marginal count across repetitions.
+Throughput uses the fastest complete repetition with the same operation budget.
+Every configured repetition still runs and remains in the artifact; means,
+standard deviations, ranges and tail percentiles are descriptive diagnostics.

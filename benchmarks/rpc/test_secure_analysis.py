@@ -70,7 +70,7 @@ class SavedAnalysisTests(unittest.TestCase):
                            env=dict(os.environ, GITHUB_SHA='fixture', GITHUB_REPOSITORY='fixture/repo'),
                            stdout=subprocess.DEVNULL, check=True)
             report = json.loads((output/'summary.json').read_text())
-            self.assertEqual(report['aggregate']['tls']['legacy-baseline']['lower_means'], 24)
+            self.assertEqual(report['aggregate']['tls']['legacy-baseline']['lower_minima'], 24)
             self.assertEqual(report['profiles'][0]['per_operation'], dict(blocks=10, bytes=160))
             self.assertEqual(len(report['profile_peers']), 5)
             self.assertEqual(len(report['unpaired_profile_peers']), 5)
@@ -118,7 +118,7 @@ class SavedAnalysisTests(unittest.TestCase):
             self.assertFalse(report['diagnostics_requested'])
             self.assertFalse(report['diagnostics_complete'])
             self.assertEqual(report['native_trials'], 480)
-            self.assertEqual(report['aggregate']['tls']['legacy']['lower_means'], 24)
+            self.assertEqual(report['aggregate']['tls']['legacy']['lower_minima'], 24)
             self.assertEqual(report['profile_trials'], 0)
             self.assertEqual(report['profiles'], [])
             self.assertEqual(report['traces'], [])

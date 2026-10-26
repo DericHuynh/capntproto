@@ -166,7 +166,7 @@ fn stats(samples: &[u64]) -> serde_json::Value {
     }
     let mut sorted = samples.to_vec();
     sorted.sort_unstable();
-    json!({"count": sorted.len(), "total_ns": sorted.iter().sum::<u64>(),
+    json!({"estimator":"minimum", "min_ns":sorted[0], "count": sorted.len(), "total_ns": sorted.iter().sum::<u64>(),
         "p50_ns": sorted[sorted.len() / 2], "p99_ns": sorted[(sorted.len() * 99 / 100).min(sorted.len()-1)]})
 }
 fn main() {

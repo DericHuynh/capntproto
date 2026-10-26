@@ -32,7 +32,7 @@ const LABELS: [&str; 6] = [
     "Rust RPC (upstream)",
 ];
 const FILES: [&str; 11] = [
-    "latency-p50",
+    "latency-minimum",
     "latency-p95",
     "latency-p99",
     "request-rate",
@@ -106,9 +106,9 @@ pub(crate) fn performance(rows: &[Value], driver: &str) -> Result<Vec<Chart>> {
     let mut charts = vec![];
     for (name, title, field, unit, divisor, relative) in [
         (
-            "latency-p50",
-            "Median round-trip latency (p50)",
-            "p50_ns",
+            "latency-minimum",
+            "Minimum round-trip latency",
+            "min_ns",
             "Microseconds - lower is better",
             1000.0,
             false,
@@ -139,8 +139,8 @@ pub(crate) fn performance(rows: &[Value], driver: &str) -> Result<Vec<Chart>> {
         ),
         (
             "latency-difference",
-            "Median latency difference from C++ Cap'n Proto",
-            "p50_ns",
+            "Minimum latency difference from C++ Cap'n Proto",
+            "min_ns",
             "Percent difference - negative is less latency",
             1.0,
             true,
@@ -197,7 +197,7 @@ pub(crate) fn performance(rows: &[Value], driver: &str) -> Result<Vec<Chart>> {
             });
         }
         charts.push(Chart { name: name.into(), title: title.into(), unit: unit.into(),
-            note: format!("Measured TCP driver: {driver}. TCP p50 gate: {} ({}). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
+            note: format!("Measured TCP driver: {driver}. TCP minimum gate: {} ({}). Relative bars use C++ Cap'n Proto as the reference; each panel includes zero. Native QUIC is encrypted; other baselines are plaintext.",
                 if crate::benchmark::tcp_acceptance_for_driver(rows, driver).is_ok() { "passed" } else { "failed or incomplete" },
                 if driver == "portable" { "1.5x at 0/64/1024 bytes" } else { "1.15x at every payload" }),
             coverage: false, panels });
@@ -443,7 +443,7 @@ mod tests {
             for (index, protocol) in benchmark::PROTOCOLS.iter().enumerate() {
                 let latency = [10_000.0, 20_000.0, 5_000.0, 15_000.0, 25_000.0, 22_000.0][index]
                     * (1.0 + bytes as f64 / 1024.0);
-                rows.push(json!({"protocol":protocol, "payload_bytes":bytes, "p50_ns":latency,
+                rows.push(json!({"protocol":protocol, "payload_bytes":bytes, "min_ns":latency,
                     "p95_ns":latency * 1.5, "p99_ns":latency * 2.0, "sequential_requests_per_second":1e9 / latency}));
             }
         }
@@ -525,7 +525,7 @@ mod tests {
         duplicates.push(rows[0].clone());
         assert!(performance(&duplicates, "legacy").is_err());
         let mut invalid = rows;
-        invalid[0]["p50_ns"] = json!(0);
+        invalid[0]["min_ns"] = json!(0);
         assert!(performance(&invalid, "legacy").is_err());
         let summary = summary();
         let charts = coverage(&summary, &summary);

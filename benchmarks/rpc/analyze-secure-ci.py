@@ -51,6 +51,7 @@ else:
     assert not scope['diagnostic'] and not native['diagnostic']
     assert scope['repetitions']==5 and scope['iterations']==1000 and len(native['rows'])==48
     cells=collections.defaultdict(list)
+    minima=collections.defaultdict(list)
     host_samples=[]
     quotas=set()
     def cpu_rows(value):
@@ -64,6 +65,7 @@ else:
         assert data['security']['tls']=='1.3' and data['security']['authentication']=='server-certificate'
         assert all(type(n) is int and n>0 for n in data['latency_ns'])
         cells[trial['transport'],trial['case'],trial['client']].append(statistics.mean(data['latency_ns']))
+        minima[trial['transport'],trial['case'],trial['client']].append(min(data['latency_ns']))
         state=json.loads((root/'native'/trial['path']/'host.json').read_text())
         before,after=state['before'],state['after']
         quotas.add(str(before.get('/sys/fs/cgroup/cpu.max')))
@@ -79,6 +81,7 @@ else:
         for label,cell in row['variants'].items():
             values=cells[row['transport'],row['case']['name'],label]
             assert len(values)==5
+            assert cell['min_ns']==min(minima[row['transport'],row['case']['name'],label])
             assert math.isclose(statistics.mean(values),cell['mean_ns'],rel_tol=1e-12)
             assert math.isclose(statistics.stdev(values),cell['repetition_mean_stddev_ns'],rel_tol=1e-12)
     aggregate={}
@@ -88,9 +91,9 @@ else:
         candidate = 'legacy' if 'legacy-baseline' in scope['binaries'] else 'portable'
         references = ['legacy-baseline', 'portable', 'cpp'] if candidate == 'legacy' else ['portable-baseline', 'legacy', 'cpp']
         for reference in references:
-            pairs=[(r['variants'][candidate]['mean_ns'],r['variants'][reference]['mean_ns']) for r in rows if reference in r['variants']]
+            pairs=[(r['variants'][candidate]['min_ns'],r['variants'][reference]['min_ns']) for r in rows if reference in r['variants']]
             if pairs:
-                aggregate[transport][reference]=dict(cases=len(pairs),lower_means=sum(a<b for a,b in pairs),
+                aggregate[transport][reference]=dict(estimator="minimum",cases=len(pairs),lower_minima=sum(a<b for a,b in pairs),
                     geometric_mean_latency_change_percent=100*(math.exp(statistics.mean(math.log(a/b) for a,b in pairs))-1))
     host=json.loads((root.parent/'host.json').read_text())
     report=dict(run=run,measurement_outcome=args.measurement_outcome,host=host,hardware=(root/'cpu.txt').read_text(),

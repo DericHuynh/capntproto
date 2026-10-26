@@ -62,7 +62,7 @@ def callgrind(text):
 
 def spread(values):
     assert values and all(math.isfinite(value) for value in values)
-    return dict(mean=statistics.mean(values), sd=statistics.stdev(values) if len(values) > 1 else 0,
+    return dict(estimator='minimum', mean=statistics.mean(values), sd=statistics.stdev(values) if len(values) > 1 else 0,
                 minimum=min(values), maximum=max(values), samples=values)
 
 
@@ -91,10 +91,10 @@ def comparisons(rows, pairs):
                 baseline = [r[metric] for r in left]
                 candidate = [r[metric] for r in right]
                 delta = [b - a for a, b in zip(baseline, candidate)]
-                mean_before = statistics.mean(baseline)
+                best_before, best_after = min(baseline), min(candidate)
                 metrics[metric] = dict(baseline=spread(baseline), candidate=spread(candidate),
                                        paired_delta=spread(delta),
-                                       change_percent=100 * statistics.mean(delta) / mean_before if mean_before else None)
+                                       change_percent=100 * (best_after - best_before) / best_before if best_before else None)
             result.append(dict(mode=key[0], transport=key[1], case=key[2], baseline=before,
                                candidate=after, repetitions=len(repetitions), metrics=metrics))
     return result

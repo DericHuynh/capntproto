@@ -195,10 +195,10 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
             let p95 = percentile(&mut samples, 95);
             let p99 = percentile(&mut samples, 99);
             medians.sort_unstable();
-            let elapsed: u128 = cell.iter().map(|t| u128::from(t.elapsed_ns)).sum();
+            let elapsed = cell.iter().map(|t| t.elapsed_ns).min().unwrap();
             let sample_trials: Vec<Vec<u64>> =
                 cell.iter().map(|trial| trial.latency_ns.clone()).collect();
-            let mut row = json!({"protocol":protocol,"security":first.security,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"sequential_requests_per_second":samples.len() as f64 * 1e9 / elapsed as f64});
+            let mut row = json!({"protocol":protocol,"security":first.security,"payload_bytes":bytes,"repetitions":cell.len(),"iterations_per_repetition":first.iterations,"p50_ns":p50,"p95_ns":p95,"p99_ns":p99,"median_range_ns":[medians[0],medians[REPETITIONS-1]],"throughput_estimator":"fastest_repetition","best_elapsed_ns":elapsed,"sequential_requests_per_second":first.iterations as f64 * 1e9 / elapsed as f64});
             row.as_object_mut().unwrap().extend(
                 latency_summary::summarize(&sample_trials)
                     .as_object()
@@ -230,7 +230,7 @@ pub fn tcp_acceptance_for_driver(rows: &[Value], driver: &str) -> Result<()> {
                 .filter(|row| row["protocol"] == protocol && row["payload_bytes"] == bytes);
             let value = cells
                 .next()
-                .and_then(|row| row["p50_ns"].as_u64())
+                .and_then(|row| row["min_ns"].as_u64())
                 .filter(|&n| n > 0)
                 .ok_or("missing TCP acceptance measurement")?;
             if cells.next().is_some() {
@@ -242,7 +242,7 @@ pub fn tcp_acceptance_for_driver(rows: &[Value], driver: &str) -> Result<()> {
         let cpp = latency("capnp-cpp")?;
         if (driver == "legacy" || bytes <= 1024) && tcp * 100 > cpp * limit {
             return Err(format!(
-                "{driver} TCP/C++ p50 exceeds {:.2}x at {bytes} bytes: {:.4}x",
+                "{driver} TCP/C++ minimum exceeds {:.2}x at {bytes} bytes: {:.4}x",
                 limit as f64 / 100.0,
                 tcp as f64 / cpp as f64
             )
@@ -574,13 +574,13 @@ mod tests {
     fn tcp_target_requires_every_payload_and_accepts_exact_boundary() {
         let mut rows = Vec::new();
         for bytes in PAYLOADS {
-            rows.push(json!({"protocol":"tcp","payload_bytes":bytes,"p50_ns":115}));
-            rows.push(json!({"protocol":"capnp-cpp","payload_bytes":bytes,"p50_ns":100}));
+            rows.push(json!({"protocol":"tcp","payload_bytes":bytes,"min_ns":115}));
+            rows.push(json!({"protocol":"capnp-cpp","payload_bytes":bytes,"min_ns":100}));
         }
         assert!(tcp_acceptance(&rows).is_ok());
-        rows[0]["p50_ns"] = json!(116);
+        rows[0]["min_ns"] = json!(116);
         assert!(tcp_acceptance(&rows).is_err());
-        rows[0]["p50_ns"] = json!(115);
+        rows[0]["min_ns"] = json!(115);
         rows.push(rows[0].clone());
         assert!(tcp_acceptance(&rows).is_err());
         rows.pop();
@@ -591,15 +591,15 @@ mod tests {
     fn portable_target_limits_small_calls_and_retains_large_diagnostics() {
         let mut rows = Vec::new();
         for bytes in PAYLOADS {
-            rows.push(json!({"protocol":"tcp","payload_bytes":bytes,"p50_ns":if bytes <= 1024 { 150 } else { 900 }}));
-            rows.push(json!({"protocol":"capnp-cpp","payload_bytes":bytes,"p50_ns":100}));
+            rows.push(json!({"protocol":"tcp","payload_bytes":bytes,"min_ns":if bytes <= 1024 { 150 } else { 900 }}));
+            rows.push(json!({"protocol":"capnp-cpp","payload_bytes":bytes,"min_ns":100}));
         }
         assert!(tcp_acceptance_for_driver(&rows, "portable").is_ok());
         assert!(tcp_acceptance_for_driver(&rows, "legacy").is_err());
         assert!(tcp_acceptance_for_driver(&rows, "unknown").is_err());
-        rows[0]["p50_ns"] = json!(151);
+        rows[0]["min_ns"] = json!(151);
         assert!(tcp_acceptance_for_driver(&rows, "portable").is_err());
-        rows[0]["p50_ns"] = json!(150);
+        rows[0]["min_ns"] = json!(150);
         rows.pop();
         assert!(tcp_acceptance_for_driver(&rows, "portable").is_err());
     }

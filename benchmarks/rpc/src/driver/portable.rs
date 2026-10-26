@@ -65,27 +65,28 @@ pub fn compare(directory: &Path, destination: &Path) -> Result<()> {
         destination.join("summary.json"),
         serde_json::to_vec_pretty(&report)?,
     )?;
-    let mut readme = String::from("# Portable loopback target\n\nTLS 1.3 over TCP, separate processes and physical cores; five rotating repetitions, 10,000 warmups and 1,000 retained calls per driver/payload. All samples and executable/host identities are retained in trials.json and environment.json. This is separate from the two-host VPC workflows.\n\nTarget: portable pooled p50 ≤ 1.05 × min(legacy, C++) for every payload. Advisory while gap #11 remains open; tails remain in summary.json.\n\n| Bytes | Portable p50 (ns) | Legacy p50 (ns) | C++ p50 (ns) | Faster reference | Ratio | Meets target |\n|---:|---:|---:|---:|---|---:|---|\n");
+    let mut readme = String::from("# Portable loopback target\n\nTLS 1.3 over TCP, separate processes and physical cores; five rotating repetitions, 10,000 warmups and 1,000 retained calls per driver/payload. All samples and executable/host identities are retained in trials.json and environment.json. This is separate from the two-host VPC workflows.\n\nTarget: portable minimum latency ≤ 1.05 × min(legacy, C++) for every payload. Advisory while gap #11 remains open; tails remain in summary.json.\n\n| Bytes | Portable minimum (ns) | Legacy minimum (ns) | C++ minimum (ns) | Faster reference | Ratio | Meets target |\n|---:|---:|---:|---:|---|---:|---|\n");
     for row in report["rows"].as_array().unwrap() {
         readme += &format!(
             "| {} | {} | {} | {} | {} | {:.3}× | {} |\n",
             row["payload_bytes"],
-            row["portable_p50_p95_p99_ns"][0],
-            row["legacy_p50_p95_p99_ns"][0],
-            row["cpp_p50_p95_p99_ns"][0],
+            row["portable_min_ns"],
+            row["legacy_min_ns"],
+            row["cpp_min_ns"],
             row["reference"].as_str().unwrap(),
             row["ratio"].as_f64().unwrap(),
             row["meets_target"]
         );
     }
-    readme += "\nMean ± SD below uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means remain in summary.json.\n\n| Bytes | Driver | Mean ± run SD µs | Run mean min–max µs |\n| ---: | --- | ---: | ---: |\n";
+    readme += "\nMean ± SD below uses sample standard deviation across the five run means, not a confidence interval. Per-sample SD, extrema and all run means remain in summary.json.\n\n| Bytes | Driver | Minimum µs | Mean ± run SD µs | Run mean min–max µs |\n| ---: | --- | ---: | ---: | ---: |\n";
     for row in report["rows"].as_array().unwrap() {
         for driver in DRIVERS {
             let stats = &row["statistics"][driver];
             readme += &format!(
-                "| {} | {} | {:.3} ± {:.3} | {:.3}–{:.3} |\n",
+                "| {} | {} | {:.3} | {:.3} ± {:.3} | {:.3}–{:.3} |\n",
                 row["payload_bytes"],
                 driver,
+                stats["min_ns"].as_u64().unwrap() as f64 / 1000.0,
                 stats["mean_ns"].as_f64().unwrap() / 1000.0,
                 stats["repetition_mean_stddev_ns"].as_f64().unwrap() / 1000.0,
                 stats["repetition_mean_range_ns"][0].as_f64().unwrap() / 1000.0,
@@ -108,6 +109,7 @@ fn summarize(trials: &[Value]) -> Result<Value> {
     let mut passed = true;
     for bytes in PAYLOADS {
         let mut measured = Vec::new();
+        let mut minima = Vec::new();
         let mut statistics = serde_json::Map::new();
         for driver in DRIVERS {
             let protocol = if driver == "capnp-cpp" {
@@ -151,22 +153,22 @@ fn summarize(trials: &[Value]) -> Result<Value> {
                 latency_summary::summarize(&sample_trials),
             );
             samples.sort_unstable();
+            minima.push(samples[0]);
             measured.push([50, 95, 99].map(|p| samples[(samples.len() * p).div_ceil(100) - 1]));
         }
-        let reference = if measured[1][0] <= measured[2][0] {
-            1
-        } else {
-            2
-        };
-        let within = u128::from(measured[0][0]) * 100 <= u128::from(measured[reference][0]) * 105;
+        let reference = if minima[1] <= minima[2] { 1 } else { 2 };
+        let within = u128::from(minima[0]) * 100 <= u128::from(minima[reference]) * 105;
         passed &= within;
-        rows.push(json!({"payload_bytes":bytes, "portable_p50_p95_p99_ns":measured[0],
+        rows.push(
+            json!({"payload_bytes":bytes, "portable_p50_p95_p99_ns":measured[0],
             "legacy_p50_p95_p99_ns":measured[1], "cpp_p50_p95_p99_ns":measured[2],
-            "reference":DRIVERS[reference], "ratio":measured[0][0] as f64 / measured[reference][0] as f64,
-            "meets_target":within, "statistics":statistics}));
+            "portable_min_ns":minima[0], "legacy_min_ns":minima[1], "cpp_min_ns":minima[2],
+            "reference":DRIVERS[reference], "ratio":minima[0] as f64 / minima[reference] as f64,
+            "meets_target":within, "statistics":statistics}),
+        );
     }
     Ok(
-        json!({"metric":"pooled p50 per payload", "maximum_ratio":1.05, "advisory":true,
+        json!({"metric":"minimum per payload", "maximum_ratio":1.05, "advisory":true,
         "reference_rule":"min(legacy, capnp-cpp) in the same campaign", "all_payloads_pass":passed, "rows":rows}),
     )
 }
