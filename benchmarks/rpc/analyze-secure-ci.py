@@ -90,6 +90,7 @@ else:
         aggregate[transport]={}
         candidate = 'legacy' if 'legacy-baseline' in scope['binaries'] else 'portable'
         references = ['legacy-baseline', 'portable', 'cpp'] if candidate == 'legacy' else ['portable-baseline', 'legacy', 'cpp']
+        references += ['grpc', 'websocket']
         for reference in references:
             pairs=[(r['variants'][candidate]['min_ns'],r['variants'][reference]['min_ns']) for r in rows if reference in r['variants']]
             if pairs:

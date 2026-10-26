@@ -345,6 +345,12 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
             match args.first().map(String::as_str) {
                 Some("topology-server") => topology::serve(&args[1..]).await,
                 Some("topology-measure") => topology::measure(&args[1..]).await,
+                Some("comparison-topology-server") if (3..=4).contains(&args.len()) => {
+                    topology::comparison::serve(&args[1], &args[2..]).await
+                }
+                Some("comparison-topology-measure") if args.len() == 6 => {
+                    topology::comparison::measure(&args[1], &args[2..]).await
+                }
                 Some("workflow-server") if args.len() == 2 => workflows::serve(&args[1]).await,
                 Some("workflow-measure") => workflows::measure(&args[1..]).await,
                 Some("comparison-server") if args.len() == 3 => {

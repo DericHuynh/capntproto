@@ -95,7 +95,8 @@ class Campaign:
     def server_args(label, case, downstream=None):
         family = case['family']
         if family == 'topology':
-            return ['topology-server', '127.0.0.1:0'] + ([downstream] if downstream else [])
+            prefix = ['comparison-topology-server', label] if label in ['grpc', 'websocket'] else ['topology-server']
+            return prefix + ['127.0.0.1:0'] + ([downstream] if downstream else [])
         if family == 'workflow':
             return (['comparison-server', label] if label in ['grpc', 'websocket'] else ['workflow-server']) + ['127.0.0.1:0']
         return ['server'] + ([] if label in ['cpp', 'upstream'] else [label if label in ['grpc', 'websocket'] else 'tcp'])
@@ -104,7 +105,8 @@ class Campaign:
     def client_args(label, case, address, warmup, iterations):
         family = case['family']
         if family == 'topology':
-            return ['topology-measure', address, case['name'], str(warmup), str(iterations)]
+            prefix = ['comparison-topology-measure', label] if label in ['grpc', 'websocket'] else ['topology-measure']
+            return prefix + [address, case['name'], str(warmup), str(iterations)]
         if family == 'workflow':
             return (['comparison-measure', label] if label in ['grpc', 'websocket'] else ['workflow-measure']) + [address, case['name'], str(warmup), str(iterations)]
         prefix = ['measure'] + ([] if label in ['cpp', 'upstream'] else [label if label in ['grpc', 'websocket'] else 'tcp'])
@@ -180,7 +182,8 @@ def idle_host():
             name = path.read_text().strip()
             argv = (path.parent / 'cmdline').read_bytes().split(b'\0')
             modes = [b'server', b'measure', b'workflow-server', b'workflow-measure',
-                     b'topology-server', b'topology-measure', b'comparison-server', b'comparison-measure']
+                     b'topology-server', b'topology-measure', b'comparison-server', b'comparison-measure',
+                     b'comparison-topology-server', b'comparison-topology-measure']
             assert len(argv) < 2 or argv[1] not in modes, f'competing benchmark peer: {path.parent}'
             if name in ['rustc', 'cargo', 'clippy-driver', 'rust-lld', 'clang', 'clang++', 'cc1plus', 'strace'] or 'callgrind' in name:
                 assert (path.parent / 'stat').read_text().split(') ', 1)[1].split()[0] == 'Z', f'competing build/profiler: {path}'
@@ -198,7 +201,7 @@ def supported(label, transport, case):
     label = engine(label)
     if transport == 'quic' and label not in ['legacy', 'portable']:
         return False
-    if case['family'] == 'topology' and label not in ['legacy', 'portable', 'cpp']:
+    if case['family'] == 'topology' and label not in ['legacy', 'portable', 'cpp', 'grpc', 'websocket']:
         return False
     return not (case['name'] == 'pipelined-read' and label in ['grpc', 'websocket'])
 

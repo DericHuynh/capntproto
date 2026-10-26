@@ -23,7 +23,7 @@ pub(super) fn run(
     let native = if matches!(phase, Phase::Allocations) {
         ""
     } else {
-        r#"python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/native --repetitions 5 --warmup 100 --iterations 1000"#
+        r#"python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --comparators --output /root/results/secure/native --repetitions 5 --warmup 100 --iterations 1000"#
     };
     let diagnostics = match phase {
         Phase::Latency => "",
