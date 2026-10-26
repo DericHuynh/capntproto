@@ -194,7 +194,7 @@ fn exhaustive_generic_parameter_usage_preserves_lexical_order() {
 
 #[test]
 fn group_union_aliases_bind_unused_enclosing_parameters() {
-    use capntproto_test_support::dynamic_test_capnp::group_scope::inner;
+    use capntproto_test_support::generic_groups_capnp::group_scope::inner;
     let mut message = capnp::message::Builder::new_default();
     let mut root = message.init_root::<inner::Builder<data::Owned, text::Owned, harness::Owned>>();
     root.reborrow().init_payload().set_count(17);

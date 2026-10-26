@@ -37,6 +37,11 @@ pub mod dynamic_test_capnp {
     include!(concat!(env!("OUT_DIR"), "/dynamic_test_capnp.rs"));
 }
 
+#[allow(clippy::extra_unused_type_parameters)] // Generated generic group helpers.
+pub mod generic_groups_capnp {
+    include!(concat!(env!("OUT_DIR"), "/generic_groups_capnp.rs"));
+}
+
 #[allow(clippy::extra_unused_type_parameters)] // Generated generic annotation helpers.
 pub mod presence_capnp {
     include!(concat!(env!("OUT_DIR"), "/presence_capnp.rs"));

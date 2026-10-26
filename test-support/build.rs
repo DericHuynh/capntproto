@@ -43,6 +43,7 @@ fn main() {
             "rpc-api",
             "cancellation-policy",
             "dynamic-test",
+            "generic-groups",
             "presence",
             "conversion",
             "reflection-lookup",

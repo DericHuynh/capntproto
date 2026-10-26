@@ -99,12 +99,3 @@ struct GroupDefaults(T) {
     }
   }
 }
-
-struct GroupScope(A) {
-  struct Inner(B, C) {
-    union {
-      payload :group { count @0 :UInt32; }
-      empty @1 :Void;
-    }
-  }
-}
