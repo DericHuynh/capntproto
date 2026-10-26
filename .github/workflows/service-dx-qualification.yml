@@ -1,0 +1,67 @@
+name: Qualify portable adoption and late early-pipeline controls
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-stable
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+  TLA2TOOLS_JAR: /tmp/tla2tools.jar
+jobs:
+  stable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 466550d0af43843957bd0a4b2c867913d13049be
+      - name: Install matched tools and formal trace input
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          cmake --version
+          clang --version
+          java -version
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$TLA2TOOLS_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLA2TOOLS_JAR" | sha256sum --check --strict
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Prove adopted early pipelines require their own notification
+        run: |
+          cp crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs "$RUNNER_TEMP/tail-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/tail-fixed.rs" crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs' EXIT
+          python3 - <<'PYCONTROL'
+          from pathlib import Path
+          p=Path('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs')
+          s=p.read_text()
+          start=s.index('                        if changed {',s.index('    fn poll_produced('))
+          end=s.index('                        self.produced.push_back(job);',start)
+          p.write_text(s[:start]+s[end:])
+          PYCONTROL
+          status=0
+          cargo test --locked --features quic --test answer_adoption portable_adopted_work_waits_for_retained_results_without_repolling_completed_execution -- --exact > "$RUNNER_TEMP/early-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/early-before.log"
+          test "$status" -eq 101
+          grep -F 'adopted execution did not resume after returning its result builder' "$RUNNER_TEMP/early-before.log"
+      - name: Verify all portable library ownership and scheduling tests
+        run: cargo test --locked -p capntproto-rpc --lib -- --test-threads=1
+      - name: Verify adoption and every formal trace corpus
+        run: cargo test --locked --features quic --test answer_adoption -- --test-threads=1
+      - name: Verify encrypted RPC and service ownership
+        run: cargo test --locked --features quic --test rpc_ownership --test secure_rpc --test subscriptions --test handoff_auth --test tcp_rpc --test rpc -- --test-threads=1
+      - name: Verify quality collector, linting and formatting
+        run: |
+          cargo test --locked -p capntproto-quality --lib -- --test-threads=1
+          cargo clippy --locked -p capntproto-rpc -p capntproto-quality --all-targets -- -D warnings
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path benchmarks/rpc/Cargo.toml -- --check
+          cargo fmt --manifest-path examples/kv/Cargo.toml -- --check
