@@ -1,0 +1,73 @@
+name: Qualify adopted pipeline control notifications
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      CAPNTPROTO_REFERENCE_CXX: clang++-22
+      TLA2TOOLS_JAR: /tmp/tla2tools.jar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 8ea674b865e82e3ba7b15c4f01afe978bd0a859c
+      - name: Install native build dependencies
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          cmake --version
+          clang --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Add bounded child and protocol tracing
+        run: |
+          python3 - <<'PYTRACE'
+          from pathlib import Path
+          
+          def edit(name,old,new):
+           p=Path(name);s=p.read_text();assert s.count(old)==1,(name,s.count(old),old);p.write_text(s.replace(old,new))
+          p=Path('crates/capntproto-rpc/src/portable.rs')
+          p.write_text(p.read_text()+'''
+          pub(crate) fn bug_trace(args: std::fmt::Arguments<'_>) {
+              use std::sync::atomic::{AtomicUsize,Ordering};
+              static COUNT: AtomicUsize=AtomicUsize::new(0);
+              if COUNT.fetch_add(1,Ordering::Relaxed)<5000 { eprintln!("TRACE {args}"); }
+          }
+          ''')
+          edit('tests/answer_adoption.rs','for budget in (1..=8).chain([64]) {','for budget in [2] {')
+          edit('crates/capntproto-rpc/src/portable/connection.rs','    match error.cause {','    crate::portable::bug_trace(format_args!("CONNECTION ERROR {error:?}"));\n    match error.cause {')
+          edit('crates/capntproto-rpc/src/scoped/wire/server/worker.rs','            let redirect_ready = entry','            crate::portable::bug_trace(format_args!("worker {:p} answer={:?} stage={} rev={} outcome={outcome:?}", self, entry.request().answer(), match &entry.stage { Stage::Prepare=>"prepare",Stage::Execute(_)=>"execute",Stage::Transfer(_)=>"transfer",Stage::Collect=>"collect",Stage::Publish=>"publish" },entry.results.revision()));\n            let redirect_ready = entry')
+          # Avoid borrowing the full worker alongside its mutable entry; stable identity is the result producer.
+          p=Path('crates/capntproto-rpc/src/scoped/wire/server/worker.rs');s=p.read_text().replace('"worker {:p} answer={:?} stage={} rev={} outcome={outcome:?}", self,','"worker {:p} answer={:?} stage={} rev={} outcome={outcome:?}", Rc::as_ptr(&entry.results.0),');p.write_text(s)
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs','        let mut remaining = self.options.budget.get();','        crate::portable::bug_trace(format_args!("pump {:p} active={:?} control_idle={} pending={:?}", self,self.schedule.active,self.control_idle,self.notifications.pending()));\n        let mut remaining = self.options.budget.get();')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs','            let index = self.schedule.next().expect("active work");','            let index = self.schedule.next().expect("active work");\n            crate::portable::bug_trace(format_args!("lane {:p} {index:?} budget={remaining}", self));')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs','        if self.prepare_transfer(coordinator, messages)? {','        crate::portable::bug_trace(format_args!("network {:p} pending={} sent={} handoff={} produced={} adoptions={}",Rc::as_ptr(&self.commands),self.pending.len(),self.sent.len(),self.handoffs.len(),self.produced.len(),self.commands.adoptions.borrow().len()));\n        if self.prepare_transfer(coordinator, messages)? {')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/handoff.rs','                    let Job::Await { token, .. } = self.handoffs.swap_remove(index) else {','                    crate::portable::bug_trace(format_args!("handoff {:p} response",Rc::as_ptr(&self.commands)));\n                    let Job::Await { token, .. } = self.handoffs.swap_remove(index) else {')
+          edit('crates/capntproto-rpc/src/scoped/wire/foreign.rs','            *state = match result {','            crate::portable::bug_trace(format_args!("foreign {key:?} resolved err={}", result.is_err()));\n            *state = match result {')
+          # Print all outgoing wire tags at one shared message-recording boundary, using
+          # pointer identity to correlate opposite directions without changing payloads.
+          edit('tests/support/mod.rs','        assert!(!self.idle, "RPC sent while idle");','''        use capnp_rpc::rpc_capnp::{message,return_};
+                  match message.which().unwrap() {
+                      message::Call(c) => { let c=c.unwrap(); eprintln!("WIRE {:p} CALL id={} method={} target={:?}",self,c.get_question_id(),c.get_method_id(),c.get_target().unwrap().which().unwrap()); }
+                      message::Return(r) => {let r=r.unwrap();eprintln!("WIRE {:p} RETURN id={} kind={}",self,r.get_answer_id(),match r.which().unwrap() {return_::Results(_)=>"results",return_::Exception(_)=>"error",return_::ResultsSentElsewhere(())=>"elsewhere",return_::AwaitFromThirdParty(_)=>"await",_=>"other"});}
+                      message::ThirdPartyAnswer(a)=>eprintln!("WIRE {:p} ADOPT id={}",self,a.unwrap().get_answer_id()),
+                      _=>(),
+                  }
+                  assert!(!self.idle, "RPC sent while idle");''')
+          PYTRACE
+      - name: Trace the remaining child stall
+        run: cargo test --locked --features quic --test answer_adoption portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget -- --exact --nocapture
