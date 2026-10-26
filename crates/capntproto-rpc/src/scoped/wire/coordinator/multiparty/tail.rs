@@ -26,6 +26,8 @@ pub(super) struct Adoption {
 pub(super) struct Produced<'id> {
     key: answers::Key<'id>,
     task: server::Transfer,
+    work_done: bool,
+    result_revision: u64,
     collected: bool,
     _permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
 }
@@ -285,6 +287,8 @@ impl<
                     Ok(key) => self.produced.push_back(Produced {
                         key,
                         task: job.task,
+                        work_done: false,
+                        result_revision: 0,
                         collected: false,
                         _permit: job._permit,
                     }),
@@ -320,10 +324,27 @@ impl<
                     Err(capnp::ErrorKind::Disconnected)
                 } else {
                     let _ = job.task.results.poll_completed(cx);
-                    if Pin::new(&mut job.task.work).poll(cx).is_pending()
-                        || job.task.results.poll_completed(cx).is_pending()
-                    {
+                    if !job.work_done {
+                        job.work_done = Pin::new(&mut job.task.work).poll(cx).is_ready();
+                    }
+                    let revision = job.task.results.revision();
+                    let changed = job.result_revision != revision;
+                    job.result_revision = revision;
+                    if !job.work_done || job.task.results.poll_completed(cx).is_pending() {
+                        // The original worker observes a different answer on
+                        // another connection. Publish early pipeline changes to
+                        // this adopted answer too, even while work is pending.
+                        if changed {
+                            coordinator
+                                .driver
+                                .answers()
+                                .notify_pipeline(job.key)
+                                .map_err(wire_error)?;
+                        }
                         self.produced.push_back(job);
+                        if changed {
+                            return Poll::Ready(Ok(true));
+                        }
                         continue;
                     }
                     coordinator.hooks.collect_server_results(

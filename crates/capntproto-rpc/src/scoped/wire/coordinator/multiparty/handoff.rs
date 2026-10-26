@@ -145,10 +145,11 @@ impl<
                         *result = AwaitStage::Response(match ready {
                             Ok((answer, guard)) => {
                                 coordinator.calls.adopt_pipeline(
-                                    &coordinator.driver,
+                                    &mut coordinator.hooks,
+                                    &mut coordinator.driver,
                                     token.key(),
                                     answer.pipeline.add_ref(),
-                                );
+                                )?;
                                 Promise::from_future(async move {
                                     let result = answer.response.await;
                                     drop((guard, answer.pipeline));
@@ -230,7 +231,9 @@ impl<
                     let (sender, receiver) = shared::channel();
                     let pipeline = Rc::new(PipelineState {
                         used: Cell::new(false),
-                        owner_wake: RefCell::new(None),
+                        // Projections and final-interest drops belong to this
+                        // network control, not the ordinary outgoing-call lane.
+                        owner_wake: RefCell::new(Some(cx.waker().clone())),
                         adopted: RefCell::default(),
                         cached: RefCell::default(),
                         _credit: Cell::new(None),
@@ -302,7 +305,7 @@ pub(super) fn project<'p, 'id, const C: usize, const H: usize>(
             .and_then(|cap| {
                 let result = coordinator
                     .hooks
-                    .export_client(&mut coordinator.driver.capabilities(), &cap);
+                    .export_snapshot(&mut coordinator.driver.capabilities(), &cap);
                 coordinator.driver.capabilities().release(cap);
                 result.map(|cap| cap.hook)
             });

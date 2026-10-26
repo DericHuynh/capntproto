@@ -9,6 +9,47 @@ use std::sync::{
 type Remote = capability::RemotePromise<any_pointer::Owned>;
 
 #[test]
+fn projection_reports_partial_resolution_before_its_target_settles() {
+    for subscribe_before_binding in [false, true] {
+        let hooks = ClientHooks::new(8, 8);
+        let endpoint = Endpoint::projection(Rc::downgrade(&hooks.inbox));
+        let hook = Hook(endpoint.clone(), None);
+        let (send, receive) = futures::channel::oneshot::channel();
+        let target: capability::Client = crate::new_future_client(async move {
+            receive
+                .await
+                .map_err(|_| Error::disconnected("test target dropped".into()))
+        });
+        let mut more = subscribe_before_binding.then(|| hook.when_more_resolved().unwrap());
+        let mut complete = hook.when_resolved();
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(Pin::new(&mut complete).poll(&mut cx).is_pending());
+        if let Some(more) = &mut more {
+            assert!(Pin::new(more).poll(&mut cx).is_pending());
+        }
+        endpoint.forward_projection(Ok(target.hook));
+        let mut more = more.unwrap_or_else(|| hook.when_more_resolved().unwrap());
+        if subscribe_before_binding {
+            let Poll::Ready(Ok(next)) = Pin::new(&mut more).poll(&mut cx) else {
+                panic!("projection hid its partial resolution until final completion");
+            };
+            assert!(next.when_more_resolved().is_some());
+        } else {
+            assert!(Pin::new(&mut more).poll(&mut cx).is_pending());
+        }
+        assert!(Pin::new(&mut complete).poll(&mut cx).is_pending());
+        send.send(capability::Client::new(crate::broken::new_cap(
+            Error::unimplemented("final test target".into()),
+        )))
+        .unwrap_or_else(|_| panic!("target resolution was abandoned"));
+        assert!(Pin::new(&mut complete).poll(&mut cx).is_ready());
+        if !subscribe_before_binding {
+            assert!(Pin::new(&mut more).poll(&mut cx).is_ready());
+        }
+    }
+}
+
+#[test]
 fn metadata_subscriptions_preserve_late_changes_without_dynamic_scanning() {
     clients::with_growing_graph::<Rc<MetadataSource>, u8, _>(
         0,

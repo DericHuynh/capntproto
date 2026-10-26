@@ -278,7 +278,7 @@ impl Results {
             wake.wake();
         }
     }
-    pub(super) fn revision(&self) -> u64 {
+    pub(in crate::scoped::wire) fn revision(&self) -> u64 {
         self.0.revision.get()
     }
     pub(crate) fn tail_origin(&self, origin: Option<Handle>) {

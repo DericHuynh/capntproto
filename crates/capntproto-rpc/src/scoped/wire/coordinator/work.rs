@@ -45,7 +45,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         if effects.resources() {
             ready |= WorkSet::CALLS | WorkSet::FOREIGN | WorkSet::WORKER;
         }
-        if effects.output() {
+        // Deferred dispatch can make a third-party call runnable without IO.
+        // Its network control must prepare the transfer before worker admission.
+        if effects.output() || effects.admission() {
             self.control_idle = false;
         }
         self.schedule.active |= ready;
