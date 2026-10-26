@@ -1,0 +1,54 @@
+name: Qualify legacy and portable regression matrix
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-stable
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+  TLA2TOOLS_JAR: /tmp/tla2tools.jar
+  CAPNTPROTO_REFERENCE_CXX: clang++-22
+jobs:
+  stable:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 044650e7294c29016857dd1f378c50f47530d877
+      - name: Install matched tools and formal trace input
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang-22 libclang-rt-22-dev
+          clang++-22 --version
+          cmake --version
+          clang --version
+          java -version
+          git submodule update --init --depth 1 -- vendor/capnproto
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$TLA2TOOLS_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLA2TOOLS_JAR" | sha256sum --check --strict
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Run adoption and cross-driver regression suites
+        run: |
+          status=0
+          for suite in answer_adoption runtime multiparty_join result_pipeline; do
+            cargo test --locked --features quic --test "$suite" -- --nocapture || status=1
+          done
+          exit "$status"
+      - name: Check regression code and formatting
+        if: success() || failure()
+        run: |
+          cargo clippy --locked --features quic --test answer_adoption --test runtime --test multiparty_join --test result_pipeline -- -D warnings
+          cargo fmt --all -- --check
