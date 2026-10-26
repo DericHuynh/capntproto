@@ -456,6 +456,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             if entry.result_revision != entry.results.revision() {
                 entry.result_revision = entry.results.revision();
                 let _ = driver.answers().notify_pipeline(entry.request().answer());
+                // Early publication changes maintenance readiness even when
+                // this method remains parked. Do not certify the lane idle.
+                advanced = true;
             }
             let waker = entry.waker.clone();
             // A ready completion continues toward Return in this turn, as KJ
@@ -489,6 +492,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 if entry.result_revision != entry.results.revision() {
                     entry.result_revision = entry.results.revision();
                     let _ = driver.answers().notify_pipeline(entry.request().answer());
+                    advanced = true;
                 }
                 if preparing && !matches!(entry.stage, Stage::Prepare) {
                     self.preparing -= 1;
