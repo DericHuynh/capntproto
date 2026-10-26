@@ -280,10 +280,19 @@ async fn interrupted_receive_preserves_authenticated_bidirectional_streams() {
             b"request after interruption",
             b"response after interruption",
         ];
-        for (peer, input) in fixture.peers.iter_mut().zip(inputs) {
-            peer.app.write_all(input).await.unwrap();
-        }
+        let mut sent = [0; 2];
         for _ in 0..2000 {
+            // Advance writers alongside the caller-polled drivers: each
+            // application pipe holds only 11 bytes in this fixture.
+            for (index, peer) in fixture.peers.iter_mut().enumerate() {
+                if sent[index] < inputs[index].len() {
+                    if let Some(result) =
+                        peer.app.write(&inputs[index][sent[index]..]).now_or_never()
+                    {
+                        sent[index] += result.unwrap();
+                    }
+                }
+            }
             fixture.tick().await;
             fixture.read();
             if fixture.peers[0].received == inputs[1] && fixture.peers[1].received == inputs[0] {
