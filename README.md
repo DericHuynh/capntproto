@@ -11,7 +11,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264719865) · commit `c6b8c819dd9a` · **cancelled**
+Latest Cargo run: [2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
@@ -19,7 +19,7 @@ Latest Cargo run: [2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264719865) · commit `c6b8c819dd9a` · **cancelled**
+[2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -27,19 +27,7 @@ Latest Cargo run: [2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-26T03:35:27Z · run 40264820978 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264820978) · commit `c6b8c819dd9a` · **success**
-
-![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
-
-Bounded campaigns including seed calibration&#59; execution counts are not comparable performance benchmarks&#46;
-
-![Fuzzer feedback by engine](docs/reports/fuzz-coverage.svg)
-
-Engine&#45;local counters&#44; not LLVM source coverage&#46; Do not compare counts across engines or builds&#46;
-
-![Saved fuzzing findings](docs/reports/fuzz-findings.svg)
-
-Saved crashes&#47;hangs are findings requiring triage&#44; not confirmed unique bugs&#46; Missing results remain unknown&#46;
+[2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
@@ -49,7 +37,7 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264719865) · commit `c6b8c819dd9a` · **cancelled**
+Latest benchmark run: [2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
 
 Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
 
