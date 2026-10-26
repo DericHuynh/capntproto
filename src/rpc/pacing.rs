@@ -1,5 +1,4 @@
 //! Reusable packet pacing, without rounding Linux deadlines to milliseconds.
-#![forbid(unsafe_code)]
 
 #[cfg(target_os = "linux")]
 use std::task::Poll;
@@ -81,10 +80,11 @@ impl PreciseTimer {
             TimerfdClockId::Monotonic,
             TimerfdFlags::NONBLOCK | TimerfdFlags::CLOEXEC,
         )?;
-        Ok(Self(tokio::io::unix::AsyncFd::with_interest(
-            fd,
-            tokio::io::Interest::READABLE,
-        )?))
+        // SAFETY: AsyncFd takes ownership of this freshly created OwnedFd.
+        // No code closes or replaces its descriptor while registered.
+        Ok(Self(unsafe {
+            tokio::io::unix::AsyncFd::register_with_interest(fd, tokio::io::Interest::READABLE)?
+        }))
     }
 
     fn arm(&self, delay: std::time::Duration) -> std::io::Result<()> {
@@ -219,10 +219,14 @@ mod tests {
         // A valid reactor descriptor that the kernel rejects as a timerfd.
         let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
         socket.set_nonblocking(true).unwrap();
-        let fd = tokio::io::unix::AsyncFd::with_interest(
-            std::os::fd::OwnedFd::from(socket),
-            tokio::io::Interest::READABLE,
-        )
+        // SAFETY: AsyncFd owns the socket's OwnedFd and the test never closes
+        // or replaces its descriptor while registered.
+        let fd = unsafe {
+            tokio::io::unix::AsyncFd::register_with_interest(
+                std::os::fd::OwnedFd::from(socket),
+                tokio::io::Interest::READABLE,
+            )
+        }
         .unwrap();
         let mut pacer = Pacer {
             timer: Some(Ok(PreciseTimer(fd))),

@@ -26,5 +26,5 @@ capnpc = { package = "capntproto-codegen", version = "0.25.3", path = "../capntp
 [dev-dependencies]
 capntproto-test-support = { path = "../../test-support" }
 tempfile = "3"
-tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util", "process"] }
+tokio = { version = "1.53.3", features = ["rt", "macros", "net", "time", "io-util", "process"] }
 tokio-util = { version = "0.7", features = ["compat"] }

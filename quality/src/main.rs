@@ -44,6 +44,7 @@ fn main() -> Result<()> {
                 ("root", "Cargo.lock"),
                 ("fuzz", "fuzz/Cargo.lock"),
                 ("downstream-example", "examples/downstream/Cargo.lock"),
+                ("kv-service-example", "examples/kv/Cargo.lock"),
                 ("rpc-benchmark", "benchmarks/rpc/Cargo.lock"),
                 ("storage-benchmark", "benchmarks/storage/Cargo.lock"),
                 ("concurrency-benchmark", "benchmarks/concurrency/Cargo.lock"),

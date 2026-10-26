@@ -19,8 +19,11 @@ pub(crate) struct Socket {
 }
 impl Socket {
     pub(super) fn new(socket: UdpSocket) -> io::Result<Self> {
+        let socket = socket.into_std()?;
         Ok(Self {
-            read: AsyncFd::with_interest(socket.into_std()?, Interest::READABLE)?,
+            // SAFETY: AsyncFd owns this socket. Its descriptor is never closed
+            // or replaced while registered; only shared socket access escapes.
+            read: unsafe { AsyncFd::register_with_interest(socket, Interest::READABLE)? },
         })
     }
     pub(super) fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -119,7 +122,10 @@ impl Socket {
         }
         // Subscribe only while backpressured. A duplicated descriptor refers to
         // the same socket, and dropping this future removes its registration.
-        let write = AsyncFd::with_interest(self.read.get_ref().try_clone()?, Interest::WRITABLE)?;
+        let socket = self.read.get_ref().try_clone()?;
+        // SAFETY: This registration owns the duplicate descriptor, which stays
+        // open and unchanged until `write` is dropped, including cancellation.
+        let write = unsafe { AsyncFd::register_with_interest(socket, Interest::WRITABLE)? };
         loop {
             let mut ready = write.writable().await?;
             if let Ok(result) = ready.try_io(|_| send()) {
