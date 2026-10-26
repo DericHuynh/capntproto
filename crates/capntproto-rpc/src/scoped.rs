@@ -354,6 +354,33 @@ impl<'id> ClientHooks<'id> {
         self.export_retained(graph, client, pending, true)
     }
 
+    // Authentication may make a pipeline's existing route final without
+    // changing where its already-ordered calls go. Keep local barriers pending.
+    fn freeze_projection(
+        &mut self,
+        graph: &mut impl Capabilities<'id>,
+        endpoint: Rc<Endpoint>,
+    ) -> capnp::Result<()> {
+        let client = self.lookup(&endpoint)?;
+        if graph
+            .is_settled(client)
+            .map_err(|e| Error::failed(e.to_string()))?
+        {
+            self.collect(graph);
+            return Ok(());
+        }
+        let (client, pending) = graph
+            .snapshot_for_export(client)
+            .map_err(|e| Error::failed(e.to_string()))?;
+        if pending {
+            graph.release(client);
+            return Ok(());
+        }
+        let frozen = self.export_retained(graph, client, false, true)?;
+        endpoint.forward_projection(Ok(frozen.hook));
+        Ok(())
+    }
+
     /// Export a live application client, following imported/pipelined promise
     /// resolution in this graph. Use `export_snapshot` only for an advertised
     /// route that must stay frozen even when its original promise redirects.

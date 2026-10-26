@@ -310,15 +310,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     }
     pub(crate) fn adopt_pipeline<A, P: Copy + Eq>(
         &mut self,
-        driver: &Peer<'p, 'id, '_, I, A, P, C, H>,
+        hooks: &mut ClientHooks<'id>,
+        driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
         key: capntproto_rpc_engine::questions::Key<'id>,
         pipeline: Box<dyn PipelineHook>,
-    ) {
+    ) -> capnp::Result<()> {
         let Some(index) = driver.completion_owner(key) else {
-            return;
+            return Ok(());
         };
         let Some(entry) = self.entries.get(index).and_then(Option::as_ref) else {
-            return;
+            return Ok(());
         };
         let question = entry.wire.question().or_else(|| {
             entry
@@ -327,15 +328,36 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 .and_then(|task| driver.invocation_question(task))
         });
         if question != Some(key) {
-            return;
+            return Ok(());
         }
         // A used path retains its original ordering route through its fence.
         if let Some(state) = &entry.wire.pipeline {
             if !state.used.get() {
                 let previous = state.adopted.replace(Some(pipeline));
                 drop(previous);
+            } else {
+                // Like legacy's unredirected PipelineClient, a used projection
+                // keeps its original wire target but no longer promises a new
+                // route. Cross-connection forwarding must not wait for Return.
+                let endpoints: Vec<_> = {
+                    let cached = state.cached.borrow();
+                    cached
+                        .first
+                        .iter()
+                        .chain(&cached.rest)
+                        .filter_map(|(_, hook)| {
+                            hook.as_any()
+                                .and_then(|hook| hook.downcast_ref::<Hook>())
+                                .map(|hook| hook.0.clone())
+                        })
+                        .collect()
+                };
+                for endpoint in endpoints {
+                    hooks.freeze_projection(&mut driver.capabilities(), endpoint)?;
+                }
             }
         }
+        Ok(())
     }
     #[allow(clippy::too_many_arguments)]
     pub fn poll<A, P: Copy + Eq, R: Default>(
