@@ -1,7 +1,7 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "55751bda9da4a9441c104ff25a7124df5a9908f1",
+    "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
     "conclusion": "failure",
     "data": {
       "charts": [],
@@ -10,17 +10,17 @@
       "note": "No measurement evidence was produced.",
       "origin": {
         "attempt": 1,
-        "commit": "55751bda9da4a9441c104ff25a7124df5a9908f1",
+        "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
         "repository": "DericHuynh/capntproto",
-        "run_id": 40280415764
+        "run_id": 40321608784
       },
       "source_id": null,
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-26T06:32:22Z",
-    "run_id": 40280415764,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40280415764"
+    "date": "2026-10-26T12:19:08Z",
+    "run_id": 40321608784,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
   },
   "cargo": [
     {
@@ -1348,56 +1348,6 @@
           "complete": false,
           "errors": 0,
           "failed": 8,
-          "failures": [
-            {
-              "name": "portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route",
-              "output": "thread 'portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route' (32848) panicked at tests/answer_adoption.rs:1247:21:\nassertion `left == right` failed: post-adoption pipeline call was not published; used=false\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<usize, usize>\n   4: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  16: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  17: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  18: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Out",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "portable_tail_finish_before_child_completion_reclaims_both_interests",
-              "output": "thread 'portable_tail_finish_before_child_completion_reclaims_both_interests' (32854) panicked at tests/answer_adoption.rs:2577:17:\nassertion `left == right` failed: both canceled answers retained application work\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<u32, u32>\n   4: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  16: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  17: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  18: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  19: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut d",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget",
-              "output": "thread 'portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget' (32858) panicked at tests/answer_adoption.rs:176:37:\ntransfer stalled with poll budget 7\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  14: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  15: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  16: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>\n  17: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget\n  18: <answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0} as core::ops::function::FnOnce<()>>",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "third_party_tail_returns_over_authenticated_native",
-              "output": "thread 'third_party_tail_returns_over_authenticated_native' (32904) panicked at tests/answer_adoption.rs:1479:37:\nportable=true: stalled at resolve early pipeline\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  14: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  15: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  16: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>\n  17: answer_adoption::third_party_tail_returns_over_authenticated_native\n  18: <answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest third_party_tail_returns_over_authenticated_native ... FAILED\n\nfailures:\n\nfailures:\n    third_party_tail_ret",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "independent_clients_share_a_real_service_and_pipeline_deep_access",
-              "output": "thread 'independent_clients_share_a_real_service_and_pipeline_deep_access' (39151) panicked at tests/service_examples.rs:163:61:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/profiles-lFI3co/%p-%m.profraw\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"build\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"examples/kv/Cargo.toml\\\" \\\"--bins\\\" \\\"--target-dir\\\" \\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/service-examples\\\" \\\"--ignore-rust-version\\\" \\\"--features\\\" \\\"quic\\\"; inspect /tmp/.tmpjxmlZo/build.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access\n   4: <service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest independent_clients_share_a_real_service_and_pipeline_deep_access has been running for over 60 seconds\ntest independent_clients_share_a_real_service_and_pipeline_deep_access ... FAILED\n\nfailures:\n\nfailures:\n    independent_clients_share_a_real_service_and_pipeline_deep_access\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 600.42s\n\n\n\nthread 'independent_clients_share_a_real_service_and_pipeline_deep_access' (39151) panicked at tests/service_examples.rs:163:61:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/profiles-lFI3co/%p-%m.profraw\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"build\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"examples/kv/Cargo.toml\\\" \\\"--bins\\\" \\\"--target-dir\\\" \\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/service-examples\\\" \\\"--ignore-rust-version\\\" \\\"--features\\\" \\\"quic\\\"; inspect /tmp/.tmpjxmlZo/build.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access\n   4: <service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n",
-              "suite": "capntproto::service_examples",
-              "truncated": false
-            },
-            {
-              "name": "formatting_and_lints",
-              "output": "thread 'formatting_and_lints' (79649) panicked at tests/tooling.rs:60:44:\ncalled `Result::unwrap()` on an `Err` value: \"cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN \\\"cargo\\\" \\\"fmt\\\" \\\"--manifest-path\\\" \\\"benchmarks/rpc/Cargo.toml\\\" \\\"--\\\" \\\"--check\\\": expected 0, got exit status: 1; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/quality/benchmark-format.log\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/../tls_policy.rs:1:\\n //! Shared benchmark certificate and TLS policy; identical across Rust drivers.\\n+use super::rustls;\\n use crate::Result;\\n use rustls::pki_types::{CertificateDer, PrivateKeyDer};\\n use std::{path::PathBuf, sync::Arc, time::Duration};\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/../tls_policy.rs:5:\\n-use super::rustls;\\n \\n pub const DEADLINE: Duration = Duration::from_secs(10);\\n pub fn directory() -> Result<PathBuf> {\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/benchmark_tls.rs:2:\\n #[path = \\\"../tls_policy.rs\\\"]\\n mod policy;\\n use crate::Result;\\n-use capntproto::rpc::{tcp::tls::TlsStream, security::rustls};\\n+use capntproto::rpc::{security::rustls, tcp::tls::TlsStream};\\n pub use policy::*;\\n use rustls::pki_types::ServerName;\\n use std::sync::Arc;\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/secure.rs:55:\\n     }\\n }\\n pub enum Listener {\\n-    Tls(TcpListener, Arc<capntproto::rpc::security::rustls::ServerConfig>),\\n+    Tls(\\n+        TcpListener,\\n+        Arc<capntproto::rpc::security::rustls::ServerConfig>,\\n+    ),\\n     Quic(quic::Endpoint),\\n }\\n impl Listener {\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/topology.rs:115:\\n     let mut driver = capnp_rpc::RpcSystem::new(network, None);\\n     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);\\n     tokio::task::spawn_local(async move {\\n-        if let Err(error) = driver.await { eprintln!(\\\"topology downstream RPC: {error}\\\"); }\\n+        if let Err(error) = driver.await {\\n+            eprintln!(\\\"topology downstream RPC: {error}\\\");\\n+        }\\n     });\\n     Ok(client)\\n }\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/topology.rs:172:\\n         } else {\\n             let driver = capnp_rpc::RpcSystem::new(network, Some(service.client.clone()));\\n             tokio::task::spawn_local(async move {\\n-                if let Err(error) = driver.await { eprintln!(\\\"topology service RPC: {error}\\\"); }\\n+                if let Err(error) = driver.await {\\n+                    eprintln!(\\\"topology service RPC: {error}\\\");\\n+                }\\n             });\\n         }\\n     }\\n\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: tooling::cargo_with_toolchain\n   4: tooling::formatting_and_lints\n   5: <tooling::formatting_and_lints::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest formatting_and_lints ... FAILED\n\nfailures:\n\nfailures:\n    formatting_and_lints\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.60s\n\n\n\nthread 'formatting_and_lints' (79649) panicked at tests/tooling.rs:60:44:\ncalled `Result::unwrap()` on an `Err` value: \"cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN \\\"cargo\\\" \\\"fmt\\\" \\\"--manifest-path\\\" \\\"benchmarks/rpc/Cargo.toml\\\" \\\"--\\\" \\\"--check\\\": expected 0, got exit status: 1; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/quality/benchmark-format.log\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/",
-              "suite": "capntproto::tooling",
-              "truncated": true
-            },
-            {
-              "name": "fuzz_and_benchmark_harness_unit_tests",
-              "output": "thread 'fuzz_and_benchmark_harness_unit_tests' (79696) panicked at tests/tooling.rs:43:53:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CARGO_ENCODED_RUSTFLAGS -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN CAPNTPROTO_COVERAGE_CHILDREN_NATIVE=\\\"1\\\" CARGO_TARGET_DIR=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/benchmarks-rpc-Cargo.toml\\\" LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/profiles-lFI3co/%p-%m.profraw\\\" NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\\\"1\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"nextest\\\" \\\"run\\\" \\\"--ignore-rust-version\\\" \\\"--message-format=libtest-json-plus\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"benchmarks/rpc/Cargo.toml\\\" \\\"--no-default-features\\\" \\\"--lib\\\"; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/benchmark-harness.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: tooling::cargo_with_toolchain\n   4: tooling::fuzz_and_benchmark_harness_unit_tests\n   5: <tooling::fuzz_and_benchmark_harness_unit_tests::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest fuzz_and_benchmark_harness_unit_tests has been running for over 60 seconds\ntest fuzz_and_benchmark_harness_unit_tests ... FAILED\n\nfailures:\n\nfailures:\n    fuzz_and_benchmark_harness_unit_tests\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 1123.18s\n\n\n\nthread 'fuzz_and_benchmark_harness_unit_tests' (79696) panicked at tests/tooling.rs:43:53:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CARGO_ENCODED_RUSTFLAGS -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN CAPNTPROTO_COVERAGE_CHILDREN_NATIVE=\\\"1\\\" CARGO_TARGET_DIR=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/benchmarks-rpc-Cargo.toml\\\" LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251/profiles-lFI3co/%p-%m.profraw\\\" NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\\\"1\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"nextest\\\" \\\"run\\\" \\\"--ignore-rust-version\\\" \\\"--message-format=libtest-json-plus\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"benchmarks/rpc/Cargo.toml\\\" \\\"--no-default-features\\\" \\\"--lib\\\"; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/benchmark-harness.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: tooling::cargo_with_toolchain\n   4: tooling::fuzz_and_benchmark_harness_unit_tests\n   5: <tooling::fuzz_and_benchmark_harness_unit_tests::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n",
-              "suite": "capntproto::tooling",
-              "truncated": false
-            },
-            {
-              "name": "optimized_runtime",
-              "output": "thread 'optimized_runtime' (99589) panicked at tests/tooling.rs:53:45:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\\\"1\\\" \\\"cargo\\\" \\\"nextest\\\" \\\"run\\\" \\\"--message-format=libtest-json-plus\\\" \\\"--locked\\\" \\\"--release\\\" \\\"--test\\\" \\\"storage\\\" \\\"--test\\\" \\\"durable_bulk\\\" \\\"--test\\\" \\\"persistence\\\" \\\"--test\\\" \\\"field_api_rpc\\\" \\\"--test\\\" \\\"native\\\" \\\"--\\\" \\\"--skip\\\" \\\"tlc\\\"; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/optimized.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: tooling::cargo_with_toolchain\n   4: tooling::optimized_checks\n   5: tooling::optimized_runtime::{closure#0}\n   6: <tooling::optimized_runtime::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest optimized_runtime has been running for over 60 seconds\ntest optimized_runtime ... FAILED\n\nfailures:\n\nfailures:\n    optimized_runtime\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 600.18s\n\n\n\nthread 'optimized_runtime' (99589) panicked at tests/tooling.rs:53:45:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\\\"1\\\" \\\"cargo\\\" \\\"nextest\\\" \\\"run\\\" \\\"--message-format=libtest-json-plus\\\" \\\"--locked\\\" \\\"--release\\\" \\\"--test\\\" \\\"storage\\\" \\\"--test\\\" \\\"durable_bulk\\\" \\\"--test\\\" \\\"persistence\\\" \\\"--test\\\" \\\"field_api_rpc\\\" \\\"--test\\\" \\\"native\\\" \\\"--\\\" \\\"--skip\\\" \\\"tlc\\\"; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/optimized.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: tooling::cargo_with_toolchain\n   4: tooling::optimized_checks\n   5: tooling::optimized_runtime::{closure#0}\n   6: <tooling::optimized_runtime::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n",
-              "suite": "capntproto::tooling",
-              "truncated": false
-            }
-          ],
           "passed": 2486,
           "skipped": 20,
           "suites": 207,
@@ -1407,6 +1357,70 @@
       "date": "2026-10-26T08:58:04Z",
       "run_id": 40295983832,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40295983832"
+    },
+    {
+      "attempt": 1,
+      "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 40321608784
+        },
+        "source_id": "0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f",
+        "status": "failed",
+        "tests": {
+          "command_passed": false,
+          "complete": false,
+          "errors": 0,
+          "failed": 5,
+          "failures": [
+            {
+              "name": "portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route",
+              "output": "thread 'portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route' (32901) panicked at tests/answer_adoption.rs:1247:21:\nassertion `left == right` failed: post-adoption pipeline call was not published; used=false\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<usize, usize>\n   4: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  16: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  17: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  18: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Out",
+              "suite": "capntproto::answer_adoption",
+              "truncated": true
+            },
+            {
+              "name": "portable_tail_finish_before_child_completion_reclaims_both_interests",
+              "output": "thread 'portable_tail_finish_before_child_completion_reclaims_both_interests' (32907) panicked at tests/answer_adoption.rs:2577:17:\nassertion `left == right` failed: both canceled answers retained application work\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<u32, u32>\n   4: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  16: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  17: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  18: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  19: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut d",
+              "suite": "capntproto::answer_adoption",
+              "truncated": true
+            },
+            {
+              "name": "portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget",
+              "output": "thread 'portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget' (32911) panicked at tests/answer_adoption.rs:176:37:\ntransfer stalled with poll budget 7\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  14: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  15: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  16: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>\n  17: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget\n  18: <answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0} as core::ops::function::FnOnce<()>>",
+              "suite": "capntproto::answer_adoption",
+              "truncated": true
+            },
+            {
+              "name": "third_party_tail_returns_over_authenticated_native",
+              "output": "thread 'third_party_tail_returns_over_authenticated_native' (32923) panicked at tests/answer_adoption.rs:1479:37:\nportable=true: stalled at resolve early pipeline\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  14: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  15: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  16: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>\n  17: answer_adoption::third_party_tail_returns_over_authenticated_native\n  18: <answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest third_party_tail_returns_over_authenticated_native ... FAILED\n\nfailures:\n\nfailures:\n    third_party_tail_ret",
+              "suite": "capntproto::answer_adoption",
+              "truncated": true
+            },
+            {
+              "name": "independent_clients_share_a_real_service_and_pipeline_deep_access",
+              "output": "thread 'independent_clients_share_a_real_service_and_pipeline_deep_access' (39342) panicked at tests/service_examples.rs:163:61:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/profiles-bTzFVT/%p-%m.profraw\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"build\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"examples/kv/Cargo.toml\\\" \\\"--bins\\\" \\\"--target-dir\\\" \\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/service-examples\\\" \\\"--ignore-rust-version\\\" \\\"--features\\\" \\\"quic\\\"; inspect /tmp/.tmpAyraba/build.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access\n   4: <service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest independent_clients_share_a_real_service_and_pipeline_deep_access has been running for over 60 seconds\ntest independent_clients_share_a_real_service_and_pipeline_deep_access ... FAILED\n\nfailures:\n\nfailures:\n    independent_clients_share_a_real_service_and_pipeline_deep_access\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 600.45s\n\n\n\nthread 'independent_clients_share_a_real_service_and_pipeline_deep_access' (39342) panicked at tests/service_examples.rs:163:61:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/profiles-bTzFVT/%p-%m.profraw\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"build\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"examples/kv/Cargo.toml\\\" \\\"--bins\\\" \\\"--target-dir\\\" \\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/service-examples\\\" \\\"--ignore-rust-version\\\" \\\"--features\\\" \\\"quic\\\"; inspect /tmp/.tmpAyraba/build.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access\n   4: <service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n",
+              "suite": "capntproto::service_examples",
+              "truncated": false
+            }
+          ],
+          "passed": 2496,
+          "skipped": 20,
+          "suites": 207,
+          "total": 2521
+        }
+      },
+      "date": "2026-10-26T12:19:08Z",
+      "run_id": 40321608784,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
     }
   ],
   "format": 1,
@@ -2591,198 +2605,7 @@
       "commit": "55751bda9da4a9441c104ff25a7124df5a9908f1",
       "conclusion": "success",
       "data": {
-        "charts": [
-          {
-            "name": "fuzz-executions",
-            "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "libFuzzer / capnp_framing",
-                    "value": 16384
-                  },
-                  {
-                    "label": "libFuzzer / capnp_pointers",
-                    "value": 16384
-                  },
-                  {
-                    "label": "libFuzzer / capnp_schema",
-                    "value": 16384
-                  },
-                  {
-                    "label": "libFuzzer / native_packet",
-                    "value": 1024
-                  },
-                  {
-                    "label": "libFuzzer / native_stream",
-                    "value": 1024
-                  },
-                  {
-                    "label": "libFuzzer / rpc_lifecycle",
-                    "value": 16384
-                  }
-                ],
-                "title": "libFuzzer + ASan"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing",
-                    "value": 801849
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers",
-                    "value": 1865629
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema",
-                    "value": 707132
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle",
-                    "value": 85237
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Fuzzing executions by engine",
-            "unit": "Executions"
-          },
-          {
-            "name": "fuzz-coverage",
-            "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "libFuzzer / capnp_framing",
-                    "value": 617
-                  },
-                  {
-                    "label": "libFuzzer / capnp_pointers",
-                    "value": 1311
-                  },
-                  {
-                    "label": "libFuzzer / capnp_schema",
-                    "value": 3373
-                  },
-                  {
-                    "label": "libFuzzer / native_packet",
-                    "value": 5569
-                  },
-                  {
-                    "label": "libFuzzer / native_stream",
-                    "value": 5609
-                  },
-                  {
-                    "label": "libFuzzer / rpc_lifecycle",
-                    "value": 7786
-                  }
-                ],
-                "title": "libFuzzer + ASan"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing",
-                    "value": 1047
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers",
-                    "value": 1748
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema",
-                    "value": 5131
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle",
-                    "value": 11277
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Fuzzer feedback by engine",
-            "unit": "Feedback entries"
-          },
-          {
-            "name": "fuzz-findings",
-            "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "libFuzzer / capnp_framing",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / capnp_pointers",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / capnp_schema",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / native_packet",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / native_stream",
-                    "value": 0
-                  },
-                  {
-                    "label": "libFuzzer / rpc_lifecycle",
-                    "value": 0
-                  }
-                ],
-                "title": "libFuzzer + ASan"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_framing hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle hangs",
-                    "value": 0
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Saved fuzzing findings",
-            "unit": "Inputs"
-          }
-        ],
+        "charts": [],
         "format": 1,
         "kind": "fuzz",
         "note": "Evidence passed.",
@@ -2799,6 +2622,29 @@
       "date": "2026-10-26T09:19:40Z",
       "run_id": 40298677459,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40298677459"
+    },
+    {
+      "attempt": 1,
+      "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 40321608784
+        },
+        "source_id": "0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f",
+        "status": "failed",
+        "tests": null
+      },
+      "date": "2026-10-26T12:19:08Z",
+      "run_id": 40321608784,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
     }
   ],
   "models": [
@@ -3911,179 +3757,7 @@
       "commit": "55751bda9da4a9441c104ff25a7124df5a9908f1",
       "conclusion": "success",
       "data": {
-        "charts": [
-          {
-            "name": "tla-outcomes",
-            "note": "Unique module/configuration/expected-exit checks. Expected invariant violations are successful controls.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "Invariant/liveness checks",
-                    "value": 429
-                  },
-                  {
-                    "label": "Expected counterexamples",
-                    "value": 691
-                  },
-                  {
-                    "label": "Failed / incomplete checks",
-                    "value": 0
-                  }
-                ],
-                "title": "Observed outcomes"
-              }
-            ],
-            "title": "TLA+ checks and expected counterexamples",
-            "unit": "Checks"
-          },
-          {
-            "name": "tla-states",
-            "note": "Counts sum independent bounded configurations; they are not globally distinct states or a proof beyond those bounds.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "CapnpRealtime",
-                    "value": 2278236
-                  },
-                  {
-                    "label": "RealtimeConfigBoundary",
-                    "value": 32134
-                  },
-                  {
-                    "label": "RpcNativeProvisioning",
-                    "value": 139275
-                  },
-                  {
-                    "label": "StructuralEquality",
-                    "value": 19437
-                  },
-                  {
-                    "label": "RealtimeReceiptLifecycle",
-                    "value": 43005
-                  },
-                  {
-                    "label": "DatagramReentry",
-                    "value": 14148
-                  },
-                  {
-                    "label": "BulkConfigBoundary",
-                    "value": 71815
-                  },
-                  {
-                    "label": "RpcFieldOwners",
-                    "value": 25865
-                  },
-                  {
-                    "label": "GrantRevocation",
-                    "value": 50599
-                  },
-                  {
-                    "label": "ShutdownWaiters",
-                    "value": 49812
-                  },
-                  {
-                    "label": "RpcNativeArbitration",
-                    "value": 23131
-                  },
-                  {
-                    "label": "RpcRealtimeReceiver",
-                    "value": 35066
-                  },
-                  {
-                    "label": "CapnpConformance",
-                    "value": 10067
-                  },
-                  {
-                    "label": "RouteShutdownCompletion",
-                    "value": 17671
-                  },
-                  {
-                    "label": "CapnpJoin",
-                    "value": 11547
-                  },
-                  {
-                    "label": "Other models",
-                    "value": 291709
-                  }
-                ],
-                "title": "Generated states"
-              },
-              {
-                "bars": [
-                  {
-                    "label": "CapnpRealtime",
-                    "value": 365632
-                  },
-                  {
-                    "label": "RealtimeConfigBoundary",
-                    "value": 25441
-                  },
-                  {
-                    "label": "RpcNativeProvisioning",
-                    "value": 25362
-                  },
-                  {
-                    "label": "StructuralEquality",
-                    "value": 19437
-                  },
-                  {
-                    "label": "RealtimeReceiptLifecycle",
-                    "value": 13716
-                  },
-                  {
-                    "label": "DatagramReentry",
-                    "value": 12927
-                  },
-                  {
-                    "label": "BulkConfigBoundary",
-                    "value": 10942
-                  },
-                  {
-                    "label": "RpcFieldOwners",
-                    "value": 9944
-                  },
-                  {
-                    "label": "GrantRevocation",
-                    "value": 9719
-                  },
-                  {
-                    "label": "ShutdownWaiters",
-                    "value": 8029
-                  },
-                  {
-                    "label": "RpcNativeArbitration",
-                    "value": 7501
-                  },
-                  {
-                    "label": "RpcRealtimeReceiver",
-                    "value": 7343
-                  },
-                  {
-                    "label": "CapnpConformance",
-                    "value": 5062
-                  },
-                  {
-                    "label": "RouteShutdownCompletion",
-                    "value": 4813
-                  },
-                  {
-                    "label": "CapnpJoin",
-                    "value": 4598
-                  },
-                  {
-                    "label": "Other models",
-                    "value": 100993
-                  }
-                ],
-                "title": "Distinct states"
-              }
-            ],
-            "title": "TLA+ explored states by model",
-            "unit": "States"
-          }
-        ],
+        "charts": [],
         "format": 1,
         "kind": "models",
         "note": "Evidence passed.",
@@ -4100,7 +3774,6 @@
           "complete": true,
           "errors": 0,
           "failed": 0,
-          "failures": [],
           "passed": 233,
           "skipped": 7,
           "suites": 88,
@@ -4110,6 +3783,39 @@
       "date": "2026-10-26T09:13:51Z",
       "run_id": 40297941287,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40297941287"
+    },
+    {
+      "attempt": 1,
+      "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 40321608784
+        },
+        "source_id": "0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f",
+        "status": "failed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "failures": [],
+          "passed": 233,
+          "skipped": 7,
+          "suites": 88,
+          "total": 240
+        }
+      },
+      "date": "2026-10-26T12:19:08Z",
+      "run_id": 40321608784,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
     }
   ]
 }
