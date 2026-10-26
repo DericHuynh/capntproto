@@ -54,16 +54,35 @@ impl DatagramSocket {
         &self,
         bytes: &mut [u8],
     ) -> io::Result<(usize, SocketAddr, usize)> {
-        #[cfg(target_os = "linux")]
-        match self {
-            Self::Udp(socket) => return socket.recv_batch(bytes).await,
-            #[cfg(test)]
-            Self::Simulated(_) => (),
-        }
-        #[cfg(any(not(target_os = "linux"), test))]
-        {
-            let (n, from) = self.recv_from(bytes).await?;
-            Ok((n, from, n.max(1)))
+        loop {
+            let received = match self {
+                Self::Udp(socket) => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        socket.recv_batch(bytes).await
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        socket
+                            .recv_from(bytes)
+                            .await
+                            .map(|(n, from)| (n, from, n.max(1)))
+                    }
+                }
+                #[cfg(test)]
+                Self::Simulated(socket) => socket
+                    .recv_from(bytes)
+                    .await
+                    .map(|(n, from)| (n, from, n.max(1))),
+            };
+            match received {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    // No packet was consumed. Keep the authenticated session
+                    // alive and allow cancellation under repeated signals.
+                    tokio::task::yield_now().await;
+                }
+                result => return result,
+            }
         }
     }
     pub(crate) fn new(socket: UdpSocket) -> io::Result<Self> {

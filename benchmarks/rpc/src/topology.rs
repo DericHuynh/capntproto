@@ -115,7 +115,9 @@ async fn connect(
     let mut driver = capnp_rpc::RpcSystem::new(network, None);
     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);
     tokio::task::spawn_local(async move {
-        if let Err(error) = driver.await { eprintln!("topology downstream RPC: {error}"); }
+        if let Err(error) = driver.await {
+            eprintln!("topology downstream RPC: {error}");
+        }
     });
     Ok(client)
 }
@@ -172,7 +174,9 @@ async fn serve_inner(
         } else {
             let driver = capnp_rpc::RpcSystem::new(network, Some(service.client.clone()));
             tokio::task::spawn_local(async move {
-                if let Err(error) = driver.await { eprintln!("topology service RPC: {error}"); }
+                if let Err(error) = driver.await {
+                    eprintln!("topology service RPC: {error}");
+                }
             });
         }
     }

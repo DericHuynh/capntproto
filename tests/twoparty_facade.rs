@@ -86,6 +86,101 @@ struct Tracked<T> {
     io: T,
     drops: Rc<Cell<u64>>,
 }
+
+thread_local! {
+    static DRAIN_WAKE: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+}
+struct DrainWake(std::thread::ThreadId);
+impl std::task::Wake for DrainWake {
+    fn wake(self: std::sync::Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &std::sync::Arc<Self>) {
+        assert_eq!(std::thread::current().id(), self.0);
+        let callback = DRAIN_WAKE.with(|slot| slot.borrow_mut().take());
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+}
+struct ClearDrainWake;
+impl Drop for ClearDrainWake {
+    fn drop(&mut self) {
+        DRAIN_WAKE.with(|slot| {
+            slot.borrow_mut().take();
+        });
+    }
+}
+fn drain_waker(callback: impl FnOnce() + 'static) -> (std::task::Waker, ClearDrainWake) {
+    DRAIN_WAKE.with(|slot| assert!(slot.borrow_mut().replace(Box::new(callback)).is_none()));
+    (
+        std::task::Waker::from(std::sync::Arc::new(DrainWake(std::thread::current().id()))),
+        ClearDrainWake,
+    )
+}
+
+#[test]
+fn canceled_server_drains_release_connections_before_notifying_waiters() {
+    let (server, driver) = TwoPartyServer::new(bootstrap());
+    let drops = Rc::new(Cell::new(0));
+    server
+        .accept(Tracked {
+            io: futures::io::Cursor::new(Vec::new()),
+            drops: drops.clone(),
+        })
+        .unwrap();
+    let mut drained = server.drain();
+    let observed = Rc::new(Cell::new(None));
+    let seen = observed.clone();
+    let released = drops.clone();
+    let (waker, _clear) = drain_waker(move || seen.set(Some(released.get())));
+    assert!(Pin::new(&mut drained)
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    drop(driver);
+    assert_eq!(drops.get(), 1);
+    assert_eq!(
+        observed.get(),
+        Some(1),
+        "drain cancellation was published before connection cleanup"
+    );
+    assert_eq!(
+        drained.now_or_never().unwrap().unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+}
+
+#[test]
+fn owned_accept_rejects_reentry_while_the_server_driver_is_dropping() {
+    let (server, driver) = TwoPartyServer::new(bootstrap());
+    let server = Rc::new(server);
+    server.accept(futures::io::Cursor::new(Vec::new())).unwrap();
+    let mut drained = server.drain();
+    let accepted = Rc::new(Cell::new(None));
+    let observed = accepted.clone();
+    let reentered = server.clone();
+    let (waker, _clear) = drain_waker(move || {
+        observed.set(Some(
+            reentered
+                .accept(futures::io::Cursor::new(Vec::new()))
+                .is_ok(),
+        ));
+    });
+    assert!(Pin::new(&mut drained)
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    drop(driver);
+    assert_eq!(
+        accepted.get(),
+        Some(false),
+        "a dying server reported accepting a connection without a driver"
+    );
+    assert!(server.accept(futures::io::Cursor::new(Vec::new())).is_err());
+    assert_eq!(
+        drained.now_or_never().unwrap().unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+}
 impl<T> Drop for Tracked<T> {
     fn drop(&mut self) {
         self.drops.set(self.drops.get() + 1);

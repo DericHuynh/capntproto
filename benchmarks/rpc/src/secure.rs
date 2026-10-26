@@ -55,7 +55,10 @@ fn profile_idle_timeout() -> Result<u64> {
     }
 }
 pub enum Listener {
-    Tls(TcpListener, Arc<capntproto::rpc::security::rustls::ServerConfig>),
+    Tls(
+        TcpListener,
+        Arc<capntproto::rpc::security::rustls::ServerConfig>,
+    ),
     Quic(quic::Endpoint),
 }
 impl Listener {
