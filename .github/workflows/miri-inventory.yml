@@ -23,6 +23,7 @@ jobs:
         run: |
           timeout 180s sudo apt-get update
           timeout 180s sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          timeout 180s git submodule update --init --depth 1 -- vendor/capnproto
           rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
           rustup component add rustfmt clippy
       - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
