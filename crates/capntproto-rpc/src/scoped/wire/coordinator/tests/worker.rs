@@ -178,7 +178,10 @@ fn resumed_plain_results_release_parameter_grants_without_another_input() {
 
 #[test]
 fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
-    for budget in [1, 7, 64] {
+    for (budget, maintenance_first) in [1, 7, 64]
+        .into_iter()
+        .flat_map(|budget| [false, true].map(move |first| (budget, first)))
+    {
         with_peer(|mut driver, messages| {
             let child = service(|mut results| {
                 results.get().set_as::<capnp::text::Owned>("child").unwrap();
@@ -264,6 +267,12 @@ fn pending_worker_wake_dispatches_early_pipeline_before_parent_completes() {
             early.send(()).unwrap();
             assert!(parent.0.load(Ordering::SeqCst) > wakes);
             assert_ne!(coordinator.notifications.pending(), WorkSet::NONE);
+            if maintenance_first {
+                // Unrelated protocol progress can put maintenance ahead of the
+                // awakened worker in an unfinished scheduler rotation.
+                coordinator.changed();
+                coordinator.schedule.cursor = Lane::Maintenance;
+            }
             for _ in 0..1024 {
                 if let Poll::Ready(result) =
                     coordinator.poll_work(messages, &mut queue, &mut scratch, &NoResources, &mut cx)
