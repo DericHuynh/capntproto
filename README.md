@@ -18,6 +18,16 @@ and independent comparisons against pinned C++ Cap'n Proto. It is not affiliated
 with the upstream Cap'n Proto project. Full API parity and production
 qualification remain work in progress; see the [release criteria](docs/wiki/Release-Acceptance.md).
 
+## Start small, then go deeper
+
+- [Message round trip](examples/message_basic.rs): `cargo run --no-default-features --example message_basic`.
+- [One scoped RPC](examples/rpc_simple.rs): `cargo run --no-default-features --features services --example rpc_simple`.
+- [Deep concurrent RPC](examples/rpc_deep.rs): `cargo run --no-default-features --features services --example rpc_deep` runs 32 concurrent pipelines of depth 32.
+
+The facade re-exports `capnp`, `capnp_rpc` and `capnp_futures`. Retain an
+`rpc::Connection` to own its driver; select TCP, TLS or QUIC explicitly. See the
+[example guide](examples/README.md) for ownership, generation and larger applications.
+
 ## What is here
 
 - **Native schema compiler:** imports, generics, constants, annotations, runtime

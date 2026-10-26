@@ -60,6 +60,8 @@ type_complexity = "allow"
 unreachable_pub = "deny"
 
 [build-dependencies]
+capntproto-compiler = { version = "0.1.0", path = "../capntproto-compiler" }
+capnp = { package = "capntproto-core", version = "0.25", path = "../capntproto-core" }
 capnpc = { package = "capntproto-codegen", version = "0.25", path = "../capntproto-codegen" }
 
 [dev-dependencies]

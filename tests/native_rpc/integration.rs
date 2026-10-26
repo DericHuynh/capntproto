@@ -290,8 +290,10 @@ async fn converted_pending_pipelines_keep_nested_paths_and_membrane_policy_local
                             let mut drivers = Drivers(Vec::new());
                             let factory = if wire {
                                 let (a, b) = tokio::io::duplex(4096);
-                                drivers.0.push(capntproto::rpc::serve(b, factory.client));
-                                let (c, d) = capntproto::rpc::client::<factory::Client>(a);
+                                drivers
+                                    .0
+                                    .push(capntproto::rpc::raw::serve(b, factory.client));
+                                let (c, d) = capntproto::rpc::raw::client::<factory::Client>(a);
                                 drivers.0.push(d);
                                 c
                             } else {

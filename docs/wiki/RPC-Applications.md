@@ -91,7 +91,7 @@ IO with default settings. See the [TLS/mTLS and QUIC guide](TCP-TLS-and-QUIC.md)
 `bootstrap()` returns the remote bootstrap on either side. `outgoing_queue()`
 provides queue diagnostics; `on_disconnect()` returns a shared completion
 observer. Dropping an observer does not cancel the connection. The older
-`rpc::client` and `rpc::serve` functions still return bare task handles whose
+`rpc::raw::client` and `rpc::raw::serve` functions still return bare task handles whose
 drop detaches the task; retain and explicitly cancel those handles if using them.
 
 ## An authenticated multiparty vat

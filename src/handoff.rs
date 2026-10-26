@@ -243,7 +243,7 @@ where
         cached: std::cell::RefCell::new(None),
     });
     let io = session.io.take().expect("new authenticated session");
-    let rpc = crate::rpc::serve(io, bootstrap.client);
+    let rpc = crate::rpc::raw::serve(io, bootstrap.client);
     Ok(Serving { session, rpc })
 }
 

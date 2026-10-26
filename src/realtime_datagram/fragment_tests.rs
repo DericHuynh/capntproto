@@ -369,8 +369,8 @@ async fn replay_tlc_fragment_traces() {
                     digest: digest(&bytes),
                 };
                 let (a, b) = tokio::io::duplex(4096);
-                let server = crate::rpc::serve(b, f.control.clone().client);
-                let (control, client) = crate::rpc::client(a);
+                let server = crate::rpc::raw::serve(b, f.control.clone().client);
+                let (control, client) = crate::rpc::raw::client(a);
                 f.control = control;
                 let mut verified = false;
                 let mut applied = 0;

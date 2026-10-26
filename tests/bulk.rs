@@ -117,8 +117,8 @@ impl Drop for Tasks {
 }
 fn wire(client: transfer::Client) -> (transfer::Client, Tasks) {
     let (a, b) = tokio::io::duplex(4096);
-    let server = capntproto::rpc::serve(b, client.client);
-    let (client, driver) = capntproto::rpc::client(a);
+    let server = capntproto::rpc::raw::serve(b, client.client);
+    let (client, driver) = capntproto::rpc::raw::client(a);
     (client, Tasks(vec![server, driver]))
 }
 async fn until(mut predicate: impl FnMut() -> bool) {

@@ -23,7 +23,7 @@ qualification gates. [Architecture](Architecture.md) explains ownership.
 | Application services | Bounded bulk, resumable durable bulk and replaceable realtime snapshots | Logical receipts/deadlines do not imply hard realtime or exactly-once execution |
 
 Defaults are `native`, `services` and `storage`; native directory routes select
-TCP/mTLS. The two-party `rpc::connect` default is plaintext TCP, also available
+TCP/mTLS. The two-party `rpc::tcp::connect` default is plaintext TCP, also available
 without default features. `quic` explicitly enables the two-party QUIC facade.
 The `native` feature still builds its quiche driver. Quiche is the
 only QUIC engine. There is no actor runtime, placement service or activation scheduler.

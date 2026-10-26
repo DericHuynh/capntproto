@@ -34,6 +34,13 @@ pub use source::{
     FileCompilation, FileCompiler, SchemaParser, SourceCompiler, SourceFile, SourceProvider,
 };
 
+/// Directory of standard schemas shipped with this compiler package.
+/// Build scripts can add this explicit import root without a system Cap'n Proto
+/// installation or paths into another workspace package.
+pub fn standard_imports() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("schemas")
+}
+
 use std::fmt;
 
 /// Maximum UTF-8 source length accepted per source file (4 MiB).

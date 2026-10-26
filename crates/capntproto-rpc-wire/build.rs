@@ -3,12 +3,9 @@ fn main() {
     // Compile on the host with the Rust compiler; embedded targets do not need
     // the C++ executable or a checked-out vendor submodule.
     let compiled = capntproto_compiler::FileCompiler::new()
-        .src_prefix("../capntproto-rpc/schema")
-        .import_path("../../schemas/imports")
-        .compile_with_dependencies(&[
-            "../capntproto-rpc/schema/rpc.capnp",
-            "../capntproto-rpc/schema/rpc-twoparty.capnp",
-        ])
+        .src_prefix("schema")
+        .import_path(capntproto_compiler::standard_imports())
+        .compile_with_dependencies(&["schema/rpc.capnp", "schema/rpc-twoparty.capnp"])
         .expect("compile pinned portable RPC schemas");
     for dependency in compiled.dependencies {
         println!("cargo:rerun-if-changed={}", dependency.display());

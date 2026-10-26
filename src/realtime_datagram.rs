@@ -545,8 +545,8 @@ mod tests {
                     let mut bad = good.clone();
                     bad[4] ^= 1;
                     let (a, b) = tokio::io::duplex(4096);
-                    let server = crate::rpc::serve(b, service.client);
-                    let (control, client): (wire::Client, _) = crate::rpc::client(a);
+                    let server = crate::rpc::raw::serve(b, service.client);
+                    let (control, client): (wire::Client, _) = crate::rpc::raw::client(a);
                     let mut queue = VecDeque::new();
                     let mut applied = 0;
                     let mut canceled = false;

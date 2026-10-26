@@ -385,11 +385,11 @@ async fn crossed_remote_provisioning_dials_do_not_deadlock_on_lease_readiness() 
                 // In-memory RPC control channels exercise delivery/lease semantics.
                 // The native candidates below use actual Native TLS admission UDP sessions.
                 let (x, y) = tokio::io::duplex(4096);
-                let at = capntproto::rpc::serve(y, ag.client().client);
-                let (ap, acontrol): (provisioner::Client, _) = capntproto::rpc::client(x);
+                let at = capntproto::rpc::raw::serve(y, ag.client().client);
+                let (ap, acontrol): (provisioner::Client, _) = capntproto::rpc::raw::client(x);
                 let (x, y) = tokio::io::duplex(4096);
-                let bt = capntproto::rpc::serve(y, bg.client().client);
-                let (bp, bcontrol): (provisioner::Client, _) = capntproto::rpc::client(x);
+                let bt = capntproto::rpc::raw::serve(y, bg.client().client);
+                let (bp, bcontrol): (provisioner::Client, _) = capntproto::rpc::raw::client(x);
                 let controls = Tasks(vec![at, acontrol, bt, bcontrol]);
                 ac.insert(b.public_key(), bp, bl.local_addr().unwrap(), b"cross")
                     .unwrap();

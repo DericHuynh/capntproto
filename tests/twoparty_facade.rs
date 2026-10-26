@@ -299,7 +299,7 @@ async fn socket_listener_cancellation_keeps_accepted_capabilities_alive() {
         let task = tokio::task::spawn_local(driver);
         let listen = Box::pin(server.listen(incoming));
         let client_io = tokio::net::TcpStream::connect(address).await.unwrap();
-        let (cap, client_task) = capntproto::rpc::client::<harness::Client>(client_io);
+        let (cap, client_task) = capntproto::rpc::raw::client::<harness::Client>(client_io);
         let call = echo(&cap, 73);
         futures::pin_mut!(call);
         match futures::future::select(call, listen).await {
@@ -446,7 +446,7 @@ async fn failed_owned_connection_is_reported_and_other_connections_remain_callab
             .unwrap();
         let (a, b) = tokio::io::duplex(128);
         server.accept(a.compat()).unwrap();
-        let (cap, client_task) = capntproto::rpc::client::<harness::Client>(b);
+        let (cap, client_task) = capntproto::rpc::raw::client::<harness::Client>(b);
         assert_eq!(echo(&cap, 73).await.unwrap(), 73);
         settle().await;
         assert_eq!(errors.get(), 1);

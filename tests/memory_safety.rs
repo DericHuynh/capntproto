@@ -39,8 +39,10 @@ fn source_inputs() -> BTreeMap<PathBuf, String> {
                 "crates/capntproto-core",
                 "crates/capntproto-rpc",
                 "crates/capntproto-rpc-engine",
+                "crates/capntproto-rpc-wire",
                 "crates/capntproto-futures",
                 "crates/capntproto-codegen",
+                "crates/capntproto-compiler",
             ]
             .iter()
             .any(|prefix| p.starts_with(prefix))

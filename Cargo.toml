@@ -36,7 +36,6 @@ services = ["dep:capnpc", "dep:capntproto-compiler"]
 storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capntproto-compiler"]
 tls = ["dep:rustls"]
 quic = ["native"]
-quic-quiche = ["quic"]
 
 [dependencies]
 capntproto-rpc-engine = { path = "crates/capntproto-rpc-engine" }
@@ -80,6 +79,17 @@ capnpc = { package = "capntproto-codegen", version = "0.25", path = "crates/capn
 [[bin]]
 name = "capntproto-model"
 path = "src/bin/model.rs"
+
+[[example]]
+name = "message_basic"
+
+[[example]]
+name = "rpc_simple"
+required-features = ["services"]
+
+[[example]]
+name = "rpc_deep"
+required-features = ["services"]
 
 [[example]]
 name = "storage_probe"

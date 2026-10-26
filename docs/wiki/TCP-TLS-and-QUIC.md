@@ -17,8 +17,8 @@ Cargo-managed BoringSSL, including standard two-party RPC and the authenticated
 [native multiparty profile](Native-Transports.md). The unmodified quiche 0.30.0 registry package and checksum are pinned in Cargo.lock.
 
 Defaults enable `native`, services and storage, with TCP as the default route
-backend. `rpc::connect` and `rpc::listen` select standard plaintext TCP;
-authenticated native directory routes retain mutual TLS. `quic` and `quic-quiche`
+backend. `rpc::tcp::connect` and `rpc::tcp::listen` select standard plaintext TCP;
+authenticated native directory routes retain mutual TLS. `quic`
 both enable the single QUIC engine and native sessions. For TLS/TCP alone use
 `default-features = false, features = ["tls"]`. Plain TCP needs no feature.
 QUIC builds require a C/C++ compiler, CMake and libclang.

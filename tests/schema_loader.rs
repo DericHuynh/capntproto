@@ -338,9 +338,11 @@ async fn transmitted_schema_drives_rpc_servers_capability_calls_and_pipelines() 
                 .publish_request(1, request.get_root().unwrap())
                 .unwrap();
             let (a, b) = tokio::io::duplex(4096);
-            let catalog_server =
-                capntproto::rpc::serve(b, Catalog::service(Rc::new(RefCell::new(catalog))).client);
-            let (catalog_client, catalog_driver) = capntproto::rpc::client(a);
+            let catalog_server = capntproto::rpc::raw::serve(
+                b,
+                Catalog::service(Rc::new(RefCell::new(catalog))).client,
+            );
+            let (catalog_client, catalog_driver) = capntproto::rpc::raw::client(a);
             let bundle = schema_exchange::fetch(
                 &catalog_client,
                 Key {
@@ -355,9 +357,9 @@ async fn transmitted_schema_drives_rpc_servers_capability_calls_and_pipelines() 
             let remote_loader = bundle.load(Limits::default()).unwrap();
             assert_eq!(remote_loader.len(), bundle.len());
             let (a, b) = tokio::io::duplex(4096);
-            let host_driver = capntproto::rpc::serve(b, host.clone());
+            let host_driver = capntproto::rpc::raw::serve(b, host.clone());
             let (client, client_driver): (capnp::capability::Client, _) =
-                capntproto::rpc::client(a);
+                capntproto::rpc::raw::client(a);
             let schema = remote_loader.get(harness_id).unwrap();
             let client = dynamic::Client::new(client, schema.clone()).unwrap();
             let mut call = client.new_request("echo").unwrap();
@@ -784,8 +786,8 @@ async fn loaded_call_trace(
     let mut drivers = Drivers(vec![tokio::task::spawn_local(driver)]);
     let client = if wire {
         let (a, b) = tokio::io::duplex(4096);
-        drivers.0.push(capntproto::rpc::serve(b, server));
-        let (client, driver) = capntproto::rpc::client::<capnp::capability::Client>(a);
+        drivers.0.push(capntproto::rpc::raw::serve(b, server));
+        let (client, driver) = capntproto::rpc::raw::client::<capnp::capability::Client>(a);
         drivers.0.push(driver);
         client
     } else {

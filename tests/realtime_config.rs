@@ -259,8 +259,8 @@ async fn hostile_wire_limits_fail_before_offers_and_valid_limits_roundtrip() {
             for raw in invalid() {
                 let (service, calls) = advertised(raw.clone());
                 let (a, b) = tokio::io::duplex(4096);
-                let server = capntproto::rpc::serve(b, service.client);
-                let (remote, driver) = capntproto::rpc::client(a);
+                let server = capntproto::rpc::raw::serve(b, service.client);
+                let (remote, driver) = capntproto::rpc::raw::client(a);
                 assert!(Sender::connect(remote).await.is_err(), "{raw:?}");
                 assert_eq!(calls.get(), 0);
                 server.abort();
@@ -271,8 +271,8 @@ async fn hostile_wire_limits_fail_before_offers_and_valid_limits_roundtrip() {
             let config = Config::new("é", 0, 1, 1, 1, 1, 1).unwrap();
             let (receiver, service) = Receiver::new(config.clone(), Rc::new(TestClock));
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, service.client);
-            let (remote, driver) = capntproto::rpc::client(a);
+            let server = capntproto::rpc::raw::serve(b, service.client);
+            let (remote, driver) = capntproto::rpc::raw::client(a);
             let sender = Sender::connect(remote).await.unwrap();
             assert_eq!(sender.config(), &config);
             assert!(sender.offer(1, 2, b"a").is_err());

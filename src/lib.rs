@@ -1,4 +1,15 @@
-//! Capability RPC over TCP/TLS and standard quiche QUIC, with whole-entry storage.
+//! Cap'n Proto messages and scoped RPC over TCP, TLS and QUIC.
+//!
+//! [`capnp`] provides messages and generated capability types; [`capnp_rpc`]
+//! provides protocol drivers. [`rpc::Connection`] owns a running connection and
+//! cancels it on drop. Storage, services and native networking are optional.
+//!
+//! Start with the `message_basic` and `rpc_simple` examples; `rpc_deep` shows
+//! concurrent calls through a 32-level capability pipeline.
+
+pub use capnp;
+pub use capnp_futures;
+pub use capnp_rpc;
 // capnpc emits generic reflection helpers whose type parameter is unused.
 #[allow(clippy::extra_unused_type_parameters)]
 #[cfg(feature = "storage")]

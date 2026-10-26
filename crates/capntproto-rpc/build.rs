@@ -7,16 +7,23 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     println!("cargo:rerun-if-env-changed=CAPNP_INCLUDE_DIR");
     println!("cargo:rerun-if-changed=schema/persistent.capnp");
-    let mut command = capnpc::CompilerCommand::new();
+    let mut compiler = capntproto_compiler::FileCompiler::new();
     if let Some(directory) = std::env::var_os("CAPNP_INCLUDE_DIR") {
-        command.import_path(directory);
+        compiler.import_path(directory);
     }
-    command
+    let compiled = compiler
         .src_prefix("schema")
         .import_path("schema")
-        .file("schema/persistent.capnp")
-        .run()
-        .expect("compile pinned persistent capability schema");
+        .import_path(capntproto_compiler::standard_imports())
+        .compile_with_dependencies(&["schema/persistent.capnp"])
+        .expect("compile pinned persistent capability schema in Rust");
+    for dependency in compiled.dependencies {
+        println!("cargo:rerun-if-changed={}", dependency.display());
+    }
+    capnpc::codegen::CodeGenerationCommand::new()
+        .output_directory(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"))
+        .run(capnp::serialize::write_message_to_words(&compiled.message).as_slice())
+        .expect("generate persistent capability bindings");
     // capnpc maps both Persistent and the persistent annotation to the same
     // Rust module. Rename only the generated annotation module, preserving
     // the authoritative schema and both wire IDs.

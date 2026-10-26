@@ -194,8 +194,6 @@ version = "0.1.0"
 dependencies = [
  "capntproto",
  "capntproto-codegen",
- "capntproto-core",
- "capntproto-rpc",
  "tempfile",
  "tokio",
 ]
@@ -205,6 +203,7 @@ name = "capntproto-rpc"
 version = "0.25.1"
 dependencies = [
  "capntproto-codegen",
+ "capntproto-compiler",
  "capntproto-core",
  "capntproto-futures",
  "capntproto-rpc-engine",

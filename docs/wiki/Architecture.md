@@ -503,7 +503,7 @@ Changing providers, authority, or budget rules belongs at this core boundary.
 | `capntproto-test-support` | Generated fixture schemas and trace-file contract; dev dependency only |
 
 The default enables `native`, `services`, `storage`, and `tls`. Native directory
-routes select TCP/mTLS; `rpc::connect` selects standard plaintext TCP. The `quic`
+routes select TCP/mTLS; `rpc::tcp::connect` selects standard plaintext TCP. The `quic`
 feature explicitly enables conventional two-party QUIC. Native still builds
 the quiche driver for explicitly selected native QUIC routes.
 Plain TCP works without default features. TLS and QUIC also run their secure RPC

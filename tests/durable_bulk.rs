@@ -369,8 +369,8 @@ struct Wire {
 impl Wire {
     fn new(client: durable_transfer::Client) -> Self {
         let (a, b) = tokio::io::duplex(4096);
-        let server = capntproto::rpc::serve(b, client.client);
-        let (client, driver) = capntproto::rpc::client(a);
+        let server = capntproto::rpc::raw::serve(b, client.client);
+        let (client, driver) = capntproto::rpc::raw::client(a);
         Self {
             client,
             tasks: vec![server, driver],
@@ -928,8 +928,9 @@ async fn completion_notifies_orm_history_and_push_subscribers_over_native() {
                     .await
                     .unwrap();
                 let (right, bt) = capntproto::transport::accept(right, &mut bc).await.unwrap();
-                let server = capntproto::rpc::serve(right, receiver.capability().client);
-                let (client, driver) = capntproto::rpc::client::<durable_transfer::Client>(left);
+                let server = capntproto::rpc::raw::serve(right, receiver.capability().client);
+                let (client, driver) =
+                    capntproto::rpc::raw::client::<durable_transfer::Client>(left);
                 let input = dir.path().join("input");
                 std::fs::write(&input, &bytes).unwrap();
                 assert_eq!(

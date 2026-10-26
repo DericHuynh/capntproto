@@ -3,6 +3,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
     println!("cargo:rerun-if-changed=preview.capnp");
     capnpc::CompilerCommand::new()
+        .capnp_root("::capntproto::capnp")
         .file("preview.capnp")
         .field_api(true)
         .run()

@@ -42,8 +42,8 @@ async fn network(
     let (a, at) = transport::connect(a, remote, &mut ac).await.unwrap();
     let (b, bt) = transport::accept(b, &mut bc).await.unwrap();
     let service = ObjectServer::<document::Owned>::client(state, grant).unwrap();
-    let st = rpc::serve(b, service.client);
-    let (client, ct) = rpc::client(a);
+    let st = rpc::raw::serve(b, service.client);
+    let (client, ct) = rpc::raw::client(a);
     (
         client,
         vec![
@@ -221,8 +221,9 @@ async fn three_party_introduction_preserves_rights_and_order() {
                     capntproto::handoff::serve::<document::Owned>(intro.clone(), state, &owner, b)
                         .await
                         .unwrap();
-                let (handoff, ct) =
-                    rpc::client::<capntproto::store_capnp::handoff::Client<document::Owned>>(a);
+                let (handoff, ct) = rpc::raw::client::<
+                    capntproto::store_capnp::handoff::Client<document::Owned>,
+                >(a);
                 let more = vec![at.abort_handle(), ct.abort_handle()];
                 let mut invalid = handoff.accept_request();
                 invalid.get().set_id(&[0; 32]);
@@ -305,8 +306,8 @@ async fn bootstrap<C: capnp::capability::FromClientHook>(
     let mut bc = transport::config(server, client.public_key(), None, b"bootstrap").unwrap();
     let (a, at) = transport::connect(a, addr, &mut ac).await.unwrap();
     let (b, bt) = transport::accept(b, &mut bc).await.unwrap();
-    let st = rpc::serve(b, service);
-    let (c, ct) = rpc::client(a);
+    let st = rpc::raw::serve(b, service);
+    let (c, ct) = rpc::raw::client(a);
     (
         c,
         vec![

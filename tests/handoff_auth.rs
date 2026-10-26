@@ -131,7 +131,7 @@ impl Peer {
         io.write_all(if fault == "preface" { b"!" } else { b"R" })
             .await
             .unwrap();
-        let (client, rpc) = rpc::client(io);
+        let (client, rpc) = rpc::raw::client(io);
         Self {
             client: Some(client),
             network,

@@ -17,8 +17,6 @@ quic = ["capntproto/quic"]
 
 [dependencies]
 capntproto = { path = "../..", default-features = false }
-capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
-capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
 tokio = { version = "1", features = ["rt", "macros", "io-util"] }
 tempfile = "3"
 

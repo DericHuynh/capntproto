@@ -92,8 +92,8 @@ async fn discovered_rendezvous_establishes_native_rpc_and_follows_name_key_rotat
             let directory=Directory::default();
             // Exercise generated discovery calls over an RPC connection.
             let (a,b)=tokio::io::duplex(4096);
-            let _directory=Task(capntproto::rpc::serve(b,directory.client(recipient.public_key()).client));
-            let (reader,driver):(capntproto::native_discovery_capnp::directory::Client,_)=capntproto::rpc::client(a);
+            let _directory=Task(capntproto::rpc::raw::serve(b,directory.client(recipient.public_key()).client));
+            let (reader,driver):(capntproto::native_discovery_capnp::directory::Client,_)=capntproto::rpc::raw::client(a);
             let _reader=Task(driver);
             let connector=Rc::new(DiscoveryConnector::new(recipient.clone(),local(),reader.clone(),Some(stun)).unwrap());
             let (network,handle)=Network::with_connector(recipient.public_key(),connector.clone());
@@ -431,8 +431,8 @@ async fn mapped_advertisements_follow_outages_and_new_endpoints_without_replayin
         let ad_c=service.advertise(&directory,"service",c.public_key(),b"mapped",options).unwrap();
         // Real generated directory RPC over an independent control connection.
         let (left,right)=tokio::io::duplex(4096);
-        let _directory=Task(capntproto::rpc::serve(right,directory.client(a.public_key()).client));
-        let (reader,driver):(capntproto::native_discovery_capnp::directory::Client,_)=capntproto::rpc::client(left);
+        let _directory=Task(capntproto::rpc::raw::serve(right,directory.client(a.public_key()).client));
+        let (reader,driver):(capntproto::native_discovery_capnp::directory::Client,_)=capntproto::rpc::raw::client(left);
         let _reader=Task(driver);
         let connector=Rc::new(DiscoveryConnector::new(a.clone(),local(),reader.clone(),None).unwrap());
         let (an,ah)=Network::with_connector(a.public_key(),connector);

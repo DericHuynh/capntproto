@@ -160,7 +160,7 @@ pub async fn connect<T: Owned + Unpin + 'static>(
             .await
             .map_err(failed)?;
     let io = session.io.take().expect("new authenticated session");
-    let (client, task) = rpc::client::<handoff::Client<T>>(io);
+    let (client, task) = rpc::raw::client::<handoff::Client<T>>(io);
     let connection = Serving { session, rpc: task };
     let mut request = client.accept_request();
     request.get().set_id(&id);

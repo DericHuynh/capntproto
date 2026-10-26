@@ -63,8 +63,8 @@ fn control(directory: &Directory, recipient: [u8; 32]) -> Control {
         calls: calls.clone(),
     });
     let (a, b) = tokio::io::duplex(4096);
-    let server = Task(capntproto::rpc::serve(b, service.client));
-    let (reader, task) = capntproto::rpc::client(a);
+    let server = Task(capntproto::rpc::raw::serve(b, service.client));
+    let (reader, task) = capntproto::rpc::raw::client(a);
     Control {
         reader,
         calls,

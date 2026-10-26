@@ -84,8 +84,8 @@ async fn pinned_shared_and_cyclic_schema_graphs_over_rpc() {
                 ])
                 .unwrap();
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, Catalog::service(catalog.clone()).client);
-            let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::client(a);
+            let server = capntproto::rpc::raw::serve(b, Catalog::service(catalog.clone()).client);
+            let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::raw::client(a);
             let bundle = exchange::fetch(&client, key(1, 1), Limits::default(), 3)
                 .await
                 .unwrap();
@@ -330,8 +330,8 @@ async fn replay(trace: Trace) {
         receivers: Rc::new(RefCell::new(receivers)),
     });
     let (a, b) = tokio::io::duplex(4096);
-    let server = capntproto::rpc::serve(b, service.client);
-    let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::client(a);
+    let server = capntproto::rpc::raw::serve(b, service.client);
+    let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::raw::client(a);
     let _tasks = Tasks(vec![server, driver]);
     let mut state = Some(Retrieval::new(key(1, trace.revision), Limits::default()).unwrap());
     let mut pending = BTreeMap::new();
@@ -494,8 +494,8 @@ async fn cancelling_fetch_releases_outstanding_schema_calls() {
                 receivers: receivers.clone(),
             });
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, service.client);
-            let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::client(a);
+            let server = capntproto::rpc::raw::serve(b, service.client);
+            let (client, driver): (wire::catalog::Client, _) = capntproto::rpc::raw::client(a);
             let _tasks = Tasks(vec![server, driver]);
             senders.remove(&1).unwrap().send(false).unwrap();
             let mut fetch = Box::pin(exchange::fetch(&client, key(1, 1), Limits::default(), 3));

@@ -157,8 +157,8 @@ async fn hostile_wire_limits_are_rejected_before_any_transfer_calls() {
             for input in INVALID {
                 let (service, calls) = advertised(*input);
                 let (a, b) = tokio::io::duplex(4096);
-                let server = capntproto::rpc::serve(b, service.client);
-                let (remote, driver) = capntproto::rpc::client(a);
+                let server = capntproto::rpc::raw::serve(b, service.client);
+                let (remote, driver) = capntproto::rpc::raw::client(a);
                 let error = Sender::connect(remote)
                     .await
                     .err()
@@ -175,8 +175,8 @@ async fn hostile_wire_limits_are_rejected_before_any_transfer_calls() {
             let limits = Config::new(3, 2, 2, 2).unwrap();
             let (receiver, service) = Receiver::new(limits.clone());
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, service.client);
-            let (remote, driver) = capntproto::rpc::client(a);
+            let server = capntproto::rpc::raw::serve(b, service.client);
+            let (remote, driver) = capntproto::rpc::raw::client(a);
             let mut sender = Sender::connect(remote).await.unwrap();
             assert_eq!(sender.config(), &limits);
             sender.write(b"ab").await.unwrap();

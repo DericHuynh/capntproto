@@ -258,8 +258,8 @@ async fn remote_lease_cancellation_expiry_drop_and_revocation_release_reservatio
             .unwrap();
             // This in-memory RPC fixture checks capability release, not secrecy.
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, grant.client().client);
-            let (client, task): (provisioner::Client, _) = capntproto::rpc::client(a);
+            let server = capntproto::rpc::raw::serve(b, grant.client().client);
+            let (client, task): (provisioner::Client, _) = capntproto::rpc::raw::client(a);
             let _tasks = Tasks(vec![server, task]);
             let mut previous = None;
             for mode in 0..5 {
@@ -351,8 +351,8 @@ async fn canceled_control_call_and_provider_owner_drop_abort_pending_accepts() {
                 issued: issued.clone(),
             });
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, delayed.client);
-            let (client, task): (provisioner::Client, _) = capntproto::rpc::client(a);
+            let server = capntproto::rpc::raw::serve(b, delayed.client);
+            let (client, task): (provisioner::Client, _) = capntproto::rpc::raw::client(a);
             let tasks = Tasks(vec![server, task]);
             let connector = ProvisioningConnector::new(recipient, local());
             connector

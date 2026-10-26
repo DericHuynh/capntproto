@@ -10,12 +10,12 @@ type supplies peer identity, ordered RPC IO and shutdown control to
 - `tls`: conventional CA/name-validated TCP/TLS with optional mandatory mTLS.
 - `native`: native multiparty sessions, TCP/TLS, the quiche driver, discovery
   and provisioning. Requires a C/C++ compiler, CMake and libclang for BoringSSL.
-- `quic` or `quic-quiche`: also enables conventional two-party QUIC RPC using
+- `quic`: also enables conventional two-party QUIC RPC using
   the same quiche engine and CA-based TLS/mTLS.
 
 Defaults enable `native`, services and storage. Directory routes select TCP/mTLS
 unless a backend is specified. Plain TCP is available without default features
-through `rpc::connect`; use `transport::tcp` for authenticated native TCP.
+through `rpc::tcp::connect`; use `transport::tcp` for authenticated native TCP.
 The `native` feature still builds the optional-use quiche driver. Enable `quic`
 explicitly for the conventional two-party QUIC facade.
 

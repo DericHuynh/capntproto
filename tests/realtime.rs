@@ -148,8 +148,8 @@ async fn rpc_timeout_is_unknown_and_does_not_cancel_snapshot() {
         .run_until(async {
             let (_clock, r, service) = setup();
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, service.client);
-            let (client, driver): (snapshots::Client, _) = capntproto::rpc::client(a);
+            let server = capntproto::rpc::raw::serve(b, service.client);
+            let (client, driver): (snapshots::Client, _) = capntproto::rpc::raw::client(a);
             let _tasks = Tasks(vec![server, driver]);
             let sender = Sender::connect(client).await.unwrap();
             let first = sender.offer(0, 10, b"first").unwrap();

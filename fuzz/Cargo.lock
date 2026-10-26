@@ -223,6 +223,7 @@ name = "capntproto-rpc"
 version = "0.25.1"
 dependencies = [
  "capntproto-codegen",
+ "capntproto-compiler",
  "capntproto-core",
  "capntproto-futures",
  "capntproto-rpc-engine",

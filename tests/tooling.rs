@@ -772,8 +772,13 @@ fn schema_pin_and_wire_inventory() {
         );
     }
     for name in ["rpc", "rpc-twoparty", "persistent"] {
+        let package = if name == "persistent" {
+            "capntproto-rpc"
+        } else {
+            "capntproto-rpc-wire"
+        };
         assert_eq!(
-            fs::read(root().join(format!("crates/capntproto-rpc/schema/{name}.capnp"))).unwrap(),
+            fs::read(root().join(format!("crates/{package}/schema/{name}.capnp"))).unwrap(),
             fs::read(root().join(format!("vendor/capnproto/c++/src/capnp/{name}.capnp"))).unwrap()
         );
     }

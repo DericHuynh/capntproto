@@ -1,5 +1,13 @@
 # Quality checks and benchmark reports
 
+Current benchmark summaries use minimum measured latency and minimum marginal
+instruction, branch and allocation counts as their primary estimates. Throughput
+uses the fastest complete repetition at the declared operation budget. All
+repetitions still run; means, spread and tail percentiles remain diagnostics.
+This policy is identified by latency statistics version 2. Historical results
+below retain the estimator recorded by their own source snapshot.
+
+
 ## Deep and concurrent RPC access, October 17, 2026
 
 The [topology suite](../../benchmarks/rpc/README.md) adds eight matched Rust/C++
@@ -3102,7 +3110,7 @@ The 1.2× QUIC/C++ target remains unmet.
 
 The legacy acceptance baseline was matched plaintext TCP at no more than 1.15×
 the pinned C++ implementation. The opt-in portable migration now uses a 1.5×
-small-call gate, described above. `rpc::connect` selects TCP, and native
+small-call gate, described above. `rpc::tcp::connect` selects TCP, and native
 directory routes select authenticated TCP/TLS. QUIC remains an explicit option;
 the historical QUIC comparisons above do not qualify this plaintext baseline.
 

@@ -1,3 +1,4 @@
+use capntproto::{capnp, capnp_rpc};
 use std::rc::Rc;
 pub mod preview_capnp {
     include!(concat!(env!("OUT_DIR"), "/preview_capnp.rs"));
@@ -31,16 +32,25 @@ async fn main() -> capnp::Result<()> {
         .run_until(async {
             let bootstrap: preview_capnp::echo::Client = capnp_rpc::new_client(Echo);
             let (a, b) = tokio::io::duplex(4096);
-            let server = capntproto::rpc::serve(b, bootstrap.client);
-            let (client, driver) = capntproto::rpc::client::<preview_capnp::echo::Client>(a);
+            let server = capntproto::rpc::Connection::new(
+                b,
+                Some(bootstrap.client),
+                capnp_rpc::rpc_twoparty_capnp::Side::Server,
+            );
+            let driver = capntproto::rpc::Connection::new(
+                a,
+                None,
+                capnp_rpc::rpc_twoparty_capnp::Side::Client,
+            );
+            let client: preview_capnp::echo::Client = driver.bootstrap();
             let pending = client.child_call().send();
             let child = pending.pipeline.get_cap();
             let mut call = child.echo_call();
             call.edit().value().set(42);
             assert_eq!(call.send().await?.read()?.value(), 42);
             drop(pending.await?);
-            server.abort();
-            driver.abort();
+            driver.shutdown(std::time::Duration::from_secs(1)).await?;
+            drop(server);
             #[cfg(all(feature = "storage", unix))]
             {
                 let dir = tempfile::tempdir().unwrap();
