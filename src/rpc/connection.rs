@@ -20,7 +20,7 @@ pub struct Connection {
 
 impl Connection {
     /// Start RPC on generic Tokio byte IO. For socket-aware flow control or
-    /// configured reader limits, use a transport's client adapter and `spawn`.
+    /// configured reader limits, use a transport's driver adapter and `spawn`.
     /// Panics outside a Tokio local executor, like `spawn_local`.
     pub fn new(
         io: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,

@@ -1,13 +1,13 @@
-//! TLS 1.3 over TCP and shared certificate configuration for standard QUIC.
+//! TLS 1.3 authentication and encryption layered over TCP.
 //!
 //! Configuration helpers validate chains and server names with rustls. Passing
 //! client roots to [`server_config`] makes a valid client certificate mandatory.
 //! Inspect the authenticated peer's certificates before choosing a bootstrap
 //! when different identities should receive different capabilities.
 
-use super::super::io::TokioIo;
+use super::super::io::{deadline, TokioIo};
 use super::super::{
-    security::{deadline, invalid_config, rustls, Identity},
+    security::{invalid_config, rustls, Identity},
     AcceptOptions, ALPN,
 };
 use capnp::{capability::Client, message::ReaderOptions};
@@ -131,7 +131,7 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
 }
 
 /// Build the RPC driver after authentication. Poll it within a Tokio LocalSet.
-pub fn client(
+pub fn driver(
     stream: TlsStream<TcpStream>,
     bootstrap: Option<Client>,
     side: Side,

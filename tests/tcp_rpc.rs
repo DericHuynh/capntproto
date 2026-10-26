@@ -45,13 +45,16 @@ async fn tcp_listener_preserves_capabilities_drain_and_existing_connections_afte
                 let server_task = tokio::task::spawn_local(driver);
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let mut listening = Box::pin(tcp::listen(&server, &listener, Default::default()));
-                let mut driver = capntproto::rpc::tcp::connect(
-                    listener.local_addr().unwrap(),
+                let stream = tcp::connect(listener.local_addr().unwrap(), Duration::from_secs(10))
+                    .await
+                    .unwrap();
+                assert!(stream.nodelay().unwrap());
+                let mut driver = tcp::driver(
+                    stream,
                     None,
+                    capnp_rpc::rpc_twoparty_capnp::Side::Client,
                     Default::default(),
-                )
-                .await
-                .unwrap();
+                );
                 let cap: harness::Client = driver.bootstrap();
                 let disconnected = driver.on_disconnect();
                 let close = driver.get_disconnector();

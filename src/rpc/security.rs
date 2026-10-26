@@ -5,7 +5,7 @@ use rustls::pki_types::{
     pem::{Error as PemError, PemObject},
     CertificateDer, PrivateKeyDer,
 };
-use std::{io, path::Path, time::Duration};
+use std::{io, path::Path};
 
 /// A leaf-first certificate chain and its matching private key, in DER form.
 pub struct Identity {
@@ -66,13 +66,4 @@ pub(crate) fn invalid_config(
     error: impl Into<Box<dyn std::error::Error + Send + Sync>>,
 ) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, error)
-}
-
-pub(crate) async fn deadline<T>(
-    timeout: Duration,
-    future: impl std::future::Future<Output = io::Result<T>>,
-) -> io::Result<T> {
-    tokio::time::timeout(timeout, future)
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC connection setup timed out"))?
 }

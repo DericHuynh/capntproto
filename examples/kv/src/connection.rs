@@ -47,14 +47,11 @@ impl ClientArgs {
                         TIMEOUT,
                     )
                     .await?;
-                    tls::client(stream, None, Side::Client, Default::default())
+                    tls::driver(stream, None, Side::Client, Default::default())
                 }
                 None => {
-                    tokio::time::timeout(
-                        TIMEOUT,
-                        tcp::connect(&self.server, None, Default::default()),
-                    )
-                    .await??
+                    let stream = tcp::connect(&self.server, TIMEOUT).await?;
+                    tcp::driver(stream, None, Side::Client, Default::default())
                 }
             },
             #[cfg(feature = "quic")]
@@ -79,7 +76,7 @@ impl ClientArgs {
                 )?);
                 let stream =
                     rpc::quic::connect(&endpoint, address, &self.server_name, TIMEOUT).await?;
-                rpc::quic::client(stream, None, Side::Client, Default::default())
+                rpc::quic::driver(stream, None, Side::Client, Default::default())
             }
         };
         Ok(rpc::Connection::spawn(driver))

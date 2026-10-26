@@ -150,7 +150,7 @@ pub(super) async fn spawn(
         _endpoint: core.clone(),
     };
     tokio::task::spawn_local(run(core, route, state, ready, canceled));
-    let ready = security::deadline(timeout, async {
+    let ready = deadline(timeout, async {
         wait.await
             .map_err(|_| io::Error::other("QUIC driver stopped during setup"))?
     })

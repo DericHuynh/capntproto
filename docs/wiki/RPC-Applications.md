@@ -75,7 +75,8 @@ Wrap a configured transport driver with `Connection::spawn`:
 ```rust
 use capntproto::rpc::{self, Connection};
 
-let driver = rpc::tcp::connect(address, None, Default::default()).await?;
+let stream = rpc::tcp::connect(address, std::time::Duration::from_secs(10)).await?;
+let driver = rpc::tcp::driver(stream, None, capntproto::capnp_rpc::rpc_twoparty_capnp::Side::Client, Default::default());
 let connection = Connection::spawn(driver);
 let service: my_schema::service::Client = connection.bootstrap();
 // Send ordinary generated requests, callbacks and pipelined calls on service.
@@ -157,7 +158,8 @@ datagrams and individual route controls without duplicating their APIs.
 Configure outgoing Call admission before spawning a bilateral driver:
 
 ```rust
-let mut driver = rpc::tcp::connect(address, None, Default::default()).await?;
+let stream = rpc::tcp::connect(address, std::time::Duration::from_secs(10)).await?;
+let mut driver = rpc::tcp::driver(stream, None, capntproto::capnp_rpc::rpc_twoparty_capnp::Side::Client, Default::default());
 driver.set_outgoing_call_limit(128);
 let connection = Connection::spawn(driver);
 let resources = connection.diagnostics();

@@ -102,11 +102,11 @@ peer accepted by its certificate policy.
 
 ## TCP and TLS connections
 
-`tcp::connect(address, bootstrap, reader_options)` dials a plaintext peer and
-returns a `TwoPartyClient` driver. It and the TCP listener disable Nagle's
+`tcp::connect(address, timeout)` dials a plaintext peer and returns a `TcpStream`.
+All connectors return streams; `tcp::driver`, `tcp::tls::driver` and
+`quic::driver` adapt those streams to RPC drivers with matching arguments. It and the TCP listener disable Nagle's
 algorithm for RPC latency. The network adapter retains live socket-informed
-flow control. Wrap a plaintext connect future in `tokio::time::timeout` when
-the caller needs a DNS/connect deadline.
+flow control. The TCP setup deadline includes DNS and connection establishment.
 
 For TLS, connect first, then construct the RPC driver:
 
@@ -122,7 +122,7 @@ let stream = tls::connect(
     Duration::from_secs(10),
 ).await?;
 let connection = capntproto::rpc::Connection::spawn(
-    tls::client(stream, None, Side::Client, Default::default()),
+    tls::driver(stream, None, Side::Client, Default::default()),
 );
 let remote: my_schema::service::Client = connection.bootstrap();
 ```
@@ -161,7 +161,7 @@ client.set_default_client_config(quic::client_config_for_version(
 let stream = quic::connect(
     &client, server_address, "rpc.example.com", Duration::from_secs(10),
 ).await?;
-// quic::client(stream, bootstrap, side, reader_options) returns the RPC driver.
+// quic::driver(stream, bootstrap, side, reader_options) returns the RPC driver.
 ```
 
 `client_config(roots, identity)` defaults to v1, the version supported by upstream
