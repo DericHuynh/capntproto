@@ -2297,6 +2297,220 @@
       "date": "2026-10-26T03:31:04Z",
       "run_id": 40264465280,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40264465280"
+    },
+    {
+      "attempt": 1,
+      "commit": "c6b8c819dd9a50ff01a0310fb94a6a193cc048e3",
+      "conclusion": "success",
+      "data": {
+        "charts": [
+          {
+            "name": "fuzz-executions",
+            "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 16384
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 1024
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 16384
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 822324
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1913892
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 719734
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 75779
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Fuzzing executions by engine",
+            "unit": "Executions"
+          },
+          {
+            "name": "fuzz-coverage",
+            "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 617
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 1311
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 3373
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 5586
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 5610
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 7792
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing",
+                    "value": 1047
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers",
+                    "value": 1748
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema",
+                    "value": 5131
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle",
+                    "value": 11897
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Fuzzer feedback by engine",
+            "unit": "Feedback entries"
+          },
+          {
+            "name": "fuzz-findings",
+            "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "label": "libFuzzer / capnp_framing",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_pointers",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / capnp_schema",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_packet",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / native_stream",
+                    "value": 0
+                  },
+                  {
+                    "label": "libFuzzer / rpc_lifecycle",
+                    "value": 0
+                  }
+                ],
+                "title": "libFuzzer + ASan"
+              },
+              {
+                "bars": [
+                  {
+                    "label": "AFL++ / capnp_framing crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_framing hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_pointers hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / capnp_schema hangs",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle crashes",
+                    "value": 0
+                  },
+                  {
+                    "label": "AFL++ / rpc_lifecycle hangs",
+                    "value": 0
+                  }
+                ],
+                "title": "AFL++ + RPC IJON"
+              }
+            ],
+            "title": "Saved fuzzing findings",
+            "unit": "Inputs"
+          }
+        ],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "c6b8c819dd9a50ff01a0310fb94a6a193cc048e3",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 40264820978
+        },
+        "source_id": "8bfebefb8e0c25a355602e67a63bf64e79a9aac669787aff30ea7d0171e99aa7",
+        "status": "passed",
+        "tests": null
+      },
+      "date": "2026-10-26T03:35:27Z",
+      "run_id": 40264820978,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40264820978"
     }
   ],
   "models": [
