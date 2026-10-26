@@ -1,0 +1,101 @@
+name: Qualify QUIC admission and setup deadline fixes
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      BUG_BASELINE: 11e43f2922f017182c8477ffff5436ca1e98079a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 3e9c31f719d33b013b367fefdf9c476f90b89e4d
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang-22 libclang-22-dev pkg-config
+          rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Check formatting and service Clippy
+        run: |
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path examples/kv/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path examples/kv/Cargo.toml --features quic --all-targets -- -D warnings
+      - name: Prove setup regressions against the previous implementation
+        run: |
+          git fetch --no-tags --depth=1 origin "$BUG_BASELINE"
+          cp src/rpc/io.rs "$RUNNER_TEMP/io-fixed.rs"
+          cp src/rpc/quic/driver.rs "$RUNNER_TEMP/driver-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/io-fixed.rs" src/rpc/io.rs; cp "$RUNNER_TEMP/driver-fixed.rs" src/rpc/quic/driver.rs' EXIT
+          python3 - <<'PYCONTROL'
+          from pathlib import Path
+          import os,subprocess
+          path = Path('src/rpc/io.rs')
+          baseline = subprocess.check_output(['git','show',os.environ['BUG_BASELINE']+':src/rpc/io.rs'],text=True)
+          current = path.read_text()
+          marker = '#[cfg(test)]\nmod tests {'
+          # Keep the new tests while substituting the exact previous production code.
+          assert baseline.count(marker) == current.count(marker) == 1
+          path.write_text(baseline.split(marker)[0] + marker + current.split(marker)[1])
+          PYCONTROL
+          git show "$BUG_BASELINE:src/rpc/quic/driver.rs" > src/rpc/quic/driver.rs
+          status=0
+          cargo test --locked --no-default-features --features services,tls,quic --lib rpc::io::tests > "$RUNNER_TEMP/deadline-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/deadline-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 7 passed; 2 failed' "$RUNNER_TEMP/deadline-before.log"
+          status=0
+          cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc quic_tests::zero_setup_budget_does_not_start_a_packet_driver -- --exact > "$RUNNER_TEMP/startup-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/startup-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 0 passed; 1 failed' "$RUNNER_TEMP/startup-before.log"
+          grep -F 'Result::unwrap_err()' "$RUNNER_TEMP/startup-before.log"
+      - name: Prove concurrent accepts lose a wakeup in the previous implementation
+        run: |
+          cp src/rpc/quic/endpoint.rs "$RUNNER_TEMP/endpoint-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/endpoint-fixed.rs" src/rpc/quic/endpoint.rs' EXIT
+          git show "$BUG_BASELINE:src/rpc/quic/endpoint.rs" > src/rpc/quic/endpoint.rs
+          status=0
+          cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc quic_tests::concurrent_accepts_and_cancellation_preserve_queued_connections -- --exact > "$RUNNER_TEMP/accept-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/accept-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 0 passed; 1 failed' "$RUNNER_TEMP/accept-before.log"
+          grep -F 'concurrent accepts lost a queued connection wakeup' "$RUNNER_TEMP/accept-before.log"
+      - name: Verify fixed framing, setup and service behavior
+        run: |
+          cargo test --locked --no-default-features --features services,tls,quic --lib rpc::io::tests
+          cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc --test service_examples --test tcp_rpc --test rpc_ownership
+          cargo test --locked --no-default-features --test tcp_rpc
+      - name: Verify the public documentation feature profiles
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc --locked -p capntproto --no-default-features --no-deps --lib
+          cargo doc --locked -p capntproto --no-deps --lib
+          cargo doc --locked -p capntproto --features quic --no-deps --lib
+      - name: Prepare the package workspace
+        run: |
+          mkdir "$RUNNER_TEMP/package-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/package-source"
+          sed -i 's/"crates\/\*"\]/"crates\/*", "vendor\/rustls"\]/; /    "vendor\/rustls",/d' "$RUNNER_TEMP/package-source/Cargo.toml"
+          cd "$RUNNER_TEMP/package-source"
+          cargo update --workspace
+      - name: Verify all release packages
+        run: |
+          cd "$RUNNER_TEMP/package-source"
+          cargo package --locked -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
