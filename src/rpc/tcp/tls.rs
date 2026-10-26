@@ -1,7 +1,8 @@
 //! TLS 1.3 authentication and encryption layered over TCP.
 //!
 //! Configuration helpers validate chains and server names with rustls. Passing
-//! client roots to [`server_config`] makes a valid client certificate mandatory.
+//! client roots to [`server_config`](crate::rpc::tcp::tls::server_config) makes
+//! a valid client certificate mandatory.
 //! Inspect the authenticated peer's certificates before choosing a bootstrap
 //! when different identities should receive different capabilities.
 
