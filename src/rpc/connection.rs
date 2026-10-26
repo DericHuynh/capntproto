@@ -74,11 +74,15 @@ impl Connection {
                 "RPC shutdown timeout must be positive".into(),
             ))
         } else {
-            tokio::time::timeout(timeout, self.disconnect.take().unwrap())
-                .await
-                .unwrap_or_else(|_| {
+            // A delayed wake can make successful cleanup and expiry ready at
+            // once. Enforce the protocol budget before polling completion.
+            tokio::select! {
+                biased;
+                _ = tokio::time::sleep(timeout) => {
                     Err(capnp::Error::disconnected("RPC shutdown timed out".into()))
-                })
+                }
+                result = self.disconnect.take().unwrap() => result,
+            }
         };
         let completed = self.task.finish(result.clone()).await;
         result.and(completed)

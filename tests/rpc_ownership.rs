@@ -128,9 +128,9 @@ async fn shutdown_rejects_completion_after_its_deadline() {
                 .await
                 .expect("peer did not drain the shutdown writer")
                 .unwrap();
+            done.await.unwrap();
             let error = shutdown.await.expect_err("late shutdown was accepted");
             assert!(error.extra.contains("timed out"), "{error}");
-            assert!(done.await.is_err());
             assert!(echo(&cap).await.is_err());
         })
         .await;
