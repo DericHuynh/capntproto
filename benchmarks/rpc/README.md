@@ -40,6 +40,8 @@ comparisons. Construction, encoding/decoding, validation, and response destructi
 are timed. Promise-pipelined reads and QUIC remain explicitly unsupported for
 gRPC and WebSockets. These results describe these implementations and workload
 contracts, rather than a general ranking of all gRPC or WebSocket applications.
+The WebSocket loopback fixture also decodes and re-encodes the same Protobuf
+`Frame` as the gRPC echo service; it is not an opaque frame reflector.
 
 For a same-campaign control, pass `-f portable_base=FULL_40_CHARACTER_SHA` or
 `-f legacy_base=FULL_40_CHARACTER_SHA`. CI builds each selected revision in an

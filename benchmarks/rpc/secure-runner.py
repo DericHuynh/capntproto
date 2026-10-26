@@ -250,6 +250,7 @@ def main():
     transports = ['tls', 'quic'] if args.transport == 'both' else [args.transport]
     scope = dict(security_version=1, transports=transports, cases=cases, repetitions=args.repetitions,
                  comparison_version=1 if args.comparators else 0,
+                 comparison_encoding='protobuf' if args.comparators else None,
                  warmup=args.warmup if args.warmup is not None else {'loopback':10000,'workflow':100,'topology':100}, iterations=args.iterations, cpus=cpus, cpu_topology=cpu_topology,
                  binaries={k:dict(path=str(v), sha256=topology.digest(v)) for k,v in binaries.items()},
                  certificate_manifest=json.loads((certs / 'manifest.json').read_text()),
