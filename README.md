@@ -11,15 +11,19 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-26T01:12:32Z · run 40253078773 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40253078773) · commit `a66db41524d1` · **cancelled**
+Latest Cargo run: [2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
+
+| Total | Passed | Failed | Errors | Skipped |
+| ---: | ---: | ---: | ---: | ---: |
+| 2502 | 2473 | [9](docs/reports/failed-tests.md) | 0 | 20 |
 
 [Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](https://github.com/DericHuynh/capntproto/blob/main/docs/wiki/README-Reports.md).
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-26T01:12:32Z · run 40253078773 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40253078773) · commit `a66db41524d1` · **cancelled**
+[2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -27,7 +31,7 @@ Latest Cargo run: [2026-10-26T01:12:32Z · run 40253078773 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-26T01:12:32Z · run 40253078773 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40253078773) · commit `a66db41524d1` · **cancelled**
+[2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
 
 ![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
 
@@ -49,9 +53,9 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-26T01:12:32Z · run 40253078773 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40253078773) · commit `a66db41524d1` · **cancelled**
+Latest benchmark run: [2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
 
-Measurement evidence: **unavailable**. This workflow attempt produced no public measurement artifact&#46;
+Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
 
 Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP, upstream Rust Cap’n Proto (`capnp-rust`), and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
 
