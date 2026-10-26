@@ -11,7 +11,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264465280) · commit `518a8fcd89d4` · **cancelled**
+Latest Cargo run: [2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264719865) · commit `c6b8c819dd9a` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
@@ -19,7 +19,7 @@ Latest Cargo run: [2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264465280) · commit `518a8fcd89d4` · **cancelled**
+[2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264719865) · commit `c6b8c819dd9a` · **cancelled**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -49,9 +49,9 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264465280) · commit `518a8fcd89d4` · **cancelled**
+Latest benchmark run: [2026-10-26T03:34:14Z · run 40264719865 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264719865) · commit `c6b8c819dd9a` · **cancelled**
 
-Measurement evidence: **unavailable**. This workflow attempt produced no public measurement artifact&#46;
+Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
 
 Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP, upstream Rust Cap’n Proto (`capnp-rust`), and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
 
