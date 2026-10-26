@@ -373,8 +373,10 @@ pub struct TwoPartyServer {
 /// handle stops further acceptance; this driver then finishes after draining.
 #[must_use = "the server driver must be polled"]
 pub struct ServerDriver {
+    // Field order matters: release every accepted connection before the drain
+    // guard publishes cancellation to user-supplied wakers.
     tasks: task_set::TaskSet<Error>,
-    drain: Rc<RefCell<Drain>>,
+    drain: ServerDrain,
 }
 
 impl Future for ServerDriver {
@@ -386,9 +388,16 @@ impl Future for ServerDriver {
 
 impl Drop for ServerDriver {
     fn drop(&mut self) {
+        // Close admission before any connection destructor can call user code.
+        self.drain.0.borrow_mut().alive = false;
+    }
+}
+
+struct ServerDrain(Rc<RefCell<Drain>>);
+impl Drop for ServerDrain {
+    fn drop(&mut self) {
         let waiting = {
-            let mut drain = self.drain.borrow_mut();
-            drain.alive = false;
+            let mut drain = self.0.borrow_mut();
             std::mem::take(&mut drain.waiting)
         };
         for waiter in waiting {
@@ -468,7 +477,7 @@ impl TwoPartyServer {
             },
             ServerDriver {
                 tasks: driver,
-                drain,
+                drain: ServerDrain(drain),
             },
         )
     }
@@ -502,6 +511,9 @@ impl TwoPartyServer {
 
     /// Accepts a configured server-side network (e.g. with a custom flow policy).
     pub fn accept_network<N: TwoPartyNetwork + 'static>(&self, network: N) -> capnp::Result<()> {
+        if !self.drain.borrow().alive {
+            return Err(Error::disconnected("server driver canceled".into()));
+        }
         if network.side() != VatId::Server {
             return Err(Error::failed("server network must use Side::Server".into()));
         }

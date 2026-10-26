@@ -309,6 +309,135 @@ pub(crate) struct Sender {
     unsupported: Cell<bool>,
     mtu_loss: Cell<bool>,
 }
+
+#[cfg(test)]
+mod interrupted_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    struct Interrupted {
+        packets: RefCell<Vec<Vec<u8>>>,
+        calls: Cell<usize>,
+        #[cfg(target_os = "linux")]
+        aggregates: Cell<usize>,
+        #[cfg(target_os = "linux")]
+        unsupported: bool,
+    }
+    impl DatagramSender for Interrupted {
+        async fn send_packet(&self, bytes: &[u8], _: SocketAddr) -> io::Result<usize> {
+            let call = self.calls.get();
+            self.calls.set(call + 1);
+            if call.is_multiple_of(2) {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            self.packets.borrow_mut().push(bytes.to_vec());
+            Ok(bytes.len())
+        }
+        #[cfg(target_os = "linux")]
+        async fn send_gso(&self, bytes: &[u8], segment: u16, _: SocketAddr) -> io::Result<usize> {
+            let call = self.aggregates.get();
+            self.aggregates.set(call + 1);
+            if call == 0 {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            if self.unsupported {
+                return Err(io::Error::from_raw_os_error(libc::EOPNOTSUPP));
+            }
+            self.packets
+                .borrow_mut()
+                .extend(bytes.chunks(usize::from(segment)).map(<[u8]>::to_vec));
+            Ok(bytes.len())
+        }
+    }
+    fn packets() -> Vec<Vec<u8>> {
+        vec![vec![17; 1200], vec![29; 1200], vec![31; 57]]
+    }
+
+    struct AlwaysInterrupted;
+    impl DatagramSender for AlwaysInterrupted {
+        async fn send_packet(&self, _: &[u8], _: SocketAddr) -> io::Result<usize> {
+            Err(io::ErrorKind::Interrupted.into())
+        }
+        #[cfg(target_os = "linux")]
+        async fn send_gso(&self, _: &[u8], _: u16, _: SocketAddr) -> io::Result<usize> {
+            Err(io::ErrorKind::Interrupted.into())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn repeated_interruption_keeps_packet_sends_cancelable() {
+        for fallback in [false, true] {
+            let sender = Sender::default();
+            #[cfg(target_os = "linux")]
+            sender.unsupported.set(fallback);
+            let _ = fallback;
+            let bytes = packets().concat();
+            let send = tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                sender.send(
+                    &AlwaysInterrupted,
+                    &bytes,
+                    1200,
+                    "127.0.0.1:1234".parse().unwrap(),
+                ),
+            );
+            tokio::pin!(send);
+            assert!(futures::poll!(send.as_mut()).is_pending());
+            tokio::time::advance(std::time::Duration::from_secs(2)).await;
+            assert!(
+                send.await.is_err(),
+                "interrupted flight ignored cancellation"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn interrupted_individual_sends_retry_only_the_current_datagram() {
+        let sender = Sender::default();
+        #[cfg(target_os = "linux")]
+        sender.unsupported.set(true);
+        let socket = Interrupted::default();
+        let expected = packets();
+        sender
+            .send(
+                &socket,
+                &expected.concat(),
+                1200,
+                "127.0.0.1:1234".parse().unwrap(),
+            )
+            .await
+            .expect("interrupted packet send terminated the flight");
+        assert_eq!(*socket.packets.borrow(), expected);
+        assert_eq!(socket.calls.get(), 6);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn interrupted_gso_retries_preserve_offload_and_fallback_boundaries() {
+        for unsupported in [false, true] {
+            let sender = Sender::default();
+            let socket = Interrupted {
+                unsupported,
+                ..Default::default()
+            };
+            let expected = packets();
+            sender
+                .send(
+                    &socket,
+                    &expected.concat(),
+                    1200,
+                    "127.0.0.1:1234".parse().unwrap(),
+                )
+                .await
+                .expect("interrupted aggregate send terminated the flight");
+            assert_eq!(*socket.packets.borrow(), expected);
+            assert_eq!(socket.aggregates.get(), 2);
+            assert_eq!(sender.unsupported.get(), unsupported);
+            assert_eq!(socket.calls.get(), if unsupported { 6 } else { 0 });
+        }
+    }
+}
 impl Sender {
     pub fn check_path_mtu(&self, conn: &mut quiche::Connection<impl quiche::BufFactory>) {
         // A probe that is too large is packet loss for quiche's DPLPMTUD. A
@@ -338,6 +467,12 @@ impl Sender {
                         ))
                     }
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                        // EINTR consumed no datagram. Preserve the aggregate
+                        // and allow cancellation even under repeated signals.
+                        tokio::task::yield_now().await;
+                        continue;
+                    }
                     Err(error) if error.raw_os_error() == Some(libc::EMSGSIZE) => break,
                     Err(error)
                         if matches!(
@@ -353,17 +488,24 @@ impl Sender {
             }
         }
         for packet in bytes.chunks(segment) {
-            match socket.send_packet(packet, to).await {
-                Ok(n) if n == packet.len() => (),
-                Err(error) if super::packet_mtu::too_large(&error, packet.len()) => {
-                    self.mtu_loss.set(true);
-                }
-                Err(error) => return Err(error),
-                Ok(_) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::WriteZero,
-                        "partial UDP datagram",
-                    ))
+            loop {
+                match socket.send_packet(packet, to).await {
+                    Ok(n) if n == packet.len() => break,
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                        // Retry this packet only; earlier segments were sent.
+                        tokio::task::yield_now().await;
+                    }
+                    Err(error) if super::packet_mtu::too_large(&error, packet.len()) => {
+                        self.mtu_loss.set(true);
+                        break;
+                    }
+                    Err(error) => return Err(error),
+                    Ok(_) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::WriteZero,
+                            "partial UDP datagram",
+                        ))
+                    }
                 }
             }
         }

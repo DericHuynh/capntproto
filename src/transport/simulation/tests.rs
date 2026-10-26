@@ -258,6 +258,62 @@ async fn real_drivers_preserve_bidirectional_bytes_and_receipts_through_packet_f
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn interrupted_receive_preserves_authenticated_bidirectional_streams() {
+    for psk in [false, true] {
+        let mut fixture = Fixture::new(Network::default(), psk);
+        fixture.establish().await;
+        for peer in &fixture.peers {
+            fixture
+                .network
+                .fail_receive(peer.id, io::ErrorKind::Interrupted);
+        }
+        fixture.poll();
+        assert!(
+            fixture
+                .peers
+                .iter()
+                .all(|peer| peer.driver.result.is_none()),
+            "interrupted receive closed an authenticated session"
+        );
+        let inputs: [&[u8]; 2] = [
+            b"request after interruption",
+            b"response after interruption",
+        ];
+        for (peer, input) in fixture.peers.iter_mut().zip(inputs) {
+            peer.app.write_all(input).await.unwrap();
+        }
+        for _ in 0..2000 {
+            fixture.tick().await;
+            fixture.read();
+            if fixture.peers[0].received == inputs[1] && fixture.peers[1].received == inputs[0] {
+                break;
+            }
+        }
+        assert_eq!(fixture.peers[0].received, inputs[1]);
+        assert_eq!(fixture.peers[1].received, inputs[0]);
+        for peer in &mut fixture.peers {
+            peer.control.begin(Duration::from_secs(1)).unwrap();
+            peer.app.shutdown().await.unwrap();
+        }
+        for _ in 0..2000 {
+            fixture.tick().await;
+            fixture.read();
+            if fixture
+                .peers
+                .iter()
+                .all(|peer| peer.driver.result.is_some())
+            {
+                break;
+            }
+        }
+        for (peer, input) in fixture.peers.iter().zip(inputs) {
+            assert_eq!(peer.driver.result, Some(Ok(())));
+            assert_eq!(peer.control.wait().await.unwrap().bytes, input.len() as u64);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Outcome {
