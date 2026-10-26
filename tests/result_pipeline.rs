@@ -4,7 +4,7 @@ use capnp::{
     capability::{FromClientHook, IntoTypelessPipeline, Promise, ResponsePromise},
     Error,
 };
-use capnp_rpc::{PipelineBuilder, RpcSystem};
+use capnp_rpc::PipelineBuilder;
 use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt};
 use std::{
@@ -15,6 +15,11 @@ use std::{
 mod result_pipeline {
     pub mod integration;
     pub mod verification;
+}
+
+// Caller/server combinations, plus a local invocation without an RPC driver.
+fn pipeline_cases() -> impl Iterator<Item = Option<[bool; 2]>> {
+    std::iter::once(None).chain((0u8..4).map(|mask| Some([mask & 1 != 0, mask & 2 != 0])))
 }
 
 struct Echo(u32, Rc<Cell<u32>>);
@@ -96,10 +101,13 @@ struct Fixture {
 }
 impl Fixture {
     async fn new(wire: bool) -> Self {
-        Self::with_wrapper(wire, |client| client).await
+        Self::with_drivers(wire.then_some([false; 2])).await
     }
-    async fn with_wrapper(
-        wire: bool,
+    async fn with_drivers(drivers: Option<[bool; 2]>) -> Self {
+        Self::with_driver_wrapper(drivers, |client| client).await
+    }
+    async fn with_driver_wrapper(
+        selected: Option<[bool; 2]>,
         wrap: impl FnOnce(harness::Client) -> harness::Client,
     ) -> Self {
         let (gate, rx) = oneshot::channel();
@@ -110,16 +118,21 @@ impl Fixture {
         });
         let client = wrap(capnp_rpc::new_client(Controlled(state.clone())));
         let mut drivers = Drivers(Vec::new());
-        let client = if wire {
+        let client = if let Some(selected) = selected {
             let hub = Rc::new(RefCell::new(support::Hub::default()));
-            let server = RpcSystem::new(
+            let server = support::driver::System::new(
+                selected[1],
                 Box::new(support::Hub::network(&hub, 1)),
                 Some(client.client),
             );
-            let mut caller = RpcSystem::new(Box::new(support::Hub::network(&hub, 2)), None);
+            let mut caller = support::driver::System::new(
+                selected[0],
+                Box::new(support::Hub::network(&hub, 2)),
+                None,
+            );
             let client = caller.bootstrap(1);
-            drivers.0.push(tokio::task::spawn_local(server));
-            drivers.0.push(tokio::task::spawn_local(caller));
+            drivers.0.push(tokio::task::spawn_local(server.run()));
+            drivers.0.push(tokio::task::spawn_local(caller.run()));
             client
         } else {
             client
@@ -231,17 +244,26 @@ impl Fixture {
 async fn independent_publication_routes_before_return_with_local_and_wire_error_semantics() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for wire in [false, true] {
+            for drivers in pipeline_cases() {
+                let wire = drivers.is_some();
                 for success in [false, true] {
-                    let mut f = Fixture::new(wire).await;
+                    let mut f = Fixture::with_drivers(drivers).await;
                     f.call();
                     f.drive().await;
                     assert_eq!(f.done, 0);
                     f.publish().unwrap();
                     f.duplicate();
                     f.resolve.take().unwrap().send(true).unwrap();
-                    f.drive().await;
-                    assert_eq!(f.done, 1);
+                    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                        while f.done == 0 && f.failed == 0 {
+                            f.drive().await;
+                        }
+                    })
+                    .await
+                    .unwrap_or_else(|_| {
+                        panic!("early child stalled: drivers={drivers:?}, success={success}")
+                    });
+                    assert_eq!((f.done, f.failed), (1, 0), "drivers={drivers:?}");
                     assert_eq!(f.parent_result, 0);
                     f.finish(success);
                     f.drive().await;
@@ -253,7 +275,8 @@ async fn independent_publication_routes_before_return_with_local_and_wire_error_
                     // result pipeline; already completed child calls stay complete.
                     assert_eq!(
                         (f.done, f.failed),
-                        if wire && !success { (1, 1) } else { (2, 0) }
+                        if wire && !success { (1, 1) } else { (2, 0) },
+                        "drivers={drivers:?}, success={success}"
                     );
                 }
             }
@@ -265,8 +288,8 @@ async fn independent_publication_routes_before_return_with_local_and_wire_error_
 async fn target_failure_and_parent_failure_before_publication_propagate() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for wire in [false, true] {
-                let mut f = Fixture::new(wire).await;
+            for drivers in pipeline_cases() {
+                let mut f = Fixture::with_drivers(drivers).await;
                 f.publish().unwrap();
                 f.call();
                 f.resolve.take().unwrap().send(false).unwrap();
@@ -275,7 +298,7 @@ async fn target_failure_and_parent_failure_before_publication_propagate() {
                 f.finish(true);
                 f.drive().await;
                 assert_eq!(f.parent_result, 1);
-                let mut f = Fixture::new(wire).await;
+                let mut f = Fixture::with_drivers(drivers).await;
                 f.call();
                 f.finish(false);
                 f.drive().await;

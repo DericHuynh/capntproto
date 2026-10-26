@@ -3,7 +3,10 @@ use capnp::{
     any_pointer, dynamic_capability as compiled,
     schema_loader::{dynamic as loaded, SchemaLoader},
 };
-use capnp_rpc::membrane::{Direction, Membrane, Policy};
+use capnp_rpc::{
+    membrane::{Direction, Membrane, Policy},
+    RpcSystem,
+};
 
 #[tokio::test(flavor = "current_thread")]
 async fn publication_resolves_existing_observers_without_finishing_parent() {
@@ -30,32 +33,38 @@ async fn publication_resolves_existing_observers_without_finishing_parent() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn snapshot_and_independent_publication_share_one_slot() {
-    for snapshot_first in [false, true] {
-        let mut f = Fixture::new(false).await;
-        if snapshot_first {
-            {
-                let mut results = f.state.results.borrow_mut();
-                let results = results.as_mut().unwrap();
-                results.get().set_cap(f.target.clone());
-                results.set_pipeline().unwrap();
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for drivers in pipeline_cases() {
+                for snapshot_first in [false, true] {
+                    let mut f = Fixture::with_drivers(drivers).await;
+                    if snapshot_first {
+                        {
+                            let mut results = f.state.results.borrow_mut();
+                            let results = results.as_mut().unwrap();
+                            results.get().set_cap(f.target.clone());
+                            results.set_pipeline().unwrap();
+                        }
+                        assert!(f.publish().is_err());
+                    } else {
+                        f.publish().unwrap();
+                        assert!(f
+                            .state
+                            .results
+                            .borrow_mut()
+                            .as_mut()
+                            .unwrap()
+                            .set_pipeline()
+                            .is_err());
+                    }
+                    f.call();
+                    f.resolve.take().unwrap().send(true).unwrap();
+                    f.drive().await;
+                    assert_eq!((f.done, f.failed, f.parent_result), (1, 0, 0));
+                }
             }
-            assert!(f.publish().is_err());
-        } else {
-            f.publish().unwrap();
-            assert!(f
-                .state
-                .results
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .set_pipeline()
-                .is_err());
-        }
-        f.call();
-        f.resolve.take().unwrap().send(true).unwrap();
-        f.drive().await;
-        assert_eq!((f.done, f.failed, f.parent_result), (1, 0, 0));
-    }
+        })
+        .await;
 }
 
 struct Boundary {
@@ -82,7 +91,7 @@ impl Policy for Boundary {
 async fn independent_pipelines_obey_membrane_policy_and_revocation_in_both_directions() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for wire in [false, true] {
+            for drivers in pipeline_cases() {
                 for reverse in [false, true] {
                     for deny_echo in [false, true] {
                         let policy = Rc::new(Boundary {
@@ -90,7 +99,7 @@ async fn independent_pipelines_obey_membrane_policy_and_revocation_in_both_direc
                             calls: RefCell::new(Vec::new()),
                         });
                         let membrane = Membrane::new(policy.clone());
-                        let mut f = Fixture::with_wrapper(wire, |client| {
+                        let mut f = Fixture::with_driver_wrapper(drivers, |client| {
                             if reverse {
                                 membrane.import(client)
                             } else {
