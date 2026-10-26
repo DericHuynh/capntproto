@@ -1,0 +1,66 @@
+name: Qualify adopted pipeline control notifications
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      CAPNTPROTO_REFERENCE_CXX: clang++-22
+      TLA2TOOLS_JAR: /tmp/tla2tools.jar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 8706acb0af737fbed63b7595acc389315c78793c
+      - name: Install native build dependencies
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          cmake --version
+          clang --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Prove partial-resolution observer regression
+        run: |
+          git fetch --no-tags --depth=1 origin 54849325c26c5f0f4181891d3d346ae91c791aa2
+          cp crates/capntproto-rpc/src/scoped.rs "$RUNNER_TEMP/scoped-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/scoped-fixed.rs" crates/capntproto-rpc/src/scoped.rs' EXIT
+          git show 54849325c26c5f0f4181891d3d346ae91c791aa2:crates/capntproto-rpc/src/scoped.rs > crates/capntproto-rpc/src/scoped.rs
+          status=0
+          cargo test --locked -p capntproto-rpc --lib scoped::tests::projection_reports_partial_resolution_before_its_target_settles -- --exact > "$RUNNER_TEMP/partial-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/partial-before.log"
+          test "$status" -eq 101
+          grep -F 'projection hid its partial resolution until final completion' "$RUNNER_TEMP/partial-before.log"
+      - name: Prove completed adopted execution was polled twice
+        run: |
+          git fetch --no-tags --depth=1 origin 7f211bc2f436ec1300a1e53a70aca26890e83bd1
+          cp crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs "$RUNNER_TEMP/tail-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/tail-fixed.rs" crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs' EXIT
+          git show 7f211bc2f436ec1300a1e53a70aca26890e83bd1:crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs > crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs
+          status=0
+          cargo test --locked --features quic --test answer_adoption portable_adopted_work_waits_for_retained_results_without_repolling_completed_execution -- --exact > "$RUNNER_TEMP/retained-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/retained-before.log"
+          test "$status" -eq 101
+          grep -F 'Shared future polled again after completion' "$RUNNER_TEMP/retained-before.log"
+      - name: Verify all focused regression cases independently
+        if: success() || failure()
+        run: |
+          status=0
+          cargo test --locked -p capntproto-rpc --lib scoped::tests::projection_reports_partial_resolution_before_its_target_settles -- --exact || status=1
+          for case in portable_adopted_work_waits_for_retained_results_without_repolling_completed_execution portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget third_party_tail_returns_over_authenticated_native; do
+            cargo test --locked --features quic --test answer_adoption "$case" -- --exact --nocapture || status=1
+          done
+          exit "$status"
