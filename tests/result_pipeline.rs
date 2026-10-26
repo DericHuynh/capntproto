@@ -254,8 +254,16 @@ async fn independent_publication_routes_before_return_with_local_and_wire_error_
                     f.publish().unwrap();
                     f.duplicate();
                     f.resolve.take().unwrap().send(true).unwrap();
-                    f.drive().await;
-                    assert_eq!(f.done, 1);
+                    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                        while f.done == 0 && f.failed == 0 {
+                            f.drive().await;
+                        }
+                    })
+                    .await
+                    .unwrap_or_else(|_| {
+                        panic!("early child stalled: drivers={drivers:?}, success={success}")
+                    });
+                    assert_eq!((f.done, f.failed), (1, 0), "drivers={drivers:?}");
                     assert_eq!(f.parent_result, 0);
                     f.finish(success);
                     f.drive().await;
