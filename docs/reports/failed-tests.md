@@ -1,14 +1,14 @@
 # Failed workspace tests
 
-[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/40280415764) · commit `55751bda9da4a9441c104ff25a7124df5a9908f1` · attempt 1
+[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/40295983832) · commit `55751bda9da4a9441c104ff25a7124df5a9908f1` · attempt 1
 
-Recorded: **6 failed**, **0 without a terminal result**, 2488 passed and 20 skipped.
+Recorded: **8 failed**, **0 without a terminal result**, 2486 passed and 20 skipped.
 
 <details open>
 <summary>1. <code>portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route</code></summary>
 
 <p>capntproto::answer_adoption</p>
-<pre>thread &#x27;portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route&#x27; (32777) panicked at tests&#x2F;answer_adoption.rs:1247:21:
+<pre>thread &#x27;portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route&#x27; (32848) panicked at tests&#x2F;answer_adoption.rs:1247:21:
 assertion `left == right` failed: post-adoption pipeline call was not published; used=false
   left: 0
  right: 1
@@ -41,7 +41,7 @@ Diagnostic excerpt truncated; full output is in the workflow artifact.
 <summary>2. <code>portable_tail_finish_before_child_completion_reclaims_both_interests</code></summary>
 
 <p>capntproto::answer_adoption</p>
-<pre>thread &#x27;portable_tail_finish_before_child_completion_reclaims_both_interests&#x27; (32784) panicked at tests&#x2F;answer_adoption.rs:2577:17:
+<pre>thread &#x27;portable_tail_finish_before_child_completion_reclaims_both_interests&#x27; (32854) panicked at tests&#x2F;answer_adoption.rs:2577:17:
 assertion `left == right` failed: both canceled answers retained application work
   left: 0
  right: 1
@@ -75,7 +75,7 @@ Diagnostic excerpt truncated; full output is in the workflow artifact.
 <summary>3. <code>portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget</code></summary>
 
 <p>capntproto::answer_adoption</p>
-<pre>thread &#x27;portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget&#x27; (32788) panicked at tests&#x2F;answer_adoption.rs:176:37:
+<pre>thread &#x27;portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget&#x27; (32858) panicked at tests&#x2F;answer_adoption.rs:176:37:
 transfer stalled with poll budget 7
 stack backtrace:
    0: __rustc::rust_begin_unwind
@@ -106,7 +106,7 @@ Diagnostic excerpt truncated; full output is in the workflow artifact.
 <summary>4. <code>third_party_tail_returns_over_authenticated_native</code></summary>
 
 <p>capntproto::answer_adoption</p>
-<pre>thread &#x27;third_party_tail_returns_over_authenticated_native&#x27; (32823) panicked at tests&#x2F;answer_adoption.rs:1479:37:
+<pre>thread &#x27;third_party_tail_returns_over_authenticated_native&#x27; (32904) panicked at tests&#x2F;answer_adoption.rs:1479:37:
 portable=true: stalled at resolve early pipeline
 stack backtrace:
    0: __rustc::rust_begin_unwind
@@ -146,8 +146,8 @@ Diagnostic excerpt truncated; full output is in the workflow artifact.
 <summary>5. <code>independent_clients_share_a_real_service_and_pipeline_deep_access</code></summary>
 
 <p>capntproto::service_examples</p>
-<pre>thread &#x27;independent_clients_share_a_real_service_and_pipeline_deep_access&#x27; (39210) panicked at tests&#x2F;service_examples.rs:163:61:
-called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;profiles-A6cCjZ&#x2F;%p-%m.profraw\&quot; RUSTDOCFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; RUSTFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; \&quot;cargo\&quot; \&quot;+nightly-2026-03-05\&quot; \&quot;build\&quot; \&quot;--locked\&quot; \&quot;--manifest-path\&quot; \&quot;examples&#x2F;kv&#x2F;Cargo.toml\&quot; \&quot;--bins\&quot; \&quot;--target-dir\&quot; \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;service-examples\&quot; \&quot;--ignore-rust-version\&quot; \&quot;--features\&quot; \&quot;quic\&quot;; inspect &#x2F;tmp&#x2F;.tmpskLe8I&#x2F;build.log&quot;
+<pre>thread &#x27;independent_clients_share_a_real_service_and_pipeline_deep_access&#x27; (39151) panicked at tests&#x2F;service_examples.rs:163:61:
+called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;profiles-lFI3co&#x2F;%p-%m.profraw\&quot; RUSTDOCFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; RUSTFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; \&quot;cargo\&quot; \&quot;+nightly-2026-03-05\&quot; \&quot;build\&quot; \&quot;--locked\&quot; \&quot;--manifest-path\&quot; \&quot;examples&#x2F;kv&#x2F;Cargo.toml\&quot; \&quot;--bins\&quot; \&quot;--target-dir\&quot; \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;service-examples\&quot; \&quot;--ignore-rust-version\&quot; \&quot;--features\&quot; \&quot;quic\&quot;; inspect &#x2F;tmp&#x2F;.tmpjxmlZo&#x2F;build.log&quot;
 stack backtrace:
    0: __rustc::rust_begin_unwind
    1: core::panicking::panic_fmt
@@ -165,12 +165,12 @@ failures:
 failures:
     independent_clients_share_a_real_service_and_pipeline_deep_access
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 600.52s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 600.42s
 
 
 
-thread &#x27;independent_clients_share_a_real_service_and_pipeline_deep_access&#x27; (39210) panicked at tests&#x2F;service_examples.rs:163:61:
-called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;profiles-A6cCjZ&#x2F;%p-%m.profraw\&quot; RUSTDOCFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; RUSTFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; \&quot;cargo\&quot; \&quot;+nightly-2026-03-05\&quot; \&quot;build\&quot; \&quot;--locked\&quot; \&quot;--manifest-path\&quot; \&quot;examples&#x2F;kv&#x2F;Cargo.toml\&quot; \&quot;--bins\&quot; \&quot;--target-dir\&quot; \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;service-examples\&quot; \&quot;--ignore-rust-version\&quot; \&quot;--features\&quot; \&quot;quic\&quot;; inspect &#x2F;tmp&#x2F;.tmpskLe8I&#x2F;build.log&quot;
+thread &#x27;independent_clients_share_a_real_service_and_pipeline_deep_access&#x27; (39151) panicked at tests&#x2F;service_examples.rs:163:61:
+called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;profiles-lFI3co&#x2F;%p-%m.profraw\&quot; RUSTDOCFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; RUSTFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; \&quot;cargo\&quot; \&quot;+nightly-2026-03-05\&quot; \&quot;build\&quot; \&quot;--locked\&quot; \&quot;--manifest-path\&quot; \&quot;examples&#x2F;kv&#x2F;Cargo.toml\&quot; \&quot;--bins\&quot; \&quot;--target-dir\&quot; \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;service-examples\&quot; \&quot;--ignore-rust-version\&quot; \&quot;--features\&quot; \&quot;quic\&quot;; inspect &#x2F;tmp&#x2F;.tmpjxmlZo&#x2F;build.log&quot;
 stack backtrace:
    0: __rustc::rust_begin_unwind
    1: core::panicking::panic_fmt
@@ -186,7 +186,7 @@ note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose bac
 <summary>6. <code>formatting_and_lints</code></summary>
 
 <p>capntproto::tooling</p>
-<pre>thread &#x27;formatting_and_lints&#x27; (79589) panicked at tests&#x2F;tooling.rs:60:44:
+<pre>thread &#x27;formatting_and_lints&#x27; (79649) panicked at tests&#x2F;tooling.rs:60:44:
 called `Result::unwrap()` on an `Err` value: &quot;cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN \&quot;cargo\&quot; \&quot;fmt\&quot; \&quot;--manifest-path\&quot; \&quot;benchmarks&#x2F;rpc&#x2F;Cargo.toml\&quot; \&quot;--\&quot; \&quot;--check\&quot;: expected 0, got exit status: 1; inspect &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;verification&#x2F;tooling&#x2F;quality&#x2F;benchmark-format.log\nDiff in &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;benchmarks&#x2F;rpc&#x2F;src&#x2F;..&#x2F;tls_policy.rs:1:\n &#x2F;&#x2F;! Shared benchmark certificate and TLS policy; identical across Rust drivers.\n+use super::rustls;\n use crate::Result;\n use rustls::pki_types::{CertificateDer, PrivateKeyDer};\n use std::{path::PathBuf, sync::Arc, time::Duration};\nDiff in &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;benchmarks&#x2F;rpc&#x2F;src&#x2F;..&#x2F;tls_policy.rs:5:\n-use super::rustls;\n \n pub const DEADLINE: Duration = Duration::from_secs(10);\n pub fn directory() -&gt; Result&lt;PathBuf&gt; {\nDiff in &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;benchmarks&#x2F;rpc&#x2F;src&#x2F;benchmark_tls.rs:2:\n #[path = \&quot;..&#x2F;tls_policy.rs\&quot;]\n mod policy;\n use crate::Result;\n-use capntproto::rpc::{tcp::tls::TlsStream, security::rustls};\n+use capntproto::rpc::{security::rustls, tcp::tls::TlsStream};\n pub use policy::*;\n use rustls::pki_types::ServerName;\n use std::sync::Arc;\nDiff in &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;benchmarks&#x2F;rpc&#x2F;src&#x2F;secure.rs:55:\n     }\n }\n pub enum Listener {\n-    Tls(TcpListener, Arc&lt;capntproto::rpc::security::rustls::ServerConfig&gt;),\n+    Tls(\n+        TcpListener,\n+        Arc&lt;capntproto::rpc::security::rustls::ServerConfig&gt;,\n+    ),\n     Quic(quic::Endpoint),\n }\n impl Listener {\nDiff in &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;benchmarks&#x2F;rpc&#x2F;src&#x2F;topology.rs:115:\n     let mut driver = capnp_rpc::RpcSystem::new(network, None);\n     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);\n     tokio::task::spawn_local(async move {\n-        if let Err(error) = driver.await { eprintln!(\&quot;topology downstream RPC: {error}\&quot;); }\n+        if let Err(error) = driver.await {\n+            eprintln!(\&quot;topology downstream RPC: {error}\&quot;);\n+        }\n     });\n     Ok(client)\n }\nDiff in &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;benchmarks&#x2F;rpc&#x2F;src&#x2F;topology.rs:172:\n         } else {\n             let driver = capnp_rpc::RpcSystem::new(network, Some(service.client.clone()));\n             tokio::task::spawn_local(async move {\n-                if let Err(error) = driver.await { eprintln!(\&quot;topology service RPC: {error}\&quot;); }\n+                if let Err(error) = driver.await {\n+                    eprintln!(\&quot;topology service RPC: {error}\&quot;);\n+                }\n             });\n         }\n     }\n&quot;
 stack backtrace:
    0: __rustc::rust_begin_unwind
@@ -205,14 +205,100 @@ failures:
 failures:
     formatting_and_lints
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.25s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.60s
 
 
 
-thread &#x27;formatting_and_lints&#x27; (79589) panicked at tests&#x2F;tooling.rs:60:44:
+thread &#x27;formatting_and_lints&#x27; (79649) panicked at tests&#x2F;tooling.rs:60:44:
 called `Result::unwrap()` on an `Err` value: &quot;cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN \&quot;cargo\&quot; \&quot;fmt\&quot; \&quot;--manifest-path\&quot; \&quot;benchmarks&#x2F;rpc&#x2F;Cargo.toml\&quot; \&quot;--\&quot; \&quot;--check\&quot;: expected 0, got exit status: 1; inspect &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;verification&#x2F;tooling&#x2F;quality&#x2F;benchmark-format.log\nDiff in &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;benchmarks&#x2F;rpc&#x2F;</pre>
 
 Diagnostic excerpt truncated; full output is in the workflow artifact.
+
+</details>
+
+<details open>
+<summary>7. <code>fuzz_and_benchmark_harness_unit_tests</code></summary>
+
+<p>capntproto::tooling</p>
+<pre>thread &#x27;fuzz_and_benchmark_harness_unit_tests&#x27; (79696) panicked at tests&#x2F;tooling.rs:43:53:
+called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CARGO_ENCODED_RUSTFLAGS -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN CAPNTPROTO_COVERAGE_CHILDREN_NATIVE=\&quot;1\&quot; CARGO_TARGET_DIR=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;benchmarks-rpc-Cargo.toml\&quot; LLVM_PROFILE_FILE=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;profiles-lFI3co&#x2F;%p-%m.profraw\&quot; NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\&quot;1\&quot; RUSTDOCFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; RUSTFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; \&quot;cargo\&quot; \&quot;+nightly-2026-03-05\&quot; \&quot;nextest\&quot; \&quot;run\&quot; \&quot;--ignore-rust-version\&quot; \&quot;--message-format=libtest-json-plus\&quot; \&quot;--locked\&quot; \&quot;--manifest-path\&quot; \&quot;benchmarks&#x2F;rpc&#x2F;Cargo.toml\&quot; \&quot;--no-default-features\&quot; \&quot;--lib\&quot;; inspect &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;verification&#x2F;tooling&#x2F;benchmark-harness.log&quot;
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: tooling::cargo_with_toolchain
+   4: tooling::fuzz_and_benchmark_harness_unit_tests
+   5: &lt;tooling::fuzz_and_benchmark_harness_unit_tests::{closure#0} as core::ops::function::FnOnce&lt;()&gt;&gt;::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+running 1 test
+test fuzz_and_benchmark_harness_unit_tests has been running for over 60 seconds
+test fuzz_and_benchmark_harness_unit_tests ... FAILED
+
+failures:
+
+failures:
+    fuzz_and_benchmark_harness_unit_tests
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 1123.18s
+
+
+
+thread &#x27;fuzz_and_benchmark_harness_unit_tests&#x27; (79696) panicked at tests&#x2F;tooling.rs:43:53:
+called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CARGO_ENCODED_RUSTFLAGS -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN CAPNTPROTO_COVERAGE_CHILDREN_NATIVE=\&quot;1\&quot; CARGO_TARGET_DIR=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;benchmarks-rpc-Cargo.toml\&quot; LLVM_PROFILE_FILE=\&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;quality-build&#x2F;250b1047fb2abb1aaf34f263bb785c71eebf5479765671f025ceafae5494b251&#x2F;profiles-lFI3co&#x2F;%p-%m.profraw\&quot; NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\&quot;1\&quot; RUSTDOCFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; RUSTFLAGS=\&quot;-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\&quot; \&quot;cargo\&quot; \&quot;+nightly-2026-03-05\&quot; \&quot;nextest\&quot; \&quot;run\&quot; \&quot;--ignore-rust-version\&quot; \&quot;--message-format=libtest-json-plus\&quot; \&quot;--locked\&quot; \&quot;--manifest-path\&quot; \&quot;benchmarks&#x2F;rpc&#x2F;Cargo.toml\&quot; \&quot;--no-default-features\&quot; \&quot;--lib\&quot;; inspect &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;verification&#x2F;tooling&#x2F;benchmark-harness.log&quot;
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: tooling::cargo_with_toolchain
+   4: tooling::fuzz_and_benchmark_harness_unit_tests
+   5: &lt;tooling::fuzz_and_benchmark_harness_unit_tests::{closure#0} as core::ops::function::FnOnce&lt;()&gt;&gt;::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+</pre>
+
+</details>
+
+<details open>
+<summary>8. <code>optimized_runtime</code></summary>
+
+<p>capntproto::tooling</p>
+<pre>thread &#x27;optimized_runtime&#x27; (99589) panicked at tests&#x2F;tooling.rs:53:45:
+called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\&quot;1\&quot; \&quot;cargo\&quot; \&quot;nextest\&quot; \&quot;run\&quot; \&quot;--message-format=libtest-json-plus\&quot; \&quot;--locked\&quot; \&quot;--release\&quot; \&quot;--test\&quot; \&quot;storage\&quot; \&quot;--test\&quot; \&quot;durable_bulk\&quot; \&quot;--test\&quot; \&quot;persistence\&quot; \&quot;--test\&quot; \&quot;field_api_rpc\&quot; \&quot;--test\&quot; \&quot;native\&quot; \&quot;--\&quot; \&quot;--skip\&quot; \&quot;tlc\&quot;; inspect &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;verification&#x2F;tooling&#x2F;optimized.log&quot;
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: tooling::cargo_with_toolchain
+   4: tooling::optimized_checks
+   5: tooling::optimized_runtime::{closure#0}
+   6: &lt;tooling::optimized_runtime::{closure#0} as core::ops::function::FnOnce&lt;()&gt;&gt;::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+running 1 test
+test optimized_runtime has been running for over 60 seconds
+test optimized_runtime ... FAILED
+
+failures:
+
+failures:
+    optimized_runtime
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 600.18s
+
+
+
+thread &#x27;optimized_runtime&#x27; (99589) panicked at tests&#x2F;tooling.rs:53:45:
+called `Result::unwrap()` on an `Err` value: &quot;timed out: cd \&quot;&#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto\&quot; &amp;&amp; env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN NEXTEST_EXPERIMENTAL_LIBTEST_JSON=\&quot;1\&quot; \&quot;cargo\&quot; \&quot;nextest\&quot; \&quot;run\&quot; \&quot;--message-format=libtest-json-plus\&quot; \&quot;--locked\&quot; \&quot;--release\&quot; \&quot;--test\&quot; \&quot;storage\&quot; \&quot;--test\&quot; \&quot;durable_bulk\&quot; \&quot;--test\&quot; \&quot;persistence\&quot; \&quot;--test\&quot; \&quot;field_api_rpc\&quot; \&quot;--test\&quot; \&quot;native\&quot; \&quot;--\&quot; \&quot;--skip\&quot; \&quot;tlc\&quot;; inspect &#x2F;home&#x2F;runner&#x2F;work&#x2F;capntproto&#x2F;capntproto&#x2F;target&#x2F;verification&#x2F;tooling&#x2F;optimized.log&quot;
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: tooling::cargo_with_toolchain
+   4: tooling::optimized_checks
+   5: tooling::optimized_runtime::{closure#0}
+   6: &lt;tooling::optimized_runtime::{closure#0} as core::ops::function::FnOnce&lt;()&gt;&gt;::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+</pre>
 
 </details>
 
