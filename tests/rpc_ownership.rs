@@ -108,6 +108,34 @@ async fn shutdown_deadline_cleans_up_a_blocked_writer() {
     .await;
 }
 
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn shutdown_rejects_completion_after_its_deadline() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let (io, mut peer) = tokio::io::duplex(1);
+            let owner = Connection::new(io, None, Side::Client);
+            let cap: harness::Client = owner.bootstrap();
+            let _call = cap.echo_request().send();
+            let done = owner.on_disconnect();
+            let shutdown = owner.shutdown(Duration::from_secs(1));
+            tokio::pin!(shutdown);
+            assert!(futures::poll!(shutdown.as_mut()).is_pending());
+
+            // Leave shutdown unpolled while its budget expires, then unblock
+            // the packet writer so both the disconnector and timer are ready.
+            tokio::time::advance(Duration::from_secs(2)).await;
+            tokio::time::timeout(TIMEOUT, peer.read_to_end(&mut Vec::new()))
+                .await
+                .expect("peer did not drain the shutdown writer")
+                .unwrap();
+            let error = shutdown.await.expect_err("late shutdown was accepted");
+            assert!(error.extra.contains("timed out"), "{error}");
+            assert!(done.await.is_err());
+            assert!(echo(&cap).await.is_err());
+        })
+        .await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn canceling_active_shutdown_aborts_the_driver() {
     local(async {
