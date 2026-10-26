@@ -355,6 +355,24 @@ fn instrumented(args: &[&str], build: &Path, profiles: &Path) -> Command {
         .env("CAPNTPROTO_COVERAGE_CHILDREN_NATIVE", "1");
     cmd
 }
+fn service_examples(build: &Path, profiles: &Path) -> Command {
+    let mut command = instrumented(
+        &[
+            "build",
+            "--locked",
+            "--ignore-rust-version",
+            "--manifest-path",
+            "examples/kv/Cargo.toml",
+            "--bins",
+            "--features",
+            "quic",
+        ],
+        build,
+        profiles,
+    );
+    command.env("CARGO_TARGET_DIR", build.join("service-examples"));
+    command
+}
 fn reference_compiler(configured: Option<String>) -> String {
     configured.unwrap_or_else(|| "clang++".into())
 }
@@ -497,21 +515,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
     // its later Cargo invocation still checks freshness before running clients.
     r.run(
         "service-examples-build",
-        instrumented(
-            &[
-                "build",
-                "--locked",
-                "--ignore-rust-version",
-                "--manifest-path",
-                "examples/kv/Cargo.toml",
-                "--bins",
-                "--features",
-                "quic",
-            ],
-            &build,
-            &profiles,
-        )
-        .env("CARGO_TARGET_DIR", build.join("service-examples")),
+        &mut service_examples(&build, &profiles),
     )?;
     let tests = r.nextest(
         "workspace-tests",
@@ -1017,6 +1021,32 @@ mod tests {
         assert_eq!(
             totals(&files),
             BTreeMap::from([("runtime".into(), metrics)])
+        );
+    }
+
+    #[test]
+    fn service_build_uses_the_same_instrumented_workspace_as_its_clients() {
+        let build = Path::new("/build");
+        let profiles = build.join("profiles");
+        let command = service_examples(build, &profiles);
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(args[0], format!("+{NIGHTLY}").as_str());
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--manifest-path", "examples/kv/Cargo.toml"]));
+        assert!(args.windows(2).any(|pair| pair == ["--features", "quic"]));
+        let env: BTreeMap<_, _> = command.get_envs().collect();
+        assert_eq!(
+            env[std::ffi::OsStr::new("CARGO_TARGET_DIR")],
+            Some(build.join("service-examples").as_os_str())
+        );
+        assert_eq!(
+            env[std::ffi::OsStr::new("RUSTFLAGS")],
+            Some(std::ffi::OsStr::new(FLAGS))
+        );
+        assert_eq!(
+            env[std::ffi::OsStr::new("LLVM_PROFILE_FILE")],
+            Some(profiles.join("%p-%m.profraw").as_os_str())
         );
     }
 
