@@ -1,7 +1,10 @@
 #![cfg(all(feature = "services", feature = "tls"))]
 //! Real server/client processes, including shared state and capability pipelines.
 use capntproto_test_support::verification::{command, root, run};
-use rcgen::{BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair};
+use rcgen::{
+    BasicConstraints, CertificateParams, CertifiedIssuer, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+    KeyUsagePurpose,
+};
 use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -102,12 +105,13 @@ fn append(base: &[String], extra: &[&str]) -> Vec<String> {
 fn certificates(directory: &Path) {
     let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     let issuer = CertifiedIssuer::self_signed(params, KeyPair::generate().unwrap()).unwrap();
     let key = KeyPair::generate().unwrap();
-    let cert = CertificateParams::new(vec!["localhost".into()])
-        .unwrap()
-        .signed_by(&key, &issuer)
-        .unwrap();
+    let mut params = CertificateParams::new(vec!["localhost".into()]).unwrap();
+    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    let cert = params.signed_by(&key, &issuer).unwrap();
     std::fs::write(directory.join("ca.pem"), issuer.pem()).unwrap();
     std::fs::write(directory.join("server.pem"), cert.pem()).unwrap();
     std::fs::write(directory.join("server-key.pem"), key.serialize_pem()).unwrap();
@@ -117,7 +121,7 @@ fn certificates(directory: &Path) {
 fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
     let directory = tempfile::tempdir().unwrap();
     let mut build = command("cargo");
-    if let (Ok(profiles), Ok(flags)) = (
+    let instrumented = if let (Ok(profiles), Ok(flags)) = (
         std::env::var("CAPNTPROTO_FULL_COVERAGE_PROFILES"),
         std::env::var("CAPNTPROTO_FULL_COVERAGE_FLAGS"),
     ) {
@@ -131,11 +135,13 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
                 "LLVM_PROFILE_FILE",
                 PathBuf::from(profiles).join("%p-%m.profraw"),
             );
-    }
+        true
+    } else {
+        false
+    };
     build
         .args([
             "build",
-            "--ignore-rust-version",
             "--locked",
             "--manifest-path",
             "examples/kv/Cargo.toml",
@@ -143,6 +149,9 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
             "--target-dir",
         ])
         .arg(target());
+    if instrumented {
+        build.arg("--ignore-rust-version");
+    }
     if cfg!(feature = "quic") {
         build.args(["--features", "quic"]);
     }

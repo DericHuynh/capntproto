@@ -111,7 +111,7 @@ the caller needs a DNS/connect deadline.
 For TLS, connect first, then construct the RPC driver:
 
 ```rust
-use capnp_rpc::rpc_twoparty_capnp::Side;
+use capntproto::capnp_rpc::rpc_twoparty_capnp::Side;
 use capntproto::rpc::tcp::tls;
 use std::time::Duration;
 
