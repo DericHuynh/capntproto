@@ -13,14 +13,36 @@ use std::{
 struct Server(Child);
 impl Drop for Server {
     fn drop(&mut self) {
+        // Let the server complete its Ctrl-C path and flush instrumented
+        // profiles. Keep a bounded kill fallback for a failed server.
+        #[cfg(unix)]
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = Command::new("kill")
+                .arg("-INT")
+                .arg(self.0.id().to_string())
+                .status();
+            for _ in 0..100 {
+                if self.0.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
 }
 
+fn target() -> PathBuf {
+    std::env::var_os("CAPNTPROTO_FULL_COVERAGE_BUILD")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root().join("target"))
+        .join("service-examples")
+}
+
 fn executable(name: &str) -> PathBuf {
-    root()
-        .join("target/service-examples/debug")
+    target()
+        .join("debug")
         .join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
 }
 
@@ -95,15 +117,32 @@ fn certificates(directory: &Path) {
 fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
     let directory = tempfile::tempdir().unwrap();
     let mut build = command("cargo");
-    build.args([
-        "build",
-        "--locked",
-        "--manifest-path",
-        "examples/kv/Cargo.toml",
-        "--bins",
-        "--target-dir",
-        "target/service-examples",
-    ]);
+    if let (Ok(profiles), Ok(flags)) = (
+        std::env::var("CAPNTPROTO_FULL_COVERAGE_PROFILES"),
+        std::env::var("CAPNTPROTO_FULL_COVERAGE_FLAGS"),
+    ) {
+        // Match the parent lane's LLVM version and include these real service
+        // binaries in its existing recursive object/profile collection.
+        build
+            .arg("+nightly-2026-03-05")
+            .env("RUSTFLAGS", &flags)
+            .env("RUSTDOCFLAGS", &flags)
+            .env(
+                "LLVM_PROFILE_FILE",
+                PathBuf::from(profiles).join("%p-%m.profraw"),
+            );
+    }
+    build
+        .args([
+            "build",
+            "--ignore-rust-version",
+            "--locked",
+            "--manifest-path",
+            "examples/kv/Cargo.toml",
+            "--bins",
+            "--target-dir",
+        ])
+        .arg(target());
     if cfg!(feature = "quic") {
         build.args(["--features", "quic"]);
     }
@@ -194,4 +233,46 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
             );
         }
     }
+}
+
+#[test]
+fn pem_configuration_roundtrips_and_preserves_actionable_errors() {
+    use capntproto::rpc::{security, tcp::tls};
+    use std::io::ErrorKind;
+    let directory = tempfile::tempdir().unwrap();
+    certificates(directory.path());
+    let path = |name| directory.path().join(name);
+    let identity =
+        security::Identity::from_pem_files(path("server.pem"), path("server-key.pem")).unwrap();
+    assert_eq!(identity.certificates.len(), 1);
+    tls::server_config(identity, None).unwrap();
+    assert_eq!(
+        security::roots_from_pem_file(path("ca.pem")).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        security::certificates_from_pem_file(path("missing.pem"))
+            .unwrap_err()
+            .kind(),
+        ErrorKind::NotFound
+    );
+    std::fs::write(path("empty.pem"), "").unwrap();
+    assert_eq!(
+        security::certificates_from_pem_file(path("empty.pem"))
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+    assert!(security::Identity::from_pem_files(path("server.pem"), path("empty.pem")).is_err());
+    std::fs::write(
+        path("invalid.pem"),
+        "-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n",
+    )
+    .unwrap();
+    assert_eq!(
+        security::roots_from_pem_file(path("invalid.pem"))
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidInput
+    );
 }
