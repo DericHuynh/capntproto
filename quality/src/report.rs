@@ -478,9 +478,9 @@ mod tests {
         )
         .unwrap();
         let error = generate(dir.path(), "benchmark").unwrap_err().to_string();
-        assert!(error.contains("TCP/C++ p50 exceeds 1.15x"), "{error}");
+        assert!(error.contains("TCP/C++ minimum exceeds 1.15x"), "{error}");
         let readme = fs::read_to_string(dir.path().join("README.md")).unwrap();
-        assert!(readme.contains("TCP/C++ p50 exceeds 1.15x"));
+        assert!(readme.contains("TCP/C++ minimum exceeds 1.15x"));
         assert_eq!(readme.matches("](charts/").count(), 8);
         fs::write(lane.join("trials.json"), &raw).unwrap();
         fs::write(
