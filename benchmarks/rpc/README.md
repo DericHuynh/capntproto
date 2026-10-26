@@ -14,7 +14,8 @@ gh workflow run performance.yml --ref codex/portable-qualification -f campaign=r
 ```
 
 The default `run-latency` campaign measures all 48 TLS/QUIC case combinations,
-with five fresh-process repetitions. The minimum measured operation latency is
+with five fresh-process repetitions. It includes gRPC and WebSockets in all 23
+supported TLS cases, alongside legacy, portable and C++. The minimum measured operation latency is
 the primary comparison; raw samples, means and spread remain available. It skips instrumented
 workloads so timing results are available without waiting for profiling.
 `run-secure` explicitly requests the full timing, tracing and profiling campaign;
@@ -25,6 +26,20 @@ guest-reported cores of the client droplet. Deep service chains share those core
 recorded in each trial. This isolates driver costs; it does not measure VPC
 network latency. The other peer remains idle during this campaign. Select
 `run-remote` for the existing two-droplet VPC workloads and loopback controls.
+
+The deep/concurrent comparison uses Tonic's generated Protobuf services over
+HTTP/2 and a binary Protobuf WebSocket application service over WSS. Every hop
+traverses the same recursive data, forwards it to a separate downstream process,
+and returns the complete nested result with a checksum and visit count. The
+catalog includes depth 8/32, 32 concurrent requests, four/eight service chains,
+and eight independent client connections. Tonic clones share their HTTP/2
+channel; WebSocket requests use correlation IDs, a bounded 64-request window,
+and independent service futures, including out-of-order response handling.
+There is no per-request connection setup or JSON/base64 conversion in these
+comparisons. Construction, encoding/decoding, validation, and response destruction
+are timed. Promise-pipelined reads and QUIC remain explicitly unsupported for
+gRPC and WebSockets. These results describe these implementations and workload
+contracts, rather than a general ranking of all gRPC or WebSocket applications.
 
 For a same-campaign control, pass `-f portable_base=FULL_40_CHARACTER_SHA` or
 `-f legacy_base=FULL_40_CHARACTER_SHA`. CI builds each selected revision in an

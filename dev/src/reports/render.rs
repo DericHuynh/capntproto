@@ -689,7 +689,7 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
     } else {
         section.push_str("Awaiting the first dedicated DigitalOcean benchmark run.\n\n");
     }
-    section.push_str("Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP, upstream Rust Cap’n Proto (`capnp-rust`), and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.\n\n");
+    section.push_str("Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Current TCP fixtures use TLS 1.3, including upstream Rust Cap’n Proto, C++, gRPC over HTTP/2 and WebSockets over WSS; native encrypted transports and standard QUIC are identified separately. Historical data retains its recorded fixture contract. The dedicated campaign also reports recursive data, concurrent calls and independent service chains for gRPC and binary Protobuf WebSockets in its encrypted comparison artifact. Bars compare the recorded workload, rather than universal protocol performance.\n\n");
     if let Some(r) =
         latest(history, "benchmark").filter(|r| !r["data"]["charts"].as_array().unwrap().is_empty())
     {

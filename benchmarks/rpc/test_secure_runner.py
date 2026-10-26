@@ -20,6 +20,30 @@ runner = module('secure_runner', 'secure-runner.py')
 counts = module('ciphertext_counts', 'ciphertext-counts.py')
 
 class SecurityEvidenceTests(unittest.TestCase):
+    def test_real_service_comparisons_cover_all_tls_topologies_without_substitution(self):
+        for case in runner.catalog():
+            for label in ['grpc', 'websocket']:
+                self.assertEqual(runner.supported(label, 'tls', case), case['name'] != 'pipelined-read')
+                self.assertFalse(runner.supported(label, 'quic', case))
+                if case['family'] == 'topology':
+                    self.assertEqual(runner.Campaign.server_args(label, case, '127.0.0.1:1234'),
+                        ['comparison-topology-server', label, '127.0.0.1:0', '127.0.0.1:1234'])
+                    self.assertEqual(runner.Campaign.client_args(label, case, '127.0.0.1:1234', 100, 1000),
+                        ['comparison-topology-measure', label, '127.0.0.1:1234', case['name'], '100', '1000'])
+        topology = next(c for c in runner.catalog() if c['family'] == 'topology')
+        self.assertFalse(runner.supported('upstream', 'tls', topology))
+
+    def test_topology_results_cannot_mislabel_a_capability_driver_as_a_comparator(self):
+        case = next(c for c in runner.catalog() if c['family'] == 'topology')
+        for label in ['grpc', 'websocket']:
+            data = dict(case={k:v for k,v in case.items() if k != 'family'}, topology_version=1,
+                implementation=label, security=runner.security('tls', label), warmup=1, iterations=2,
+                latency_ns=[10,20], elapsed_ns=35)
+            runner.validate(data, case, 'tls', label, 1, 2)
+            data['implementation'] = 'legacy'
+            with self.assertRaises(AssertionError):
+                runner.validate(data, case, 'tls', label, 1, 2)
+
     def test_profiler_keeps_legacy_and_portable_selection_distinct(self):
         profiler = module('secure_profile', 'secure-profile.py')
         with tempfile.TemporaryDirectory() as directory:

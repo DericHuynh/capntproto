@@ -289,4 +289,49 @@ mod tests {
             })
             .await;
     }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn unknown_response_ids_fail_all_waiters_and_release_capacity() {
+        tokio::task::LocalSet::new()
+            .run_until(timeout(std::time::Duration::from_secs(5), async {
+                let (a, b) = tokio::io::duplex(16384);
+                let client = Client::from_socket(
+                    WebSocketStream::from_raw_socket(a, Role::Client, Some(config())).await,
+                );
+                let peer = tokio::task::spawn_local(async move {
+                    let mut socket =
+                        WebSocketStream::from_raw_socket(b, Role::Server, Some(config())).await;
+                    for _ in 0..2 {
+                        assert!(matches!(
+                            socket.next().await.unwrap().unwrap(),
+                            Message::Binary(_)
+                        ));
+                    }
+                    socket
+                        .send(Message::Binary(
+                            AccessEnvelope {
+                                id: 0,
+                                body: Some(Body::Description(Description { hops: 1 })),
+                            }
+                            .encode_to_vec()
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+                    while socket.next().await.is_some() {}
+                });
+                let (a, b) = tokio::join!(client.hops(), client.hops());
+                for result in [a, b] {
+                    assert_eq!(
+                        result.unwrap_err().to_string(),
+                        "unknown WebSocket response ID"
+                    );
+                }
+                assert_eq!(client.permits.available_permits(), IN_FLIGHT);
+                assert!(client.hops().await.is_err());
+                peer.await.unwrap();
+            }))
+            .await
+            .unwrap();
+    }
 }

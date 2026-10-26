@@ -249,6 +249,7 @@ def main():
         cases = [c for c in cases if c['name'] in selected]
     transports = ['tls', 'quic'] if args.transport == 'both' else [args.transport]
     scope = dict(security_version=1, transports=transports, cases=cases, repetitions=args.repetitions,
+                 comparison_version=1 if args.comparators else 0,
                  warmup=args.warmup if args.warmup is not None else {'loopback':10000,'workflow':100,'topology':100}, iterations=args.iterations, cpus=cpus, cpu_topology=cpu_topology,
                  binaries={k:dict(path=str(v), sha256=topology.digest(v)) for k,v in binaries.items()},
                  certificate_manifest=json.loads((certs / 'manifest.json').read_text()),
@@ -294,6 +295,8 @@ def main():
             (output / 'summary.json').write_text(json.dumps(dict(rows=rows, diagnostic=args.trace), indent=2) + '\n')
             print(transport, case['name'], flush=True)
     lines = ['# Encrypted RPC comparison', '', 'Minimum measured operation latency is the benchmark result. Handshakes are excluded. Raw repetitions, means and spread are retained.',
+             'gRPC uses Tonic/Protobuf over HTTP/2. WebSocket topologies use binary Protobuf with bounded, correlated concurrent requests. Both traverse the same nested request at every independent service hop, return the complete nested data, and validate checksums and visit counts. They use TLS 1.3, persistent connections, the same depths, concurrency and client counts, and five process repetitions.',
+             'gRPC and WebSocket do not support capability promise pipelining or this suite\'s QUIC path; unsupported cells are listed in scope.json.',
              'C++ QUIC is unsupported at the pinned revision; no plaintext or TCP substitute is included.', '',
              '| Transport | Case | Implementation | Minimum µs | Mean ± run SD µs | Run mean min–max µs |',
              '| --- | --- | --- | ---: | ---: | ---: |']

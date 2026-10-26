@@ -681,10 +681,12 @@ fn latency_campaign_preserves_sampling_and_salvages_failures_without_profiling()
                 .find(|s| s.contains("python3 secure-runner.py"))
                 .unwrap();
             assert!(script.contains("--repetitions 5 --warmup 100 --iterations 1000"));
+            assert!(script.contains("--comparators"));
             assert!(script.contains("--portable-baseline"));
             assert!(script.contains("--legacy-baseline"));
             assert!(!script.contains("--cases") || script.contains("--cases all"));
             assert!(!script.contains("--trace"));
+            assert!(script.contains("--comparators"));
             assert!(!script.contains("secure-profile.py"));
             assert!(!calls
                 .iter()

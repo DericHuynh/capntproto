@@ -20,8 +20,9 @@ mod grpc {
 }
 mod benchmark_tls;
 // Tonic's buffered IO uses the official rustls types and the same DER policy.
+// Compile this policy against both official rustls and our Unbuffered fork.
 #[path = "../tls_policy.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::duplicate_mod)]
 mod reference_tls;
 mod secure;
 mod topology;

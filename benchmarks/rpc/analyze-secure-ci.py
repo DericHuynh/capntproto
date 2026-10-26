@@ -1,5 +1,5 @@
 """Analyze saved CI droplet artifacts; never launches benchmark workloads."""
-import argparse, collections, json, math, os, re, statistics, subprocess, sys, time
+import argparse, collections, importlib.util, json, math, os, re, statistics, subprocess, sys, time
 from pathlib import Path
 from allocation_comparison import compare as compare_allocations, markdown as allocation_markdown
 parser = argparse.ArgumentParser(description=__doc__)
@@ -50,6 +50,18 @@ else:
     scope = json.loads((root/'native/scope.json').read_text())
     assert not scope['diagnostic'] and not native['diagnostic']
     assert scope['repetitions']==5 and scope['iterations']==1000 and len(native['rows'])==48
+    if scope.get('comparison_version') == 1:
+        spec = importlib.util.spec_from_file_location('comparison_runner', Path(__file__).with_name('secure-runner.py'))
+        comparison_runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(comparison_runner)
+        assert {'grpc', 'websocket'} <= scope['binaries'].keys(), 'missing comparison executables'
+        expected = set()
+        for row in native['rows']:
+            labels = {label for label in scope['binaries'] if comparison_runner.supported(label, row['transport'], row['case'])}
+            assert row['variants'].keys() == labels, 'missing or unsupported protocol comparison'
+            expected.update((row['transport'], row['case']['name'], label, rep) for label in labels for rep in range(5))
+        actual = [(trial['transport'], trial['case'], trial['client'], trial['repetition']) for trial in scope['trials']]
+        assert len(actual) == len(expected) and set(actual) == expected, 'incomplete protocol comparison repetitions'
     cells=collections.defaultdict(list)
     minima=collections.defaultdict(list)
     host_samples=[]

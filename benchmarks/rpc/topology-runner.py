@@ -47,6 +47,7 @@ def main():
     parser.add_argument('--portable', type=Path, help='Portable driver binary; defaults to --rust with portable selected on every peer.')
     parser.add_argument('--cpp', type=Path, help='Required for TLS; unsupported for QUIC.')
     parser.add_argument('--transport', choices=['tls', 'quic'], default='tls')
+    parser.add_argument('--comparators', action='store_true', help='Include realistic gRPC/HTTP2 and multiplexed binary Protobuf WebSocket services (TLS only).')
     parser.add_argument('--baseline', type=Path, help='Optional frozen Rust control, interleaved with the candidate and C++.')
     parser.add_argument('--portable-baseline', type=Path, help='Optional frozen portable control, explicitly selected on every peer.')
     parser.add_argument('--output', type=Path, required=True)
@@ -66,6 +67,9 @@ def main():
                 'portable': (args.portable or args.rust).resolve(strict=True)}
     if args.transport == 'tls':
         binaries['cpp'] = args.cpp.resolve(strict=True)
+    if args.comparators:
+        assert args.transport == 'tls', 'gRPC and WebSocket topologies require TLS, not the QUIC path'
+        binaries.update(grpc=args.rust.resolve(strict=True), websocket=args.rust.resolve(strict=True))
     if args.baseline is not None:
         binaries['baseline'] = args.baseline.resolve(strict=True)
     if args.portable_baseline is not None:
@@ -152,7 +156,7 @@ def main():
             for hop in reversed(range(case['hops'])):
                 label = services[hop]
                 cpu = cpus[1 + hop % (len(cpus) - 1)]
-                command = ['topology-server', '127.0.0.1:0'] + ([address] if address else [])
+                command = (['comparison-topology-server', label] if label in ['grpc', 'websocket'] else ['topology-server']) + ['127.0.0.1:0'] + ([address] if address else [])
                 process = launch(label, command, directory / f'service-{hop}', cpu)
                 workers.append(process)
                 with selectors.DefaultSelector() as selector:
@@ -166,17 +170,18 @@ def main():
                 if label in ['portable', 'portable-baseline']:
                     assert ready['implementation'] == 'portable', 'portable service was not selected'
                 elif 'implementation' in ready:
-                    assert ready['implementation'] == ('capnp-cpp' if label == 'cpp' else 'legacy')
+                    assert ready['implementation'] == (label if label in ['grpc', 'websocket'] else ('capnp-cpp' if label == 'cpp' else 'legacy'))
                 address = ready.get('address') or f"127.0.0.1:{ready['port']}"
                 placement.append(dict(hop=hop, implementation=label, cpu=cpu, address=address))
-            client = launch(client_label, ['topology-measure', address, case['name'], str(warm), str(count)], directory / 'client', cpus[0])
+            command = (['comparison-topology-measure', client_label] if client_label in ['grpc', 'websocket'] else ['topology-measure'])
+            client = launch(client_label, command + [address, case['name'], str(warm), str(count)], directory / 'client', cpus[0])
             output, _ = client.communicate(timeout=300)
             (directory / 'trial.json').write_text(output)
             assert client.returncode == 0, f'client failed: {directory}'
             data = json.loads(output)
             assert data.get('security', {}).get('transport') == ('quic-v1' if args.transport == 'quic' else 'tls-tcp'), 'client transport mismatch'
             assert data['topology_version'] == 1 and data['case'] == case
-            expected = 'portable' if client_label in ['portable', 'portable-baseline'] else ('capnp-cpp' if client_label == 'cpp' else 'legacy')
+            expected = client_label if client_label in ['grpc', 'websocket'] else ('portable' if client_label in ['portable', 'portable-baseline'] else ('capnp-cpp' if client_label == 'cpp' else 'legacy'))
             assert data['implementation'] == expected
             assert data['iterations'] == len(data['latency_ns']) == count and data['warmup'] == warm
             assert all(type(n) is int and n > 0 for n in data['latency_ns'])
