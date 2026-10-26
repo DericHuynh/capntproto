@@ -1,0 +1,88 @@
+name: Qualify realistic protocol comparison fixtures
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-protocol-comparisons
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+jobs:
+  fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 17ad90ecae4dc54c6a0e587ab06ada1e01ce2591
+      - name: Install fixture build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler libssl-dev openssl
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: dedicated-benchmarks
+          workspaces: |
+            . -> target
+            benchmarks/rpc -> target
+          cache-on-failure: true
+      - name: Test benchmark services and runners
+        run: |
+          cargo test --locked --manifest-path benchmarks/rpc/Cargo.toml --lib -- --nocapture
+      - name: Validate actual encrypted services and every topology
+        run: |
+          cargo build --locked --manifest-path benchmarks/rpc/Cargo.toml --bin capntproto-rpc-bench
+          python3 - <<'PYSMOKE'
+          import json,os,sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('benchmarks/rpc').resolve()))
+          import importlib.util
+          p=Path('benchmarks/rpc/secure-runner.py').resolve()
+          spec=importlib.util.spec_from_file_location('protocol_smoke',p);r=importlib.util.module_from_spec(spec);spec.loader.exec_module(r)
+          out=Path(os.environ['RUNNER_TEMP'])/'realistic-comparison-checks';out.mkdir()
+          certs=r.certificates.generate(out/'certificates')
+          wrong=r.certificates.generate(out/'untrusted')
+          driver=Path('benchmarks/rpc/target/debug/capntproto-rpc-bench').resolve(strict=True)
+          cpus,_=r.physical_cpus()
+          campaign=r.Campaign({'grpc':driver,'websocket':driver},out,certs,cpus)
+          checks=[]
+          for case in r.catalog():
+           for label in ['grpc','websocket']:
+            if r.supported(label,'tls',case):
+             name=f'{case["name"]}-{label}'
+             print('CHECK',name,flush=True)
+             campaign.trial(case,label,'tls',name,1,2)
+             checks.append(name)
+          case=next(c for c in r.catalog() if c['name']=='deep-8')
+          for label in ['grpc','websocket']:
+           for reason,overrides in [('hostname',{'CAPNTPROTO_BENCH_SERVER_NAME':'wrong.invalid'}),('trust-root',{'CAPNTPROTO_BENCH_CERTS':str(wrong)})]:
+            name=f'reject-{label}-{reason}';print('CHECK',name,flush=True)
+            campaign.trial(case,label,'tls',name,0,1,client_overrides=overrides,reject=True)
+            checks.append(name)
+          (out/'checks.json').write_text(json.dumps({'performance_evidence':False,'scope':'Correctness-only service exercise on hosted CI; discard timings.','checks':checks},indent=2))
+          print('COMPARISON_CHECKS_PASSED',len(checks),flush=True)
+          PYSMOKE
+      - name: Validate reports and dedicated orchestration
+        run: |
+          cargo test --locked -p capntproto-dev --lib cloud::
+          cargo test --locked -p capntproto-dev --lib reports::
+          python3 -m unittest discover -s benchmarks/rpc -p 'test_*.py'
+      - name: Check benchmark code
+        run: |
+          cargo clippy --locked --manifest-path benchmarks/rpc/Cargo.toml --all-targets -- -D warnings
+          cargo fmt --manifest-path benchmarks/rpc/Cargo.toml -- --check
+      - name: Preserve correctness fixture output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: realistic-comparison-checks
+          path: ${{ runner.temp }}/realistic-comparison-checks/
+          if-no-files-found: warn
