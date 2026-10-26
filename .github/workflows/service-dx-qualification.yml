@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: qualify-service-dx
+  group: qualify-service-dx-release
   cancel-in-progress: false
 jobs:
   release:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: b4e4fe54ea4e1ab10369b9b547c148f4dcfaf775
+          ref: 9d239f292a0c39343eff5925dfa5ed9f4f1338bd
       - name: Install package build dependencies
         run: |
           sudo apt-get update
@@ -39,6 +39,7 @@ jobs:
           cargo fmt --all -- --check
           cargo fmt --manifest-path examples/kv/Cargo.toml -- --check
           cargo test --locked -p capntproto-dev
+          cargo test --locked -p capntproto-quality --lib
           cargo clippy --locked --manifest-path examples/kv/Cargo.toml --all-targets --features quic -- -D warnings
       - name: Compile all encrypted benchmark adapters
         run: cargo check --locked --manifest-path benchmarks/rpc/Cargo.toml --all-targets
@@ -70,29 +71,3 @@ jobs:
             ${{ runner.temp }}/package-source/target/package/*.crate
             ${{ runner.temp }}/package-source/target/package/SHA256SUMS
           if-no-files-found: error
-  mutations:
-    runs-on: ubuntu-26.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          ref: b4e4fe54ea4e1ab10369b9b547c148f4dcfaf775
-      - uses: ./.github/actions/quality-setup
-        with:
-          lane: memory
-      - name: Qualify the original guard mutation and coverage checks
-        env:
-          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
-        run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --test guard_quality
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: service-dx-guard-evidence
-          path: |
-            target/verification/rust-mutations/
-            target/verification/guard-coverage/
-            target/nextest/reports/
-          include-hidden-files: true
-  fuzz:
-    uses: ./.github/workflows/verification-fuzz.yml

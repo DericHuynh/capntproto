@@ -1,7 +1,10 @@
 #![cfg(all(feature = "services", feature = "tls"))]
 //! Real server/client processes, including shared state and capability pipelines.
 use capntproto_test_support::verification::{command, root, run};
-use rcgen::{BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair};
+use rcgen::{
+    BasicConstraints, CertificateParams, CertifiedIssuer, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+    KeyUsagePurpose,
+};
 use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -13,14 +16,36 @@ use std::{
 struct Server(Child);
 impl Drop for Server {
     fn drop(&mut self) {
+        // Let the server complete its Ctrl-C path and flush instrumented
+        // profiles. Keep a bounded kill fallback for a failed server.
+        #[cfg(unix)]
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = Command::new("kill")
+                .arg("-INT")
+                .arg(self.0.id().to_string())
+                .status();
+            for _ in 0..100 {
+                if self.0.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
 }
 
+fn target() -> PathBuf {
+    std::env::var_os("CAPNTPROTO_FULL_COVERAGE_BUILD")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root().join("target"))
+        .join("service-examples")
+}
+
 fn executable(name: &str) -> PathBuf {
-    root()
-        .join("target/service-examples/debug")
+    target()
+        .join("debug")
         .join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
 }
 
@@ -80,12 +105,13 @@ fn append(base: &[String], extra: &[&str]) -> Vec<String> {
 fn certificates(directory: &Path) {
     let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     let issuer = CertifiedIssuer::self_signed(params, KeyPair::generate().unwrap()).unwrap();
     let key = KeyPair::generate().unwrap();
-    let cert = CertificateParams::new(vec!["localhost".into()])
-        .unwrap()
-        .signed_by(&key, &issuer)
-        .unwrap();
+    let mut params = CertificateParams::new(vec!["localhost".into()]).unwrap();
+    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    let cert = params.signed_by(&key, &issuer).unwrap();
     std::fs::write(directory.join("ca.pem"), issuer.pem()).unwrap();
     std::fs::write(directory.join("server.pem"), cert.pem()).unwrap();
     std::fs::write(directory.join("server-key.pem"), key.serialize_pem()).unwrap();
@@ -95,15 +121,37 @@ fn certificates(directory: &Path) {
 fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
     let directory = tempfile::tempdir().unwrap();
     let mut build = command("cargo");
-    build.args([
-        "build",
-        "--locked",
-        "--manifest-path",
-        "examples/kv/Cargo.toml",
-        "--bins",
-        "--target-dir",
-        "target/service-examples",
-    ]);
+    let instrumented = if let (Ok(profiles), Ok(flags)) = (
+        std::env::var("CAPNTPROTO_FULL_COVERAGE_PROFILES"),
+        std::env::var("CAPNTPROTO_FULL_COVERAGE_FLAGS"),
+    ) {
+        // Match the parent lane's LLVM version and include these real service
+        // binaries in its existing recursive object/profile collection.
+        build
+            .arg("+nightly-2026-03-05")
+            .env("RUSTFLAGS", &flags)
+            .env("RUSTDOCFLAGS", &flags)
+            .env(
+                "LLVM_PROFILE_FILE",
+                PathBuf::from(profiles).join("%p-%m.profraw"),
+            );
+        true
+    } else {
+        false
+    };
+    build
+        .args([
+            "build",
+            "--locked",
+            "--manifest-path",
+            "examples/kv/Cargo.toml",
+            "--bins",
+            "--target-dir",
+        ])
+        .arg(target());
+    if instrumented {
+        build.arg("--ignore-rust-version");
+    }
     if cfg!(feature = "quic") {
         build.args(["--features", "quic"]);
     }
@@ -194,4 +242,46 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
             );
         }
     }
+}
+
+#[test]
+fn pem_configuration_roundtrips_and_preserves_actionable_errors() {
+    use capntproto::rpc::{security, tcp::tls};
+    use std::io::ErrorKind;
+    let directory = tempfile::tempdir().unwrap();
+    certificates(directory.path());
+    let path = |name| directory.path().join(name);
+    let identity =
+        security::Identity::from_pem_files(path("server.pem"), path("server-key.pem")).unwrap();
+    assert_eq!(identity.certificates.len(), 1);
+    tls::server_config(identity, None).unwrap();
+    assert_eq!(
+        security::roots_from_pem_file(path("ca.pem")).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        security::certificates_from_pem_file(path("missing.pem"))
+            .unwrap_err()
+            .kind(),
+        ErrorKind::NotFound
+    );
+    std::fs::write(path("empty.pem"), "").unwrap();
+    assert_eq!(
+        security::certificates_from_pem_file(path("empty.pem"))
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidData
+    );
+    assert!(security::Identity::from_pem_files(path("server.pem"), path("empty.pem")).is_err());
+    std::fs::write(
+        path("invalid.pem"),
+        "-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n",
+    )
+    .unwrap();
+    assert_eq!(
+        security::roots_from_pem_file(path("invalid.pem"))
+            .unwrap_err()
+            .kind(),
+        ErrorKind::InvalidInput
+    );
 }
