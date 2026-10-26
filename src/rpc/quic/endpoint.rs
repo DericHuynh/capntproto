@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::{
     net::UdpSocket,
-    sync::{mpsc, Notify},
+    sync::{mpsc, Mutex, Notify},
 };
 
 const MAX_CONNECTIONS: usize = 1024;
@@ -33,6 +33,7 @@ pub(super) struct Core {
     pub server: RefCell<Option<ServerConfig>>,
     routes: Routes,
     tokens: retry::Tokens,
+    accept_lock: Mutex<()>,
     incoming: RefCell<mpsc::Receiver<Incoming>>,
     pub admitting: Cell<bool>,
     changed: Rc<Notify>,
@@ -65,6 +66,7 @@ impl Endpoint {
             server: RefCell::new(server),
             routes: Rc::new(RefCell::new(HashMap::new())),
             tokens: retry::Tokens::new(),
+            accept_lock: Mutex::new(()),
             incoming: RefCell::new(rx),
             admitting: Cell::new(true),
             changed: Rc::new(Notify::new()),
@@ -84,7 +86,11 @@ impl Endpoint {
         *self.0.client.borrow_mut() = Some(config);
     }
     /// Canceling this future leaves queued incoming sessions available.
+    /// Concurrent calls are served in order without replacing each other's wakeups.
     pub async fn accept(&self) -> Option<Incoming> {
+        // A channel receiver registers one task waker. Keep other acceptors on
+        // the cancellation-safe lock queue until that receiver is available.
+        let _accept = self.0.accept_lock.lock().await;
         futures::future::poll_fn(|cx| self.0.incoming.borrow_mut().poll_recv(cx)).await
     }
     /// Wait until every admitted or pending session has released its route.

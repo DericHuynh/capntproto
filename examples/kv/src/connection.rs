@@ -58,11 +58,13 @@ impl ClientArgs {
             },
             #[cfg(feature = "quic")]
             Transport::Quic => {
-                let stream = tokio::time::timeout(TIMEOUT, self.connect_quic())
-                    .await
-                    .map_err(|_| {
-                        io::Error::new(io::ErrorKind::TimedOut, "QUIC connection setup timed out")
-                    })??;
+                let stream = tokio::select! {
+                    biased;
+                    _ = tokio::time::sleep(TIMEOUT) => Err(io::Error::new(
+                        io::ErrorKind::TimedOut, "QUIC connection setup timed out",
+                    )),
+                    result = self.connect_quic() => result,
+                }?;
                 rpc::quic::driver(stream, None, Side::Client, Default::default())
             }
         };

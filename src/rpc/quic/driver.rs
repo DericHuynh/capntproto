@@ -140,36 +140,37 @@ pub(super) async fn spawn(
     conn: Box<quiche::Connection>,
     timeout: Duration,
 ) -> io::Result<Stream> {
-    let (ready, wait) = oneshot::channel();
-    let (close, canceled) = oneshot::channel();
-    let state = Rc::new(State {
-        conn: RefCell::new(conn),
-        write_closed: false.into(),
-        read_closed: false.into(),
-        closed: false.into(),
-        failure: RefCell::new(None),
-        reader: RefCell::new(None),
-        writer: RefCell::new(None),
-        turn: OutputTurn::default(),
-        defer_flush: false.into(),
-    });
-    route.activate(&state, core.local);
-    let mut stream = Stream {
-        state: state.clone(),
-        close: Some(close),
-        certificates: vec![],
-        version: 0,
-        _endpoint: core.clone(),
-    };
-    tokio::task::spawn_local(run(core, route, state, ready, canceled));
-    let ready = deadline(timeout, async {
-        wait.await
-            .map_err(|_| io::Error::other("QUIC driver stopped during setup"))?
+    deadline(timeout, async move {
+        let (ready, wait) = oneshot::channel();
+        let (close, canceled) = oneshot::channel();
+        let state = Rc::new(State {
+            conn: RefCell::new(conn),
+            write_closed: false.into(),
+            read_closed: false.into(),
+            closed: false.into(),
+            failure: RefCell::new(None),
+            reader: RefCell::new(None),
+            writer: RefCell::new(None),
+            turn: OutputTurn::default(),
+            defer_flush: false.into(),
+        });
+        route.activate(&state, core.local);
+        let mut stream = Stream {
+            state: state.clone(),
+            close: Some(close),
+            certificates: vec![],
+            version: 0,
+            _endpoint: core.clone(),
+        };
+        tokio::task::spawn_local(run(core, route, state, ready, canceled));
+        let ready = wait
+            .await
+            .map_err(|_| io::Error::other("QUIC driver stopped during setup"))??;
+        stream.certificates = ready.certificates;
+        stream.version = ready.version;
+        Ok(stream)
     })
-    .await?;
-    stream.certificates = ready.certificates;
-    stream.version = ready.version;
-    Ok(stream)
+    .await
 }
 async fn flush(
     conn: &RefCell<Box<quiche::Connection>>,

@@ -14,9 +14,17 @@ pub(super) async fn deadline<T>(
     timeout: std::time::Duration,
     future: impl std::future::Future<Output = io::Result<T>>,
 ) -> io::Result<T> {
-    tokio::time::timeout(timeout, future)
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC connection setup timed out"))?
+    let expired = || io::Error::new(io::ErrorKind::TimedOut, "RPC connection setup timed out");
+    if timeout.is_zero() {
+        return Err(expired());
+    }
+    // A delayed wake can make both branches ready. Check the setup budget
+    // before allowing another poll to start IO or publish an authenticated peer.
+    tokio::select! {
+        biased;
+        _ = tokio::time::sleep(timeout) => Err(expired()),
+        result = future => result,
+    }
 }
 
 pub(crate) fn defer(cx: &mut Context<'_>) {
@@ -125,6 +133,38 @@ impl<T: AsyncWrite + Unpin> futures::AsyncWrite for TokioIo<T> {
 mod tests {
     use super::*;
     use futures::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test(start_paused = true)]
+    async fn expired_setup_deadline_does_not_poll_work_after_a_delayed_wakeup() {
+        let polls = std::cell::Cell::new(0);
+        let work = std::future::poll_fn(|_| {
+            polls.set(polls.get() + 1);
+            if polls.get() == 1 {
+                Poll::Pending
+            } else {
+                Poll::Ready(Ok(()))
+            }
+        });
+        let setup = deadline(std::time::Duration::from_secs(1), work);
+        tokio::pin!(setup);
+        assert!(futures::poll!(setup.as_mut()).is_pending());
+        tokio::time::advance(std::time::Duration::from_secs(2)).await;
+        assert_eq!(setup.await.unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert_eq!(polls.get(), 1, "expired setup work was polled again");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn zero_setup_budget_does_not_start_work() {
+        let started = std::cell::Cell::new(false);
+        let error = deadline(std::time::Duration::ZERO, async {
+            started.set(true);
+            Ok(())
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(!started.get());
+    }
 
     #[test]
     fn deferred_wake_allows_other_ready_local_tasks_to_run() {

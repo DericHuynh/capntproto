@@ -1,7 +1,7 @@
 use super::common::*;
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyServer};
 use capntproto::rpc::quic::{self, Endpoint, Version};
-use std::{io, time::Duration};
+use std::{io, rc::Rc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn server(pki: &Pki, mutual: bool) -> Endpoint {
@@ -37,6 +37,107 @@ async fn assert_peer_closes(stream: &mut quic::Stream) {
     .unwrap();
     assert!(stream.shutdown().await.is_err());
 }
+
+fn pending_accept(
+    endpoint: Rc<Endpoint>,
+) -> (
+    tokio::task::JoinHandle<quic::Incoming>,
+    tokio::sync::oneshot::Receiver<()>,
+) {
+    let (registered, ready) = tokio::sync::oneshot::channel();
+    let task = tokio::task::spawn_local(async move {
+        let mut accept = std::pin::pin!(endpoint.accept());
+        assert!(futures::poll!(accept.as_mut()).is_pending());
+        let _ = registered.send(());
+        accept.await.expect("endpoint closed")
+    });
+    (task, ready)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn concurrent_accepts_and_cancellation_preserve_queued_connections() {
+    local(async {
+        for cancel_first in [false, true] {
+            let pki = Pki::new();
+            let server = Rc::new(server(&pki, false));
+            let endpoint = Rc::new(client(&pki, false, Version::V1));
+            let (first, first_ready) = pending_accept(server.clone());
+            first_ready.await.unwrap();
+            let (second, second_ready) = pending_accept(server.clone());
+            second_ready.await.unwrap();
+            let mut first = Some(first);
+            if cancel_first {
+                let first = first.take().unwrap();
+                first.abort();
+                assert!(first.await.is_err());
+            }
+            let count = if cancel_first { 1 } else { 2 };
+            let mut clients = Vec::new();
+            for _ in 0..count {
+                let endpoint = endpoint.clone();
+                let address = server.local_addr().unwrap();
+                clients.push(tokio::task::spawn_local(async move {
+                    quic::connect(&endpoint, address, "localhost", TIMEOUT).await
+                }));
+            }
+            let accepted = tokio::time::timeout(Duration::from_secs(2), async {
+                let mut incoming = Vec::new();
+                if let Some(first) = first {
+                    incoming.push(first.await.unwrap());
+                }
+                incoming.push(second.await.unwrap());
+                incoming
+            })
+            .await
+            .expect("concurrent accepts lost a queued connection wakeup");
+            assert_eq!(accepted.len(), count);
+            for incoming in &accepted {
+                assert_eq!(incoming.remote_address(), endpoint.local_addr().unwrap());
+            }
+            drop(accepted);
+            for task in clients {
+                task.abort();
+                let _ = task.await;
+            }
+            tokio::time::timeout(TIMEOUT, endpoint.wait_idle())
+                .await
+                .unwrap();
+        }
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn zero_setup_budget_does_not_start_a_packet_driver() {
+    local(async {
+        let pki = Pki::new();
+        let endpoint = client(&pki, false, Version::V1);
+        let peer = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        peer.set_nonblocking(true).unwrap();
+        let error = quic::connect(
+            &endpoint,
+            peer.local_addr().unwrap(),
+            "localhost",
+            Duration::ZERO,
+        )
+        .await
+        .err()
+        .expect("zero-budget setup succeeded");
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        // A retired route proves any previously spawned packet driver finished;
+        // then inspect the OS socket directly, without cached reactor readiness.
+        tokio::time::timeout(TIMEOUT, endpoint.wait_idle())
+            .await
+            .unwrap();
+        assert_eq!(
+            peer.recv(&mut [0; 1350]).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+            "timed-out setup emitted a datagram"
+        );
+    })
+    .await;
+}
+
 async fn roundtrip(mutual: bool, version: Version) {
     local(async {
         let pki = Pki::new();
