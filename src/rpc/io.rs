@@ -149,18 +149,40 @@ mod tests {
     #[derive(Default)]
     struct Writer {
         calls: usize,
+        scalar_calls: usize,
         pending: bool,
         bytes: Vec<u8>,
         flushed: bool,
         closed: bool,
     }
+    impl Writer {
+        fn write_prefix(
+            &mut self,
+            cx: &mut Context<'_>,
+            bytes: impl Iterator<Item = u8>,
+        ) -> Poll<io::Result<usize>> {
+            if !self.pending {
+                self.pending = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            self.pending = false;
+            let start = self.bytes.len();
+            self.bytes.extend(bytes.take(3));
+            Poll::Ready(Ok(self.bytes.len() - start))
+        }
+    }
     impl AsyncWrite for Writer {
         fn poll_write(
-            self: Pin<&mut Self>,
-            _: &mut Context<'_>,
-            _: &[u8],
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bytes: &[u8],
         ) -> Poll<io::Result<usize>> {
-            panic!("vectored writes must reach the transport intact")
+            // Once only the payload suffix remains, framing deliberately uses
+            // write_all. The initial header and payload must still be vectored.
+            assert!(self.calls > 0, "framing must start with vectored IO");
+            self.scalar_calls += 1;
+            self.write_prefix(cx, bytes.iter().copied())
         }
         fn poll_write_vectored(
             mut self: Pin<&mut Self>,
@@ -168,21 +190,9 @@ mod tests {
             buffers: &[io::IoSlice<'_>],
         ) -> Poll<io::Result<usize>> {
             self.calls += 1;
-            if !self.pending {
-                self.pending = true;
-                cx.waker().wake_by_ref();
-                return Poll::Pending;
-            }
-            self.pending = false;
             // Partial progress can cross a buffer boundary. The caller must
             // keep the suffix and retry it unchanged after backpressure.
-            let bytes: Vec<u8> = buffers
-                .iter()
-                .flat_map(|b| b.iter().copied())
-                .take(3)
-                .collect();
-            self.bytes.extend(&bytes);
-            Poll::Ready(Ok(bytes.len()))
+            self.write_prefix(cx, buffers.iter().flat_map(|b| b.iter().copied()))
         }
         fn poll_flush(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
             self.flushed = true;
@@ -211,6 +221,7 @@ mod tests {
             );
         });
         assert!(writer.inner.calls > 2);
+        assert!(writer.inner.scalar_calls > 0);
         assert_eq!(writer.inner.bytes, expected);
         assert!(writer.inner.flushed && writer.inner.closed);
     }

@@ -82,6 +82,16 @@ pub fn fuzz(r: &mut Runner) -> Result<()> {
         }
     }
     let afl = (|| -> Result<()> {
+        let host = r
+            .evidence
+            .compiler
+            .lines()
+            .find_map(|line| line.strip_prefix("host: "))
+            .ok_or("rustc did not report its host target")?
+            .to_owned();
+        let binaries = std::path::Path::new("target/afl-build")
+            .join(&host)
+            .join("debug");
         r.run(
             "afl-build",
             v::command("cargo")
@@ -98,6 +108,10 @@ pub fn fuzz(r: &mut Runner) -> Result<()> {
                     "--target-dir",
                     "target/afl-build",
                 ])
+                // Explicit target selection confines AFL's RUSTFLAGS to the
+                // fuzz targets. Schema compilers and build scripts run on the
+                // host and must not execute AFL-instrumented code at build time.
+                .args(["--target", &host])
                 .env("AFL_NO_CFG_FUZZING", "1"),
         )?;
         r.cargo(
@@ -120,7 +134,9 @@ pub fn fuzz(r: &mut Runner) -> Result<()> {
                 .args(["run", "--locked", "-p", "capntproto-dev", "--", "afl-fuzz"])
                 .arg("--output")
                 .arg(&afl_output)
-                .args(["--binaries", "target/afl-build/debug", "--corpus"])
+                .arg("--binaries")
+                .arg(&binaries)
+                .arg("--corpus")
                 .arg(&corpus),
         );
         if let Ok(bytes) = std::fs::read(afl_output.join("afl.json")) {
