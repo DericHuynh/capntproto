@@ -1,0 +1,114 @@
+name: Qualify service API and CI fixes (no publication)
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/codex/service-dx-qualification-20261026'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      CAPNTPROTO_REFERENCE_CXX: clang++-22
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 33d9ffac41157f4f1a503d6455a9de054c2031e9
+      - name: Install package build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang-22 libclang-22-dev pkg-config capnproto libcapnp-dev protobuf-compiler
+          rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Initialize pinned reference source for inventory tests
+        run: git submodule update --init --depth 1 -- vendor/capnproto
+      - name: Check formatting, development safeguards and client/server Clippy
+        run: |
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path examples/kv/Cargo.toml -- --check
+          cargo test --locked -p capntproto-dev
+          cargo test --locked -p capntproto-quality --lib
+          cargo clippy --locked --manifest-path examples/kv/Cargo.toml --all-targets --features quic -- -D warnings
+      - name: Compile all encrypted benchmark adapters
+        run: cargo check --locked --manifest-path benchmarks/rpc/Cargo.toml --all-targets
+      - name: Prove QUIC truncation regression against the previous implementation
+        env:
+          PREVIOUS: c6b8c819dd9a50ff01a0310fb94a6a193cc048e3
+        run: |
+          cp src/rpc/quic.rs "$RUNNER_TEMP/quic-fixed.rs"
+          cp src/rpc/quic/driver.rs "$RUNNER_TEMP/quic-driver-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/quic-fixed.rs" src/rpc/quic.rs; cp "$RUNNER_TEMP/quic-driver-fixed.rs" src/rpc/quic/driver.rs' EXIT
+          git show "$PREVIOUS:src/rpc/quic.rs" > src/rpc/quic.rs
+          git show "$PREVIOUS:src/rpc/quic/driver.rs" > src/rpc/quic/driver.rs
+          status=0
+          cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc quic_tests::connection_close_without_stream_fin_reports_truncation_after_buffered_data -- --exact > "$RUNNER_TEMP/truncation-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/truncation-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 0 passed; 1 failed' "$RUNNER_TEMP/truncation-before.log"
+          grep -F 'Result::unwrap_err()' "$RUNNER_TEMP/truncation-before.log"
+      - name: Prove fallback test catches a client trying only the first address
+        run: |
+          cp examples/kv/src/connection.rs "$RUNNER_TEMP/connection-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/connection-fixed.rs" examples/kv/src/connection.rs' EXIT
+          python3 - <<'PYCONTROL'
+          from pathlib import Path
+          path = Path('examples/kv/src/connection.rs')
+          source = path.read_text()
+          assert source.count('addresses.into_iter().enumerate()') == 1
+          path.write_text(source.replace('addresses.into_iter().enumerate()', 'addresses.into_iter().take(1).enumerate()'))
+          PYCONTROL
+          status=0
+          cargo test --locked --manifest-path examples/kv/Cargo.toml --features quic --lib connection::tests::silent_first_address_does_not_block_a_reachable_fallback -- --exact > "$RUNNER_TEMP/fallback-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/fallback-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 0 passed; 1 failed' "$RUNNER_TEMP/fallback-before.log"
+          grep -F 'silent DNS candidate blocked a reachable address' "$RUNNER_TEMP/fallback-before.log"
+      - name: Check transport interoperability before packaging
+        run: cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc --test service_examples --test tcp_rpc --test rpc_ownership
+      - name: Qualify descriptor registration and preserve generator regression coverage
+        run: |
+          cargo test --locked --lib rpc::pacing::tests
+          cargo test --locked --lib transport::socket::readiness::tests
+          cargo test --locked --test generic_parameters
+          cargo test --locked --test tooling pinned_cpp_runtime_reference -- --exact
+      - name: Prepare the package workspace
+        # The vendor stays outside the development workspace. Cargo's package
+        # workspace stages unpublished dependencies in its temporary registry.
+        run: |
+          mkdir "$RUNNER_TEMP/package-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/package-source"
+          sed -i 's/"crates\/\*"\]/"crates\/*", "vendor\/rustls"\]/; /    "vendor\/rustls",/d' "$RUNNER_TEMP/package-source/Cargo.toml"
+          cd "$RUNNER_TEMP/package-source"
+          cargo update --workspace
+      - name: Verify all packaged sources and run simple and deep examples
+        run: |
+          cd "$RUNNER_TEMP/package-source"
+          cargo package --locked \
+            -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen \
+            -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures \
+            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
+          cargo run --locked --example message_basic
+          sha256sum target/package/*.crate > target/package/SHA256SUMS
+      - name: Retain verified release packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: crates-io-packages-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/package-source/target/package/*.crate
+            ${{ runner.temp }}/package-source/target/package/SHA256SUMS
+          if-no-files-found: error
