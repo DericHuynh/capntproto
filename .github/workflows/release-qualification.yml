@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: a36be524b58011043d4d3de655819c8cf2213523
+          ref: b81dd7cf4e4e6ee9100d4aa8215975f2baf9b7c7
       - name: Install package build dependencies
         run: |
           sudo apt-get update
@@ -33,6 +33,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-packages
+          cache-on-failure: true
       - name: Test reporting and workflow safeguards
         run: cargo test --locked -p capntproto-dev
       - name: Compile encrypted benchmark adapters

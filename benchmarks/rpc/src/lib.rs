@@ -8,6 +8,7 @@ use futures::{SinkExt, StreamExt};
 use serde_json::json;
 use std::{io::Write, rc::Rc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio_rustls::rustls;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 #[allow(dead_code)]
@@ -18,6 +19,10 @@ mod grpc {
     tonic::include_proto!("echo");
 }
 mod benchmark_tls;
+// Tonic's buffered IO uses the official rustls types and the same DER policy.
+#[path = "../tls_policy.rs"]
+#[allow(dead_code)]
+mod reference_tls;
 mod secure;
 mod topology;
 mod workflows;
@@ -409,7 +414,7 @@ fn grpc_incoming(
     listener: TcpListener,
 ) -> Result<impl futures::Stream<Item = std::io::Result<tokio_rustls::server::TlsStream<TcpStream>>>>
 {
-    let mut config = (*benchmark_tls::server_config()?).clone();
+    let mut config = (*reference_tls::server_config()?).clone();
     config.alpn_protocols = vec![b"h2".to_vec()];
     let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
     Ok(tokio_stream::wrappers::TcpListenerStream::new(listener)
