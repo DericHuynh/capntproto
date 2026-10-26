@@ -1,8 +1,8 @@
 //! Shared benchmark certificate and TLS policy; identical across Rust drivers.
+use super::rustls;
 use crate::Result;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::{path::PathBuf, sync::Arc, time::Duration};
-use super::rustls;
 
 pub const DEADLINE: Duration = Duration::from_secs(10);
 pub fn directory() -> Result<PathBuf> {
