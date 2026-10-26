@@ -11,7 +11,7 @@ use rustls::{
 use std::{io::Cursor, sync::Arc};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-fn configurations(suite: SupportedCipherSuite) -> (ClientConfig, ServerConfig) {
+fn configurations(suite: SupportedCipherSuite) -> (ClientConfig, ServerConfig, Pki) {
     let pki = Pki::new();
     let mut provider = rustls::crypto::ring::default_provider();
     provider.cipher_suites = vec![suite];
@@ -32,7 +32,7 @@ fn configurations(suite: SupportedCipherSuite) -> (ClientConfig, ServerConfig) {
     // including AES-128's key length, without adding a production key API.
     client.enable_secret_extraction = true;
     server.enable_secret_extraction = true;
-    (client, server)
+    (client, server, pki)
 }
 
 fn matching_encrypters(suite: SupportedCipherSuite) -> (Box<dyn MessageEncrypter>, OwnedReference) {
@@ -47,7 +47,7 @@ fn matching_encrypters(suite: SupportedCipherSuite) -> (Box<dyn MessageEncrypter
             to.process_new_packets().unwrap();
         }
     }
-    let (client, server) = configurations(suite);
+    let (client, server, _) = configurations(suite);
     let mut client = rustls::Connection::Client(
         rustls::ClientConnection::new(Arc::new(client), "localhost".try_into().unwrap()).unwrap(),
     );
@@ -211,7 +211,33 @@ async fn direct_records_interoperate_across_automatic_key_updates_for_every_ciph
                 quic: None,
             }));
             for unbuffered_client in [true, false] {
-                let (mut client, mut server) = configurations(SupportedCipherSuite::Tls13(limited));
+                let (mut client, mut server, pki) =
+                    configurations(SupportedCipherSuite::Tls13(limited));
+                // Force the same key limit in the independently compiled official peer.
+                use tokio_rustls::rustls as reference;
+                let mut provider = reference::crypto::ring::default_provider();
+                let original = provider
+                    .cipher_suites
+                    .iter()
+                    .filter_map(|s| s.tls13())
+                    .find(|s| u16::from(s.common.suite) == u16::from(suite.common.suite))
+                    .unwrap();
+                let reference_limited = Box::leak(Box::new(reference::Tls13CipherSuite {
+                    common: reference::CipherSuiteCommon {
+                        suite: original.common.suite,
+                        hash_provider: original.common.hash_provider,
+                        confidentiality_limit: 8,
+                    },
+                    hkdf_provider: original.hkdf_provider,
+                    aead_alg: original.aead_alg,
+                    quic: None,
+                }));
+                provider.cipher_suites =
+                    vec![reference::SupportedCipherSuite::Tls13(reference_limited)];
+                let (mut reference_client, mut reference_server) =
+                    pki.reference_configs(Arc::new(provider));
+                reference_client.max_fragment_size = Some(256);
+                reference_server.max_fragment_size = Some(256);
                 client.max_fragment_size = Some(256);
                 server.max_fragment_size = Some(256);
                 let (client, server) = (Arc::new(client), Arc::new(server));
@@ -226,7 +252,7 @@ async fn direct_records_interoperate_across_automatic_key_updates_for_every_ciph
                             ping(&mut c).await;
                         },
                         async {
-                            let mut s = tokio_rustls::TlsAcceptor::from(server)
+                            let mut s = tokio_rustls::TlsAcceptor::from(Arc::new(reference_server))
                                 .accept(b)
                                 .await
                                 .unwrap();
@@ -238,10 +264,11 @@ async fn direct_records_interoperate_across_automatic_key_updates_for_every_ciph
                 } else {
                     let (extracted, _) = tokio::join!(
                         async {
-                            let mut c = tokio_rustls::TlsConnector::from(client)
-                                .connect("localhost".try_into().unwrap(), a)
-                                .await
-                                .unwrap();
+                            let mut c =
+                                tokio_rustls::TlsConnector::from(Arc::new(reference_client))
+                                    .connect("localhost".try_into().unwrap(), a)
+                                    .await
+                                    .unwrap();
                             ping(&mut c).await;
                             c.into_inner().1.dangerous_extract_secrets().unwrap()
                         },

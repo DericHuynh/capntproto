@@ -1,6 +1,6 @@
 # Maintained Capntproto crate derived from capnp. See upstream provenance and LICENSE.
 [package]
-publish = false
+publish = true
 edition = "2021"
 rust-version = "1.97.0"
 name = "capntproto-core"

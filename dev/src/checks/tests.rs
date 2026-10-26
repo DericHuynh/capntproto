@@ -168,6 +168,17 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
     }
     workflow_policy(&all).unwrap();
     for (file, pointer, value) in [
+        ("release", "/jobs/release/if", json!("true")),
+        (
+            "release",
+            "/on/workflow_dispatch/inputs/publish/default",
+            json!(true),
+        ),
+        (
+            "release",
+            "/on/workflow_dispatch/inputs/bootstrap/default",
+            json!(true),
+        ),
         ("verification-models", "/jobs/models/needs", json!(["kani"])),
         (
             "verification-models",

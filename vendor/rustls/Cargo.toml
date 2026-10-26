@@ -12,10 +12,12 @@
 [package]
 edition = "2021"
 rust-version = "1.71"
-name = "rustls"
+name = "capntproto-rustls"
 version = "0.23.46"
 build = "build.rs"
 exclude = [
+    "Cargo.toml.orig",
+    ".cargo_vcs_info.json",
     "src/testdata",
     "tests/**",
 ]
@@ -24,7 +26,7 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "Rustls is a modern TLS library written in Rust."
+description = "Capntproto rustls fork with upstream-style direct-output TLS record encryption"
 homepage = "https://github.com/rustls/rustls"
 readme = "README.md"
 categories = [
@@ -32,7 +34,7 @@ categories = [
     "cryptography",
 ]
 license = "Apache-2.0 OR ISC OR MIT"
-repository = "https://github.com/rustls/rustls"
+repository = "https://github.com/DericHuynh/capntproto"
 
 [package.metadata.docs.rs]
 features = [

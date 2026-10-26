@@ -1,6 +1,7 @@
 # Maintained Capntproto crate derived from capnpc. See upstream provenance and LICENSE.
 [package]
-publish = false
+include = ["src/**", "schema/**", "schemas/**", "build.rs", "README.md", "LICENSE*", "NOTICE", "CHANGELOG.md", "REPROTO.md", "tests/**"]
+publish = true
 edition = "2021"
 name = "capntproto-codegen"
 version = "0.25.3"

@@ -1,4 +1,6 @@
 [package]
+include = ["src/**", "schema/**", "schemas/**", "build.rs", "README.md", "LICENSE*", "NOTICE", "CHANGELOG.md", "REPROTO.md", "tests/**"]
+repository = "https://github.com/DericHuynh/capntproto"
 name = "capntproto-compiler"
 version = "0.1.0"
 edition = "2021"
@@ -6,7 +8,7 @@ rust-version = "1.97"
 license = "MIT"
 description = "Experimental Rust compiler for the Cap'n Proto schema language"
 readme = "README.md"
-publish = false
+publish = true
 
 [dependencies]
 capnp = { package = "capntproto-core", version = "0.25", path = "../capntproto-core" }

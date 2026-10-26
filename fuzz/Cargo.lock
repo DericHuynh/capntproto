@@ -157,7 +157,7 @@ dependencies = [
  "rcgen",
  "ring",
  "rustix",
- "rustls",
+ "capntproto-rustls",
  "serde",
  "serde_json",
  "socket2",
@@ -936,7 +936,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustls"
+name = "capntproto-rustls"
 version = "0.23.46"
 dependencies = [
  "once_cell",

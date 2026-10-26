@@ -1,3 +1,14 @@
+# Capntproto rustls fork
+
+This package is a maintained fork of rustls 0.23.46 for capntproto. It retains
+rustls's library name and licenses. Its TLS record encryption writes directly
+into caller-provided ciphertext storage, following the upstream implementation
+available on the rustls 0.24 development branch. It is not an official rustls
+release. Use `capntproto::rpc::tls::rustls` to configure capntproto connections;
+configs from the official `rustls` crate are a different Rust type.
+
+The upstream project and original documentation follow below.
+
 <p align="center">
   <img width="460" height="300" src="https://raw.githubusercontent.com/rustls/rustls/main/admin/rustls-logo-web.png">
 </p>

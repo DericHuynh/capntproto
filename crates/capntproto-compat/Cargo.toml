@@ -1,4 +1,6 @@
 [package]
+include = ["src/**", "schema/**", "schemas/**", "build.rs", "README.md", "LICENSE*", "NOTICE", "CHANGELOG.md", "REPROTO.md", "tests/**"]
+repository = "https://github.com/DericHuynh/capntproto"
 name = "capntproto-compat"
 version = "0.1.0"
 edition = "2021"
@@ -6,20 +8,20 @@ rust-version = "1.97"
 license = "MIT"
 description = "Optional codecs and protocol adapters for the maintained Cap'n Proto runtime"
 readme = "README.md"
-publish = false
+publish = true
 
 [dependencies]
-capnp = { package = "capntproto-core", path = "../capntproto-core" }
-capnp-rpc = { package = "capntproto-rpc", path = "../capntproto-rpc" }
-capntproto-compiler = { path = "../capntproto-compiler" }
+capnp = { package = "capntproto-core", version = "0.25.6", path = "../capntproto-core" }
+capnp-rpc = { package = "capntproto-rpc", version = "0.25.1", path = "../capntproto-rpc" }
+capntproto-compiler = { version = "0.1.0", path = "../capntproto-compiler" }
 futures = "0.3"
 serde_json = "1"
 base64 = "0.22"
 
 [build-dependencies]
-capnp = { package = "capntproto-core", path = "../capntproto-core" }
-capntproto-compiler = { path = "../capntproto-compiler" }
-capnpc = { package = "capntproto-codegen", path = "../capntproto-codegen" }
+capnp = { package = "capntproto-core", version = "0.25.6", path = "../capntproto-core" }
+capntproto-compiler = { version = "0.1.0", path = "../capntproto-compiler" }
+capnpc = { package = "capntproto-codegen", version = "0.25.3", path = "../capntproto-codegen" }
 
 [dev-dependencies]
 capntproto-test-support = { path = "../../test-support" }

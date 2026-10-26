@@ -1,8 +1,10 @@
 [package]
+include = ["src/**", "schema/**", "schemas/**", "build.rs", "README.md", "LICENSE*", "NOTICE", "CHANGELOG.md", "REPROTO.md", "tests/**"]
+repository = "https://github.com/DericHuynh/capntproto"
 name = "capntproto-rpc-wire"
 version = "0.1.0"
 edition = "2021"
-publish = false
+publish = true
 license = "MIT"
 description = "Portable RPC schemas and bounded outgoing capability publication"
 
@@ -14,13 +16,13 @@ unaligned = ["capnp/unaligned"]
 sync_reader = ["capnp/sync_reader"]
 
 [dependencies]
-capnp = { package = "capntproto-core", path = "../capntproto-core", default-features = false }
-capntproto-rpc-engine = { path = "../capntproto-rpc-engine" }
+capnp = { package = "capntproto-core", version = "0.25.6", path = "../capntproto-core", default-features = false }
+capntproto-rpc-engine = { version = "0.1.0", path = "../capntproto-rpc-engine" }
 
 [build-dependencies]
-capnp = { package = "capntproto-core", path = "../capntproto-core" }
-capnpc = { package = "capntproto-codegen", path = "../capntproto-codegen" }
-capntproto-compiler = { path = "../capntproto-compiler" }
+capnp = { package = "capntproto-core", version = "0.25.6", path = "../capntproto-core" }
+capnpc = { package = "capntproto-codegen", version = "0.25.3", path = "../capntproto-codegen" }
+capntproto-compiler = { version = "0.1.0", path = "../capntproto-compiler" }
 
 [dev-dependencies]
 allocation-counter = "=0.8.1"

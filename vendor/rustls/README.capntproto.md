@@ -5,7 +5,9 @@ backport of [rustls PR #3127](https://github.com/rustls/rustls/pull/3127), merge
 `73a793c90f2e8c8b651cd3f1131f4be27f41259b`. Original notices and licenses remain.
 `UPSTREAM.json` records the package provenance and original file hashes;
 `UPSTREAM-3127.json` records the upstream implementation and the 0.23 adaptations.
-`LOCAL.patch` is the complete delta against the published crate.
+`LOCAL.patch` records the crypto implementation delta against the published crate.
+The package manifest and README additionally identify the published fork as
+`capntproto-rustls`; `Cargo.toml.orig` retains the original upstream manifest.
 
 ## Provider contract and data path
 
@@ -34,9 +36,9 @@ buffer-recycling architecture.
 
 Application ciphertext does not pass through a temporary allocation or copy.
 Plaintext still enters output once. Received plaintext and queued handshake/control
-records retain their 0.23 storage behavior. The root path dependency and maintained
-RPC benchmark patch resolve to this vendor; the independent upstream fixture uses
-registry rustls.
+records retain their 0.23 storage behavior. The root dependency aliases the `capntproto-rustls` package as `rustls`; the
+maintained benchmark uses it through the root facade. The independent buffered
+reference fixture uses official registry rustls. No consumer Cargo patch is required.
 
 ## Validation
 

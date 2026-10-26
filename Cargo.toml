@@ -1,4 +1,5 @@
 [package]
+repository = "https://github.com/DericHuynh/capntproto"
 name = "capntproto"
 version = "0.1.0"
 edition = "2021"
@@ -6,8 +7,9 @@ license = "MIT"
 description = "Capntproto: Rust schemas, capability RPC, encrypted transport and durable storage"
 readme = "README.md"
 rust-version = "1.97"
-publish = false
+publish = true
 build = "build.rs"
+include = ["src/**", "schemas/**", "build.rs", "examples/*.rs", "examples/*.capnp", "examples/support/**", "examples/README.md", "tests/interop/quic_peer.rs", "README.md", "LICENSE"]
 
 [workspace]
 resolver = "2"
@@ -38,7 +40,7 @@ tls = ["dep:rustls"]
 quic = ["native"]
 
 [dependencies]
-capntproto-rpc-engine = { path = "crates/capntproto-rpc-engine" }
+capntproto-rpc-engine = { version = "0.1.0", path = "crates/capntproto-rpc-engine" }
 bytes = { version = "1", optional = true }
 boring = { version = "5", optional = true }
 x509-parser = { version = "0.18", optional = true }
@@ -51,7 +53,7 @@ futures = "0.3"
 tokio = { version = "1.53.1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 socket2 = "0.6"
-rustls = { version = "=0.23.46", path = "vendor/rustls", optional = true, default-features = false, features = ["ring", "std"] }
+rustls = { package = "capntproto-rustls", version = "=0.23.46", path = "vendor/rustls", optional = true, default-features = false, features = ["ring", "std"] }
 ring = "0.17"
 memmap2 = { version = "0.9", optional = true }
 fs2 = { version = "0.4", optional = true }
@@ -63,7 +65,7 @@ tempfile = "3"
 
 [build-dependencies]
 capnpc = { package = "capntproto-codegen", version = "0.25", path = "crates/capntproto-codegen", optional = true }
-capntproto-compiler = { path = "crates/capntproto-compiler", optional = true }
+capntproto-compiler = { version = "0.1.0", path = "crates/capntproto-compiler", optional = true }
 capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntproto-core" }
 
 [dev-dependencies]
@@ -130,6 +132,3 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(capntproto_verus)"] }
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"
 missing_safety_doc = "deny"
-
-[patch.crates-io]
-rustls = { path = "vendor/rustls" }

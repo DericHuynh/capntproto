@@ -93,7 +93,7 @@ async fn unbuffered_client_interoperates_with_buffered_server_and_key_updates() 
     tokio::time::timeout(TIMEOUT, async {
         let pki = Pki::new();
         let (client, server) = tokio::io::duplex(37);
-        let acceptor = tokio_rustls::TlsAcceptor::from(pki.server(false));
+        let acceptor = tokio_rustls::TlsAcceptor::from(pki.reference_server());
         // Start application reads as soon as that side's handshake finishes.
         // A joint handshake barrier would prevent the client from draining the
         // server's post-handshake tickets through this 37-byte transport.
@@ -132,7 +132,7 @@ async fn unbuffered_server_interoperates_with_buffered_client_and_rejects_trunca
     tokio::time::timeout(TIMEOUT, async {
         let pki = Pki::new();
         let (client, server) = tokio::io::duplex(8192);
-        let connector = tokio_rustls::TlsConnector::from(pki.client(false));
+        let connector = tokio_rustls::TlsConnector::from(pki.reference_client());
         let (client, server) = tokio::join!(
             connector.connect("localhost".try_into().unwrap(), client),
             TlsStream::accept(server, pki.server(false)),
@@ -160,7 +160,7 @@ async fn corrupted_application_record_is_rejected() {
     tokio::time::timeout(TIMEOUT, async {
         let pki = Pki::new();
         let (client, server) = tokio::io::duplex(8192);
-        let connector = tokio_rustls::TlsConnector::from(pki.client(false));
+        let connector = tokio_rustls::TlsConnector::from(pki.reference_client());
         let (client, server) = tokio::join!(
             connector.connect("localhost".try_into().unwrap(), client),
             TlsStream::accept(server, pki.server(false)),

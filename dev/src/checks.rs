@@ -333,6 +333,30 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
         }
     }
     ensure!(automatic == ["ci"], "CI must have one automatic entrypoint");
+    if let Some(release) = all.get("release") {
+        ensure!(
+            keys(&release["on"])? == BTreeSet::from(["workflow_dispatch".into()])
+                && release["on"]["workflow_dispatch"]["inputs"]["publish"]["default"] == false
+                && release["on"]["workflow_dispatch"]["inputs"]["bootstrap"]["default"] == false
+                && release["jobs"]["release"]["if"] == "github.ref == 'refs/heads/main'"
+                && release["concurrency"]["cancel-in-progress"] == false,
+            "crate publication must be explicit, default to verification, and use main"
+        );
+        let steps = release["jobs"]["release"]["steps"]
+            .as_array()
+            .context("release steps")?;
+        for name in [
+            "Require passing CI for the exact release commit",
+            "Publish the verified package set",
+        ] {
+            ensure!(
+                steps
+                    .iter()
+                    .any(|step| step["name"] == name && step["if"] == "inputs.publish"),
+                "publication requires both the exact-commit CI gate and explicit input"
+            );
+        }
+    }
     let ci = &all["ci"];
     ensure!(
         ci["on"]["pull_request"].is_null(),

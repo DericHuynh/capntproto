@@ -2,7 +2,7 @@
 use crate::Result;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::{path::PathBuf, sync::Arc, time::Duration};
-use tokio_rustls::rustls;
+use super::rustls;
 
 pub const DEADLINE: Duration = Duration::from_secs(10);
 pub fn directory() -> Result<PathBuf> {

@@ -336,7 +336,7 @@ fn pinned_native_profile() {
         "native/dependencies",
     );
     assert!(!graph.contains("snow v"));
-    assert!(graph.contains("rustls v"));
+    assert!(graph.contains("capntproto-rustls v"));
     assert!(graph.contains("boring v"));
     let output = cargo(
         &["metadata", "--locked", "--format-version", "1"],

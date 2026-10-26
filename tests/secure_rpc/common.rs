@@ -55,6 +55,55 @@ impl Pki {
         }
     }
 
+    // The buffered interoperability peer uses the official registry rustls,
+    // independently of the production fork, with the same CA and TLS policy.
+    pub fn reference_configs(
+        &self,
+        provider: Arc<tokio_rustls::rustls::crypto::CryptoProvider>,
+    ) -> (
+        tokio_rustls::rustls::ClientConfig,
+        tokio_rustls::rustls::ServerConfig,
+    ) {
+        use tokio_rustls::rustls as reference;
+        let mut roots = reference::RootCertStore::empty();
+        roots.add(self.ca.der().clone()).unwrap();
+        let mut client = reference::ClientConfig::builder_with_provider(provider.clone())
+            .with_protocol_versions(&[&reference::version::TLS13])
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let identity = self.identity("localhost", false, false);
+        let mut server = reference::ServerConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&reference::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(identity.certificates, identity.private_key)
+            .unwrap();
+        client.alpn_protocols = vec![tls::ALPN.to_vec()];
+        server.alpn_protocols = client.alpn_protocols.clone();
+        client.enable_secret_extraction = true;
+        server.enable_secret_extraction = true;
+        (client, server)
+    }
+
+    pub fn reference_server(&self) -> Arc<tokio_rustls::rustls::ServerConfig> {
+        Arc::new(
+            self.reference_configs(Arc::new(
+                tokio_rustls::rustls::crypto::ring::default_provider(),
+            ))
+            .1,
+        )
+    }
+
+    pub fn reference_client(&self) -> Arc<tokio_rustls::rustls::ClientConfig> {
+        Arc::new(
+            self.reference_configs(Arc::new(
+                tokio_rustls::rustls::crypto::ring::default_provider(),
+            ))
+            .0,
+        )
+    }
+
     pub fn server(&self, mutual: bool) -> Arc<rustls::ServerConfig> {
         tls::server_config(
             self.identity("localhost", false, false),

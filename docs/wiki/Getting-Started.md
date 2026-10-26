@@ -59,10 +59,12 @@ The downstream check copies `examples/downstream` outside the workspace. It
 generates the field API, starts two RPC systems, calls a returned capability
 through a pipeline, and commits/reopens storage. It executes default and
 optimized builds. Its manifest shows the dependency
-recipe: point `capntproto`, `capnp`, `capnp-rpc` and build dependency `capnpc` at
-the **same unpacked bundle**. Internal paths select `capntproto-{core,rpc,futures,codegen}` using
-Cargo package aliases; no consumer `[patch.crates-io]` table is needed. Consumers own
-their Cargo.lock and must retain the coordinated versions. The separate sample
+recipe: use `capntproto` as the runtime dependency and access `capnp`, `capnp_rpc`
+and `capnp_futures` through its re-exports. Schema generation uses the
+`capntproto-codegen` build dependency (aliased as `capnpc`) and
+`CompilerCommand::capnp_root("::capntproto::capnp")`. Published dependencies carry
+registry versions; source checkouts also carry local paths. No consumer
+`[patch.crates-io]` table is needed. Consumers own their Cargo.lock. The separate sample
 uses in-memory duplex transport; `native_store` exercises the UDP/Native service.
 
 All combinations of `native`, `storage`, and `services`, including none, are
@@ -182,3 +184,35 @@ Report suspected vulnerabilities privately to
 [huynhderic@gmail.com](mailto:huynhderic@gmail.com); see the
 [security policy](../../SECURITY.md). Maintainers should also enable GitHub's private
 reporting form using the [repository setup guide](GitHub-Setup.md).
+
+## Publishing releases
+
+The repository's `release.yml` workflow verifies the complete package set and
+runs both simple and deep RPC examples before authenticating. Run it from `main`
+with **publish** unchecked to check a release without uploading. Publishing also
+requires a successful CI run for that exact commit.
+
+For the first release, create a short-lived crates.io API token permitted to
+publish the new crate names, then store it in this repository under **Settings →
+Secrets and variables → Actions → New repository secret**, named
+`CARGO_REGISTRY_TOKEN`. Do not put the token in source code, workflow inputs or
+chat. Run **Release / crates.io** with **publish** and **bootstrap** checked.
+Crates.io requires this initial token publication before trusted publishing can
+be configured for a new crate.
+
+After that first upload, open each crate's **Settings → Trusted Publishing** on
+crates.io and add a GitHub publisher with owner `DericHuynh`, repository
+`capntproto`, workflow filename `release.yml`, and no environment. Configure all
+ten packages: `capntproto`, `capntproto-core`, `capntproto-codegen`,
+`capntproto-compiler`, `capntproto-futures`, `capntproto-rpc`,
+`capntproto-rpc-engine`, `capntproto-rpc-wire`, `capntproto-compat` and
+`capntproto-rustls`. Subsequent releases use **publish** checked and **bootstrap**
+unchecked. GitHub OIDC then obtains a temporary token; the pinned official
+[rust-lang action](https://github.com/rust-lang/crates-io-auth-action) revokes it
+at job completion. Remove the bootstrap secret and revoke its token after the
+trusted publisher is configured.
+
+The `capntproto-rustls` package preserves our direct-output record encryption
+backport and the upstream rustls licenses. Configure it through
+`capntproto::rpc::tls::rustls`; the official `rustls` crate has distinct config
+types. See the [fork's provenance and API differences](../../vendor/rustls/README.capntproto.md).
