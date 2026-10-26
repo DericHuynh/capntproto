@@ -305,7 +305,7 @@ pub fn distribution(mut values: Vec<f64>) -> Result<Value> {
     } else {
         values[n / 2 - 1] / 2.0 + values[n / 2] / 2.0
     };
-    Ok(json!({"estimator":"minimum","median":median,"min":values[0],"max":values[n-1]}))
+    Ok(json!({"median":median,"min":values[0],"max":values[n-1]}))
 }
 fn metrics(rows: &[Value], fields: &[&str]) -> Result<Value> {
     let mut result = json!({});
@@ -453,7 +453,7 @@ pub fn summarize(kind: Kind, directory: &Path) -> Result<()> {
     }
     crate::write_json(
         directory.join("summary.json"),
-        &json!({"aggregation":"Median and range of per-run statistics, never pooled percentiles. Rejections and expiries are separate outcomes, not successful latencies. Snapshot cases have no latency samples (zero fields mean not measured). Process CPU includes setup and verification; elapsed_ns is the timed region.","scenarios":scenarios}),
+        &json!({"estimator":"minimum","aggregation":"Minimum of per-run statistics; median and range retained as diagnostics, never pooled percentiles. Rejections and expiries are separate outcomes, not successful latencies. Snapshot cases have no latency samples (zero fields mean not measured). Process CPU includes setup and verification; elapsed_ns is the timed region.","scenarios":scenarios}),
     )
 }
 fn rpc(output: &Path, binary: &Path) -> Result<()> {
@@ -643,6 +643,7 @@ fn compare(base: &Path, output: &Path, trials: u32, iterations: u32) -> Result<(
     }
     ensure!(sources == inputs()?, "benchmark inputs changed during run");
     let mut report=environment(&binary,Some(&base),&sources,"Comparison adapter, not full ORM/history/capability integration. Fixed slots omit allocator/graph relocation; timings from one shared host; RSS is process peak; coexistence bytes are logical, not physical peak; warm-cache reopen; fsync calls do not prove hardware power-loss behavior.")?;
+    report["estimator"] = json!("minimum");
     report["summary"] = summary;
     report["trials"] = json!(trials);
     report["iterations"] = json!(iterations);
@@ -722,8 +723,10 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             std::fs::copy(source.join("runs.jsonl"), dir.path().join("runs.jsonl")).unwrap();
             summarize(kind, dir.path()).unwrap();
+            let report = crate::read_json(dir.path().join("summary.json")).unwrap();
+            assert_eq!(report["estimator"], "minimum");
             assert_eq!(
-                scenarios(crate::read_json(dir.path().join("summary.json")).unwrap()),
+                scenarios(report),
                 scenarios(crate::read_json(source.join("summary.json")).unwrap()),
                 "{folder} statistics changed"
             );
