@@ -11,7 +11,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-25T22:32:59Z · run 40240714431 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40240714431) · commit `d57692ae2c6c` · **failure**
+Latest Cargo run: [2026-10-26T00:07:26Z · run 40247810785 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40247810785) · commit `c8c1d60320d9` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
@@ -19,7 +19,7 @@ Latest Cargo run: [2026-10-25T22:32:59Z · run 40240714431 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-25T22:32:59Z · run 40240714431 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40240714431) · commit `d57692ae2c6c` · **failure**
+[2026-10-26T00:07:26Z · run 40247810785 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40247810785) · commit `c8c1d60320d9` · **cancelled**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -27,7 +27,7 @@ Latest Cargo run: [2026-10-25T22:32:59Z · run 40240714431 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-25T22:32:59Z · run 40240714431 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40240714431) · commit `d57692ae2c6c` · **failure**
+[2026-10-26T00:07:26Z · run 40247810785 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40247810785) · commit `c8c1d60320d9` · **cancelled**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
@@ -37,9 +37,9 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-25T22:32:59Z · run 40240714431 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40240714431) · commit `d57692ae2c6c` · **failure**
+Latest benchmark run: [2026-10-26T00:07:26Z · run 40247810785 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40247810785) · commit `c8c1d60320d9` · **cancelled**
 
-Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
+Measurement evidence: **unavailable**. This workflow attempt produced no public measurement artifact&#46;
 
 Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP, upstream Rust Cap’n Proto (`capnp-rust`), and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
 
