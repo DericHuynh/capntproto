@@ -1,0 +1,93 @@
+name: Trace remaining portable answer-adoption stalls
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      CAPNTPROTO_REFERENCE_CXX: clang++-22
+      TLA2TOOLS_JAR: /tmp/tla2tools.jar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 54849325c26c5f0f4181891d3d346ae91c791aa2
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang-22 libclang-22-dev pkg-config default-jre-headless
+          rustup toolchain install 1.97.0 --profile minimal
+          git submodule update --init --depth 1 -- vendor/capnproto
+          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$TLA2TOOLS_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLA2TOOLS_JAR" | sha256sum --check --strict
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Add temporary bounded tracing
+        run: |
+          python3 - <<'PYTRACE'
+          from pathlib import Path
+          
+          def edit(name, old, new):
+           p=Path(name); s=p.read_text(); assert s.count(old)==1,(name,old,s.count(old)); p.write_text(s.replace(old,new))
+          p=Path('crates/capntproto-rpc/src/portable.rs')
+          p.write_text(p.read_text()+'''
+          pub(crate) fn bug_trace(args: std::fmt::Arguments<'_>) {
+              use std::sync::atomic::{AtomicUsize,Ordering};
+              static COUNT: AtomicUsize=AtomicUsize::new(0);
+              if COUNT.fetch_add(1,Ordering::Relaxed)<5000 { eprintln!("TRACE {args}"); }
+          }
+          ''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs', '''        if self.prepare_transfer(coordinator, messages)? {''', '''        crate::portable::bug_trace(format_args!("network {:p} enter pending={} sent={} handoff={} produced={} adoptions={}", Rc::as_ptr(&self.commands), self.pending.len(),self.sent.len(),self.handoffs.len(),self.produced.len(),self.commands.adoptions.borrow().len()));
+                  if self.prepare_transfer(coordinator, messages)? {
+                      crate::portable::bug_trace(format_args!("network {:p} prepare transfer", Rc::as_ptr(&self.commands)));''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/handoff.rs', '''                    if let AwaitStage::Authenticate(future) = result {''', '''                    crate::portable::bug_trace(format_args!("handoff {:p} await", Rc::as_ptr(&self.commands)));
+                              if let AwaitStage::Authenticate(future) = result {''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/handoff.rs', '''                        *result = AwaitStage::Response(match ready {''', '''                        crate::portable::bug_trace(format_args!("handoff {:p} authenticated", Rc::as_ptr(&self.commands)));
+                                  *result = AwaitStage::Response(match ready {''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/handoff.rs', '''                    let Job::Await { token, .. } = self.handoffs.swap_remove(index) else {''', '''                    crate::portable::bug_trace(format_args!("handoff {:p} response", Rc::as_ptr(&self.commands)));
+                              let Job::Await { token, .. } = self.handoffs.swap_remove(index) else {''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/handoff.rs', '''                    let exchange = match result {''', '''                    crate::portable::bug_trace(format_args!("handoff {:p} adopt", Rc::as_ptr(&self.commands)));
+                              let exchange = match result {''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/handoff.rs', '''    let changed = !waiting.is_empty();''', '''    let changed = !waiting.is_empty();
+              if changed { crate::portable::bug_trace(format_args!("project {:p} waiting={}", Rc::as_ptr(pipeline),waiting.len())); }''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty/tail.rs', '''            let mut job = self.produced.pop_front().expect("retained adoption");''', '''            let mut job = self.produced.pop_front().expect("retained adoption");
+                      crate::portable::bug_trace(format_args!("produced {:p} poll {:?} collected={}", Rc::as_ptr(&self.commands), job.key, job.collected));''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs', '''        let mut remaining = self.options.budget.get();''', '''        crate::portable::bug_trace(format_args!("pump {:p} budget={} active={:?} control_idle={} pending={:?}", self, self.options.budget, self.schedule.active, self.control_idle, self.notifications.pending()));
+                  let mut remaining = self.options.budget.get();''')
+          edit('crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs', '''                drop(context);
+                          match result {''', '''                drop(context);
+                          crate::portable::bug_trace(format_args!("pump {:p} control result={:?} active={:?}", self, result,self.schedule.active));
+                          match result {''')
+          edit('crates/capntproto-rpc/src/scoped/wire.rs', '''        let cached = self.0.cached.borrow().get(path).map(|hook| hook.add_ref());''', '''        crate::portable::bug_trace(format_args!("pipeline {:p} get owner={} adopted={} used={} finished={}", Rc::as_ptr(&self.0), self.0.owner_wake.borrow().is_some(),self.0.adopted.borrow().is_some(),self.0.used.get(),self.0.finished.borrow().is_some()));
+                  let cached = self.0.cached.borrow().get(path).map(|hook| hook.add_ref());''')
+          edit('tests/answer_adoption.rs', '''            for budget in [1, 7, 64] {''', '''            for budget in [1, 7, 64] {
+                          eprintln!("STAGE budget={budget} begin");''')
+          edit('tests/answer_adoption.rs', '''                    let request = remote.pending_request().send();
+                              let early = request.pipeline.get_cap().echo_request().send().promise;''', '''                    eprintln!("STAGE budget={budget} resolved");
+                              let request = remote.pending_request().send();
+                              let early = request.pipeline.get_cap().echo_request().send().promise;''')
+          edit('tests/answer_adoption.rs', '''                    gate.send(()).unwrap();
+                              let response = request.promise.await.unwrap();''', '''                    eprintln!("STAGE budget={budget} opening gate");
+                              gate.send(()).unwrap();
+                              let response = request.promise.await.unwrap();
+                              eprintln!("STAGE budget={budget} root done");''')
+          PYTRACE
+      - name: Trace pipeline transfer at each polling budget
+        run: cargo test --locked --features quic --test answer_adoption portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget -- --exact --nocapture
+      - name: Trace native early pipeline
+        if: success() || failure()
+        run: cargo test --locked --features quic --test answer_adoption third_party_tail_returns_over_authenticated_native -- --exact --nocapture
