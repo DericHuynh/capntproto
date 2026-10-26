@@ -11,7 +11,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
+Latest Cargo run: [2026-10-26T05:46:59Z · run 40276085394 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40276085394) · commit `3e9c31f719d3` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
@@ -19,7 +19,7 @@ Latest Cargo run: [2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
+[2026-10-26T05:46:59Z · run 40276085394 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40276085394) · commit `3e9c31f719d3` · **cancelled**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -27,7 +27,7 @@ Latest Cargo run: [2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
+[2026-10-26T05:46:59Z · run 40276085394 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40276085394) · commit `3e9c31f719d3` · **cancelled**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
@@ -37,7 +37,7 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-26T04:51:14Z · run 40271179389 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40271179389) · commit `11e43f2922f0` · **cancelled**
+Latest benchmark run: [2026-10-26T05:46:59Z · run 40276085394 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40276085394) · commit `3e9c31f719d3` · **cancelled**
 
 Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
 
