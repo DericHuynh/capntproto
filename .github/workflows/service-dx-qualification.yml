@@ -1,0 +1,129 @@
+name: Qualify batched server teardown and interrupted UDP fixes
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      TLA2TOOLS_JAR: /tmp/tla2tools.jar
+      CAPNTPROTO_REFERENCE_CXX: clang++-22
+      BUG_BASELINE: 55751bda9da4a9441c104ff25a7124df5a9908f1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: cb13c3be72227ccccb9082805c098744afdbdfaa
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang-22 libclang-22-dev pkg-config default-jre-headless
+          rustup toolchain install 1.97.0 --profile minimal
+          git submodule update --init --depth 1 -- vendor/capnproto
+          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$TLA2TOOLS_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLA2TOOLS_JAR" | sha256sum --check --strict
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Prove both server teardown regressions against the previous implementation
+        run: |
+          git fetch --no-tags --depth=1 origin "$BUG_BASELINE"
+          cp crates/capntproto-rpc/src/twoparty/facade.rs "$RUNNER_TEMP/facade-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/facade-fixed.rs" crates/capntproto-rpc/src/twoparty/facade.rs' EXIT
+          git show "$BUG_BASELINE:crates/capntproto-rpc/src/twoparty/facade.rs" > crates/capntproto-rpc/src/twoparty/facade.rs
+          for case in canceled_server_drains_release_connections_before_notifying_waiters owned_accept_rejects_reentry_while_the_server_driver_is_dropping; do
+            status=0
+            cargo test --locked --no-default-features --test twoparty_facade "$case" -- --exact > "$RUNNER_TEMP/$case-before.log" 2>&1 || status=$?
+            cat "$RUNNER_TEMP/$case-before.log"
+            test "$status" -eq 101
+            grep -F 'test result: FAILED. 0 passed; 1 failed' "$RUNNER_TEMP/$case-before.log"
+          done
+          grep -F 'drain cancellation was published before connection cleanup' "$RUNNER_TEMP/canceled_server_drains_release_connections_before_notifying_waiters-before.log"
+          grep -F 'a dying server reported accepting a connection without a driver' "$RUNNER_TEMP/owned_accept_rejects_reentry_while_the_server_driver_is_dropping-before.log"
+      - name: Verify minimal client and server lifecycle APIs
+        run: cargo test --locked --no-default-features --test twoparty_facade --test rpc_ownership --test tcp_rpc -- --test-threads=1
+      - name: Prove interrupted packet sends fail in the previous implementation
+        run: |
+          cp src/rpc/packet_batch.rs "$RUNNER_TEMP/packet-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/packet-fixed.rs" src/rpc/packet_batch.rs' EXIT
+          python3 - <<'PYCONTROL'
+          from pathlib import Path
+          import os,subprocess
+          path=Path('src/rpc/packet_batch.rs')
+          current=path.read_text()
+          marker='#[cfg(test)]\nmod interrupted_tests {'
+          assert current.count(marker)==1
+          tests=marker+current.split(marker,1)[1].split('\nimpl Sender {',1)[0]
+          baseline=subprocess.check_output(['git','show',os.environ['BUG_BASELINE']+':src/rpc/packet_batch.rs'],text=True)
+          path.write_text(baseline+'\n'+tests+'\n')
+          PYCONTROL
+          status=0
+          cargo test --locked --features quic --lib rpc::packet_batch::interrupted_tests > "$RUNNER_TEMP/packet-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/packet-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 0 passed; 3 failed' "$RUNNER_TEMP/packet-before.log"
+          grep -F 'interrupted packet send terminated the flight' "$RUNNER_TEMP/packet-before.log"
+          grep -F 'interrupted aggregate send terminated the flight' "$RUNNER_TEMP/packet-before.log"
+      - name: Prove interrupted receive closes an authenticated session in the previous implementation
+        run: |
+          cp src/transport/socket.rs "$RUNNER_TEMP/socket-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/socket-fixed.rs" src/transport/socket.rs' EXIT
+          git show "$BUG_BASELINE:src/transport/socket.rs" > src/transport/socket.rs
+          status=0
+          cargo test --locked --features quic --lib transport::simulation::tests::interrupted_receive_preserves_authenticated_bidirectional_streams -- --exact > "$RUNNER_TEMP/receive-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/receive-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 0 passed; 1 failed' "$RUNNER_TEMP/receive-before.log"
+          grep -F 'interrupted receive closed an authenticated session' "$RUNNER_TEMP/receive-before.log"
+      - name: Prove oversized introduction fields allocate before validation in the previous implementation
+        run: |
+          cp src/introduction.rs "$RUNNER_TEMP/introduction-fixed.rs"
+          trap 'cp "$RUNNER_TEMP/introduction-fixed.rs" src/introduction.rs' EXIT
+          git show "$BUG_BASELINE:src/introduction.rs" > src/introduction.rs
+          status=0
+          cargo test --locked --features quic --test handoff_auth oversized_introduction_fields_are_rejected_without_copying_the_input -- --exact > "$RUNNER_TEMP/introduction-before.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/introduction-before.log"
+          test "$status" -eq 101
+          grep -F 'test result: FAILED. 0 passed; 1 failed' "$RUNNER_TEMP/introduction-before.log"
+          grep -F 'invalid id was copied before validation' "$RUNNER_TEMP/introduction-before.log"
+      - name: Verify packet boundaries, offload fallback and native recovery
+        run: |
+          cargo test --locked --features quic --lib rpc::packet_batch
+          cargo test --locked --features quic --lib transport::socket
+          cargo test --locked --features quic --lib transport::simulation::tests::interrupted_receive_preserves_authenticated_bidirectional_streams -- --exact
+          cargo test --locked --features quic --lib transport::simulation::tests::real_drivers_preserve_bidirectional_bytes_and_receipts_through_packet_faults -- --exact
+          cargo test --locked --features quic --lib transport::simulation::tests::receive_failure_wakes_driver_without_publishing_authentication -- --exact
+      - name: Verify encrypted RPC and public service ownership
+        run: |
+          cargo test --locked --features quic --test twoparty_facade --test unix_facade --test handoff_auth --test subscriptions --test rpc_ownership --test secure_rpc --test service_examples --test tcp_rpc --test rpc -- --test-threads=1
+          cargo clippy --locked -p capntproto --features quic --lib --test twoparty_facade --test handoff_auth -- -D warnings
+      - name: Verify formatting and documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo fmt --all -- --check
+          cargo doc --locked -p capntproto --no-default-features --no-deps --lib
+          cargo doc --locked -p capntproto --no-deps --lib
+          cargo doc --locked -p capntproto --features quic --no-deps --lib
+      - name: Prepare the package workspace
+        run: |
+          mkdir "$RUNNER_TEMP/package-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/package-source"
+          sed -i 's/"crates\/\*"\]/"crates\/*", "vendor\/rustls"\]/; /    "vendor\/rustls",/d' "$RUNNER_TEMP/package-source/Cargo.toml"
+          cd "$RUNNER_TEMP/package-source"
+          cargo update --workspace
+      - name: Verify all release packages
+        run: |
+          cd "$RUNNER_TEMP/package-source"
+          cargo package --locked -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
