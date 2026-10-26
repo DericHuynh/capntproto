@@ -4,6 +4,7 @@ use capnp::{capability::Promise, traits::HasTypeId};
 use capntproto::{
     authority::{Grant, ObjectGeneration, ObjectId, Rights},
     orm::{ObjectServer, ObjectState},
+    rpc::Connection,
     storage::{ObjectKey, Revision, Store, Update},
     store_capnp::{document, history, object, observer, subscription},
 };
@@ -18,6 +19,7 @@ struct Fixture {
     state: Rc<ObjectState>,
     grant: Grant,
     object: Object,
+    connections: Vec<Connection>,
     _directory: tempfile::TempDir,
 }
 impl Fixture {
@@ -39,8 +41,22 @@ impl Fixture {
             state,
             grant,
             object,
+            connections: Vec::new(),
             _directory: directory,
         }
+    }
+    fn routed(&mut self, object: Object, wire: bool) -> Object {
+        if !wire {
+            return object;
+        }
+        use capnp_rpc::rpc_twoparty_capnp::Side;
+        let (left, right) = tokio::io::duplex(64 * 1024);
+        self.connections
+            .push(Connection::new(right, Some(object.client), Side::Server));
+        let client = Connection::new(left, None, Side::Client);
+        let object = client.bootstrap();
+        self.connections.push(client);
+        object
     }
     fn other_client(&self) -> Object {
         ObjectServer::client(
@@ -152,33 +168,36 @@ async fn drain() {
 async fn subscriptions_follow_publications_from_every_store_writer() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for writer in 0..3 {
-                for publish_first in [false, true] {
-                    let f = Fixture::new();
-                    let publication = async {
-                        if writer == 0 {
-                            publish(&f.other_client()).await;
-                        } else {
-                            f.publish_directly(writer == 2);
+            for wire in [false, true] {
+                for writer in 0..3 {
+                    for publish_first in [false, true] {
+                        let mut f = Fixture::new();
+                        let object = f.routed(f.object.clone(), wire);
+                        let publication = async {
+                            if writer == 0 {
+                                publish(&f.other_client()).await;
+                            } else {
+                                f.publish_directly(writer == 2);
+                            }
+                        };
+                        tokio::pin!(publication);
+                        if publish_first {
+                            (&mut publication).await;
                         }
-                    };
-                    tokio::pin!(publication);
-                    if publish_first {
-                        (&mut publication).await;
+                        let (subscription, mut events) = subscribe(&object, Reply::Ok).await;
+                        drain().await;
+                        if !publish_first {
+                            assert!(events.try_recv().is_err());
+                            publication.await;
+                        }
+                        assert_eq!(
+                            tokio::time::timeout(Duration::from_secs(2), events.recv())
+                                .await
+                                .expect("subscription missed a store publication"),
+                            Some((1, "updated".into())),
+                        );
+                        subscription.cancel_request().send().promise.await.unwrap();
                     }
-                    let (subscription, mut events) = subscribe(&f.object, Reply::Ok).await;
-                    drain().await;
-                    if !publish_first {
-                        assert!(events.try_recv().is_err());
-                        publication.await;
-                    }
-                    assert_eq!(
-                        tokio::time::timeout(Duration::from_secs(2), events.recv())
-                            .await
-                            .expect("subscription missed a store publication"),
-                        Some((1, "updated".into())),
-                    );
-                    subscription.cancel_request().send().promise.await.unwrap();
                 }
             }
         })
@@ -189,26 +208,29 @@ async fn subscriptions_follow_publications_from_every_store_writer() {
 async fn revoked_subscriptions_stop_idle_and_blocked_observers() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for blocked in [false, true] {
-                let f = Fixture::new();
-                let child = f.grant.delegate([2; 32], Rights::SUBSCRIBE).unwrap();
-                let subscriber = ObjectServer::client(f.state.clone(), child.clone()).unwrap();
-                let (subscription, mut events) = subscribe(&subscriber, Reply::Pending).await;
-                if blocked {
-                    publish(&f.object).await;
-                    tokio::time::timeout(Duration::from_secs(2), events.recv())
+            for wire in [false, true] {
+                for blocked in [false, true] {
+                    let mut f = Fixture::new();
+                    let child = f.grant.delegate([2; 32], Rights::SUBSCRIBE).unwrap();
+                    let subscriber = ObjectServer::client(f.state.clone(), child.clone()).unwrap();
+                    let subscriber = f.routed(subscriber, wire);
+                    let (subscription, mut events) = subscribe(&subscriber, Reply::Pending).await;
+                    if blocked {
+                        publish(&f.object).await;
+                        tokio::time::timeout(Duration::from_secs(2), events.recv())
+                            .await
+                            .unwrap()
+                            .unwrap();
+                    } else {
+                        drain().await;
+                    }
+                    child.revoke();
+                    assert!(tokio::time::timeout(Duration::from_secs(2), events.recv())
                         .await
-                        .unwrap()
-                        .unwrap();
-                } else {
-                    drain().await;
+                        .expect("revocation left the observer retained")
+                        .is_none());
+                    assert_slot_released(&f.object, &subscription).await;
                 }
-                child.revoke();
-                assert!(tokio::time::timeout(Duration::from_secs(2), events.recv())
-                    .await
-                    .expect("revocation left the observer retained")
-                    .is_none());
-                assert_slot_released(&f.object, &subscription).await;
             }
         })
         .await;
@@ -239,14 +261,17 @@ async fn assert_slot_released(object: &Object, subscription: &subscription::Clie
 async fn failed_observers_release_their_subscription_slot() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let f = Fixture::new();
-            let (subscription, mut events) = subscribe(&f.object, Reply::Error).await;
-            publish(&f.object).await;
-            tokio::time::timeout(Duration::from_secs(2), events.recv())
-                .await
-                .unwrap()
-                .unwrap();
-            assert_slot_released(&f.object, &subscription).await;
+            for wire in [false, true] {
+                let mut f = Fixture::new();
+                let object = f.routed(f.object.clone(), wire);
+                let (subscription, mut events) = subscribe(&object, Reply::Error).await;
+                publish(&f.object).await;
+                tokio::time::timeout(Duration::from_secs(2), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_slot_released(&object, &subscription).await;
+            }
         })
         .await;
 }
