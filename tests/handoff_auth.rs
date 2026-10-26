@@ -11,6 +11,53 @@ use capntproto::{
 use std::{cell::RefCell, net::SocketAddr, rc::Rc, time::Duration};
 use tokio::{io::AsyncWriteExt, net::UdpSocket};
 
+#[test]
+fn oversized_introduction_fields_are_rejected_without_copying_the_input() {
+    use capntproto::{introduction, store_capnp::introduction_ticket};
+    use futures::FutureExt;
+    let identity = Identity::generate();
+    let oversized = vec![0x17; 4 * 1024 * 1024];
+    for field in ["id", "context"] {
+        let mut message = capnp::message::Builder::new_default();
+        let mut ticket = message.init_root::<introduction_ticket::Builder>();
+        ticket.set_id(if field == "id" { &oversized } else { &[1; 32] });
+        ticket.set_context(if field == "context" {
+            &oversized
+        } else {
+            &[2; 32]
+        });
+        ticket.set_target(&[3; 32]);
+        ticket.set_recipient(&identity.public_key());
+        ticket.set_psk(&[4; 32]);
+        ticket.set_address("127.0.0.1:1");
+        let ticket = message
+            .get_root_as_reader::<introduction_ticket::Reader>()
+            .unwrap();
+        let mut failure = None;
+        let allocated = allocation_counter::measure(|| {
+            match introduction::connect::<document::Owned>(
+                &identity,
+                ticket,
+                "127.0.0.1:0".parse().unwrap(),
+            )
+            .now_or_never()
+            {
+                Some(Err(error)) => failure = Some(error),
+                _ => panic!("invalid ticket did not fail before starting network IO"),
+            }
+        });
+        assert!(failure.unwrap().extra.contains(if field == "id" {
+            "invalid introduction ID"
+        } else {
+            "invalid context"
+        }));
+        assert!(
+            allocated.bytes_total < 4096,
+            "invalid {field} was copied before validation: {allocated:?}"
+        );
+    }
+}
+
 struct Fixture {
     _dir: tempfile::TempDir,
     object: Rc<ObjectState>,

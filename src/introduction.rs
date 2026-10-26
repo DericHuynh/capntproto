@@ -129,10 +129,10 @@ pub async fn connect<T: Owned + Unpin + 'static>(
     ticket: introduction_ticket::Reader<'_>,
     local: SocketAddr,
 ) -> capnp::Result<Direct<T>> {
-    let id = ticket.get_id()?.to_vec();
-    if id.len() != 32 {
-        return Err(failed("invalid introduction ID"));
-    }
+    let id: [u8; 32] = ticket
+        .get_id()?
+        .try_into()
+        .map_err(|_| failed("invalid introduction ID"))?;
     let target = ticket
         .get_target()?
         .try_into()
@@ -144,10 +144,10 @@ pub async fn connect<T: Owned + Unpin + 'static>(
         .get_psk()?
         .try_into()
         .map_err(|_| failed("invalid introduction PSK"))?;
-    let context = ticket.get_context()?.to_vec();
-    if context.len() != 32 {
-        return Err(failed("invalid context"));
-    }
+    let context: [u8; 32] = ticket
+        .get_context()?
+        .try_into()
+        .map_err(|_| failed("invalid context"))?;
     let address = ticket
         .get_address()?
         .to_str()
