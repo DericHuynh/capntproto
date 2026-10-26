@@ -1,8 +1,8 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
-    "conclusion": "failure",
+    "commit": "136928c4091d747f3218209eb57d7efe5bee5cc3",
+    "conclusion": "cancelled",
     "data": {
       "charts": [],
       "format": 1,
@@ -10,17 +10,17 @@
       "note": "No measurement evidence was produced.",
       "origin": {
         "attempt": 1,
-        "commit": "16b04ee9f981663e2e8213943be97b434b8f0e4d",
+        "commit": "136928c4091d747f3218209eb57d7efe5bee5cc3",
         "repository": "DericHuynh/capntproto",
-        "run_id": 40321608784
+        "run_id": 40364747434
       },
       "source_id": null,
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-26T12:19:08Z",
-    "run_id": 40321608784,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
+    "date": "2026-10-26T17:01:44Z",
+    "run_id": 40364747434,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40364747434"
   },
   "cargo": [
     {
@@ -1380,38 +1380,6 @@
           "complete": false,
           "errors": 0,
           "failed": 5,
-          "failures": [
-            {
-              "name": "portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route",
-              "output": "thread 'portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route' (32901) panicked at tests/answer_adoption.rs:1247:21:\nassertion `left == right` failed: post-adoption pipeline call was not published; used=false\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<usize, usize>\n   4: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  16: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  17: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  18: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Out",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "portable_tail_finish_before_child_completion_reclaims_both_interests",
-              "output": "thread 'portable_tail_finish_before_child_completion_reclaims_both_interests' (32907) panicked at tests/answer_adoption.rs:2577:17:\nassertion `left == right` failed: both canceled answers retained application work\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<u32, u32>\n   4: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  16: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  17: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  18: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  19: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut d",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget",
-              "output": "thread 'portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget' (32911) panicked at tests/answer_adoption.rs:176:37:\ntransfer stalled with poll budget 7\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  14: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  15: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  16: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>\n  17: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget\n  18: <answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0} as core::ops::function::FnOnce<()>>",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "third_party_tail_returns_over_authenticated_native",
-              "output": "thread 'third_party_tail_returns_over_authenticated_native' (32923) panicked at tests/answer_adoption.rs:1479:37:\nportable=true: stalled at resolve early pipeline\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  14: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}\n  15: tokio::runtime::context::runtime::enter_runtime::<<tokio::runtime::scheduler::current_thread::CurrentThread>::block_on<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>::{closure#0}, ()>\n  16: <tokio::runtime::runtime::Runtime>::block_on_inner::<core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>\n  17: answer_adoption::third_party_tail_returns_over_authenticated_native\n  18: <answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest third_party_tail_returns_over_authenticated_native ... FAILED\n\nfailures:\n\nfailures:\n    third_party_tail_ret",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "independent_clients_share_a_real_service_and_pipeline_deep_access",
-              "output": "thread 'independent_clients_share_a_real_service_and_pipeline_deep_access' (39342) panicked at tests/service_examples.rs:163:61:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/profiles-bTzFVT/%p-%m.profraw\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"build\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"examples/kv/Cargo.toml\\\" \\\"--bins\\\" \\\"--target-dir\\\" \\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/service-examples\\\" \\\"--ignore-rust-version\\\" \\\"--features\\\" \\\"quic\\\"; inspect /tmp/.tmpAyraba/build.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access\n   4: <service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest independent_clients_share_a_real_service_and_pipeline_deep_access has been running for over 60 seconds\ntest independent_clients_share_a_real_service_and_pipeline_deep_access ... FAILED\n\nfailures:\n\nfailures:\n    independent_clients_share_a_real_service_and_pipeline_deep_access\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 600.45s\n\n\n\nthread 'independent_clients_share_a_real_service_and_pipeline_deep_access' (39342) panicked at tests/service_examples.rs:163:61:\ncalled `Result::unwrap()` on an `Err` value: \"timed out: cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u NEXTEST_PROFILE -u RUSTUP_TOOLCHAIN LLVM_PROFILE_FILE=\\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/profiles-bTzFVT/%p-%m.profraw\\\" RUSTDOCFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" RUSTFLAGS=\\\"-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch\\\" \\\"cargo\\\" \\\"+nightly-2026-03-05\\\" \\\"build\\\" \\\"--locked\\\" \\\"--manifest-path\\\" \\\"examples/kv/Cargo.toml\\\" \\\"--bins\\\" \\\"--target-dir\\\" \\\"/home/runner/work/capntproto/capntproto/target/quality-build/0c9a8cbce3b093165104c44cbb4a0ea08d704d42126e67efc8e81534cce5204f/service-examples\\\" \\\"--ignore-rust-version\\\" \\\"--features\\\" \\\"quic\\\"; inspect /tmp/.tmpAyraba/build.log\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access\n   4: <service_examples::independent_clients_share_a_real_service_and_pipeline_deep_access::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n",
-              "suite": "capntproto::service_examples",
-              "truncated": false
-            }
-          ],
           "passed": 2496,
           "skipped": 20,
           "suites": 207,
@@ -1421,6 +1389,24 @@
       "date": "2026-10-26T12:19:08Z",
       "run_id": 40321608784,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
+    },
+    {
+      "attempt": 1,
+      "commit": "136928c4091d747f3218209eb57d7efe5bee5cc3",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-26T17:01:44Z",
+      "run_id": 40364747434,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40364747434"
     }
   ],
   "format": 1,
@@ -2645,6 +2631,29 @@
       "date": "2026-10-26T12:19:08Z",
       "run_id": 40321608784,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
+    },
+    {
+      "attempt": 1,
+      "commit": "136928c4091d747f3218209eb57d7efe5bee5cc3",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Workflow failed after measurement; see the CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "136928c4091d747f3218209eb57d7efe5bee5cc3",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 40364747434
+        },
+        "source_id": "bc255a557cab0d781d54acf7a8ef974fef9b5152bbbe412c938d57940a2ae247",
+        "status": "failed",
+        "tests": null
+      },
+      "date": "2026-10-26T17:01:44Z",
+      "run_id": 40364747434,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40364747434"
     }
   ],
   "models": [
@@ -3806,7 +3815,6 @@
           "complete": true,
           "errors": 0,
           "failed": 0,
-          "failures": [],
           "passed": 233,
           "skipped": 7,
           "suites": 88,
@@ -3816,6 +3824,24 @@
       "date": "2026-10-26T12:19:08Z",
       "run_id": 40321608784,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40321608784"
+    },
+    {
+      "attempt": 1,
+      "commit": "136928c4091d747f3218209eb57d7efe5bee5cc3",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-26T17:01:44Z",
+      "run_id": 40364747434,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40364747434"
     }
   ]
 }
