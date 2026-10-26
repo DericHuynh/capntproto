@@ -1,0 +1,52 @@
+name: Qualify adopted pipeline control notifications
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      CAPNTPROTO_REFERENCE_CXX: clang++-22
+      TLA2TOOLS_JAR: /tmp/tla2tools.jar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: c0bab71143fe79a528db6e05a0db1a273fdce6f9
+      - name: Install native build dependencies
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          cmake --version
+          clang --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Verify adopted answer regressions
+        run: |
+          status=0
+          cargo test --locked -p capntproto-rpc --lib scoped::tests::projection_reports_partial_resolution_before_its_target_settles -- --exact || status=1
+          for case in portable_adopted_work_waits_for_retained_results_without_repolling_completed_execution portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route portable_tail_finish_before_child_completion_reclaims_both_interests portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget third_party_tail_returns_over_authenticated_native; do
+            cargo test --locked --features quic --test answer_adoption "$case" -- --exact --nocapture || status=1
+          done
+          exit "$status"
+      - name: Verify portable library ownership and scheduling
+        run: cargo test --locked -p capntproto-rpc --lib -- --test-threads=1
+      - name: Verify adopted and encrypted RPC integration
+        run: cargo test --locked --features quic --test answer_adoption --test rpc_ownership --test secure_rpc -- --test-threads=1 --skip replay_tlc
+      - name: Verify coverage workspace command and formatting
+        run: |
+          cargo test --locked -p capntproto-quality --lib coverage::tests::service_build_uses_the_same_instrumented_workspace_as_its_clients -- --exact
+          cargo fmt --all -- --check
+          cargo clippy --locked -p capntproto-rpc --all-targets -- -D warnings
