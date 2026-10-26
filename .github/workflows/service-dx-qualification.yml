@@ -1,0 +1,40 @@
+name: Qualify adopted pipeline control notifications
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+      CAPNTPROTO_REFERENCE_CXX: clang++-22
+      TLA2TOOLS_JAR: /tmp/tla2tools.jar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 54849325c26c5f0f4181891d3d346ae91c791aa2
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang-22 libclang-22-dev pkg-config default-jre-headless
+          rustup toolchain install 1.97.0 --profile minimal
+          git submodule update --init --depth 1 -- vendor/capnproto
+          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$TLA2TOOLS_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLA2TOOLS_JAR" | sha256sum --check --strict
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Verify all answer-adoption cases on stable
+        run: cargo test --locked --features quic --test answer_adoption -- --test-threads=1
