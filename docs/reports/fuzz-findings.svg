@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="552" viewBox="0 0 1400 552" role="img" aria-labelledby="title">
+<title id="title">Saved fuzzing findings</title>
+<rect width="1400" height="552" fill="white"/>
+<g font-family="DejaVu Sans, sans-serif">
+<text x="35.00" y="44.00" font-size="27" fill="#1e293b">Saved fuzzing findings</text>
+<text x="35.00" y="78.00" font-size="14" fill="#64748b">Saved crashes&#x2F;hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.</text>
+<text x="35.00" y="122.00" font-size="20" fill="#1e293b">libFuzzer + ASan</text>
+<text x="35.00" y="153.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_framing</text>
+<rect x="600.00" y="138.00" width="0.00" height="23" fill="#0868d4"/>
+<text x="606.00" y="155.00" font-size="13" fill="#334155">0</text>
+<text x="35.00" y="195.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_pointers</text>
+<rect x="600.00" y="180.00" width="0.00" height="23" fill="#00ac7b"/>
+<text x="606.00" y="197.00" font-size="13" fill="#334155">0</text>
+<text x="35.00" y="237.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_schema</text>
+<rect x="600.00" y="222.00" width="0.00" height="23" fill="#ef4444"/>
+<text x="606.00" y="239.00" font-size="13" fill="#334155">0</text>
+<text x="35.00" y="279.00" font-size="13" fill="#334155">libFuzzer &#x2F; native_packet</text>
+<rect x="600.00" y="264.00" width="0.00" height="23" fill="#e89200"/>
+<text x="606.00" y="281.00" font-size="13" fill="#334155">0</text>
+<text x="35.00" y="321.00" font-size="13" fill="#334155">libFuzzer &#x2F; native_stream</text>
+<rect x="600.00" y="306.00" width="0.00" height="23" fill="#8b5cf6"/>
+<text x="606.00" y="323.00" font-size="13" fill="#334155">0</text>
+<text x="35.00" y="363.00" font-size="13" fill="#334155">libFuzzer &#x2F; rpc_lifecycle</text>
+<rect x="600.00" y="348.00" width="0.00" height="23" fill="#0868d4"/>
+<text x="606.00" y="365.00" font-size="13" fill="#334155">0</text>
+<text x="600.00" y="410.00" font-size="13" fill="#64748b">Inputs</text>
+<text x="35.00" y="474.00" font-size="13" fill="#64748b">Measured 2026-10-26T01:12:32Z | commit a66db41524d1</text>
+</g>
+</svg>
