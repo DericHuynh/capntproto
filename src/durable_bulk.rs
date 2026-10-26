@@ -409,8 +409,6 @@ where
                 },
             ])
             .map_err(failure)?;
-        drop(store);
-        self.state.notify_publication(meta.revision);
         Ok(meta.into())
     }
     fn cancel_transfer(&self) -> capnp::Result<Status> {

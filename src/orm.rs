@@ -23,22 +23,14 @@ fn failure(e: impl std::fmt::Display) -> capnp::Error {
 pub struct ObjectState {
     store: Rc<RefCell<Store>>,
     object: ObjectId,
-    changed: tokio::sync::watch::Sender<Revision>,
     subscribers: Cell<usize>,
     schema: Cell<Option<u64>>,
 }
 impl ObjectState {
-    #[cfg(feature = "services")]
-    pub(crate) fn notify_publication(&self, revision: Revision) {
-        self.changed.send_replace(revision);
-    }
     pub fn new(store: Rc<RefCell<Store>>, object: ObjectId) -> Rc<Self> {
-        let revision = store.borrow().published(ObjectKey::from(object));
-        let (changed, _) = tokio::sync::watch::channel(revision);
         Rc::new(Self {
             store,
             object,
-            changed,
             subscribers: Cell::new(0),
             schema: Cell::new(None),
         })
@@ -195,7 +187,6 @@ where
                     Revision::new(p.get_expected_published()),
                 )
                 .map_err(failure)?;
-            self.state.changed.send_replace(rev);
             results.get().set_revision(rev.get());
             Ok(())
         })
@@ -223,55 +214,79 @@ where
                 return Err(failure("subscription capacity exhausted"));
             }
             self.state.subscribers.set(self.state.subscribers.get() + 1);
-            let mut updates = self.state.changed.subscribe();
+            let slot = Rc::new(SubscriptionSlot {
+                state: self.state.clone(),
+                active: Cell::new(true),
+            });
+            let release = ReleaseSubscription(slot.clone());
+            // Store notifications cover every publisher, including other
+            // ObjectStates and atomic durable-bulk commits. Subscribe before
+            // reading the current revision so that no publication is lost.
+            let mut updates = self.state.store.borrow().watch_publications();
             let state = self.state.clone();
             let grant = self.grant.clone();
             let task = tokio::task::spawn_local(async move {
-                loop {
-                    if !grant.allows(Rights::SUBSCRIBE) {
-                        return;
-                    }
-                    let revision = *updates.borrow_and_update();
-                    if revision > after {
-                        let snapshot = match state
+                let _release = release;
+                let delivery = async {
+                    loop {
+                        updates.borrow_and_update();
+                        let revision = match state
                             .store
                             .borrow()
-                            .revision(ObjectKey::from(state.object), revision)
+                            .history_bounds(ObjectKey::from(state.object))
                         {
-                            Ok(v) => v,
+                            Ok((_, revision)) => revision,
                             Err(_) => return,
                         };
-                        let result = (|| -> capnp::Result<_> {
-                            let mut bytes = typed_bytes::<T>(&snapshot)?;
-                            let message = capnp::serialize::read_message_from_flat_slice(
-                                &mut bytes,
-                                ReaderOptions::new(),
-                            )?;
-                            let mut call = observer.changed_request();
-                            call.get().set_revision(revision.get());
-                            call.get().set_value(message.get_root::<T::Reader<'_>>()?)?;
-                            Ok(call.send().promise)
-                        })();
-                        match result {
-                            Ok(p) => {
-                                if p.await.is_err() {
-                                    return;
+                        if revision > after {
+                            let snapshot = match state
+                                .store
+                                .borrow()
+                                .revision(ObjectKey::from(state.object), revision)
+                            {
+                                Ok(v) => v,
+                                Err(_) => return,
+                            };
+                            let result = (|| -> capnp::Result<_> {
+                                let mut bytes = typed_bytes::<T>(&snapshot)?;
+                                let message = capnp::serialize::read_message_from_flat_slice(
+                                    &mut bytes,
+                                    ReaderOptions::new(),
+                                )?;
+                                let mut call = observer.changed_request();
+                                call.get().set_revision(revision.get());
+                                call.get().set_value(message.get_root::<T::Reader<'_>>()?)?;
+                                Ok(call.send().promise)
+                            })();
+                            match result {
+                                Ok(p) => {
+                                    if p.await.is_err() {
+                                        return;
+                                    }
                                 }
-                            }
-                            Err(_) => return,
-                        };
-                        after = revision;
+                                Err(_) => return,
+                            };
+                            after = revision;
+                        }
+                        if updates.changed().await.is_err() {
+                            return;
+                        }
                     }
-                    if updates.changed().await.is_err() {
-                        return;
-                    }
+                };
+                // Revocation must stop both an idle subscription and a call to
+                // an observer that never replies, releasing its slot in either
+                // case. Prefer revocation when both branches are ready.
+                tokio::select! {
+                    biased;
+                    _ = grant.when_revoked() => (),
+                    _ = delivery => (),
                 }
             });
             results
                 .get()
                 .set_subscription(capnp_rpc::new_client(Subscription {
                     task: RefCell::new(Some(task)),
-                    state: self.state.clone(),
+                    slot,
                 }));
             Ok(())
         })
@@ -279,13 +294,30 @@ where
 }
 struct Subscription {
     task: RefCell<Option<tokio::task::JoinHandle<()>>>,
+    slot: Rc<SubscriptionSlot>,
+}
+struct SubscriptionSlot {
     state: Rc<ObjectState>,
+    active: Cell<bool>,
+}
+impl SubscriptionSlot {
+    fn release(&self) {
+        if self.active.replace(false) {
+            self.state.subscribers.set(self.state.subscribers.get() - 1);
+        }
+    }
+}
+struct ReleaseSubscription(Rc<SubscriptionSlot>);
+impl Drop for ReleaseSubscription {
+    fn drop(&mut self) {
+        self.0.release();
+    }
 }
 impl Subscription {
     fn stop(&self) {
         if let Some(t) = self.task.borrow_mut().take() {
             t.abort();
-            self.state.subscribers.set(self.state.subscribers.get() - 1);
+            self.slot.release();
         }
     }
 }
