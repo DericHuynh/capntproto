@@ -188,6 +188,11 @@ jobs:
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --features quic --lib rpc::quic::retry
           cargo test --locked -p capntproto-compiler --doc
           cargo check --locked -p capntproto --no-default-features --lib
+          if test "$RUNNER_OS" = Linux; then
+            RUSTDOCFLAGS='-D warnings' cargo doc --locked -p capntproto --no-default-features --no-deps --lib
+            RUSTDOCFLAGS='-D warnings' cargo doc --locked -p capntproto --no-deps --lib
+            RUSTDOCFLAGS='-D warnings' cargo doc --locked -p capntproto --features quic --no-deps --lib
+          fi
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --test rpc_ownership
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --lib storage::components
           cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --test component_orm
