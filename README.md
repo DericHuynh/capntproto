@@ -163,14 +163,21 @@ commits and do not imply a combined release qualification.
 
 Release builds, separate client/server processes, one outstanding request,
 10,000 warmups and 1,000 retained calls per trial, five repetitions per payload.
-TCP uses the same plaintext transport as C++ Cap’n Proto; QUIC is measured
-separately with encryption. The dashboard includes p95/p99, request rates and
+TCP uses TLS 1.3 for all implementations; QUIC is measured
+separately. The dashboard includes p95/p99, request rates and
 the measured source revision. Relative charts use C++ as their reference.
 
 The suite includes an independent [upstream Rust RPC baseline](benchmarks/rpc-upstream/README.md)
 using published `capnp-rpc` crates. Fresh loopback and two-host workflow reports
 compare it against C++ alongside our drivers, gRPC and WebSockets. Historical
 graphs retain the implementations measured at their recorded revision.
+
+The default dedicated campaign also compares realistic gRPC and binary Protobuf
+WebSocket services for nested data, 32 concurrent calls, and four/eight service
+chains with eight client connections. Every hop validates the same data and
+returns the full result. Comparisons retain five process repetitions, minimum
+latency, means and spread; gRPC/WebSocket QUIC and capability promise pipelining
+are marked unsupported. See the [fixture contracts](benchmarks/rpc/README.md).
 
 Graphs identify the measured TCP driver: **legacy** or **portable**. Legacy
 results do not qualify the opt-in portable replacement. Its current small-call

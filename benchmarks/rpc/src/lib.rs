@@ -5,6 +5,7 @@ use capntproto::{
     transport::{self, Identity},
 };
 use futures::{SinkExt, StreamExt};
+use prost::Message as _;
 use serde_json::json;
 use std::{io::Write, rc::Rc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -20,8 +21,9 @@ mod grpc {
 }
 mod benchmark_tls;
 // Tonic's buffered IO uses the official rustls types and the same DER policy.
+// Compile this policy against both official rustls and our Unbuffered fork.
 #[path = "../tls_policy.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::duplicate_mod)]
 mod reference_tls;
 mod secure;
 mod topology;
@@ -127,7 +129,14 @@ async fn serve(protocol: &str) -> Result<()> {
                 let mut stream = tokio_tungstenite::accept_async(socket).await?;
                 while let Some(frame) = stream.next().await {
                     match frame? {
-                        frame @ Message::Binary(_) => stream.send(frame).await?,
+                        Message::Binary(bytes) => {
+                            let frame = grpc::Frame::decode(bytes)?;
+                            stream
+                                .send(Message::Binary(frame.encode_to_vec().into()))
+                                .await?;
+                        }
+                        Message::Ping(_) => stream.flush().await?,
+                        Message::Pong(_) => (),
                         Message::Close(_) => break,
                         _ => return Err("unexpected benchmark WebSocket frame".into()),
                     }
@@ -232,14 +241,26 @@ impl Roundtrip for grpc::echo_client::EchoClient<tonic::transport::Channel> {
 }
 impl Roundtrip for WebSocketStream<capntproto::rpc::tcp::tls::TlsStream<TcpStream>> {
     async fn roundtrip(&mut self, sequence: u64, payload: &[u8]) -> Result<()> {
-        let mut frame = sequence.to_le_bytes().to_vec();
-        frame.extend_from_slice(payload);
-        self.send(Message::Binary(frame.clone().into())).await?;
-        let response = self.next().await.ok_or("WebSocket closed")??;
-        if response != Message::Binary(frame.into()) {
-            return Err("WebSocket response mismatch".into());
+        let frame = grpc::Frame {
+            sequence,
+            payload: payload.into(),
+        };
+        self.send(Message::Binary(frame.encode_to_vec().into()))
+            .await?;
+        loop {
+            match self.next().await.ok_or("WebSocket closed")?? {
+                Message::Binary(bytes) => {
+                    let response = grpc::Frame::decode(bytes)?;
+                    if response.sequence != sequence || response.payload != payload {
+                        return Err("WebSocket response mismatch".into());
+                    }
+                    return Ok(());
+                }
+                Message::Ping(_) => self.flush().await?,
+                Message::Pong(_) => (),
+                _ => return Err("unexpected benchmark WebSocket frame".into()),
+            }
         }
-        Ok(())
     }
 }
 async fn measure(args: &[String]) -> Result<()> {
@@ -345,6 +366,12 @@ pub fn run(protocol: Option<&str>) -> Result<()> {
             match args.first().map(String::as_str) {
                 Some("topology-server") => topology::serve(&args[1..]).await,
                 Some("topology-measure") => topology::measure(&args[1..]).await,
+                Some("comparison-topology-server") if (3..=4).contains(&args.len()) => {
+                    topology::comparison::serve(&args[1], &args[2..]).await
+                }
+                Some("comparison-topology-measure") if args.len() == 6 => {
+                    topology::comparison::measure(&args[1], &args[2..]).await
+                }
                 Some("workflow-server") if args.len() == 2 => workflows::serve(&args[1]).await,
                 Some("workflow-measure") => workflows::measure(&args[1..]).await,
                 Some("comparison-server") if args.len() == 3 => {

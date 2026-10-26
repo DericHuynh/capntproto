@@ -32,3 +32,38 @@ service Workflows {
   rpc Release(Operation) returns (Operation);
   rpc Callback(stream Operation) returns (stream Operation);
 }
+
+// The same recursive request and reply traversed at every Cap'n Proto service hop.
+message AccessNode {
+  uint64 value = 1;
+  bytes payload = 2;
+  AccessNode next = 3;
+}
+message DescribeRequest {}
+message Description { uint32 hops = 1; }
+message AccessRequest {
+  uint64 sequence = 1;
+  uint32 depth = 2;
+  AccessNode root = 3;
+}
+message AccessResponse {
+  uint64 checksum = 1;
+  uint32 visits = 2;
+  AccessNode root = 3;
+}
+service AccessService {
+  rpc Describe(DescribeRequest) returns (Description);
+  rpc Access(AccessRequest) returns (AccessResponse);
+}
+
+// WebSocket application RPC: correlation IDs allow responses to finish out of order.
+message AccessEnvelope {
+  uint64 id = 1;
+  oneof body {
+    DescribeRequest describe = 2;
+    Description description = 3;
+    AccessRequest access = 4;
+    AccessResponse result = 5;
+    string error = 6;
+  }
+}
