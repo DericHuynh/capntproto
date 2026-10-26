@@ -90,6 +90,89 @@ impl harness::Server for EarlyPipeline {
         })
     }
 }
+struct RetainedResults(Rc<RefCell<Option<harness::PendingResults>>>);
+impl harness::Server for RetainedResults {
+    fn pending(
+        self: Rc<Self>,
+        context: harness::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (_, mut results) = context.into_owned();
+        results.get().set_cap(capnp_rpc::new_client(Echo));
+        *self.0.borrow_mut() = Some(results);
+        capnp::capability::Promise::ok(())
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn portable_adopted_work_waits_for_retained_results_without_repolling_completed_execution() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let hub = Rc::new(RefCell::new(Hub::default()));
+                hub.borrow_mut().introductions = true;
+                enable(&hub);
+                let retained = Rc::new(RefCell::new(None));
+                let service: harness::Client =
+                    capnp_rpc::new_client(RetainedResults(retained.clone()));
+                let callee = support::driver::System::new(
+                    true,
+                    Box::new(Hub::network(&hub, 3)),
+                    Some(service.client),
+                );
+                let factory = Rc::new(Factory(RefCell::new(None)));
+                let mut relay = support::driver::System::with_factory(
+                    true,
+                    Box::new(Hub::network(&hub, 2)),
+                    2,
+                    factory.clone(),
+                );
+                let target: harness::Client = relay.bootstrap(3);
+                let ready = target.client.hook.when_resolved();
+                let service: harness::Client = capnp_rpc::new_client(Tail(target));
+                *factory.0.borrow_mut() = Some(service.client);
+                let callee = tokio::task::spawn_local(callee.run());
+                let relay = tokio::task::spawn_local(relay.run());
+                ready.await.unwrap();
+                let mut caller =
+                    support::driver::System::new(true, Box::new(Hub::network(&hub, 1)), None);
+                let target: harness::Client = caller.bootstrap(2);
+                let caller = tokio::task::spawn_local(caller.run());
+                let mut request = target.pending_request().send();
+                while retained.borrow().is_none() {
+                    tokio::task::yield_now().await;
+                }
+                drain().await;
+                assert!((&mut request.promise).now_or_never().is_none());
+                // Execution is complete, but the application still owns its
+                // result builder. Returning it must resume collection once.
+                drop(retained.borrow_mut().take());
+                let response = request.promise.await.unwrap();
+                let cap = response.get().unwrap().get_cap().unwrap();
+                assert_eq!(
+                    cap.echo_request()
+                        .send()
+                        .promise
+                        .await
+                        .unwrap()
+                        .get()
+                        .unwrap()
+                        .get_value(),
+                    73
+                );
+                for task in [caller, relay, callee] {
+                    assert!(
+                        !task.is_finished(),
+                        "returning retained results stopped RPC"
+                    );
+                    task.abort();
+                }
+            })
+            .await
+            .expect("adopted execution did not resume after returning its result builder");
+        })
+        .await;
+}
+
 async fn drain() {
     for _ in 0..64 {
         tokio::task::yield_now().await;
