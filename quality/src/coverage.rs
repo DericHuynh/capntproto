@@ -229,7 +229,18 @@ pub fn regression(
         ));
     }
     for (name, old) in baseline {
-        let Some(new) = current.get(name) else {
+        // Preserve the measured adapter's floor after moving TLS beneath TCP.
+        // The historical baseline and its measured numbers stay unchanged.
+        let renamed = (name == "src/rpc/tls.rs").then_some("src/rpc/tcp/tls.rs");
+        let Some(new) = current
+            .get(name)
+            .or_else(|| renamed.and_then(|path| current.get(path)))
+        else {
+            if renamed.is_some() {
+                failures.push(format!(
+                    "{name}: missing renamed TCP TLS adapter instrumentation"
+                ));
+            }
             continue;
         }; // Deleted source is not executable code.
         let Some(old) = &old.metrics else {
@@ -708,6 +719,39 @@ pub fn collect(r: &mut Runner) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn renamed_tcp_tls_adapter_keeps_its_per_file_floor() {
+        let file = |count, covered| FileCoverage {
+            sha256: "fixture".into(),
+            group: "runtime".into(),
+            status: "measured".into(),
+            metrics: Some(Metrics {
+                lines: Metric { count, covered },
+                regions: Metric { count, covered },
+                functions: Metric { count, covered },
+                branches: Metric { count, covered },
+            }),
+        };
+        let baseline = BTreeMap::from([
+            ("src/rpc/tls.rs".into(), file(10, 10)),
+            ("src/other.rs".into(), file(10_000, 10_000)),
+        ]);
+        let mut current = BTreeMap::from([
+            ("src/rpc/tcp/tls.rs".into(), file(10, 10)),
+            ("src/other.rs".into(), file(10_000, 10_000)),
+        ]);
+        assert!(regression(&current, &baseline).is_ok());
+        current.insert("src/rpc/tcp/tls.rs".into(), file(10, 9));
+        assert!(regression(&current, &baseline)
+            .unwrap_err()
+            .to_string()
+            .contains("src/rpc/tls.rs: lines regressed"));
+        current.remove("src/rpc/tcp/tls.rs");
+        assert!(regression(&current, &baseline)
+            .unwrap_err()
+            .to_string()
+            .contains("missing renamed TCP TLS adapter"));
+    }
     #[test]
     fn coordinator_extraction_keeps_its_floor_and_requires_every_component() {
         let file = |count, covered| FileCoverage {
