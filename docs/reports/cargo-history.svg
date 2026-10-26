@@ -5,147 +5,152 @@
 <text x="35.00" y="45.00" font-size="27" fill="#1e293b">Capntproto — Cargo Test Results</text>
 <text x="35.00" y="78.00" font-size="15" fill="#64748b">Nextest and doctest results · selected partition · counts per CI run · UTC</text>
 <text x="70.00" y="115.00" font-size="16" fill="#0868d4">Total</text>
-<polyline points="80.00,373.40 110.92,355.76 120.57,354.79 123.99,354.10 156.52,352.99 159.43,352.43 178.50,337.02 187.66,337.02 275.86,329.39 557.97,329.39 594.95,238.45 649.03,235.81 652.10,234.84 653.95,234.70 681.79,230.67 695.08,229.29 701.42,229.29 727.20,225.68 923.09,225.68 1272.64,182.78 1276.60,182.64 1287.29,180.97 1292.63,180.97 1300.00,180.00" fill="none" stroke="#0868d4" stroke-width="2.3"/>
-<circle cx="80.00" cy="373.40" r="3" fill="#0868d4"><title>2026-10-03T09:31:53Z: 1128</title></circle>
-<circle cx="110.92" cy="355.76" r="3" fill="#0868d4"><title>2026-10-03T23:35:28Z: 1255</title></circle>
-<circle cx="120.57" cy="354.79" r="3" fill="#0868d4"><title>2026-10-04T03:58:44Z: 1262</title></circle>
-<circle cx="123.99" cy="354.10" r="3" fill="#0868d4"><title>2026-10-04T05:32:01Z: 1267</title></circle>
-<circle cx="156.52" cy="352.99" r="3" fill="#0868d4"><title>2026-10-04T20:19:36Z: 1275</title></circle>
-<circle cx="159.43" cy="352.43" r="3" fill="#0868d4"><title>2026-10-04T21:39:01Z: 1279</title></circle>
-<circle cx="178.50" cy="337.02" r="3" fill="#0868d4"><title>2026-10-05T06:19:17Z: 1390</title></circle>
-<circle cx="187.66" cy="337.02" r="3" fill="#0868d4"><title>2026-10-05T10:29:14Z: 1390</title></circle>
-<circle cx="275.86" cy="329.39" r="3" fill="#0868d4"><title>2026-10-07T02:35:55Z: 1445</title></circle>
-<circle cx="557.97" cy="329.39" r="3" fill="#0868d4"><title>2026-10-12T10:53:06Z: 1445</title></circle>
-<circle cx="594.95" cy="238.45" r="3" fill="#0868d4"><title>2026-10-13T03:42:00Z: 2100</title></circle>
-<circle cx="649.03" cy="235.81" r="3" fill="#0868d4"><title>2026-10-14T04:17:37Z: 2119</title></circle>
-<circle cx="652.10" cy="234.84" r="3" fill="#0868d4"><title>2026-10-14T05:41:25Z: 2126</title></circle>
-<circle cx="653.95" cy="234.70" r="3" fill="#0868d4"><title>2026-10-14T06:32:00Z: 2127</title></circle>
-<circle cx="681.79" cy="230.67" r="3" fill="#0868d4"><title>2026-10-14T19:11:29Z: 2156</title></circle>
-<circle cx="695.08" cy="229.29" r="3" fill="#0868d4"><title>2026-10-15T01:14:01Z: 2166</title></circle>
-<circle cx="701.42" cy="229.29" r="3" fill="#0868d4"><title>2026-10-15T04:07:12Z: 2166</title></circle>
-<circle cx="727.20" cy="225.68" r="3" fill="#0868d4"><title>2026-10-15T15:50:28Z: 2192</title></circle>
-<circle cx="923.09" cy="225.68" r="3" fill="#0868d4"><title>2026-10-19T08:55:25Z: 2192</title></circle>
-<circle cx="1272.64" cy="182.78" r="3" fill="#0868d4"><title>2026-10-25T23:52:32Z: 2501</title></circle>
-<path d="M 1272.64 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
-<circle cx="1276.60" cy="182.64" r="3" fill="#0868d4"><title>2026-10-26T01:40:39Z: 2502</title></circle>
-<path d="M 1276.60 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
-<circle cx="1287.29" cy="180.97" r="3" fill="#0868d4"><title>2026-10-26T06:32:22Z: 2514</title></circle>
-<path d="M 1287.29 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
-<circle cx="1292.63" cy="180.97" r="3" fill="#0868d4"><title>2026-10-26T08:58:04Z: 2514</title></circle>
-<path d="M 1292.63 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
-<circle cx="1300.00" cy="180.00" r="3" fill="#0868d4"><title>2026-10-26T12:19:08Z: 2521</title></circle>
-<path d="M 1300.00 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
+<polyline points="80.00,373.58 110.60,355.97 120.15,355.00 123.53,354.31 155.73,353.20 158.61,352.64 177.48,337.25 186.54,337.25 273.84,329.62 553.03,329.62 589.63,238.80 643.15,236.16 646.19,235.19 648.02,235.05 675.57,231.03 688.72,229.64 695.00,229.64 720.51,226.04 914.38,226.04 1260.31,183.19 1264.24,183.05 1274.82,181.39 1280.10,181.39 1287.39,180.42 1300.00,180.00" fill="none" stroke="#0868d4" stroke-width="2.3"/>
+<circle cx="80.00" cy="373.58" r="3" fill="#0868d4"><title>2026-10-03T09:31:53Z: 1128</title></circle>
+<circle cx="110.60" cy="355.97" r="3" fill="#0868d4"><title>2026-10-03T23:35:28Z: 1255</title></circle>
+<circle cx="120.15" cy="355.00" r="3" fill="#0868d4"><title>2026-10-04T03:58:44Z: 1262</title></circle>
+<circle cx="123.53" cy="354.31" r="3" fill="#0868d4"><title>2026-10-04T05:32:01Z: 1267</title></circle>
+<circle cx="155.73" cy="353.20" r="3" fill="#0868d4"><title>2026-10-04T20:19:36Z: 1275</title></circle>
+<circle cx="158.61" cy="352.64" r="3" fill="#0868d4"><title>2026-10-04T21:39:01Z: 1279</title></circle>
+<circle cx="177.48" cy="337.25" r="3" fill="#0868d4"><title>2026-10-05T06:19:17Z: 1390</title></circle>
+<circle cx="186.54" cy="337.25" r="3" fill="#0868d4"><title>2026-10-05T10:29:14Z: 1390</title></circle>
+<circle cx="273.84" cy="329.62" r="3" fill="#0868d4"><title>2026-10-07T02:35:55Z: 1445</title></circle>
+<circle cx="553.03" cy="329.62" r="3" fill="#0868d4"><title>2026-10-12T10:53:06Z: 1445</title></circle>
+<circle cx="589.63" cy="238.80" r="3" fill="#0868d4"><title>2026-10-13T03:42:00Z: 2100</title></circle>
+<circle cx="643.15" cy="236.16" r="3" fill="#0868d4"><title>2026-10-14T04:17:37Z: 2119</title></circle>
+<circle cx="646.19" cy="235.19" r="3" fill="#0868d4"><title>2026-10-14T05:41:25Z: 2126</title></circle>
+<circle cx="648.02" cy="235.05" r="3" fill="#0868d4"><title>2026-10-14T06:32:00Z: 2127</title></circle>
+<circle cx="675.57" cy="231.03" r="3" fill="#0868d4"><title>2026-10-14T19:11:29Z: 2156</title></circle>
+<circle cx="688.72" cy="229.64" r="3" fill="#0868d4"><title>2026-10-15T01:14:01Z: 2166</title></circle>
+<circle cx="695.00" cy="229.64" r="3" fill="#0868d4"><title>2026-10-15T04:07:12Z: 2166</title></circle>
+<circle cx="720.51" cy="226.04" r="3" fill="#0868d4"><title>2026-10-15T15:50:28Z: 2192</title></circle>
+<circle cx="914.38" cy="226.04" r="3" fill="#0868d4"><title>2026-10-19T08:55:25Z: 2192</title></circle>
+<circle cx="1260.31" cy="183.19" r="3" fill="#0868d4"><title>2026-10-25T23:52:32Z: 2501</title></circle>
+<path d="M 1260.31 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
+<circle cx="1264.24" cy="183.05" r="3" fill="#0868d4"><title>2026-10-26T01:40:39Z: 2502</title></circle>
+<path d="M 1264.24 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
+<circle cx="1274.82" cy="181.39" r="3" fill="#0868d4"><title>2026-10-26T06:32:22Z: 2514</title></circle>
+<path d="M 1274.82 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
+<circle cx="1280.10" cy="181.39" r="3" fill="#0868d4"><title>2026-10-26T08:58:04Z: 2514</title></circle>
+<path d="M 1280.10 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
+<circle cx="1287.39" cy="180.42" r="3" fill="#0868d4"><title>2026-10-26T12:19:08Z: 2521</title></circle>
+<path d="M 1287.39 160 V 540" stroke="#ef4444" stroke-dasharray="2 5"/>
+<circle cx="1300.00" cy="180.00" r="3" fill="#0868d4"><title>2026-10-26T18:06:40Z: 2524</title></circle>
 <text x="10.00" y="530.00" font-size="12" fill="#64748b">0</text>
-<text x="10.00" y="442.50" font-size="12" fill="#64748b">630</text>
-<text x="10.00" y="355.00" font-size="12" fill="#64748b">1260</text>
-<text x="10.00" y="267.50" font-size="12" fill="#64748b">1891</text>
-<text x="10.00" y="180.00" font-size="12" fill="#64748b">2521</text>
+<text x="10.00" y="442.50" font-size="12" fill="#64748b">631</text>
+<text x="10.00" y="355.00" font-size="12" fill="#64748b">1262</text>
+<text x="10.00" y="267.50" font-size="12" fill="#64748b">1893</text>
+<text x="10.00" y="180.00" font-size="12" fill="#64748b">2524</text>
 <text x="80.00" y="565.00" font-size="13" fill="#64748b">2026-10-03 09:31 UTC</text>
-<text x="1060.00" y="565.00" font-size="13" fill="#64748b">2026-10-26 12:19 UTC</text>
+<text x="1060.00" y="565.00" font-size="13" fill="#64748b">2026-10-26 18:06 UTC</text>
 <text x="220.00" y="115.00" font-size="16" fill="#00ac7b">Pass</text>
-<polyline points="80.00,374.78 110.92,358.40 120.57,357.43 123.99,356.74 156.52,355.62 159.43,355.07 178.50,339.80 187.66,339.80 275.86,332.16 557.97,332.16 594.95,241.23 649.03,238.59 652.10,237.62 653.95,237.48 681.79,233.45 695.08,232.06 701.42,232.06 727.20,228.45 923.09,228.45 1272.64,186.53 1276.60,186.66 1287.29,184.58 1292.63,184.86 1300.00,183.47" fill="none" stroke="#00ac7b" stroke-width="2.3"/>
-<circle cx="80.00" cy="374.78" r="3" fill="#00ac7b"><title>2026-10-03T09:31:53Z: 1118</title></circle>
-<circle cx="110.92" cy="358.40" r="3" fill="#00ac7b"><title>2026-10-03T23:35:28Z: 1236</title></circle>
-<circle cx="120.57" cy="357.43" r="3" fill="#00ac7b"><title>2026-10-04T03:58:44Z: 1243</title></circle>
-<circle cx="123.99" cy="356.74" r="3" fill="#00ac7b"><title>2026-10-04T05:32:01Z: 1248</title></circle>
-<circle cx="156.52" cy="355.62" r="3" fill="#00ac7b"><title>2026-10-04T20:19:36Z: 1256</title></circle>
-<circle cx="159.43" cy="355.07" r="3" fill="#00ac7b"><title>2026-10-04T21:39:01Z: 1260</title></circle>
-<circle cx="178.50" cy="339.80" r="3" fill="#00ac7b"><title>2026-10-05T06:19:17Z: 1370</title></circle>
-<circle cx="187.66" cy="339.80" r="3" fill="#00ac7b"><title>2026-10-05T10:29:14Z: 1370</title></circle>
-<circle cx="275.86" cy="332.16" r="3" fill="#00ac7b"><title>2026-10-07T02:35:55Z: 1425</title></circle>
-<circle cx="557.97" cy="332.16" r="3" fill="#00ac7b"><title>2026-10-12T10:53:06Z: 1425</title></circle>
-<circle cx="594.95" cy="241.23" r="3" fill="#00ac7b"><title>2026-10-13T03:42:00Z: 2080</title></circle>
-<circle cx="649.03" cy="238.59" r="3" fill="#00ac7b"><title>2026-10-14T04:17:37Z: 2099</title></circle>
-<circle cx="652.10" cy="237.62" r="3" fill="#00ac7b"><title>2026-10-14T05:41:25Z: 2106</title></circle>
-<circle cx="653.95" cy="237.48" r="3" fill="#00ac7b"><title>2026-10-14T06:32:00Z: 2107</title></circle>
-<circle cx="681.79" cy="233.45" r="3" fill="#00ac7b"><title>2026-10-14T19:11:29Z: 2136</title></circle>
-<circle cx="695.08" cy="232.06" r="3" fill="#00ac7b"><title>2026-10-15T01:14:01Z: 2146</title></circle>
-<circle cx="701.42" cy="232.06" r="3" fill="#00ac7b"><title>2026-10-15T04:07:12Z: 2146</title></circle>
-<circle cx="727.20" cy="228.45" r="3" fill="#00ac7b"><title>2026-10-15T15:50:28Z: 2172</title></circle>
-<circle cx="923.09" cy="228.45" r="3" fill="#00ac7b"><title>2026-10-19T08:55:25Z: 2172</title></circle>
-<circle cx="1272.64" cy="186.53" r="3" fill="#00ac7b"><title>2026-10-25T23:52:32Z: 2474</title></circle>
-<circle cx="1276.60" cy="186.66" r="3" fill="#00ac7b"><title>2026-10-26T01:40:39Z: 2473</title></circle>
-<circle cx="1287.29" cy="184.58" r="3" fill="#00ac7b"><title>2026-10-26T06:32:22Z: 2488</title></circle>
-<circle cx="1292.63" cy="184.86" r="3" fill="#00ac7b"><title>2026-10-26T08:58:04Z: 2486</title></circle>
-<circle cx="1300.00" cy="183.47" r="3" fill="#00ac7b"><title>2026-10-26T12:19:08Z: 2496</title></circle>
+<polyline points="80.00,374.97 110.60,358.61 120.15,357.63 123.53,356.94 155.73,355.83 158.61,355.28 177.48,340.02 186.54,340.02 273.84,332.40 553.03,332.40 589.63,241.57 643.15,238.93 646.19,237.96 648.02,237.82 675.57,233.80 688.72,232.42 695.00,232.42 720.51,228.81 914.38,228.81 1260.31,186.93 1264.24,187.07 1274.82,184.99 1280.10,185.27 1287.39,183.88 1300.00,182.77" fill="none" stroke="#00ac7b" stroke-width="2.3"/>
+<circle cx="80.00" cy="374.97" r="3" fill="#00ac7b"><title>2026-10-03T09:31:53Z: 1118</title></circle>
+<circle cx="110.60" cy="358.61" r="3" fill="#00ac7b"><title>2026-10-03T23:35:28Z: 1236</title></circle>
+<circle cx="120.15" cy="357.63" r="3" fill="#00ac7b"><title>2026-10-04T03:58:44Z: 1243</title></circle>
+<circle cx="123.53" cy="356.94" r="3" fill="#00ac7b"><title>2026-10-04T05:32:01Z: 1248</title></circle>
+<circle cx="155.73" cy="355.83" r="3" fill="#00ac7b"><title>2026-10-04T20:19:36Z: 1256</title></circle>
+<circle cx="158.61" cy="355.28" r="3" fill="#00ac7b"><title>2026-10-04T21:39:01Z: 1260</title></circle>
+<circle cx="177.48" cy="340.02" r="3" fill="#00ac7b"><title>2026-10-05T06:19:17Z: 1370</title></circle>
+<circle cx="186.54" cy="340.02" r="3" fill="#00ac7b"><title>2026-10-05T10:29:14Z: 1370</title></circle>
+<circle cx="273.84" cy="332.40" r="3" fill="#00ac7b"><title>2026-10-07T02:35:55Z: 1425</title></circle>
+<circle cx="553.03" cy="332.40" r="3" fill="#00ac7b"><title>2026-10-12T10:53:06Z: 1425</title></circle>
+<circle cx="589.63" cy="241.57" r="3" fill="#00ac7b"><title>2026-10-13T03:42:00Z: 2080</title></circle>
+<circle cx="643.15" cy="238.93" r="3" fill="#00ac7b"><title>2026-10-14T04:17:37Z: 2099</title></circle>
+<circle cx="646.19" cy="237.96" r="3" fill="#00ac7b"><title>2026-10-14T05:41:25Z: 2106</title></circle>
+<circle cx="648.02" cy="237.82" r="3" fill="#00ac7b"><title>2026-10-14T06:32:00Z: 2107</title></circle>
+<circle cx="675.57" cy="233.80" r="3" fill="#00ac7b"><title>2026-10-14T19:11:29Z: 2136</title></circle>
+<circle cx="688.72" cy="232.42" r="3" fill="#00ac7b"><title>2026-10-15T01:14:01Z: 2146</title></circle>
+<circle cx="695.00" cy="232.42" r="3" fill="#00ac7b"><title>2026-10-15T04:07:12Z: 2146</title></circle>
+<circle cx="720.51" cy="228.81" r="3" fill="#00ac7b"><title>2026-10-15T15:50:28Z: 2172</title></circle>
+<circle cx="914.38" cy="228.81" r="3" fill="#00ac7b"><title>2026-10-19T08:55:25Z: 2172</title></circle>
+<circle cx="1260.31" cy="186.93" r="3" fill="#00ac7b"><title>2026-10-25T23:52:32Z: 2474</title></circle>
+<circle cx="1264.24" cy="187.07" r="3" fill="#00ac7b"><title>2026-10-26T01:40:39Z: 2473</title></circle>
+<circle cx="1274.82" cy="184.99" r="3" fill="#00ac7b"><title>2026-10-26T06:32:22Z: 2488</title></circle>
+<circle cx="1280.10" cy="185.27" r="3" fill="#00ac7b"><title>2026-10-26T08:58:04Z: 2486</title></circle>
+<circle cx="1287.39" cy="183.88" r="3" fill="#00ac7b"><title>2026-10-26T12:19:08Z: 2496</title></circle>
+<circle cx="1300.00" cy="182.77" r="3" fill="#00ac7b"><title>2026-10-26T18:06:40Z: 2504</title></circle>
 <text x="370.00" y="115.00" font-size="16" fill="#ef4444">Fail</text>
-<polyline points="80.00,530.00 110.92,530.00 120.57,530.00 123.99,530.00 156.52,530.00 159.43,530.00 178.50,530.00 187.66,530.00 275.86,530.00 557.97,530.00 594.95,530.00 649.03,530.00 652.10,530.00 653.95,530.00 681.79,530.00 695.08,530.00 701.42,530.00 727.20,530.00 923.09,530.00 1272.64,529.03 1276.60,528.75 1287.29,529.17 1292.63,528.89 1300.00,529.31" fill="none" stroke="#ef4444" stroke-width="2.3"/>
+<polyline points="80.00,530.00 110.60,530.00 120.15,530.00 123.53,530.00 155.73,530.00 158.61,530.00 177.48,530.00 186.54,530.00 273.84,530.00 553.03,530.00 589.63,530.00 643.15,530.00 646.19,530.00 648.02,530.00 675.57,530.00 688.72,530.00 695.00,530.00 720.51,530.00 914.38,530.00 1260.31,529.03 1264.24,528.75 1274.82,529.17 1280.10,528.89 1287.39,529.31 1300.00,530.00" fill="none" stroke="#ef4444" stroke-width="2.3"/>
 <circle cx="80.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-03T09:31:53Z: 0</title></circle>
-<circle cx="110.92" cy="530.00" r="3" fill="#ef4444"><title>2026-10-03T23:35:28Z: 0</title></circle>
-<circle cx="120.57" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T03:58:44Z: 0</title></circle>
-<circle cx="123.99" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T05:32:01Z: 0</title></circle>
-<circle cx="156.52" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T20:19:36Z: 0</title></circle>
-<circle cx="159.43" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T21:39:01Z: 0</title></circle>
-<circle cx="178.50" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T06:19:17Z: 0</title></circle>
-<circle cx="187.66" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T10:29:14Z: 0</title></circle>
-<circle cx="275.86" cy="530.00" r="3" fill="#ef4444"><title>2026-10-07T02:35:55Z: 0</title></circle>
-<circle cx="557.97" cy="530.00" r="3" fill="#ef4444"><title>2026-10-12T10:53:06Z: 0</title></circle>
-<circle cx="594.95" cy="530.00" r="3" fill="#ef4444"><title>2026-10-13T03:42:00Z: 0</title></circle>
-<circle cx="649.03" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T04:17:37Z: 0</title></circle>
-<circle cx="652.10" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T05:41:25Z: 0</title></circle>
-<circle cx="653.95" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T06:32:00Z: 0</title></circle>
-<circle cx="681.79" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T19:11:29Z: 0</title></circle>
-<circle cx="695.08" cy="530.00" r="3" fill="#ef4444"><title>2026-10-15T01:14:01Z: 0</title></circle>
-<circle cx="701.42" cy="530.00" r="3" fill="#ef4444"><title>2026-10-15T04:07:12Z: 0</title></circle>
-<circle cx="727.20" cy="530.00" r="3" fill="#ef4444"><title>2026-10-15T15:50:28Z: 0</title></circle>
-<circle cx="923.09" cy="530.00" r="3" fill="#ef4444"><title>2026-10-19T08:55:25Z: 0</title></circle>
-<circle cx="1272.64" cy="529.03" r="3" fill="#ef4444"><title>2026-10-25T23:52:32Z: 7</title></circle>
-<circle cx="1276.60" cy="528.75" r="3" fill="#ef4444"><title>2026-10-26T01:40:39Z: 9</title></circle>
-<circle cx="1287.29" cy="529.17" r="3" fill="#ef4444"><title>2026-10-26T06:32:22Z: 6</title></circle>
-<circle cx="1292.63" cy="528.89" r="3" fill="#ef4444"><title>2026-10-26T08:58:04Z: 8</title></circle>
-<circle cx="1300.00" cy="529.31" r="3" fill="#ef4444"><title>2026-10-26T12:19:08Z: 5</title></circle>
+<circle cx="110.60" cy="530.00" r="3" fill="#ef4444"><title>2026-10-03T23:35:28Z: 0</title></circle>
+<circle cx="120.15" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T03:58:44Z: 0</title></circle>
+<circle cx="123.53" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T05:32:01Z: 0</title></circle>
+<circle cx="155.73" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T20:19:36Z: 0</title></circle>
+<circle cx="158.61" cy="530.00" r="3" fill="#ef4444"><title>2026-10-04T21:39:01Z: 0</title></circle>
+<circle cx="177.48" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<circle cx="186.54" cy="530.00" r="3" fill="#ef4444"><title>2026-10-05T10:29:14Z: 0</title></circle>
+<circle cx="273.84" cy="530.00" r="3" fill="#ef4444"><title>2026-10-07T02:35:55Z: 0</title></circle>
+<circle cx="553.03" cy="530.00" r="3" fill="#ef4444"><title>2026-10-12T10:53:06Z: 0</title></circle>
+<circle cx="589.63" cy="530.00" r="3" fill="#ef4444"><title>2026-10-13T03:42:00Z: 0</title></circle>
+<circle cx="643.15" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T04:17:37Z: 0</title></circle>
+<circle cx="646.19" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T05:41:25Z: 0</title></circle>
+<circle cx="648.02" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T06:32:00Z: 0</title></circle>
+<circle cx="675.57" cy="530.00" r="3" fill="#ef4444"><title>2026-10-14T19:11:29Z: 0</title></circle>
+<circle cx="688.72" cy="530.00" r="3" fill="#ef4444"><title>2026-10-15T01:14:01Z: 0</title></circle>
+<circle cx="695.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-15T04:07:12Z: 0</title></circle>
+<circle cx="720.51" cy="530.00" r="3" fill="#ef4444"><title>2026-10-15T15:50:28Z: 0</title></circle>
+<circle cx="914.38" cy="530.00" r="3" fill="#ef4444"><title>2026-10-19T08:55:25Z: 0</title></circle>
+<circle cx="1260.31" cy="529.03" r="3" fill="#ef4444"><title>2026-10-25T23:52:32Z: 7</title></circle>
+<circle cx="1264.24" cy="528.75" r="3" fill="#ef4444"><title>2026-10-26T01:40:39Z: 9</title></circle>
+<circle cx="1274.82" cy="529.17" r="3" fill="#ef4444"><title>2026-10-26T06:32:22Z: 6</title></circle>
+<circle cx="1280.10" cy="528.89" r="3" fill="#ef4444"><title>2026-10-26T08:58:04Z: 8</title></circle>
+<circle cx="1287.39" cy="529.31" r="3" fill="#ef4444"><title>2026-10-26T12:19:08Z: 5</title></circle>
+<circle cx="1300.00" cy="530.00" r="3" fill="#ef4444"><title>2026-10-26T18:06:40Z: 0</title></circle>
 <text x="520.00" y="115.00" font-size="16" fill="#e89200">Error</text>
-<polyline points="80.00,530.00 110.92,530.00 120.57,530.00 123.99,530.00 156.52,530.00 159.43,530.00 178.50,530.00 187.66,530.00 275.86,530.00 557.97,530.00 594.95,530.00 649.03,530.00 652.10,530.00 653.95,530.00 681.79,530.00 695.08,530.00 701.42,530.00 727.20,530.00 923.09,530.00 1272.64,530.00 1276.60,530.00 1287.29,530.00 1292.63,530.00 1300.00,530.00" fill="none" stroke="#e89200" stroke-width="2.3"/>
+<polyline points="80.00,530.00 110.60,530.00 120.15,530.00 123.53,530.00 155.73,530.00 158.61,530.00 177.48,530.00 186.54,530.00 273.84,530.00 553.03,530.00 589.63,530.00 643.15,530.00 646.19,530.00 648.02,530.00 675.57,530.00 688.72,530.00 695.00,530.00 720.51,530.00 914.38,530.00 1260.31,530.00 1264.24,530.00 1274.82,530.00 1280.10,530.00 1287.39,530.00 1300.00,530.00" fill="none" stroke="#e89200" stroke-width="2.3"/>
 <circle cx="80.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-03T09:31:53Z: 0</title></circle>
-<circle cx="110.92" cy="530.00" r="3" fill="#e89200"><title>2026-10-03T23:35:28Z: 0</title></circle>
-<circle cx="120.57" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T03:58:44Z: 0</title></circle>
-<circle cx="123.99" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T05:32:01Z: 0</title></circle>
-<circle cx="156.52" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T20:19:36Z: 0</title></circle>
-<circle cx="159.43" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T21:39:01Z: 0</title></circle>
-<circle cx="178.50" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T06:19:17Z: 0</title></circle>
-<circle cx="187.66" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T10:29:14Z: 0</title></circle>
-<circle cx="275.86" cy="530.00" r="3" fill="#e89200"><title>2026-10-07T02:35:55Z: 0</title></circle>
-<circle cx="557.97" cy="530.00" r="3" fill="#e89200"><title>2026-10-12T10:53:06Z: 0</title></circle>
-<circle cx="594.95" cy="530.00" r="3" fill="#e89200"><title>2026-10-13T03:42:00Z: 0</title></circle>
-<circle cx="649.03" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T04:17:37Z: 0</title></circle>
-<circle cx="652.10" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T05:41:25Z: 0</title></circle>
-<circle cx="653.95" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T06:32:00Z: 0</title></circle>
-<circle cx="681.79" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T19:11:29Z: 0</title></circle>
-<circle cx="695.08" cy="530.00" r="3" fill="#e89200"><title>2026-10-15T01:14:01Z: 0</title></circle>
-<circle cx="701.42" cy="530.00" r="3" fill="#e89200"><title>2026-10-15T04:07:12Z: 0</title></circle>
-<circle cx="727.20" cy="530.00" r="3" fill="#e89200"><title>2026-10-15T15:50:28Z: 0</title></circle>
-<circle cx="923.09" cy="530.00" r="3" fill="#e89200"><title>2026-10-19T08:55:25Z: 0</title></circle>
-<circle cx="1272.64" cy="530.00" r="3" fill="#e89200"><title>2026-10-25T23:52:32Z: 0</title></circle>
-<circle cx="1276.60" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T01:40:39Z: 0</title></circle>
-<circle cx="1287.29" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T06:32:22Z: 0</title></circle>
-<circle cx="1292.63" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T08:58:04Z: 0</title></circle>
-<circle cx="1300.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T12:19:08Z: 0</title></circle>
+<circle cx="110.60" cy="530.00" r="3" fill="#e89200"><title>2026-10-03T23:35:28Z: 0</title></circle>
+<circle cx="120.15" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T03:58:44Z: 0</title></circle>
+<circle cx="123.53" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T05:32:01Z: 0</title></circle>
+<circle cx="155.73" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T20:19:36Z: 0</title></circle>
+<circle cx="158.61" cy="530.00" r="3" fill="#e89200"><title>2026-10-04T21:39:01Z: 0</title></circle>
+<circle cx="177.48" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T06:19:17Z: 0</title></circle>
+<circle cx="186.54" cy="530.00" r="3" fill="#e89200"><title>2026-10-05T10:29:14Z: 0</title></circle>
+<circle cx="273.84" cy="530.00" r="3" fill="#e89200"><title>2026-10-07T02:35:55Z: 0</title></circle>
+<circle cx="553.03" cy="530.00" r="3" fill="#e89200"><title>2026-10-12T10:53:06Z: 0</title></circle>
+<circle cx="589.63" cy="530.00" r="3" fill="#e89200"><title>2026-10-13T03:42:00Z: 0</title></circle>
+<circle cx="643.15" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T04:17:37Z: 0</title></circle>
+<circle cx="646.19" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T05:41:25Z: 0</title></circle>
+<circle cx="648.02" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T06:32:00Z: 0</title></circle>
+<circle cx="675.57" cy="530.00" r="3" fill="#e89200"><title>2026-10-14T19:11:29Z: 0</title></circle>
+<circle cx="688.72" cy="530.00" r="3" fill="#e89200"><title>2026-10-15T01:14:01Z: 0</title></circle>
+<circle cx="695.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-15T04:07:12Z: 0</title></circle>
+<circle cx="720.51" cy="530.00" r="3" fill="#e89200"><title>2026-10-15T15:50:28Z: 0</title></circle>
+<circle cx="914.38" cy="530.00" r="3" fill="#e89200"><title>2026-10-19T08:55:25Z: 0</title></circle>
+<circle cx="1260.31" cy="530.00" r="3" fill="#e89200"><title>2026-10-25T23:52:32Z: 0</title></circle>
+<circle cx="1264.24" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T01:40:39Z: 0</title></circle>
+<circle cx="1274.82" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T06:32:22Z: 0</title></circle>
+<circle cx="1280.10" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T08:58:04Z: 0</title></circle>
+<circle cx="1287.39" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T12:19:08Z: 0</title></circle>
+<circle cx="1300.00" cy="530.00" r="3" fill="#e89200"><title>2026-10-26T18:06:40Z: 0</title></circle>
 <text x="670.00" y="115.00" font-size="16" fill="#8b5cf6">Skip</text>
-<polyline points="80.00,528.61 110.92,527.36 120.57,527.36 123.99,527.36 156.52,527.36 159.43,527.36 178.50,527.22 187.66,527.22 275.86,527.22 557.97,527.22 594.95,527.22 649.03,527.22 652.10,527.22 653.95,527.22 681.79,527.22 695.08,527.22 701.42,527.22 727.20,527.22 923.09,527.22 1272.64,527.22 1276.60,527.22 1287.29,527.22 1292.63,527.22 1300.00,527.22" fill="none" stroke="#8b5cf6" stroke-width="2.3"/>
+<polyline points="80.00,528.61 110.60,527.37 120.15,527.37 123.53,527.37 155.73,527.37 158.61,527.37 177.48,527.23 186.54,527.23 273.84,527.23 553.03,527.23 589.63,527.23 643.15,527.23 646.19,527.23 648.02,527.23 675.57,527.23 688.72,527.23 695.00,527.23 720.51,527.23 914.38,527.23 1260.31,527.23 1264.24,527.23 1274.82,527.23 1280.10,527.23 1287.39,527.23 1300.00,527.23" fill="none" stroke="#8b5cf6" stroke-width="2.3"/>
 <circle cx="80.00" cy="528.61" r="3" fill="#8b5cf6"><title>2026-10-03T09:31:53Z: 10</title></circle>
-<circle cx="110.92" cy="527.36" r="3" fill="#8b5cf6"><title>2026-10-03T23:35:28Z: 19</title></circle>
-<circle cx="120.57" cy="527.36" r="3" fill="#8b5cf6"><title>2026-10-04T03:58:44Z: 19</title></circle>
-<circle cx="123.99" cy="527.36" r="3" fill="#8b5cf6"><title>2026-10-04T05:32:01Z: 19</title></circle>
-<circle cx="156.52" cy="527.36" r="3" fill="#8b5cf6"><title>2026-10-04T20:19:36Z: 19</title></circle>
-<circle cx="159.43" cy="527.36" r="3" fill="#8b5cf6"><title>2026-10-04T21:39:01Z: 19</title></circle>
-<circle cx="178.50" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-05T06:19:17Z: 20</title></circle>
-<circle cx="187.66" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-05T10:29:14Z: 20</title></circle>
-<circle cx="275.86" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-07T02:35:55Z: 20</title></circle>
-<circle cx="557.97" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-12T10:53:06Z: 20</title></circle>
-<circle cx="594.95" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-13T03:42:00Z: 20</title></circle>
-<circle cx="649.03" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-14T04:17:37Z: 20</title></circle>
-<circle cx="652.10" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-14T05:41:25Z: 20</title></circle>
-<circle cx="653.95" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-14T06:32:00Z: 20</title></circle>
-<circle cx="681.79" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-14T19:11:29Z: 20</title></circle>
-<circle cx="695.08" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-15T01:14:01Z: 20</title></circle>
-<circle cx="701.42" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-15T04:07:12Z: 20</title></circle>
-<circle cx="727.20" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-15T15:50:28Z: 20</title></circle>
-<circle cx="923.09" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-19T08:55:25Z: 20</title></circle>
-<circle cx="1272.64" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-25T23:52:32Z: 20</title></circle>
-<circle cx="1276.60" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-26T01:40:39Z: 20</title></circle>
-<circle cx="1287.29" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-26T06:32:22Z: 20</title></circle>
-<circle cx="1292.63" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-26T08:58:04Z: 20</title></circle>
-<circle cx="1300.00" cy="527.22" r="3" fill="#8b5cf6"><title>2026-10-26T12:19:08Z: 20</title></circle>
-<text x="35.00" y="620.00" font-size="13" fill="#64748b">LATEST RUN HAS NO TEST COUNTS — see its CI log. Earlier points are historical evidence.</text>
+<circle cx="110.60" cy="527.37" r="3" fill="#8b5cf6"><title>2026-10-03T23:35:28Z: 19</title></circle>
+<circle cx="120.15" cy="527.37" r="3" fill="#8b5cf6"><title>2026-10-04T03:58:44Z: 19</title></circle>
+<circle cx="123.53" cy="527.37" r="3" fill="#8b5cf6"><title>2026-10-04T05:32:01Z: 19</title></circle>
+<circle cx="155.73" cy="527.37" r="3" fill="#8b5cf6"><title>2026-10-04T20:19:36Z: 19</title></circle>
+<circle cx="158.61" cy="527.37" r="3" fill="#8b5cf6"><title>2026-10-04T21:39:01Z: 19</title></circle>
+<circle cx="177.48" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-05T06:19:17Z: 20</title></circle>
+<circle cx="186.54" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-05T10:29:14Z: 20</title></circle>
+<circle cx="273.84" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-07T02:35:55Z: 20</title></circle>
+<circle cx="553.03" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-12T10:53:06Z: 20</title></circle>
+<circle cx="589.63" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-13T03:42:00Z: 20</title></circle>
+<circle cx="643.15" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-14T04:17:37Z: 20</title></circle>
+<circle cx="646.19" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-14T05:41:25Z: 20</title></circle>
+<circle cx="648.02" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-14T06:32:00Z: 20</title></circle>
+<circle cx="675.57" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-14T19:11:29Z: 20</title></circle>
+<circle cx="688.72" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-15T01:14:01Z: 20</title></circle>
+<circle cx="695.00" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-15T04:07:12Z: 20</title></circle>
+<circle cx="720.51" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-15T15:50:28Z: 20</title></circle>
+<circle cx="914.38" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-19T08:55:25Z: 20</title></circle>
+<circle cx="1260.31" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-25T23:52:32Z: 20</title></circle>
+<circle cx="1264.24" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-26T01:40:39Z: 20</title></circle>
+<circle cx="1274.82" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-26T06:32:22Z: 20</title></circle>
+<circle cx="1280.10" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-26T08:58:04Z: 20</title></circle>
+<circle cx="1287.39" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-26T12:19:08Z: 20</title></circle>
+<circle cx="1300.00" cy="527.23" r="3" fill="#8b5cf6"><title>2026-10-26T18:06:40Z: 20</title></circle>
+<text x="35.00" y="620.00" font-size="13" fill="#64748b">Dotted lines: failed&#x2F;incomplete workspace command. Error = announced tests without a terminal result.</text>
 </g>
 </svg>
