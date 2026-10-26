@@ -4,7 +4,7 @@
 //! should retain an owning [`super::Connection`] instead.
 use super::io::TokioIo;
 /// Low-level task adapter. Dropping the returned join handle detaches the task;
-/// prefer [`Connection`] when a scope should own and cancel the driver.
+/// prefer [`super::Connection`] when a scope should own and cancel the driver.
 pub fn serve(
     io: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
     bootstrap: capnp::capability::Client,
@@ -16,7 +16,7 @@ pub fn serve(
     ))
 }
 /// Low-level task adapter returning an initial typed bootstrap. Prefer
-/// [`Connection`] for bounded shutdown and cancellation when the owner is dropped.
+/// [`super::Connection`] for bounded shutdown and cancellation when the owner is dropped.
 pub fn client<T: capnp::capability::FromClientHook>(
     io: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
 ) -> (T, tokio::task::JoinHandle<capnp::Result<()>>) {

@@ -5,8 +5,9 @@
 //! provides protocol drivers. [`rpc::Connection`] owns a running connection and
 //! cancels it on drop. Storage, services and native networking are optional.
 //!
-//! Start with `message_basic`, then run the separate `kv_server` and `kv_client`
-//! examples. `kv_deep_client` exercises concurrent directory capability pipelines.
+//! Start with `message_basic`, then run the separate `server` and `client`
+//! binaries in the [key/value service example](https://github.com/DericHuynh/capntproto/tree/main/examples/kv).
+//! Its `deep-client` binary exercises concurrent directory capability pipelines.
 
 pub use capnp;
 pub use capnp_futures;

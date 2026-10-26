@@ -2,8 +2,9 @@
 //!
 //! Retain [`Connection`] while using its bootstrap capabilities. Its drop cancels
 //! the driver; [`Connection::shutdown`] completes bounded graceful cleanup. Use
-//! [`tcp`] or [`quic`] to choose a transport. TLS secures TCP through
-//! [`tcp::tls`]; QUIC includes TLS 1.3. [`security`] holds shared certificates.
+//! [`tcp`] or `quic` (feature `quic`) to choose a transport. TLS secures TCP
+//! through `tcp::tls` (feature `tls`); QUIC includes TLS 1.3. The `security`
+//! module holds shared certificates when TLS is enabled.
 //! Use [`raw`] only when an
 //! integration deliberately manages detached task handles.
 mod connection;
