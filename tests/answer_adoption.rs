@@ -1343,15 +1343,10 @@ async fn adoption_exposes_unused_pipeline_before_return_and_preserves_used_route
                         let mut c =
                             Caller::with_driver(portable, true, true, capnp_rpc::new_client(Echo))
                                 .await;
-                        if previously_used {
-                            let call = c
-                                .pipeline
-                                .as_ref()
-                                .unwrap()
-                                .get_cap()
-                                .echo_request()
-                                .send()
-                                .promise;
+                        let existing =
+                            previously_used.then(|| c.pipeline.as_ref().unwrap().get_cap());
+                        if let Some(existing) = &existing {
+                            let call = existing.echo_request().send().promise;
                             c.observe().await;
                             assert_eq!(c.calls.len(), 1, "old pipeline call was not published");
                             assert_eq!(call.await.unwrap().get().unwrap().get_value(), 73);
@@ -1360,14 +1355,11 @@ async fn adoption_exposes_unused_pipeline_before_return_and_preserves_used_route
                         c.adopt();
                         c.redirect();
                         c.observe().await;
-                        let call = c
-                            .pipeline
-                            .as_ref()
-                            .unwrap()
-                            .get_cap()
-                            .echo_request()
-                            .send()
-                            .promise;
+                        // Ordering belongs to this existing client. A freshly
+                        // projected client may already use the adopted route.
+                        let cap =
+                            existing.unwrap_or_else(|| c.pipeline.as_ref().unwrap().get_cap());
+                        let call = cap.echo_request().send().promise;
                         c.observe().await;
                         assert_eq!(
                             c.calls.len(),
@@ -1394,6 +1386,7 @@ async fn adoption_exposes_unused_pipeline_before_return_and_preserves_used_route
                         c.complete(false);
                         c.observe().await;
                         assert_eq!(c.outcome, 1);
+                        drop(cap);
                         c.pipeline.take();
                         c.response.take();
                         c.observe().await;
