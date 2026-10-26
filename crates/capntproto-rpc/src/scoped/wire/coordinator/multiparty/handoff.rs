@@ -230,7 +230,9 @@ impl<
                     let (sender, receiver) = shared::channel();
                     let pipeline = Rc::new(PipelineState {
                         used: Cell::new(false),
-                        owner_wake: RefCell::new(None),
+                        // Projections and final-interest drops belong to this
+                        // network control, not the ordinary outgoing-call lane.
+                        owner_wake: RefCell::new(Some(cx.waker().clone())),
                         adopted: RefCell::default(),
                         cached: RefCell::default(),
                         _credit: Cell::new(None),

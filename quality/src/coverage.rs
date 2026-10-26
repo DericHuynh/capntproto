@@ -490,6 +490,29 @@ pub fn collect(r: &mut Runner) -> Result<()> {
     )?;
     let inventory_path = r.directory.join("workspace-inventory.json");
     fs::write(&inventory_path, &workspace_inventory)?;
+    // Build the independent service workspace before the concurrent test run.
+    // A cold instrumented QUIC/BoringSSL build can exceed the test helper's
+    // command deadline, especially alongside other nested compiler campaigns.
+    // Use the exact flags, toolchain and target directory the service test uses;
+    // its later Cargo invocation still checks freshness before running clients.
+    r.run(
+        "service-examples-build",
+        instrumented(
+            &[
+                "build",
+                "--locked",
+                "--ignore-rust-version",
+                "--manifest-path",
+                "examples/kv/Cargo.toml",
+                "--bins",
+                "--features",
+                "quic",
+            ],
+            &build,
+            &profiles,
+        )
+        .env("CARGO_TARGET_DIR", build.join("service-examples")),
+    )?;
     let tests = r.nextest(
         "workspace-tests",
         instrumented(
