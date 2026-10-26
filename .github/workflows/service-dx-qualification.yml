@@ -1,0 +1,98 @@
+name: Qualify service API and CI fixes (no publication)
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-service-dx
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/codex/service-dx-qualification-20261026'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: b4e4fe54ea4e1ab10369b9b547c148f4dcfaf775
+      - name: Install package build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake clang libclang-dev pkg-config capnproto libcapnp-dev protobuf-compiler
+          rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-packages
+          cache-on-failure: true
+      - name: Check formatting, development safeguards and client/server Clippy
+        run: |
+          cargo fmt --all -- --check
+          cargo fmt --manifest-path examples/kv/Cargo.toml -- --check
+          cargo test --locked -p capntproto-dev
+          cargo clippy --locked --manifest-path examples/kv/Cargo.toml --all-targets --features quic -- -D warnings
+      - name: Compile all encrypted benchmark adapters
+        run: cargo check --locked --manifest-path benchmarks/rpc/Cargo.toml --all-targets
+      - name: Check transport interoperability before packaging
+        run: cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc --test service_examples
+      - name: Prepare the package workspace
+        # The vendor stays outside the development workspace. Cargo's package
+        # workspace stages unpublished dependencies in its temporary registry.
+        run: |
+          mkdir "$RUNNER_TEMP/package-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/package-source"
+          sed -i 's/"crates\/\*"\]/"crates\/*", "vendor\/rustls"\]/; /    "vendor\/rustls",/d' "$RUNNER_TEMP/package-source/Cargo.toml"
+          cd "$RUNNER_TEMP/package-source"
+          cargo update --workspace
+      - name: Verify all packaged sources and run simple and deep examples
+        run: |
+          cd "$RUNNER_TEMP/package-source"
+          cargo package --locked \
+            -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen \
+            -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures \
+            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
+          cargo run --locked --example message_basic
+          sha256sum target/package/*.crate > target/package/SHA256SUMS
+      - name: Retain verified release packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: crates-io-packages-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/package-source/target/package/*.crate
+            ${{ runner.temp }}/package-source/target/package/SHA256SUMS
+          if-no-files-found: error
+  mutations:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: b4e4fe54ea4e1ab10369b9b547c148f4dcfaf775
+      - uses: ./.github/actions/quality-setup
+        with:
+          lane: memory
+      - name: Qualify the original guard mutation and coverage checks
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --test guard_quality
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: service-dx-guard-evidence
+          path: |
+            target/verification/rust-mutations/
+            target/verification/guard-coverage/
+            target/nextest/reports/
+          include-hidden-files: true
+  fuzz:
+    uses: ./.github/workflows/verification-fuzz.yml
