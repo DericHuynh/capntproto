@@ -32,7 +32,7 @@ pub(super) fn run(
         }
         Phase::All => {
             r#"for n in 10 100; do
-    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
+    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --comparators --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
 done
 python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles"#
         }

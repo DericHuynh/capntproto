@@ -301,7 +301,7 @@ mod tests {
                 let peer = tokio::task::spawn_local(async move {
                     let mut socket =
                         WebSocketStream::from_raw_socket(b, Role::Server, Some(config())).await;
-                    for _ in 0..2 {
+                    for _ in 0..IN_FLIGHT {
                         assert!(matches!(
                             socket.next().await.unwrap().unwrap(),
                             Message::Binary(_)
@@ -320,13 +320,28 @@ mod tests {
                         .unwrap();
                     while socket.next().await.is_some() {}
                 });
-                let (a, b) = tokio::join!(client.hops(), client.hops());
-                for result in [a, b] {
-                    assert_eq!(
-                        result.unwrap_err().to_string(),
-                        "unknown WebSocket response ID"
-                    );
-                }
+                // More callers than the window must wait without putting
+                // additional requests on the wire. Failure wakes both groups.
+                let results =
+                    futures::future::join_all((0..IN_FLIGHT * 2).map(|_| client.hops())).await;
+                let errors: Vec<_> = results
+                    .into_iter()
+                    .map(|r| r.unwrap_err().to_string())
+                    .collect();
+                assert_eq!(
+                    errors
+                        .iter()
+                        .filter(|e| *e == "unknown WebSocket response ID")
+                        .count(),
+                    IN_FLIGHT
+                );
+                assert_eq!(
+                    errors
+                        .iter()
+                        .filter(|e| *e == "WebSocket connection stopped")
+                        .count(),
+                    IN_FLIGHT
+                );
                 assert_eq!(client.permits.available_permits(), IN_FLIGHT);
                 assert!(client.hops().await.is_err());
                 peer.await.unwrap();
