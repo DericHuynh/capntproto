@@ -1590,6 +1590,50 @@ impl Hook {
         call.enqueue_owned(self.0.inbox.upgrade())
     }
 
+    // A projection can bind to another unresolved promise. Resolution observers
+    // must see that first step; only when_resolved follows the remaining chain.
+    fn wait_for_resolution(&self, follow: bool) -> Promise<(), Error> {
+        let Some(inbox) = self.0.inbox.upgrade() else {
+            return Promise::err(Error::disconnected(
+                "scoped ClientHook driver dropped".into(),
+            ));
+        };
+        let endpoint = self.0.clone();
+        let shutdown = inbox.shutdown.clone();
+        let resolved = endpoint
+            .resolution
+            .borrow_mut()
+            .get_or_insert_with(|| {
+                let (sender, receiver) = shared::channel();
+                Resolution {
+                    sender,
+                    receiver: receiver.shared(),
+                }
+            })
+            .receiver
+            .clone();
+        Promise::from_future(async move {
+            // The waiter retains its graph route. Bridge close/drop wakes it
+            // through shutdown even though notification state is endpoint-owned.
+            let result = match futures::future::select(shutdown, resolved).await {
+                futures::future::Either::Right((result, _)) => result
+                    .map_err(crate::canceled_to_error)
+                    .and_then(core::convert::identity),
+                futures::future::Either::Left((reason, _)) => Err(reason.unwrap_or_else(|_| {
+                    Error::disconnected("scoped ClientHook driver dropped".into())
+                })),
+            };
+            result?;
+            let forwarded = endpoint.introduced.borrow().clone();
+            if follow {
+                if let Some(forwarded) = forwarded {
+                    forwarded.when_resolved().await?;
+                }
+            }
+            Ok(())
+        })
+    }
+
     pub(crate) fn direct_response_available(&self) -> bool {
         self.introduced().is_none()
     }
@@ -1788,7 +1832,7 @@ impl ClientHook for Hook {
             None
         } else {
             let endpoint = self.0.clone();
-            let ready = self.when_resolved();
+            let ready = self.wait_for_resolution(false);
             Some(Promise::from_future(async move {
                 ready.await?;
                 Ok(Box::new(Hook(endpoint, None)) as Box<dyn ClientHook>)
@@ -1805,43 +1849,7 @@ impl ClientHook for Hook {
         if self.0.settled.get() {
             return Promise::ok(());
         }
-        let Some(inbox) = self.0.inbox.upgrade() else {
-            return Promise::err(Error::disconnected(
-                "scoped ClientHook driver dropped".into(),
-            ));
-        };
-        let endpoint = self.0.clone();
-        let shutdown = inbox.shutdown.clone();
-        let resolved = endpoint
-            .resolution
-            .borrow_mut()
-            .get_or_insert_with(|| {
-                let (sender, receiver) = shared::channel();
-                Resolution {
-                    sender,
-                    receiver: receiver.shared(),
-                }
-            })
-            .receiver
-            .clone();
-        Promise::from_future(async move {
-            // The waiter retains its graph route. Bridge close/drop wakes it
-            // through shutdown even though notification state is endpoint-owned.
-            let result = match futures::future::select(shutdown, resolved).await {
-                futures::future::Either::Right((result, _)) => result
-                    .map_err(crate::canceled_to_error)
-                    .and_then(core::convert::identity),
-                futures::future::Either::Left((reason, _)) => Err(reason.unwrap_or_else(|_| {
-                    Error::disconnected("scoped ClientHook driver dropped".into())
-                })),
-            };
-            result?;
-            let forwarded = endpoint.introduced.borrow().clone();
-            if let Some(forwarded) = forwarded {
-                forwarded.when_resolved().await?;
-            }
-            Ok(())
-        })
+        self.wait_for_resolution(true)
     }
 }
 

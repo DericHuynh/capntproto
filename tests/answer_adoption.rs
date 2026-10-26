@@ -108,7 +108,8 @@ fn enable(hub: &Rc<RefCell<Hub>>) {
 async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for budget in [1, 7, 64] {
+            for budget in (1..=8).chain([64]) {
+                let stage = Cell::new("connect");
                 tokio::time::timeout(Duration::from_secs(5), async {
                     let hub = Rc::new(RefCell::new(Hub::default()));
                     hub.borrow_mut().introductions = true;
@@ -145,6 +146,7 @@ async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_
                     let tail: harness::Client = capnp_rpc::new_client(Tail(remote));
                     *factory.0.borrow_mut() = Some(tail.client);
                     let relay = tokio::task::spawn_local(relay);
+                    stage.set("resolve host");
                     ready.await.unwrap();
                     let mut caller = capnp_rpc::portable::RpcSystem::new(
                         Box::new(Hub::network(&hub, 1)),
@@ -156,6 +158,7 @@ async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_
                     let caller = tokio::task::spawn_local(caller.run());
                     let request = remote.pending_request().send();
                     let early = request.pipeline.get_cap().echo_request().send().promise;
+                    stage.set("dispatch parent");
                     while calls.get() == 0 {
                         tokio::task::yield_now().await;
                     }
@@ -164,7 +167,9 @@ async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_
                     // without additional IO or manual polling of the driver.
                     drain().await;
                     gate.send(()).unwrap();
+                    stage.set("parent reply");
                     let response = request.promise.await.unwrap();
+                    stage.set("pipelined child reply");
                     assert_eq!(early.await.unwrap().get().unwrap().get_value(), 73);
                     assert_eq!(calls.get(), 1);
                     drop(response);
@@ -173,7 +178,12 @@ async fn portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_
                     callee.abort();
                 })
                 .await
-                .unwrap_or_else(|_| panic!("transfer stalled with poll budget {budget}"));
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "transfer stalled with poll budget {budget} at {}",
+                        stage.get()
+                    )
+                });
             }
         })
         .await;
