@@ -21,7 +21,7 @@ async fn roundtrip(mutual: bool) {
                 Some(rustls::ProtocolVersion::TLSv1_3)
             );
             assert_eq!(stream.get_ref().1.peer_certificates().is_some(), mutual);
-            tls::client(stream, Some(bootstrap()), Side::Server, Default::default()).await
+            tls::driver(stream, Some(bootstrap()), Side::Server, Default::default()).await
         });
         let stream = tls::connect(
             address,
@@ -41,7 +41,7 @@ async fn roundtrip(mutual: bool) {
         );
         assert_eq!(stream.get_ref().1.peer_certificates().unwrap().len(), 1);
         assert!(stream.get_ref().0.nodelay().unwrap());
-        exercise(tls::client(stream, None, Side::Client, Default::default())).await;
+        exercise(tls::driver(stream, None, Side::Client, Default::default())).await;
         task.await.unwrap().unwrap();
     })
     .await;
@@ -170,7 +170,7 @@ async fn listener_isolates_invalid_and_stalled_handshakes_and_cancellation() {
             )
             .await
             .unwrap();
-            let mut driver = tls::client(stream, None, Side::Client, Default::default());
+            let mut driver = tls::driver(stream, None, Side::Client, Default::default());
             let cap = driver
                 .bootstrap::<capntproto_test_support::structured::runtime_test_capnp::harness::Client>(
                 );

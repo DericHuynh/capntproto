@@ -10,6 +10,15 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+pub(super) async fn deadline<T>(
+    timeout: std::time::Duration,
+    future: impl std::future::Future<Output = io::Result<T>>,
+) -> io::Result<T> {
+    tokio::time::timeout(timeout, future)
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC connection setup timed out"))?
+}
+
 pub(crate) fn defer(cx: &mut Context<'_>) {
     // yield_now's first poll places this waker on Tokio's deferred queue,
     // independently of the future's lifetime. TaskSet owns the resume state.

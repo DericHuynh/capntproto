@@ -38,15 +38,16 @@ async fn tcp_owned_connection_bootstraps_both_sides_and_shuts_down() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let service: harness::Client = capnp_rpc::new_client(Echo);
         let (client, server) = tokio::join!(
-            capntproto::rpc::tcp::connect(
-                listener.local_addr().unwrap(),
-                Some(service.client.clone()),
-                Default::default()
-            ),
+            capntproto::rpc::tcp::connect(listener.local_addr().unwrap(), TIMEOUT),
             listener.accept()
         );
-        let a = Connection::spawn(client.unwrap());
-        let b = Connection::spawn(capntproto::rpc::tcp::client(
+        let a = Connection::spawn(capntproto::rpc::tcp::driver(
+            client.unwrap(),
+            Some(service.client.clone()),
+            Side::Client,
+            Default::default(),
+        ));
+        let b = Connection::spawn(capntproto::rpc::tcp::driver(
             server.unwrap().0,
             Some(service.client),
             Side::Server,

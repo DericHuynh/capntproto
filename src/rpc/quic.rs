@@ -7,7 +7,7 @@ mod config;
 mod driver;
 mod endpoint;
 mod retry;
-use super::io::TokioIo;
+use super::io::{deadline, TokioIo};
 pub use super::QuicVersion as Version;
 use super::{
     security::{self, Identity},
@@ -225,7 +225,7 @@ pub fn network(stream: Stream, side: Side, options: ReaderOptions) -> Network {
     network.set_task_yield(super::io::defer);
     network
 }
-pub fn client(
+pub fn driver(
     stream: Stream,
     bootstrap: Option<Client>,
     side: Side,

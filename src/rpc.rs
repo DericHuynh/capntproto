@@ -42,6 +42,7 @@ pub const ALPN: &[u8] = b"capntproto-rpc/1";
 pub struct AcceptOptions {
     /// Includes authentication and, for QUIC, arrival of the first RPC stream.
     pub timeout: std::time::Duration,
+    /// Maximum number of concurrent sessions still completing setup.
     pub max_pending: std::num::NonZeroUsize,
 }
 

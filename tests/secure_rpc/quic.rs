@@ -48,7 +48,7 @@ async fn roundtrip(mutual: bool, version: Version) {
                 .unwrap();
             assert_eq!(stream.version(), version.wire_id());
             assert_eq!(!stream.peer_certificates().is_empty(), mutual);
-            quic::client(stream, Some(bootstrap()), Side::Server, Default::default()).await
+            quic::driver(stream, Some(bootstrap()), Side::Server, Default::default()).await
         });
         let endpoint = client(&pki, mutual, version);
         let stream = quic::connect(&endpoint, address, "localhost", TIMEOUT)
@@ -56,7 +56,7 @@ async fn roundtrip(mutual: bool, version: Version) {
             .unwrap();
         assert_eq!(stream.version(), version.wire_id());
         assert!(!stream.peer_certificates().is_empty());
-        exercise(quic::client(stream, None, Side::Client, Default::default())).await;
+        exercise(quic::driver(stream, None, Side::Client, Default::default())).await;
         task.await.unwrap().unwrap();
     })
     .await;
@@ -215,7 +215,7 @@ async fn listener_accepts_while_peer_stalls_and_preserves_established_rpc_after_
         let clients = async {
             let stalled = quic::connect(&client, endpoint.local_addr().unwrap(), "localhost", TIMEOUT).await.unwrap();
             let stream = quic::connect(&client, endpoint.local_addr().unwrap(), "localhost", TIMEOUT).await.unwrap();
-            let mut driver = quic::client(stream, None, Side::Client, Default::default());
+            let mut driver = quic::driver(stream, None, Side::Client, Default::default());
             let cap = driver.bootstrap::<capntproto_test_support::structured::runtime_test_capnp::harness::Client>();
             let close = driver.get_disconnector();
             let task = tokio::task::spawn_local(driver);

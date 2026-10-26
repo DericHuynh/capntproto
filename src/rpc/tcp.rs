@@ -12,17 +12,19 @@ pub use io::ReadHalf;
 use io::WriteHalf;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
-/// Dial a plaintext TCP peer with Nagle's algorithm disabled for RPC latency.
-/// Wrap this future in `tokio::time::timeout` to bound DNS and connection setup.
+/// Dial a TCP stream with Nagle's algorithm disabled for RPC latency.
+/// The deadline covers DNS and connection setup, like the TLS connector.
 /// Use `rpc::tcp::tls` (with the `tls` feature) for authenticated encryption.
 pub async fn connect(
     address: impl ToSocketAddrs,
-    bootstrap: Option<Client>,
-    options: ReaderOptions,
-) -> std::io::Result<twoparty::TwoPartyClient<'static>> {
-    let socket = TcpStream::connect(address).await?;
-    socket.set_nodelay(true)?;
-    Ok(client(socket, bootstrap, Side::Client, options))
+    timeout: std::time::Duration,
+) -> std::io::Result<TcpStream> {
+    super::io::deadline(timeout, async move {
+        let socket = TcpStream::connect(address).await?;
+        socket.set_nodelay(true)?;
+        Ok(socket)
+    })
+    .await
 }
 
 /// Build a network from an already connected socket. Each stream uses its live
@@ -57,7 +59,7 @@ pub fn network(
 
 /// Obtain bootstrap/observation handles, then poll this driver on a local
 /// executor. The socket is owned by the driver and its connection handles.
-pub fn client(
+pub fn driver(
     socket: TcpStream,
     bootstrap: Option<Client>,
     side: Side,

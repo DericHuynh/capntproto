@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: 9d239f292a0c39343eff5925dfa5ed9f4f1338bd
+          ref: 16f939afaee9e7e3ff74edddd387ba3033ec457e
       - name: Install package build dependencies
         run: |
           sudo apt-get update
@@ -34,6 +34,8 @@ jobs:
         with:
           key: release-packages
           cache-on-failure: true
+      - name: Initialize pinned reference source for inventory tests
+        run: git submodule update --init --depth 1 -- vendor/capnproto
       - name: Check formatting, development safeguards and client/server Clippy
         run: |
           cargo fmt --all -- --check
@@ -44,7 +46,7 @@ jobs:
       - name: Compile all encrypted benchmark adapters
         run: cargo check --locked --manifest-path benchmarks/rpc/Cargo.toml --all-targets
       - name: Check transport interoperability before packaging
-        run: cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc --test service_examples
+        run: cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc --test service_examples --test tcp_rpc --test rpc_ownership
       - name: Prepare the package workspace
         # The vendor stays outside the development workspace. Cargo's package
         # workspace stages unpublished dependencies in its temporary registry.
