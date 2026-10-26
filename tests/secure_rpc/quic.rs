@@ -289,6 +289,61 @@ async fn half_close_preserves_large_payload_and_reverse_direction() {
     .await;
 }
 #[tokio::test(flavor = "current_thread")]
+async fn connection_close_without_stream_fin_reports_truncation_after_buffered_data() {
+    local(async {
+        for half_closed in [false, true] {
+            let pki = Pki::new();
+            let server = server(&pki, false);
+            let address = server.local_addr().unwrap();
+            let (abort, aborted) = tokio::sync::oneshot::channel();
+            let peer = tokio::task::spawn_local(async move {
+                let mut stream = quic::accept(server.accept().await.unwrap(), TIMEOUT)
+                    .await
+                    .unwrap();
+                assert_eq!(stream.read_u8().await.unwrap(), b's');
+                stream.write_all(b"buffered response").await.unwrap();
+                stream.flush().await.unwrap();
+                aborted.await.unwrap();
+                // Close the connection without ever sending the stream's FIN.
+                drop(stream);
+                tokio::time::timeout(TIMEOUT, server.wait_idle())
+                    .await
+                    .unwrap();
+            });
+            let endpoint = client(&pki, false, Version::V1);
+            let mut stream = quic::connect(&endpoint, address, "localhost", TIMEOUT)
+                .await
+                .unwrap();
+            stream.write_all(b"s").await.unwrap();
+            if half_closed {
+                stream.shutdown().await.unwrap();
+            }
+            let mut received = vec![stream.read_u8().await.unwrap()];
+            abort.send(()).unwrap();
+            tokio::time::timeout(TIMEOUT, async {
+                while !stream.is_closed() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            let error = stream.read_to_end(&mut received).await.unwrap_err();
+            assert_eq!(received, b"buffered response");
+            assert_eq!(
+                error.kind(),
+                if half_closed {
+                    io::ErrorKind::UnexpectedEof
+                } else {
+                    io::ErrorKind::ConnectionAborted
+                }
+            );
+            peer.await.unwrap();
+        }
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn drop_cancels_session_and_releases_routes() {
     local(async {
         let pki = Pki::new();

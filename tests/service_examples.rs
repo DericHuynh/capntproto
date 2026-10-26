@@ -117,9 +117,7 @@ fn certificates(directory: &Path) {
     std::fs::write(directory.join("server-key.pem"), key.serialize_pem()).unwrap();
 }
 
-#[test]
-fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
-    let directory = tempfile::tempdir().unwrap();
+fn example_cargo() -> (Command, bool) {
     let mut build = command("cargo");
     let instrumented = if let (Ok(profiles), Ok(flags)) = (
         std::env::var("CAPNTPROTO_FULL_COVERAGE_PROFILES"),
@@ -139,6 +137,13 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
     } else {
         false
     };
+    (build, instrumented)
+}
+
+#[test]
+fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut build, instrumented) = example_cargo();
     build
         .args([
             "build",
@@ -156,6 +161,24 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
         build.args(["--features", "quic"]);
     }
     run(&mut build, &directory.path().join("build.log"), 0).unwrap();
+    if cfg!(feature = "quic") {
+        let (mut test, instrumented) = example_cargo();
+        test.args([
+            "test",
+            "--locked",
+            "--manifest-path",
+            "examples/kv/Cargo.toml",
+            "--lib",
+            "--features",
+            "quic",
+            "--target-dir",
+        ])
+        .arg(target());
+        if instrumented {
+            test.arg("--ignore-rust-version");
+        }
+        run(&mut test, &directory.path().join("address-fallback.log"), 0).unwrap();
+    }
     certificates(directory.path());
     let path = |name| directory.path().join(name).display().to_string();
     let mut modes = vec![("tcp", false), ("tcp", true)];
@@ -194,6 +217,15 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
         // A new process and connection must see the first process's write.
         assert_eq!(
             client("client", &append(&base, &["get", "greeting"]), true).trim(),
+            "hello"
+        );
+        // A hostname may resolve to IPv6 before IPv4 even though this service
+        // deliberately listens only on IPv4. Every transport must try fallback.
+        let mut named = base.clone();
+        let address: std::net::SocketAddr = named[1].parse().unwrap();
+        named[1] = format!("localhost:{}", address.port());
+        assert_eq!(
+            client("client", &append(&named, &["get", "greeting"]), true).trim(),
             "hello"
         );
         client(

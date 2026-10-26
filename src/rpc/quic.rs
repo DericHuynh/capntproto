@@ -83,7 +83,7 @@ impl AsyncRead for Stream {
             }
             Err(quiche::Error::Done | quiche::Error::InvalidStreamState(_)) => {
                 if state.closed.get() {
-                    return Poll::Ready(Ok(()));
+                    return Poll::Ready(Err(state.read_error()));
                 }
                 state.reader.borrow_mut().replace(cx.waker().clone());
                 Poll::Pending

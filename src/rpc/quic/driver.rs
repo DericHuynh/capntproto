@@ -80,6 +80,18 @@ impl State {
                 })
             })
     }
+    pub fn read_error(&self) -> io::Error {
+        self.failure
+            .borrow()
+            .as_ref()
+            .map(|(kind, message)| io::Error::new(*kind, message.clone()))
+            .unwrap_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "QUIC connection closed before receiving stream FIN",
+                )
+            })
+    }
     pub fn receive(&self, bytes: &mut [u8], from: SocketAddr, local: SocketAddr) {
         if self.closed.get() || self.failure.borrow().is_some() {
             return;

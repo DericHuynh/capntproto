@@ -20,3 +20,6 @@ tokio = { version = "1", features = ["rt", "macros", "net", "time", "signal"] }
 capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
 capntproto-compiler = { path = "../../crates/capntproto-compiler" }
+
+[dev-dependencies]
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }

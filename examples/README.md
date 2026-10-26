@@ -76,6 +76,8 @@ cargo run --bin deep-client -- --ca /path/ca.pem
 QUIC includes TLS 1.3. Enable the example's `quic` feature and select the QUIC
 transport; use the same PEM certificate and trust files. The native build needs
 CMake, a C/C++ compiler and libclang.
+Clients try the hostname's resolved addresses within one setup deadline, so an
+unreachable IPv6 or IPv4 address does not prevent a reachable alternative.
 
 ```sh
 cargo run --features quic --bin server -- --transport quic \

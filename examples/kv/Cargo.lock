@@ -246,6 +246,7 @@ dependencies = [
  "capntproto-core",
  "clap",
  "futures",
+ "rcgen",
  "tokio",
 ]
 
