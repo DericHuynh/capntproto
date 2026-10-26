@@ -1,0 +1,95 @@
+name: Qualify crate release (no publication)
+on:
+  push:
+    branches: [codex/release-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-crates-io-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/codex/release-qualification-20261026'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Require passing CI for the exact release commit
+        if: ${{ false }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f "head_sha=$GITHUB_SHA" -f event=push -f status=completed \
+            --jq '.workflow_runs | any(.conclusion == "success")' | grep -qx true
+      - name: Install package build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake clang libclang-dev pkg-config capnproto libcapnp-dev protobuf-compiler
+          rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-packages
+      - name: Restore exact candidate workflows for the development policy tests
+        run: git restore --source=a36be524b58011043d4d3de655819c8cf2213523 --worktree .github/workflows
+      - name: Test reporting and workflow safeguards
+        run: cargo test --locked -p capntproto-dev
+      - name: Compile encrypted benchmark adapters
+        run: cargo check --locked --manifest-path benchmarks/rpc/Cargo.toml --all-targets
+      - name: Check transport interoperability before packaging
+        run: cargo test --locked --no-default-features --features tls --test secure_rpc
+      - name: Prepare the package workspace
+        # The vendor stays outside the development workspace. Cargo's package
+        # workspace stages unpublished dependencies in its temporary registry.
+        run: |
+          mkdir "$RUNNER_TEMP/package-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/package-source"
+          sed -i 's/"crates\/\*"\]/"crates\/*", "vendor\/rustls"\]/; /    "vendor\/rustls",/d' "$RUNNER_TEMP/package-source/Cargo.toml"
+          cd "$RUNNER_TEMP/package-source"
+          cargo update --workspace
+      - name: Verify all packaged sources and run simple and deep examples
+        run: |
+          cd "$RUNNER_TEMP/package-source"
+          cargo package --locked \
+            -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen \
+            -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures \
+            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
+          cargo run --locked --example message_basic
+          cargo run --locked --example rpc_simple
+          cargo run --locked --example rpc_deep
+          sha256sum target/package/*.crate > target/package/SHA256SUMS
+      - name: Retain verified release packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: crates-io-packages-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/package-source/target/package/*.crate
+            ${{ runner.temp }}/package-source/target/package/SHA256SUMS
+          if-no-files-found: error
+      - name: Obtain the short-lived trusted publishing token
+        if: ${{ false }}
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish the verified package set
+        if: ${{ false }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ inputs.bootstrap && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+        run: |
+          test -n "$CARGO_REGISTRY_TOKEN"
+          cd "$RUNNER_TEMP/package-source"
+          # Package verification has already succeeded before token issuance.
+          cargo publish --locked --no-verify \
+            -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen \
+            -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures \
+            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
+          sha256sum --check target/package/SHA256SUMS
