@@ -1,0 +1,43 @@
+name: Miri inventory qualification
+on:
+  push:
+    branches: [codex/miri-inventory-qualification-20261026]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  miri:
+    name: Exact native and interpreted memory inventories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CAPNTPROTO_MIRI_EXTENDED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install memory checker prerequisites
+        run: |
+          timeout 180s sudo apt-get update
+          timeout 180s sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
+          rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+          rustup component add rustfmt clippy
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: extended-miri
+          workspaces: |
+            . -> target
+            verification/miri -> target
+      - name: Run the full corrected memory-safety wrapper
+        run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --no-default-features --test memory_safety
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: corrected-miri-inventory
+          path: |
+            target/verification/memory-safety/
+            target/nextest/reports/
+          if-no-files-found: warn
