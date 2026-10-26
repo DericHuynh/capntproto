@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: 16f939afaee9e7e3ff74edddd387ba3033ec457e
+          ref: cfa73dc9973ec619bf08305c77a30a88de4ae763
       - name: Install package build dependencies
         run: |
           sudo apt-get update

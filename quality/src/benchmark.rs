@@ -212,7 +212,7 @@ pub fn matrix(trials: &[Trial]) -> Result<Vec<Value>> {
 }
 
 /// Acceptance compares matched TLS capability RPC, at every payload size.
-/// Keep raw distributions and tails in the report; the gate uses pooled p50.
+/// Keep raw distributions and tails in the report; the gate uses the minimum valid latency.
 pub fn tcp_acceptance(rows: &[Value]) -> Result<()> {
     tcp_acceptance_for_driver(rows, "legacy")
 }

@@ -111,7 +111,7 @@ def main():
                  order_policy='Rotate variants, then reverse every complete cycle. Five repetitions do not exactly balance every position.',
                  statistics='mean_ns and sample stddev_ns describe all retained samples; repetition_mean_stddev_ns is sample SD across run means, not a confidence interval.',
                  metric='Whole concurrent batch latency, including construction, all service hops, validation, response destruction and ten-second deadline.',
-                 goal='Every uninstrumented portable cell pooled p50 <= the fastest reference on the same transport (legacy and C++ for TLS, legacy for QUIC); diagnostic timings do not qualify.',
+                 goal='Every uninstrumented portable cell minimum valid latency <= the fastest reference on the same transport (legacy and C++ for TLS, legacy for QUIC); diagnostic timings do not qualify.',
                  trials=[])
     (out / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
 

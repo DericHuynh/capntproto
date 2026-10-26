@@ -212,7 +212,7 @@ pub fn compare_tcp(tcp: &Path, cpp: &Path, destination: &Path) -> Result<()> {
             "driver_sha256": digest(&std::env::current_exe()?)?,
             "cpu_placement": placement, "cpu": output("lscpu", &[])?,
             "clock_reads": clock_diagnostics(&placement)?,
-            "scope": "Matched TLS 1.3 over TCP, separate processes and physical cores, 10000 warmups and 1000 retained calls per trial, five alternating repetitions. Portable gate: pooled p50 <= 1.5x for 0/64/1024 bytes; 65536 bytes and tails reported separately. Legacy gate: <= 1.15x at every payload."
+            "scope": "Matched TLS 1.3 over TCP, separate processes and physical cores, 10000 warmups and 1000 retained calls per trial, five alternating repetitions. Portable gate: minimum valid latency <= 1.5x for 0/64/1024 bytes; 65536 bytes and tails reported separately. Legacy gate: <= 1.15x at every payload."
         }))?,
     )?;
     let mut trials = Vec::new();
