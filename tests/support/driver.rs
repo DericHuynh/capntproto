@@ -11,20 +11,17 @@ impl<V: 'static> System<V> {
         network: Box<dyn VatNetwork<V>>,
         bootstrap: Option<capnp::capability::Client>,
     ) -> Self {
+        Self::with_options(portable, network, bootstrap, options())
+    }
+    pub fn with_options(
+        portable: bool,
+        network: Box<dyn VatNetwork<V>>,
+        bootstrap: Option<capnp::capability::Client>,
+        options: capnp_rpc::portable::Options,
+    ) -> Self {
         if portable {
             Self::Portable(
-                capnp_rpc::portable::RpcSystem::new(
-                    network,
-                    bootstrap,
-                    capnp_rpc::portable::Options::bounded(
-                        16.try_into().unwrap(),
-                        256.try_into().unwrap(),
-                        (512 * 1024).try_into().unwrap(),
-                        (8 * 1024 * 1024).try_into().unwrap(),
-                    )
-                    .unwrap(),
-                )
-                .unwrap(),
+                capnp_rpc::portable::RpcSystem::new(network, bootstrap, options).unwrap(),
             )
         } else {
             Self::Hosted(capnp_rpc::RpcSystem::new(network, bootstrap))
@@ -36,19 +33,19 @@ impl<V: 'static> System<V> {
         local_id: V,
         factory: Rc<dyn capnp_rpc::BootstrapFactory<V>>,
     ) -> Self {
+        Self::with_factory_options(portable, network, local_id, factory, options())
+    }
+    pub fn with_factory_options(
+        portable: bool,
+        network: Box<dyn VatNetwork<V>>,
+        local_id: V,
+        factory: Rc<dyn capnp_rpc::BootstrapFactory<V>>,
+        options: capnp_rpc::portable::Options,
+    ) -> Self {
         if portable {
             Self::Portable(
                 capnp_rpc::portable::RpcSystem::new_with_bootstrap_factory(
-                    network,
-                    local_id,
-                    factory,
-                    capnp_rpc::portable::Options::bounded(
-                        16.try_into().unwrap(),
-                        256.try_into().unwrap(),
-                        (512 * 1024).try_into().unwrap(),
-                        (8 * 1024 * 1024).try_into().unwrap(),
-                    )
-                    .unwrap(),
+                    network, local_id, factory, options,
                 )
                 .unwrap(),
             )
@@ -70,4 +67,14 @@ impl<V: 'static> System<V> {
             Self::Portable(s) => s.run().await,
         }
     }
+}
+
+pub fn options() -> capnp_rpc::portable::Options {
+    capnp_rpc::portable::Options::bounded(
+        16.try_into().unwrap(),
+        256.try_into().unwrap(),
+        (512 * 1024).try_into().unwrap(),
+        (8 * 1024 * 1024).try_into().unwrap(),
+    )
+    .unwrap()
 }
