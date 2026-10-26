@@ -339,20 +339,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 // Like legacy's unredirected PipelineClient, a used projection
                 // keeps its original wire target but no longer promises a new
                 // route. Cross-connection forwarding must not wait for Return.
-                let endpoints: Vec<_> = {
+                let (first, rest) = {
                     let cached = state.cached.borrow();
-                    cached
-                        .first
-                        .iter()
-                        .chain(&cached.rest)
-                        .filter_map(|(_, hook)| {
-                            hook.as_any()
-                                .and_then(|hook| hook.downcast_ref::<Hook>())
-                                .map(|hook| hook.0.clone())
-                        })
-                        .collect()
+                    let endpoint = |(_, hook): &CachedProjection| {
+                        hook.as_any()
+                            .and_then(|hook| hook.downcast_ref::<Hook>())
+                            .map(|hook| hook.0.clone())
+                    };
+                    (
+                        cached.first.as_ref().and_then(endpoint),
+                        cached.rest.iter().filter_map(endpoint).collect::<Vec<_>>(),
+                    )
                 };
-                for endpoint in endpoints {
+                for endpoint in first.into_iter().chain(rest) {
                     hooks.freeze_projection(&mut driver.capabilities(), endpoint)?;
                 }
             }
