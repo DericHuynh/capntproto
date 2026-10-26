@@ -1,26 +1,21 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "b81dd7cf4e4e6ee9100d4aa8215975f2baf9b7c7",
-    "conclusion": "failure",
+    "commit": "518a8fcd89d46bcf353133db62ae0d2764b35295",
+    "conclusion": "cancelled",
     "data": {
       "charts": [],
       "format": 1,
       "kind": "benchmark",
-      "note": "No measurement evidence was produced.",
-      "origin": {
-        "attempt": 1,
-        "commit": "b81dd7cf4e4e6ee9100d4aa8215975f2baf9b7c7",
-        "repository": "DericHuynh/capntproto",
-        "run_id": 40255382264
-      },
+      "note": "This workflow attempt produced no public measurement artifact.",
+      "origin": null,
       "source_id": null,
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-26T01:40:39Z",
-    "run_id": 40255382264,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40255382264"
+    "date": "2026-10-26T03:31:04Z",
+    "run_id": 40264465280,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40264465280"
   },
   "cargo": [
     {
@@ -1194,62 +1189,6 @@
           "complete": false,
           "errors": 0,
           "failed": 9,
-          "failures": [
-            {
-              "name": "rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress",
-              "output": "thread 'rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress' (32091) panicked at src/rpc/io.rs:163:13:\nvectored writes must reach the transport intact\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: <capntproto::rpc::io::tests::Writer as tokio::io::async_write::AsyncWrite>::poll_write\n   3: <futures_util::io::write_all::WriteAll<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>> as core::future::future::Future>::poll\n   4: capnp_futures::serialize::write_framed::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>>::{closure#0}\n   5: capnp_futures::serialize::write_buffers::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>>::{closure#0}\n   6: capnp_futures::serialize::write_message_refs::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>, capnp::message::Builder<capnp::message::HeapAllocator>, core::slice::iter::Iter<capnp::message::Builder<capnp::message::HeapAllocator>>>::{closure#0}\n   7: capnp_futures::serialize::write_messages::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>, capnp::message::Builder<capnp::message::HeapAllocator>>::{closure#0}\n   8: capntproto::rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress::{closure#0}\n   9: futures_executor::local_pool::run_executor::<(), futures_executor::local_pool::block_on<capntproto::rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress::{closure#0}>::{closure#0}>::{closure#0}\n  10: futures_executor::local_pool::block_on::<capntproto::rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress::{closure#0}>\n  11: capntproto::rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress\n  12: <capntproto::rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress ... FAILED\n\nfailures:\n\nfailures:\n    rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 300 filtered out; finished in 0.33s\n\n\n\nthread 'rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress' (32091) panicked at src/rpc/io.rs:163:13:\nvectored writes must reach the transport intact\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: <capntproto::rpc::io::tests::Writer as tokio::io::async_write::AsyncWrite>::poll_write\n   3: <futures_util::io::write_all::WriteAll<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>> as core::future::future::Future>::poll\n   4: capnp_futures::serialize::write_framed::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>>::{closure#0}\n   5: capnp_futures::serialize::write_buffers::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>>::{closure#0}\n   6: capnp_futures::serialize::write_message_refs::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>, capnp::message::Builder<capnp::message::HeapAllocator>, core::slice::iter::Iter<capnp::message::Builder<capnp::message::HeapAllocator>>>::{closure#0}\n   7: capnp_futures::serialize::write_messages::<&mut capntproto::rpc::io::TokioIo<capntproto::rpc::io::tests::Writer>, capnp::message::Builder<capnp::message::HeapAllocator>>::{closure#0}\n   8: capntproto::rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress::{closure#0}\n   9: futures_executor::local_pool::run_executor::<(), futures_executor::local_pool::block_on<capntproto::rpc::io::tests::framing_keeps_vectored_writes_through_pending_and_partial_progress::{closure#0}>::{closure#0}>::{closure#0}\n  10: futures_executor::local_pool::block_on::<capntproto::rpc::io::tests::framing_keeps_vector",
-              "suite": "capntproto",
-              "truncated": true
-            },
-            {
-              "name": "portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route",
-              "output": "thread 'portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route' (32609) panicked at tests/answer_adoption.rs:1247:21:\nassertion `left == right` failed: post-adoption pipeline call was not published; used=false\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<usize, usize>\n   4: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_adoption_exposes_unused_pipeline_before_return_and_preserves_used_route::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}\n  16: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  17: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::curren",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "portable_tail_finish_before_child_completion_reclaims_both_interests",
-              "output": "thread 'portable_tail_finish_before_child_completion_reclaims_both_interests' (32619) panicked at tests/answer_adoption.rs:2577:17:\nassertion `left == right` failed: both canceled answers retained application work\n  left: 0\n right: 1\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::assert_failed_inner\n   3: core::panicking::assert_failed::<u32, u32>\n   4: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}\n   5: <tokio::time::timeout::Timeout<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   6: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}\n   7: <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   8: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   9: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}::{closure#0}>::{closure#0}\n  10: answer_adoption::portable_tail_finish_before_child_completion_reclaims_both_interests::{closure#0}\n  11: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  13: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  14: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  15: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}\n  16: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  17: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&m",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget",
-              "output": "thread 'portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget' (32633) panicked at tests/answer_adoption.rs:176:37:\ntransfer stalled with poll budget 7\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::portable_third_party_pipeline_transfer_resumes_after_idle_at_each_poll_budget::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}\n  13: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  14: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>\n  15: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&m",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "third_party_tail_returns_over_authenticated_native",
-              "output": "thread 'third_party_tail_returns_over_authenticated_native' (32694) panicked at tests/answer_adoption.rs:1479:37:\nportable=true: stalled at resolve early pipeline\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}::{closure#1}\n   3: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}\n   4: <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   5: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   6: <tokio::task::local::LocalSet>::run_until::<answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}::{closure#0}>::{closure#0}\n   7: answer_adoption::third_party_tail_returns_over_authenticated_native::{closure#0}\n   8: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n   9: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  10: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  11: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  12: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}\n  13: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  14: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>\n  15: <tokio::runtime::scheduler::current_thread::CoreGuard>::enter::<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>\n  16: <tokio::runtime::scheduler::current_thread::CurrentThread>::block_on::<core::",
-              "suite": "capntproto::answer_adoption",
-              "truncated": true
-            },
-            {
-              "name": "authoritative_absence_and_provisioning_failure_do_not_consult_another_reader",
-              "output": "thread 'authoritative_absence_and_provisioning_failure_do_not_consult_another_reader' (37601) panicked at tests/native_discovery_failover.rs:237:17:\nassertion failed: connector.connect_name(\"service\").await.is_err()\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::panic\n   3: native_discovery_failover::authoritative_absence_and_provisioning_failure_do_not_consult_another_reader::{closure#0}::{closure#0}::{closure#0}\n   4: <tokio::time::timeout::Timeout<native_discovery_failover::authoritative_absence_and_provisioning_failure_do_not_consult_another_reader::{closure#0}::{closure#0}::{closure#0}> as core::future::future::Future>::poll\n   5: native_discovery_failover::authoritative_absence_and_provisioning_failure_do_not_consult_another_reader::{closure#0}::{closure#0}\n   6: <tokio::task::local::RunUntil<native_discovery_failover::authoritative_absence_and_provisioning_failure_do_not_consult_another_reader::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}\n   7: <tokio::task::local::LocalSet>::with::<core::task::poll::Poll<()>, <tokio::task::local::RunUntil<native_discovery_failover::authoritative_absence_and_provisioning_failure_do_not_consult_another_reader::{closure#0}::{closure#0}> as core::future::future::Future>::poll::{closure#0}>::{closure#0}\n   8: <tokio::task::local::LocalSet>::run_until::<native_discovery_failover::authoritative_absence_and_provisioning_failure_do_not_consult_another_reader::{closure#0}::{closure#0}>::{closure#0}\n   9: native_discovery_failover::authoritative_absence_and_provisioning_failure_do_not_consult_another_reader::{closure#0}\n  10: tokio::task::coop::budget::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}::{closure#0}>\n  11: <tokio::runtime::scheduler::current_thread::Context>::enter::<core::task::poll::Poll<()>, <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}::{closure#0}>\n  12: <tokio::runtime::scheduler::current_thread::CoreGuard>::block_on::<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}\n  13: <tokio::runtime::context::scoped::Scoped<tokio::runtime::scheduler::Context>>::set::<<tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  14: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}\n  15: <std::thread::local::LocalKey<tokio::runtime::context::Context>>::with::<tokio::runtime::context::set_scheduler<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_thread::CoreGuard>::block_on<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output = ()>>>>::{closure#0}, core::option::Option<()>>::{closure#0}>::{closure#0}, (alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>)>\n  16: tokio::runtime::context::set_scheduler::<(alloc::boxed::Box<tokio::runtime::scheduler::current_thread::Core>, core::option::Option<()>), <tokio::runtime::scheduler::current_thread::CoreGuard>::enter<<tokio::runtime::scheduler::current_t",
-              "suite": "capntproto::native_discovery_failover",
-              "truncated": true
-            },
-            {
-              "name": "report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered",
-              "output": "thread 'report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered' (42692) panicked at quality/src/report.rs:481:9:\n1 quality requirements failed:\n- legacy TCP/C++ minimum exceeds 1.15x at 0 bytes: 50.0000x\nSee /tmp/.tmpUMQjHz/README.md\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: capntproto_quality::report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered\n   3: <capntproto_quality::report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered ... FAILED\n\nfailures:\n\nfailures:\n    report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 1.57s\n\n\n\nthread 'report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered' (42692) panicked at quality/src/report.rs:481:9:\n1 quality requirements failed:\n- legacy TCP/C++ minimum exceeds 1.15x at 0 bytes: 50.0000x\nSee /tmp/.tmpUMQjHz/README.md\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: capntproto_quality::report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered\n   3: <capntproto_quality::report::tests::report_appends_charts_and_removes_them_when_samples_are_tampered::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n",
-              "suite": "capntproto-quality",
-              "truncated": false
-            },
-            {
-              "name": "formatting_and_lints",
-              "output": "thread 'formatting_and_lints' (73022) panicked at tests/tooling.rs:60:44:\ncalled `Result::unwrap()` on an `Err` value: \"cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN \\\"cargo\\\" \\\"fmt\\\" \\\"--manifest-path\\\" \\\"benchmarks/rpc/Cargo.toml\\\" \\\"--\\\" \\\"--check\\\": expected 0, got exit status: 1; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/quality/benchmark-format.log\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/../tls_policy.rs:1:\\n //! Shared benchmark certificate and TLS policy; identical across Rust drivers.\\n+use super::rustls;\\n use crate::Result;\\n use rustls::pki_types::{CertificateDer, PrivateKeyDer};\\n use std::{path::PathBuf, sync::Arc, time::Duration};\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/../tls_policy.rs:5:\\n-use super::rustls;\\n \\n pub const DEADLINE: Duration = Duration::from_secs(10);\\n pub fn directory() -> Result<PathBuf> {\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/topology.rs:115:\\n     let mut driver = capnp_rpc::RpcSystem::new(network, None);\\n     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);\\n     tokio::task::spawn_local(async move {\\n-        if let Err(error) = driver.await { eprintln!(\\\"topology downstream RPC: {error}\\\"); }\\n+        if let Err(error) = driver.await {\\n+            eprintln!(\\\"topology downstream RPC: {error}\\\");\\n+        }\\n     });\\n     Ok(client)\\n }\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/topology.rs:172:\\n         } else {\\n             let driver = capnp_rpc::RpcSystem::new(network, Some(service.client.clone()));\\n             tokio::task::spawn_local(async move {\\n-                if let Err(error) = driver.await { eprintln!(\\\"topology service RPC: {error}\\\"); }\\n+                if let Err(error) = driver.await {\\n+                    eprintln!(\\\"topology service RPC: {error}\\\");\\n+                }\\n             });\\n         }\\n     }\\n\"\nstack backtrace:\n   0: __rustc::rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::result::unwrap_failed\n   3: tooling::cargo_with_toolchain\n   4: tooling::formatting_and_lints\n   5: <tooling::formatting_and_lints::{closure#0} as core::ops::function::FnOnce<()>>::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n\nrunning 1 test\ntest formatting_and_lints ... FAILED\n\nfailures:\n\nfailures:\n    formatting_and_lints\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.05s\n\n\n\nthread 'formatting_and_lints' (73022) panicked at tests/tooling.rs:60:44:\ncalled `Result::unwrap()` on an `Err` value: \"cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN \\\"cargo\\\" \\\"fmt\\\" \\\"--manifest-path\\\" \\\"benchmarks/rpc/Cargo.toml\\\" \\\"--\\\" \\\"--check\\\": expected 0, got exit status: 1; inspect /home/runner/work/capntproto/capntproto/target/verification/tooling/quality/benchmark-format.log\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/../tls_policy.rs:1:\\n //! Shared benchmark certificate and TLS policy; identical across Rust drivers.\\n+use super::rustls;\\n use crate::Result;\\n use rustls::pki_types::{CertificateDer, PrivateKeyDer};\\n use std::{path::PathBuf, sync::Arc, time::Duration};\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/../tls_policy.rs:5:\\n-use super::rustls;\\n \\n pub const DEADLINE: Duration = Duration::from_secs(10);\\n pub fn directory() -> Result<PathBuf> {\\nDiff in /home/runner/work/capntproto/capntproto/benchmarks/rpc/src/topology.rs:115:\\n     let mut driver = capnp_rpc::RpcSystem::new(network, None);\\n     let client = driver.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server);\\n     toki",
-              "suite": "capntproto::tooling",
-              "truncated": true
-            },
-            {
-              "name": "pinned_cpp_runtime_reference",
-              "output": "thread 'pinned_cpp_runtime_reference' (101539) panicked at tests/tooling.rs:259:25:\ncalled `Result::unwrap()` on an `Err` value: \"cd \\\"/home/runner/work/capntproto/capntproto\\\" && env -u CAPNTPROTO_COVERAGE_CHILDREN_NATIVE -u CARGO_ENCODED_RUSTFLAGS -u CARGO_TARGET_DIR -u LLVM_PROFILE_FILE -u NEXTEST_PROFILE -u RUSTDOCFLAGS -u RUSTFLAGS -u RUSTUP_TOOLCHAIN \\\"clang++-22\\\" \\\"-std=c++23\\\" \\\"-DCAPNTPROTO_PINNED_RUNTIME\\\" \\\"-I/tmp/.tmpQEPju3\\\" \\\"-Ivendor/capnproto/c++/src\\\" \\\"tests/cpp/static-cancellation.c++\\\" \\\"/tmp/.tmpQEPju3/runtime-test.capnp.c++\\\" \\\"/tmp/.tmpQEPju3/cancellation-policy.capnp.c++\\\" \\\"/tmp/.tmpQEPju3/dynamic-test.capnp.c++\\\" \\\"/home/runner/work/capntproto/capntproto/target/cpp-reference/c++/src/capnp/libcapnp-rpc.a\\\" \\\"/home/runner/work/capntproto/capntproto/target/cpp-reference/c++/src/capnp/libcapnp.a\\\" \\\"/home/runner/work/capntproto/capntproto/target/cpp-reference/c++/src/kj/libkj-async.a\\\" \\\"/home/runner/work/capntproto/capntproto/target/cpp-reference/c++/src/kj/libkj.a\\\" \\\"-pthread\\\" \\\"-o\\\" \\\"/tmp/.tmpQEPju3/reference\\\": expected 0, got exit status: 1; inspect /home/runner/work/capntproto/capntproto/target/verification/cpp-reference/compile.log\\nl be removed. \\\" \\\\\\n      |       ^\\ntests/cpp/static-cancellation.c++:79:64: warning: 'Maybe' is deprecated: Using nullptr as an empty Maybe is deprecated and will be removed. Please use kj::none for this purpose instead. [-Wdeprecated-declarations]\\n   79 |     auto promise = client.typelessRequest(interfaceId, method, nullptr, {}).send();\\n      |                                                                ^\\ntests/cpp/static-cancellation.c++:388:3: note: in instantiation of function template specialization 'check<DerivedServer>' requested here\\n  388 |   check<DerivedServer>(wait, capnp::typeId<Policy>(), 0, false);\\n      |   ^\\nvendor/capnproto/c++/src/kj/common.h:1925:3: note: 'Maybe' has been explicitly marked deprecated here\\n 1925 |   KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR\\n      |   ^\\nvendor/capnproto/c++/src/kj/common.h:1766:7: note: expanded from macro 'KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR'\\n 1766 |     [[deprecated(\\\"Using nullptr as an empty Maybe is deprecated and will be removed. \\\" \\\\\\n      |       ^\\ntests/cpp/static-cancellation.c++:79:64: warning: 'Maybe' is deprecated: Using nullptr as an empty Maybe is deprecated and will be removed. Please use kj::none for this purpose instead. [-Wdeprecated-declarations]\\n   79 |     auto promise = client.typelessRequest(interfaceId, method, nullptr, {}).send();\\n      |                                                                ^\\ntests/cpp/static-cancellation.c++:390:3: note: in instantiation of function template specialization 'check<FileServer>' requested here\\n  390 |   check<FileServer>(wait, capnp::typeId<Harness>(), 3, true);\\n      |   ^\\nvendor/capnproto/c++/src/kj/common.h:1925:3: note: 'Maybe' has been explicitly marked deprecated here\\n 1925 |   KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR\\n      |   ^\\nvendor/capnproto/c++/src/kj/common.h:1766:7: note: expanded from macro 'KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR'\\n 1766 |     [[deprecated(\\\"Using nullptr as an empty Maybe is deprecated and will be removed. \\\" \\\\\\n      |       ^\\n6 warnings and 3 errors generated.\\nIn file included from /tmp/.tmpQEPju3/dynamic-test.capnp.c++:4:\\n/tmp/.tmpQEPju3/dynamic-test.capnp.h:8408:32: error: use 'template' keyword to treat 'Inner' as a dependent template name\\n 8408 | inline typename GroupScope<A>::Inner<B, C>::Payload::Reader GroupScope<A>::Inner<B, C>::Reader::getPayload() const {\\n      |                                ^\\n/tmp/.tmpQEPju3/dynamic-test.capnp.h:8415:32: error: use 'template' keyword to treat 'Inner' as a dependent template name\\n 8415 | inline typename GroupScope<A>::Inner<B, C>::Payload::Builder GroupScope<A>::Inner<B, C>::Builder::getPayload() {\\n      |                                ^\\n/tmp/.tmpQEPju3/dynamic-test.capnp.h:8422:32: error: use 'template' keyword to treat 'Inner' as a dependent template name\\n 8422 | inline typename GroupScope<A>::Inner<B, C>::",
-              "suite": "capntproto::tooling",
-              "truncated": true
-            }
-          ],
           "passed": 2473,
           "skipped": 20,
           "suites": 205,
@@ -1259,6 +1198,24 @@
       "date": "2026-10-26T01:40:39Z",
       "run_id": 40255382264,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40255382264"
+    },
+    {
+      "attempt": 1,
+      "commit": "518a8fcd89d46bcf353133db62ae0d2764b35295",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-26T03:31:04Z",
+      "run_id": 40264465280,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40264465280"
     }
   ],
   "format": 1,
@@ -2269,111 +2226,7 @@
       "commit": "b81dd7cf4e4e6ee9100d4aa8215975f2baf9b7c7",
       "conclusion": "failure",
       "data": {
-        "charts": [
-          {
-            "name": "fuzz-executions",
-            "note": "Bounded campaigns including seed calibration; execution counts are not comparable performance benchmarks.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing",
-                    "value": 798999
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers",
-                    "value": 1836145
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema",
-                    "value": 693466
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle",
-                    "value": 93560
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Fuzzing executions by engine",
-            "unit": "Executions"
-          },
-          {
-            "name": "fuzz-coverage",
-            "note": "Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing",
-                    "value": 1047
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers",
-                    "value": 1748
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema",
-                    "value": 5130
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle",
-                    "value": 11319
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Fuzzer feedback by engine",
-            "unit": "Feedback entries"
-          },
-          {
-            "name": "fuzz-findings",
-            "note": "Saved crashes/hangs are findings requiring triage, not confirmed unique bugs. Missing results remain unknown.",
-            "panels": [
-              {
-                "bars": [
-                  {
-                    "label": "AFL++ / capnp_framing crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_framing hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_pointers hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / capnp_schema hangs",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle crashes",
-                    "value": 0
-                  },
-                  {
-                    "label": "AFL++ / rpc_lifecycle hangs",
-                    "value": 0
-                  }
-                ],
-                "title": "AFL++ + RPC IJON"
-              }
-            ],
-            "title": "Saved fuzzing findings",
-            "unit": "Inputs"
-          }
-        ],
+        "charts": [],
         "format": 1,
         "kind": "fuzz",
         "note": "Lane failed or did not complete; inspect the linked CI run.",
@@ -2390,6 +2243,24 @@
       "date": "2026-10-26T01:40:39Z",
       "run_id": 40255382264,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40255382264"
+    },
+    {
+      "attempt": 1,
+      "commit": "518a8fcd89d46bcf353133db62ae0d2764b35295",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-26T03:31:04Z",
+      "run_id": 40264465280,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40264465280"
     }
   ],
   "models": [
@@ -3351,7 +3222,6 @@
           "complete": true,
           "errors": 0,
           "failed": 0,
-          "failures": [],
           "passed": 233,
           "skipped": 7,
           "suites": 88,
@@ -3361,6 +3231,24 @@
       "date": "2026-10-26T01:40:39Z",
       "run_id": 40255382264,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/40255382264"
+    },
+    {
+      "attempt": 1,
+      "commit": "518a8fcd89d46bcf353133db62ae0d2764b35295",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-26T03:31:04Z",
+      "run_id": 40264465280,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/40264465280"
     }
   ]
 }

@@ -11,19 +11,15 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
+Latest Cargo run: [2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264465280) · commit `518a8fcd89d4` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
-
-| Total | Passed | Failed | Errors | Skipped |
-| ---: | ---: | ---: | ---: | ---: |
-| 2502 | 2473 | [9](docs/reports/failed-tests.md) | 0 | 20 |
 
 [Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](https://github.com/DericHuynh/capntproto/blob/main/docs/wiki/README-Reports.md).
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
+[2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264465280) · commit `518a8fcd89d4` · **cancelled**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -31,19 +27,7 @@ Latest Cargo run: [2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
-
-![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
-
-Bounded campaigns including seed calibration&#59; execution counts are not comparable performance benchmarks&#46;
-
-![Fuzzer feedback by engine](docs/reports/fuzz-coverage.svg)
-
-Engine&#45;local counters&#44; not LLVM source coverage&#46; Do not compare counts across engines or builds&#46;
-
-![Saved fuzzing findings](docs/reports/fuzz-findings.svg)
-
-Saved crashes&#47;hangs are findings requiring triage&#44; not confirmed unique bugs&#46; Missing results remain unknown&#46;
+[2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264465280) · commit `518a8fcd89d4` · **cancelled**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
@@ -53,9 +37,9 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-26T01:40:39Z · run 40255382264 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40255382264) · commit `b81dd7cf4e4e` · **failure**
+Latest benchmark run: [2026-10-26T03:31:04Z · run 40264465280 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40264465280) · commit `518a8fcd89d4` · **cancelled**
 
-Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
+Measurement evidence: **unavailable**. This workflow attempt produced no public measurement artifact&#46;
 
 Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP, upstream Rust Cap’n Proto (`capnp-rust`), and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
 
