@@ -1039,7 +1039,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn has_promised_pending_call(&self) -> bool {
         self.call
             .as_ref()
-            .is_some_and(|call| matches!(call.target(), TargetRef::Promised { .. }))
+            .is_some_and(|call| matches!(&call.target, Target::Promised(_)))
     }
     /// Whether the deferred request has no parameter capabilities, pipeline
     /// target or third-party answer. Such admission only retains its hosted
