@@ -15,6 +15,7 @@ const BRANCH: &str = "reports";
 fn kind(path: &str) -> Option<&'static str> {
     match path {
         ".github/workflows/ci.yml" => Some("ci"),
+        ".github/workflows/quality.yml" => Some("quality"),
         ".github/workflows/full-quality.yml" | ".github/workflows/verification-coverage.yml" => {
             Some("full")
         }
@@ -212,11 +213,13 @@ fn artifact_data(api: &impl Api, run: &Value, lane: &str) -> Result<Value> {
     let matches: Vec<_> = artifacts
         .iter()
         // Accept historical standalone artifacts, never the shared legacy name
-        // for CI: each lane must own a different immutable artifact.
+        // for composite workflows: each lane owns an immutable artifact.
         .filter(|a| {
             (a["name"] == name
-                || (kind(run["path"].as_str().unwrap_or("")) != Some("ci")
-                    && a["name"] == "readme-data"))
+                || (!matches!(
+                    kind(run["path"].as_str().unwrap_or("")),
+                    Some("ci" | "quality")
+                ) && a["name"] == "readme-data"))
                 && a["expired"] == false
         })
         .collect();
@@ -242,7 +245,16 @@ fn artifact_data(api: &impl Api, run: &Value, lane: &str) -> Result<Value> {
         ));
     }
     ensure!(data["kind"] == lane, "publication workflow/lane mismatch");
-    if run["conclusion"] != "success" && data["status"] == "passed" {
+    // An unrelated lane can fail a composite workflow after this lane passed.
+    // Preserve its source-bound measurement; the workflow conclusion is still
+    // displayed separately. Standalone failures retain their stricter policy.
+    if run["conclusion"] != "success"
+        && data["status"] == "passed"
+        && !matches!(
+            kind(run["path"].as_str().unwrap_or("")),
+            Some("ci" | "quality")
+        )
+    {
         data["status"] = json!("failed");
         data["charts"] = json!([]);
         data["note"] = json!("Workflow failed after measurement; see the CI run.");
@@ -276,7 +288,9 @@ fn execute(api: &impl Api, event: &Value, repository: &str) -> Result<()> {
     );
     let lane = kind(crate::string(&run, "path")?).unwrap();
     let lanes: &[&str] = if lane == "ci" {
-        &["cargo", "models", "fuzz", "benchmark"]
+        &["benchmark"]
+    } else if lane == "quality" {
+        &["cargo", "models", "fuzz"]
     } else {
         &[lane]
     };
@@ -477,13 +491,14 @@ mod publication_tests {
     struct Fake {
         initial: bool,
         ci: bool,
+        quality: bool,
         attempt: Cell<usize>,
         calls: RefCell<Vec<(String, Value, String)>>,
         archive: Vec<u8>,
     }
     impl Api for Fake {
         fn download(&self, path: &str) -> Result<Vec<u8>> {
-            if self.ci {
+            if self.ci || self.quality {
                 let id: usize = path.split('/').nth(3).unwrap().parse()?;
                 let mut data = publication(1);
                 data["kind"] = json!(["cargo", "models", "fuzz", "benchmark"][id - 9]);
@@ -499,7 +514,7 @@ mod publication_tests {
                     Some((seed.to_string().into_bytes(), "e".repeat(40)))
                 }
                 "docs/reports.template.md" => Some((
-                    b"# Synthetic template\n{{REPORTS}}".to_vec(),
+                    b"# Synthetic template\n{{REPORTS}}\n{{BENCHMARK_TABLES}}".to_vec(),
                     "f".repeat(40),
                 )),
                 _ => None,
@@ -513,7 +528,7 @@ mod publication_tests {
             Ok(match path {
                 "" => json!({"default_branch":"main"}),
                 "/actions/runs/1" => {
-                    json!({"id":1,"run_attempt":1,"path":if self.ci {".github/workflows/ci.yml"} else {".github/workflows/verification-coverage.yml"},"status":"completed","event":"push","head_branch":"main","head_repository":{"full_name":"example/capntproto"},"head_sha":"b".repeat(40),"created_at":"2026-09-28T10:00:00Z","conclusion":"success","html_url":"https://github.com/example/capntproto/actions/runs/1"})
+                    json!({"id":1,"run_attempt":1,"path":if self.quality {".github/workflows/quality.yml"} else if self.ci {".github/workflows/ci.yml"} else {".github/workflows/verification-coverage.yml"},"status":"completed","event":"push","head_branch":"main","head_repository":{"full_name":"example/capntproto"},"head_sha":"b".repeat(40),"created_at":"2026-09-28T10:00:00Z","conclusion":"success","html_url":"https://github.com/example/capntproto/actions/runs/1"})
                 }
                 "/git/ref/heads/main" => json!({"object":{"sha":"f".repeat(40)}}),
                 "/git/ref/heads/reports" => {
@@ -523,7 +538,7 @@ mod publication_tests {
                     json!({"object":{"sha":if self.attempt.get()==0{"c".repeat(40)}else{"d".repeat(40)}}})
                 }
                 "/actions/runs/1/artifacts?per_page=100" => {
-                    if self.ci {
+                    if self.ci || self.quality {
                         let artifacts: Vec<_> = ["cargo", "models", "fuzz", "benchmark"].into_iter().enumerate().map(|(i,lane)| json!({"id":i+9,"name":format!("readme-data-{lane}-1"),"expired":false,"size_in_bytes":1024})).collect();
                         json!({"artifacts":artifacts})
                     } else {
@@ -553,53 +568,81 @@ mod publication_tests {
         Fake {
             initial,
             ci: false,
+            quality: false,
             attempt: Cell::new(0),
             calls: Default::default(),
             archive: archive(name, &publication(attempt)),
         }
     }
     #[test]
-    fn ci_publishes_all_four_lanes_in_one_atomic_update() {
-        let mut api = api(true, "publication.json", 1);
-        api.ci = true;
-        execute(
-            &api,
-            &json!({"workflow_run":{"id":1}}),
-            "example/capntproto",
-        )
-        .unwrap();
-        let calls = api.calls.borrow();
-        let histories: Vec<Value> = calls
-            .iter()
-            .filter(|(path, _, _)| path == "/git/blobs")
-            .filter_map(|(_, body, _)| {
-                serde_json::from_slice(&STANDARD.decode(body["content"].as_str().unwrap()).unwrap())
+    fn composite_workflows_publish_only_their_own_lanes() {
+        for quality in [false, true] {
+            let mut api = api(true, "publication.json", 1);
+            api.ci = !quality;
+            api.quality = quality;
+            execute(
+                &api,
+                &json!({"workflow_run":{"id":1}}),
+                "example/capntproto",
+            )
+            .unwrap();
+            let calls = api.calls.borrow();
+            let histories: Vec<Value> = calls
+                .iter()
+                .filter(|(path, _, _)| path == "/git/blobs")
+                .filter_map(|(_, body, _)| {
+                    serde_json::from_slice(
+                        &STANDARD.decode(body["content"].as_str().unwrap()).unwrap(),
+                    )
                     .ok()
-            })
-            .filter(|v: &Value| v.get("cargo").is_some() && v.get("benchmark").is_some())
-            .collect();
-        assert!(!histories.is_empty());
-        for history in histories {
-            for lane in ["cargo", "models", "fuzz"] {
-                assert!(history[lane]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|r| r["run_id"] == 1 && r["data"]["kind"] == lane));
+                })
+                .filter(|v: &Value| v.get("cargo").is_some() && v.get("benchmark").is_some())
+                .collect();
+            assert!(!histories.is_empty());
+            for history in histories {
+                for lane in ["cargo", "models", "fuzz"] {
+                    assert_eq!(
+                        history[lane]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|r| r["run_id"] == 1 && r["data"]["kind"] == lane),
+                        quality
+                    );
+                }
+                assert_eq!(history["benchmark"].is_null(), quality);
             }
-            assert_eq!(history["benchmark"]["data"]["kind"], "benchmark");
+            drop(calls);
+            let mut run = api.request("/actions/runs/1", None, "GET").unwrap();
+            assert_eq!(
+                artifact_data(&api, &run, "full").unwrap()["status"],
+                "unavailable"
+            );
+            run["run_attempt"] = json!(2);
+            assert_eq!(
+                artifact_data(&api, &run, "cargo").unwrap()["status"],
+                "unavailable"
+            );
         }
-        drop(calls);
-        let mut run = api.request("/actions/runs/1", None, "GET").unwrap();
-        assert_eq!(
-            artifact_data(&api, &run, "full").unwrap()["status"],
-            "unavailable"
-        );
-        run["run_attempt"] = json!(2);
-        assert_eq!(
-            artifact_data(&api, &run, "cargo").unwrap()["status"],
-            "unavailable"
-        );
+    }
+    #[test]
+    fn unrelated_composite_failure_keeps_validated_lane_results() {
+        for quality in [false, true] {
+            let mut api = api(false, "publication.json", 1);
+            api.ci = !quality;
+            api.quality = quality;
+            let mut run = api.request("/actions/runs/1", None, "GET").unwrap();
+            run["conclusion"] = json!("failure");
+            let lane = if quality { "cargo" } else { "benchmark" };
+            assert_eq!(artifact_data(&api, &run, lane).unwrap()["status"], "passed");
+            // Neither composite may fall back to an ambiguous shared artifact.
+            api.ci = false;
+            api.quality = false;
+            assert_eq!(
+                artifact_data(&api, &run, lane).unwrap()["status"],
+                "unavailable"
+            );
+        }
     }
     #[test]
     fn artifacts_are_bound_to_archive_path_and_attempt() {

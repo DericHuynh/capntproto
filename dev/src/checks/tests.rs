@@ -213,6 +213,33 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
         ),
         ("ci", "/jobs/report/needs", json!(["platforms"])),
         (
+            "ci",
+            "/jobs/report/needs",
+            json!([
+                "workflows",
+                "documentation",
+                "portability",
+                "platforms",
+                "performance",
+                "cleanup",
+                "cargo"
+            ]),
+        ),
+        (
+            "quality",
+            "/jobs/result/needs",
+            json!(["cargo", "models", "fuzz"]),
+        ),
+        ("quality", "/jobs/result/if", json!("success()")),
+        ("quality", "/jobs/cargo/continue-on-error", json!(true)),
+        ("quality", "/jobs/fuzz/needs", json!(["cargo"])),
+        ("quality", "/jobs/models/if", json!("false")),
+        (
+            "quality",
+            "/on/pull_request",
+            json!({"paths":["crates/**"]}),
+        ),
+        (
             "verification-fuzz",
             "/on/push",
             json!({"branches":["main"]}),

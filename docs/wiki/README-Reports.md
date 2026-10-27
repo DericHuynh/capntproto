@@ -11,13 +11,15 @@ resolve within that branch. The source README links to that dashboard and its fa
 ordinary workspace tests/doctests once with LLVM coverage. [TLA+ models](../../.github/workflows/verification-models.yml)
 owns the bounded model checks and Rust replays. [Fuzzing](../../.github/workflows/verification-fuzz.yml)
 owns libFuzzer/ASan and AFL++/IJON campaigns. [Dedicated benchmarks](../../.github/workflows/performance.yml)
-remains the performance producer. CI calls all four after platform validation;
-benchmarks follow the verification lanes. Each exports an identity-bound `readme-data-<lane>-<attempt>`
+remains the performance producer. CI calls benchmarks after workflow validation.
+The independent Quality workflow calls Cargo/coverage, models, fuzzing and extended
+verification without depending on main CI. Each exports an identity-bound `readme-data-<lane>-<attempt>`
 artifact and its own README, graphs and diagnostics, including on test failure.
 
 [Reports / Publish](../../.github/workflows/reports.yml) runs after each producer
-finishes, or once after the encompassing CI run completes. A CI publication
-merges all four lane artifacts atomically, with separate histories and graphs.
+finishes, or once after the encompassing CI or Quality run completes. CI publishes
+only benchmark results; Quality merges its Cargo, model and fuzz artifacts atomically.
+Each workflow preserves the other workflow's histories and graphs.
 It updates only the dashboard `README.md` and renderer-owned files in
 `docs/reports/` on the **reports branch**. The first publication creates an orphan
 branch containing reports only, seeded with the frozen history in
@@ -26,17 +28,19 @@ updates with bounded retries after concurrent report writes. The default branch
 is read only: its code and template are trusted, its ref is never mutated. No PR
 code or executable artifact is run by the publisher.
 
-The publisher accepts only completed runs of CI or the four named workflow files (plus their former filenames for manually publishing
+The publisher accepts only completed runs of CI, Quality or the four named workflow files (plus their former filenames for manually publishing
 runs started before the workflow migration), from
 this repository's default branch, triggered by push, schedule or manual dispatch.
 It checks the measured commit's ancestry and the artifact's repository, run ID,
 attempt and commit. It downloads only the bounded JSON publication artifact;
 archive members cannot select output paths.
-CI lanes use unique immutable artifact names. Historical standalone `readme-data`
-artifacts remain readable, but CI never accepts that ambiguous shared name.
+CI and Quality lanes use unique immutable artifact names. Historical standalone `readme-data`
+artifacts remain readable, but neither composite workflow accepts that ambiguous shared name.
 Reruns replace their earlier attempt;
 late-finishing older runs do not replace newer benchmark results. Failed or
 cancelled runs with missing data are recorded as unavailable, never as success.
+A failing composite workflow preserves individually validated successful lane data;
+the aggregate workflow conclusion remains visible beside it.
 
 The history keeps the latest 365 attempts separately for Cargo, TLA+ and fuzzing (one entry per run ID per lane), the legacy combined history, and the latest benchmark attempt. Shared run IDs must agree on commit, date and URL across lanes. Historical entries keep test counts, commit,
 source fingerprint and CI links; only current coverage/benchmark bars retain
@@ -98,6 +102,28 @@ Older combined results stay in `history.json` and `test-history.svg`. New Cargo
 and TLA+ histories start at their first measurements; historical totals are not
 relabeled as if the partitions had always existed.
 
+## Exhaustive benchmark tables
+
+The template has exactly one `{{REPORTS}}` slot and one `{{BENCHMARK_TABLES}}`
+slot. The second renders every validated measurement from the latest benchmark
+run, rather than selecting only the payloads represented by the older bar charts:
+
+- TLS/QUIC latency for every case and supported implementation, including gRPC and
+  binary Protobuf WebSocket services: minimum, mean, sample spread, repetition
+  spread/range, p50, p95 and p99, with sample counts.
+- Available Callgrind instruction/branch and DHAT allocation counters per operation
+  or concurrent batch, summed across the client and every service hop.
+- Available whole-process syscall counts, including setup, with mean and run spread.
+- Explicit unsupported protocol/workload combinations and validated two-host workflows.
+
+The default encrypted campaign produces no historical `benchmark/evidence.json`.
+Its independently validated `analysis/summary.json` (or the native checkpoint after
+incomplete diagnostics) supplies table data. Collection requires the original build
+manifest, validates measured commit/run identity and executable hashes, and retains
+source fingerprints. Missing cells stay unavailable; they never become zero.
+Tables are bounded structured data in an optional benchmark-only `tables` publication
+field. Labels and cells are escaped before rendering. Older publications remain readable.
+
 ## Labelled benchmark bar charts
 
 The source README embeds a stable `docs/reports/benchmarks.svg` preview from
@@ -148,6 +174,8 @@ cargo run --locked -p capntproto-dev -- reports collect --input target/quality -
 ```
 
 Use `--kind models`, `--kind fuzz`, or `--kind benchmark` for the other producers.
+For encrypted benchmark summaries, also pass
+`--benchmark-manifest target/benchmark-build/bundle/manifest.json`.
 `--report-output DIRECTORY` writes standalone SVG graphs and a report README.
 `--kind full` reads historical combined evidence. The collector does not run tests
 or benchmarks. It rejects changed logs, stale chart fingerprints, non-finite values

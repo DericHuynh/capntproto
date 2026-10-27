@@ -332,7 +332,10 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
             );
         }
     }
-    ensure!(automatic == ["ci"], "CI must have one automatic entrypoint");
+    ensure!(
+        automatic == ["ci", "quality"],
+        "CI and quality must have separate automatic entrypoints"
+    );
     if let Some(release) = all.get("release") {
         ensure!(
             keys(&release["on"])? == BTreeSet::from(["workflow_dispatch".into()])
@@ -366,10 +369,6 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     for (job, file) in [
         ("workflows", "ci-workflows"),
         ("documentation", "ci-docs"),
-        ("cargo", "verification-tests"),
-        ("models", "verification-models"),
-        ("fuzz", "verification-fuzz"),
-        ("extended", "verification-extended"),
         ("performance", "performance"),
         ("cleanup", "maintenance-benchmarks"),
     ] {
@@ -390,10 +389,6 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
                 "documentation",
                 "portability",
                 "platforms",
-                "cargo",
-                "models",
-                "fuzz",
-                "extended",
                 "performance",
                 "cleanup"
             ]),
@@ -410,17 +405,35 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
                 .collect(),
         "untracked CI gate"
     );
-    for job in ["cargo", "models", "fuzz", "extended"] {
-        let expected = if job == "cargo" {
-            json!(["platforms", "documentation", "portability"])
-        } else {
-            json!(["platforms", "documentation"])
-        };
+    let quality = &all["quality"];
+    ensure!(
+        quality["on"]["pull_request"].is_null(),
+        "quality cannot be path filtered"
+    );
+    for (job, file) in [
+        ("cargo", "verification-tests"),
+        ("models", "verification-models"),
+        ("fuzz", "verification-fuzz"),
+        ("extended", "verification-extended"),
+    ] {
         ensure!(
-            jobs[job]["needs"] == expected,
-            "verification must follow platform and documentation checks"
+            quality["jobs"][job]["uses"] == format!("./.github/workflows/{file}.yml")
+                && all[file]["on"].get("workflow_call").is_some()
+                && quality["jobs"][job].get("needs").is_none()
+                && quality["jobs"][job].get("if").is_none()
+                && quality["jobs"][job].get("continue-on-error").is_none(),
+            "quality verification must run independently of main CI"
         );
     }
+    ensure!(
+        quality["jobs"]["result"]["needs"] == json!(["cargo", "models", "fuzz", "extended"])
+            && quality["jobs"]["result"]["if"] == "always()"
+            && keys(&quality["jobs"])?
+                == BTreeSet::from(
+                    ["cargo", "models", "fuzz", "extended", "result"].map(str::to_owned)
+                ),
+        "quality badge must reflect every independent quality lane"
+    );
     ensure!(
         jobs["portability"]["needs"] == "workflows",
         "portability must follow workflow validation"
@@ -521,6 +534,7 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     let mut groups = BTreeSet::new();
     for name in [
         "ci",
+        "quality",
         "ci-workflows",
         "ci-docs",
         "verification-tests",
@@ -580,7 +594,7 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
                     "workflow_dispatch".into(),
                     "workflow_call".into()
                 ]),
-            "verification must be called by CI, not duplicate push/PR triggers"
+            "verification must be called by Quality, not duplicate push/PR triggers"
         );
     }
     ensure!(
@@ -634,6 +648,7 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     );
     let names = [
         "ci",
+        "quality",
         "verification-tests",
         "verification-models",
         "verification-fuzz",

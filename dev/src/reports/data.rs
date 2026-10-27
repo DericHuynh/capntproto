@@ -398,23 +398,30 @@ pub fn validate_charts(value: &Value) -> Result<()> {
     Ok(())
 }
 pub fn validate_publication(value: &Value) -> Result<()> {
-    ensure!(
-        keys(
-            value,
-            &[
-                "format",
-                "kind",
-                "origin",
-                "source_id",
-                "tests",
-                "charts",
-                "status",
-                "note"
-            ]
-        ),
-        "unexpected publication fields"
-    );
+    let mut fields = vec![
+        "format",
+        "kind",
+        "origin",
+        "source_id",
+        "tests",
+        "charts",
+        "status",
+        "note",
+    ];
+    if value.get("tables").is_some() {
+        fields.push("tables");
+    }
+    ensure!(keys(value, &fields), "unexpected publication fields");
     let kind = crate::string(value, "kind")?;
+    if let Some(tables) = value.get("tables") {
+        ensure!(
+            kind == "benchmark"
+                && !value["source_id"].is_null()
+                && value["status"] != "unavailable",
+            "benchmark tables need measured source identity"
+        );
+        super::benchmarks::validate(tables)?;
+    }
     ensure!(
         value["format"] == 1 && ["full", "cargo", "models", "fuzz", "benchmark"].contains(&kind),
         "invalid publication format/kind"

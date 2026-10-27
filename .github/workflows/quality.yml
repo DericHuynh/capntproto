@@ -1,0 +1,40 @@
+name: Quality
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  cargo:
+    name: Cargo tests and coverage
+    uses: ./.github/workflows/verification-tests.yml # zizmor: ignore[self-repository]
+  models:
+    name: Formal proofs and distributed models
+    uses: ./.github/workflows/verification-models.yml # zizmor: ignore[self-repository]
+  fuzz:
+    name: Fuzzing
+    uses: ./.github/workflows/verification-fuzz.yml # zizmor: ignore[self-repository]
+  extended:
+    name: Memory safety and mutation controls
+    uses: ./.github/workflows/verification-extended.yml # zizmor: ignore[self-repository]
+  result:
+    name: Quality result
+    needs: [cargo, models, fuzz, extended]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Report every quality lane
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          {
+            printf '# Independent quality verification\n\n'
+            jq -r 'to_entries[] | "- \(.key): \(.value.result)"' <<< "$RESULTS"
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -e 'to_entries | all(.[]; .value.result == "success")' <<< "$RESULTS"

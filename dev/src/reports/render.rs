@@ -11,7 +11,7 @@ fn esc(s: &str) -> String {
     html_escape::encode_safe(s).into_owned()
 }
 /// Artifact labels are text, never Markdown links, images or raw HTML.
-fn markdown_text(s: &str) -> String {
+pub(super) fn markdown_text(s: &str) -> String {
     s.chars()
         .map(|c| {
             if c.is_ascii_punctuation() {
@@ -593,7 +593,10 @@ pub fn artifact(data: &Value, output: &Path) -> Result<()> {
             markdown_text(crate::string(chart, "note")?)
         ));
     }
-    if charts.is_empty() {
+    if data.get("tables").is_some() {
+        text.push_str(&super::benchmarks::markdown(data)?);
+    }
+    if charts.is_empty() && data.get("tables").is_none() {
         text.push_str("No validated measurements were produced; inspect the job logs.\n");
     }
     crate::write(output.join("README.md"), text)
@@ -621,8 +624,9 @@ pub fn owned() -> BTreeSet<String> {
 pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<PathBuf>> {
     validate_history(history)?;
     ensure!(
-        template.matches("{{REPORTS}}").count() == 1,
-        "README template must contain exactly one {{REPORTS}} slot"
+        template.matches("{{REPORTS}}").count() == 1
+            && template.matches("{{BENCHMARK_TABLES}}").count() == 1,
+        "README template must contain exactly one reports slot and benchmark tables slot"
     );
     let assets = output.join("docs/reports");
     std::fs::create_dir_all(&assets)?;
@@ -738,7 +742,11 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
             35.0,
             65.0,
             25,
-            "No validated latency measurement in the latest run",
+            if latest(history, "benchmark").is_some_and(|r| r["data"].get("tables").is_some()) {
+                "See exhaustive benchmark tables for measured latency"
+            } else {
+                "No validated latency measurement in the latest run"
+            },
             "#1e293b",
         );
         text(
@@ -751,9 +759,20 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
         );
         finish(svg, &preview)?;
     }
+    let benchmark_tables = if let Some(record) = latest(history, "benchmark") {
+        format!(
+            "Measured run: {}\n\n{}",
+            run_text(record)?,
+            super::benchmarks::markdown(&record["data"])?
+        )
+    } else {
+        "No dedicated benchmark measurements are available yet.\n".into()
+    };
     crate::write(
         output.join("README.md"),
-        template.replace("{{REPORTS}}", &section),
+        template
+            .replace("{{REPORTS}}", &section)
+            .replace("{{BENCHMARK_TABLES}}", &benchmark_tables),
     )?;
     crate::write(
         assets.join("failed-tests.md"),

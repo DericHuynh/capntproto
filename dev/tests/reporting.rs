@@ -90,6 +90,53 @@ fn collect_origin_is_explicit_and_malformed_ci_metadata_fails_closed() {
 }
 
 #[test]
+fn encrypted_summary_reaches_public_tables_without_historical_evidence_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let output = path.join("publication.json");
+    let manifest = path.join("manifest.json");
+    write_json(
+        &manifest,
+        &json!({"source_id":"a".repeat(64),"binaries":{"driver":"b".repeat(64)}}),
+    )
+    .unwrap();
+    write_json(path.join("analysis/summary.json"), &json!({"run":{"headSha":"c".repeat(40),"url":"https://github.com/example/capntproto/actions/runs/42"},"measurement_outcome":"success","binaries":{"portable":{"sha256":"b".repeat(64)}},"latency":[{"transport":"quic","case":{"name":"unary-small"},"variants":{"portable":{"samples":5000,"min_ns":1500,"mean_ns":2400.,"p50_ns":2300,"p95_ns":3000,"p99_ns":4100}}}]})).unwrap();
+    let command = || {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_capntproto-dev"));
+        command
+            .args(["reports", "collect", "--kind", "benchmark", "--input"])
+            .arg(path)
+            .arg("--benchmark-manifest")
+            .arg(&manifest)
+            .arg("--output")
+            .arg(&output)
+            .arg("--report-output")
+            .arg(path.join("report"))
+            .env("GITHUB_REPOSITORY", "example/capntproto")
+            .env("GITHUB_RUN_ID", "42")
+            .env("GITHUB_RUN_ATTEMPT", "1")
+            .env("GITHUB_SHA", "c".repeat(40));
+        command
+    };
+    let result = command().output().unwrap();
+    assert!(result.status.success(), "{result:?}");
+    let data = capntproto_dev::read_json(&output).unwrap();
+    assert_eq!(data["status"], "passed");
+    assert_eq!(data["tables"][0]["rows"][0][4], 1.5);
+    let text = std::fs::read_to_string(path.join("report/README.md")).unwrap();
+    assert!(
+        text.contains("unary&#45;small") && text.contains("portable") && text.contains("1.500")
+    );
+    let mut stale = command();
+    stale.env("GITHUB_SHA", "d".repeat(40));
+    assert!(!stale.output().unwrap().status.success());
+    assert!(
+        !output.exists(),
+        "a stale publication survived failed identity validation"
+    );
+}
+
+#[test]
 fn counts_ignore_nested_test_output() {
     let counts = data::test_counts(
         &format!("cargo output\n{}\n{}", suite(2, 1, 1), suite(5, 0, 0)),
@@ -372,7 +419,8 @@ fn shared_ci_run_ids_require_consistent_sources_and_unique_lanes() {
 #[test]
 fn renderer_has_labels_is_deterministic_and_removes_stale_charts() {
     let dir = tempfile::tempdir().unwrap();
-    let template = "# Synthetic renderer fixture — not measured results\n\n{{REPORTS}}";
+    let template =
+        "# Synthetic renderer fixture — not measured results\n\n{{REPORTS}}\n{{BENCHMARK_TABLES}}";
     let files = render::render(template, &render::empty_history(), dir.path()).unwrap();
     assert!(files
         .iter()
@@ -380,6 +428,7 @@ fn renderer_has_labels_is_deterministic_and_removes_stale_charts() {
     let readme = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
     assert!(readme.contains("Awaiting") && !readme.contains("0 passed"));
     let mut bench = record(3, "benchmark", DATE, 1);
+    bench["data"]["tables"] = json!([{"title":"Synthetic exhaustive fixture","columns":["Case","Implementation","Minimum µs"],"rows":[["deep-32","portable",1.5],["deep-32","grpc",2.0]]}]);
     bench["data"]["charts"] = json!([{"name":"latency-p50","title":"Synthetic renderer data — Median latency","unit":"Microseconds — lower is better","note":"Test fixture, not a performance claim.","panels":[{"title":"65536 byte payload","bars":[{"label":"gRPC (tonic)","value":10.0},{"label":"WebSockets","value":null}]}]}]);
     let history = render::merge(
         &render::merge(&render::empty_history(), &record(1, "full", DATE, 1)).unwrap(),
@@ -387,6 +436,10 @@ fn renderer_has_labels_is_deterministic_and_removes_stale_charts() {
     )
     .unwrap();
     render::render(template, &history, dir.path()).unwrap();
+    let readme = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
+    assert!(readme.contains("| deep&#45;32 | portable | 1.500 |"));
+    assert!(readme.contains("| deep&#45;32 | grpc | 2.000 |"));
+    assert!(!readme.contains("{{BENCHMARK_TABLES}}"));
     let svg = std::fs::read_to_string(dir.path().join("docs/reports/latency-p50.svg")).unwrap();
     assert_eq!(
         svg,

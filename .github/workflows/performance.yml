@@ -262,7 +262,7 @@ jobs:
           retention-days: 90
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
-        run: cargo run --locked -p capntproto-dev -- reports collect --input "$RUNNER_TEMP/benchmark-quality" --kind benchmark --output target/readme-data/publication.json
+        run: cargo run --locked -p capntproto-dev -- reports collect --input "$RUNNER_TEMP/benchmark-quality" --kind benchmark --benchmark-manifest target/benchmark-build/bundle/manifest.json --output target/readme-data/publication.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

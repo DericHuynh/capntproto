@@ -1,4 +1,5 @@
 //! Source-bound CI evidence, standalone SVG graphs, and isolated report publication.
+mod benchmarks;
 pub mod data;
 mod publish;
 pub mod render;
@@ -38,6 +39,8 @@ pub enum Args {
         failures_output: Option<PathBuf>,
         #[arg(long)]
         report_output: Option<PathBuf>,
+        #[arg(long)]
+        benchmark_manifest: Option<PathBuf>,
     },
     Render {
         #[arg(long)]
@@ -60,12 +63,22 @@ pub fn run(args: Args) -> Result<()> {
             output,
             failures_output,
             report_output,
+            benchmark_manifest,
         } => {
             crate::remove(&output)?;
             if let Some(path) = &failures_output {
                 crate::remove(path)?;
             }
-            let value = data::collect(&input, kind.name())?;
+            let mut value = data::collect(&input, kind.name())?;
+            if matches!(kind, Kind::Benchmark) {
+                value = benchmarks::collect(&input, benchmark_manifest.as_deref(), value)?;
+                data::validate_publication(&value)?;
+            } else {
+                ensure!(
+                    benchmark_manifest.is_none(),
+                    "build manifest is only valid for benchmark collection"
+                );
+            }
             crate::write_json(&output, &value)?;
             if let Some(path) = failures_output {
                 crate::write(
