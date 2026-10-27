@@ -1994,9 +1994,10 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
             } else if self.1 {
                 results
                     .get()
-                    .set_as_capability(crate::broken::new_cap(Error::failed(
-                        "independent capability".into(),
-                    )));
+                    .set_as_capability(Box::new(crate::local::Client::new(Parked(
+                        Rc::new(Cell::new(0)),
+                        false,
+                    ))));
                 Promise::ok(())
             } else {
                 Promise::from(results.get().set_as::<capnp::text::Owned>("independent"))
