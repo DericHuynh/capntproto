@@ -84,6 +84,7 @@ impl<V> Connection<V> {
                 remaining: 0,
                 maximum: maximum.get(),
                 ended: false,
+                pending_error: None,
                 #[cfg(unix)]
                 fds: Vec::new(),
                 #[cfg(unix)]
@@ -138,6 +139,7 @@ pub struct Reader {
     remaining: usize,
     maximum: usize,
     ended: bool,
+    pending_error: Option<Error>,
     #[cfg(unix)]
     fds: Vec<Option<Rc<std::os::fd::OwnedFd>>>,
     #[cfg(unix)]
@@ -145,6 +147,9 @@ pub struct Reader {
 }
 impl Reader {
     fn poll_message(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<bool>> {
+        if let Some(error) = self.pending_error.take() {
+            return Poll::Ready(Err(error));
+        }
         if self.ended {
             return Poll::Ready(Ok(false));
         }
@@ -266,6 +271,20 @@ impl ImportReceiver<resources::Import> for Reader {
 impl Input<resources::Import> for Reader {
     fn has_buffered_next_frame(&mut self) -> bool {
         !self.active && !self.ended && self.input.has_buffered_next_frame()
+    }
+    fn poll_buffered_next_frame(&mut self, cx: &mut Context<'_>) -> Poll<bool> {
+        if self.pending_error.is_some() {
+            return Poll::Ready(false);
+        }
+        match self.poll_message(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Ok(_)) => Poll::Ready(self.buffered_frame().is_some()),
+            Poll::Ready(Err(error)) => {
+                self.ended = true;
+                self.pending_error = Some(error);
+                Poll::Ready(false)
+            }
+        }
     }
     fn buffered_frame(&self) -> Option<&[u8]> {
         if self.active && self.position == 0 {

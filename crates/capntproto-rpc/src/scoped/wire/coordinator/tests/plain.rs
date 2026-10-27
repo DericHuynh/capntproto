@@ -870,6 +870,7 @@ struct Replies {
     consumed: usize,
     progress: Option<Rc<Cell<usize>>>,
     stop: Option<Rc<Signal>>,
+    read_through: bool,
 }
 impl io::Read for Replies {
     type Error = ();
@@ -886,7 +887,14 @@ impl ImportReceiver<()> for Replies {
 }
 impl transport::Input<()> for Replies {
     fn has_buffered_next_frame(&mut self) -> bool {
-        !self.frames.is_empty()
+        !self.read_through && !self.frames.is_empty()
+    }
+    fn poll_buffered_next_frame(&mut self, _: &mut Context<'_>) -> Poll<bool> {
+        if self.frames.is_empty() {
+            Poll::Pending
+        } else {
+            Poll::Ready(true)
+        }
     }
     fn take_buffered_frame<'p>(
         &mut self,
@@ -945,7 +953,14 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
             Poll::Ready(Ok(bytes.len()))
         }
     }
-    for budget in [1, 8, 64] {
+    for (budget, read_through) in [
+        (1, false),
+        (8, false),
+        (64, false),
+        (1, true),
+        (8, true),
+        (64, true),
+    ] {
         for capacity in [1, 8, 32] {
             with_peer(|mut driver, messages| {
                 let seen = Rc::new(Cell::new(0));
@@ -967,6 +982,7 @@ fn buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out() {
                 let mut bytes = OutputBytes::default();
                 let mut reader = Replies {
                     progress: Some(bytes.input.clone()),
+                    read_through,
                     ..Default::default()
                 };
                 let mut control = Policy {
