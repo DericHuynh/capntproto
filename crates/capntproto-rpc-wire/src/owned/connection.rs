@@ -1033,6 +1033,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn has_pending_call(&self) -> bool {
         self.call.is_some()
     }
+    /// Whether the deferred request targets a previous answer's pipeline.
+    /// This does not assert that the pipeline has resolved yet.
+    #[inline]
+    pub fn has_promised_pending_call(&self) -> bool {
+        self.call
+            .as_ref()
+            .is_some_and(|call| matches!(call.target(), TargetRef::Promised { .. }))
+    }
     /// Whether the deferred request has no parameter capabilities, pipeline
     /// target or third-party answer. Such admission only retains its hosted
     /// target and creates its answer; it cannot resolve another capability.

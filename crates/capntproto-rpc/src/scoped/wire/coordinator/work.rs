@@ -653,7 +653,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
     }
 
+    #[inline(always)]
     fn accept_request(&mut self, messages: &messages::Messages<'p, '_, '_>) -> capnp::Result<bool> {
+        if self.driver.has_promised_pending_call() {
+            self.accept_promised_request(messages)
+        } else {
+            // Keep ordinary local admission in its original caller. Routing
+            // it through the larger promised-answer adapter spills and copies
+            // the whole owning request even though no resolver is needed.
+            self.worker.accept(&mut self.driver)
+        }
+    }
+    #[inline(never)]
+    fn accept_promised_request(
+        &mut self,
+        messages: &messages::Messages<'p, '_, '_>,
+    ) -> capnp::Result<bool> {
         let hooks = &mut self.hooks;
         let foreign = &mut self.foreign;
         self.worker.accept_using(&mut self.driver, |driver| {
