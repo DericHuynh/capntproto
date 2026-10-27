@@ -5,6 +5,7 @@ pub(super) enum Phase {
     Latency,
     All,
     Allocations,
+    Instructions,
 }
 
 pub(super) fn run(
@@ -26,15 +27,16 @@ pub(super) fn run(
         r#"python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --comparators --output /root/results/secure/native --repetitions 5 --warmup 100 --iterations 1000"#
     };
     let diagnostics = match phase {
-        Phase::Latency => "",
+        Phase::Latency => String::new(),
         Phase::Allocations => {
-            r#"python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles --allocation-only"#
+            r#"python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles --allocation-only"#.to_owned()
         }
-        Phase::All => {
-            r#"for n in 10 100; do
-    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --comparators --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
+        Phase::All | Phase::Instructions => {
+            let profile_mode = if matches!(phase, Phase::Instructions) { " --instruction-only" } else { "" };
+            format!(r#"for n in 10 100; do
+    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${{baseline[@]}}" --comparators --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
 done
-python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles"#
+python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${{baseline[@]}}" --output /root/results/secure/profiles{profile_mode}"#)
         }
     };
     let command = format!(

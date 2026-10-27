@@ -44,7 +44,9 @@ def main():
     parser.add_argument('--portable-baseline', type=Path)
     parser.add_argument('--legacy-baseline', type=Path)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--allocation-only', action='store_true', help='DHAT all workloads; no native latency claims.')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--allocation-only', action='store_true', help='DHAT all workloads; no native latency claims.')
+    modes.add_argument('--instruction-only', action='store_true', help='Callgrind workloads only; no allocation claims.')
     args = parser.parse_args()
     r.idle_host()
     output = args.output.resolve()
@@ -61,7 +63,7 @@ def main():
     workloads = [(t, name, [50, 500]) for t, name in [('tls', 'dependent-read'), ('tls', 'pipelined-read'), ('quic', 'pipelined-read')]]
     workloads += [(t, name, [5, 50]) for t in ['tls', 'quic'] for name in ['concurrent-32', 'deep-32-concurrent-32', 'services-4-deep-16-clients-8']]
     allocation_workloads = [(t, c['name'], [5, 50]) for t in ['tls', 'quic'] for c in r.catalog()]
-    scope = dict(diagnostic=True, allocation_only=args.allocation_only, warmup=10, environment_overrides=dict(CAPNTPROTO_BENCH_QUIC_IDLE_MS='120000'), allocation_workloads=[dict(transport=t, case=n, points=p) for t,n,p in allocation_workloads], workloads=[dict(transport=t, case=n, points=p) for t,n,p in workloads], cpu_topology=cpu_topology, cpus=cpus,
+    scope = dict(diagnostic=True, allocation_only=args.allocation_only, instruction_only=args.instruction_only, warmup=10, environment_overrides=dict(CAPNTPROTO_BENCH_QUIC_IDLE_MS='120000'), allocation_workloads=[] if args.instruction_only else [dict(transport=t, case=n, points=p) for t,n,p in allocation_workloads], workloads=[dict(transport=t, case=n, points=p) for t,n,p in workloads], cpu_topology=cpu_topology, cpus=cpus,
                  binaries={k: dict(path=str(v), sha256=r.topology.digest(v)) for k, v in binaries.items()},
                  metric='All peers: (long profile minus short profile) / difference in iterations, with per-workload points. '
                         'Callgrind instructions/cache/branches are simulated. DHAT reports cumulative allocations.',
@@ -70,7 +72,7 @@ def main():
         (output / 'scope.json').write_text(json.dumps(scope, indent=2) + '\n')
     save()
     cases = {c['name']: c for c in r.catalog()}
-    for mode in (['dhat'] if args.allocation_only else ['callgrind', 'dhat']):
+    for mode in (['dhat'] if args.allocation_only else ['callgrind'] if args.instruction_only else ['callgrind', 'dhat']):
         campaign.mode = mode
         for transport, name, points in (allocation_workloads if mode == 'dhat' else workloads):
             for label in binaries:

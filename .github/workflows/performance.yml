@@ -41,7 +41,7 @@ on:
         description: Latency only (fast), full encrypted diagnostics, allocations, or VPC workflows
         default: run-latency
         type: choice
-        options: [run-latency, run-secure, run-allocations, run-remote]
+        options: [run-latency, run-secure, run-instructions, run-allocations, run-remote]
       region:
         description: DigitalOcean region, or auto to select an available region
         default: auto

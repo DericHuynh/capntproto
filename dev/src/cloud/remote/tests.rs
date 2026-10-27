@@ -564,44 +564,53 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
 
 #[test]
 fn encrypted_campaign_salvages_profiles_and_cleans_up_on_failure() {
-    for fail_at in ["", "python3 secure-runner.py"] {
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        let commands = CompletedCommands {
-            commands: PairCommands::default(),
-            manifest: fixture_bundle(&bundle),
-            fail_at,
-        };
-        let api = PairApi::default();
-        let output = dir.path().join("output");
-        let state = dir.path().join("state");
-        let result = run(
-            &api,
-            &bundle,
-            &output,
-            &state,
-            &tag("test/secure-pair"),
-            &Cancellation::default(),
-            &commands,
-            Campaign::Secure,
-        );
-        assert_eq!(result.is_ok(), fail_at.is_empty());
-        assert!(api.hosts.borrow().is_empty());
-        assert!(api.keys.borrow().is_empty());
-        assert!(!state.join("client/host").exists());
-        assert!(output.join("secure/secure.tar.gz").is_file());
-        assert!(output.join("secure/host.json").is_file());
-        if fail_at.is_empty() {
-            let calls = commands.commands.0.borrow();
-            let script = calls
-                .iter()
-                .find(|s| s.contains("python3 secure-runner.py"))
-                .unwrap();
-            assert!(script.find("secure-runner.py").unwrap() < script.find("--trace").unwrap());
-            assert!(script.find("--trace").unwrap() < script.find("secure-profile.py").unwrap());
-            assert!(!calls
-                .iter()
-                .any(|s| s.contains("workflow-client") || s.contains("compare-portable")));
+    for instructions_only in [false, true] {
+        for fail_at in ["", "python3 secure-runner.py"] {
+            let dir = tempfile::tempdir().unwrap();
+            let bundle = dir.path().join("bundle");
+            let commands = CompletedCommands {
+                commands: PairCommands::default(),
+                manifest: fixture_bundle(&bundle),
+                fail_at,
+            };
+            let api = PairApi::default();
+            let output = dir.path().join("output");
+            let state = dir.path().join("state");
+            let result = run(
+                &api,
+                &bundle,
+                &output,
+                &state,
+                &tag("test/secure-pair"),
+                &Cancellation::default(),
+                &commands,
+                if instructions_only {
+                    Campaign::Instructions
+                } else {
+                    Campaign::Secure
+                },
+            );
+            assert_eq!(result.is_ok(), fail_at.is_empty());
+            assert!(api.hosts.borrow().is_empty());
+            assert!(api.keys.borrow().is_empty());
+            assert!(!state.join("client/host").exists());
+            assert!(output.join("secure/secure.tar.gz").is_file());
+            assert!(output.join("secure/host.json").is_file());
+            if fail_at.is_empty() {
+                let calls = commands.commands.0.borrow();
+                let script = calls
+                    .iter()
+                    .find(|s| s.contains("python3 secure-runner.py"))
+                    .unwrap();
+                assert!(script.find("secure-runner.py").unwrap() < script.find("--trace").unwrap());
+                assert!(
+                    script.find("--trace").unwrap() < script.find("secure-profile.py").unwrap()
+                );
+                assert_eq!(script.contains("--instruction-only"), instructions_only);
+                assert!(!calls
+                    .iter()
+                    .any(|s| s.contains("workflow-client") || s.contains("compare-portable")));
+            }
         }
     }
 }

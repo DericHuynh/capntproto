@@ -100,6 +100,39 @@ class SecurityEvidenceTests(unittest.TestCase):
             self.assertIn('fixture disconnect', scope['failures'][0]['error'])
             self.assertEqual(scope['trials'][-1]['implementation'], 'legacy-baseline')
 
+    def test_instruction_only_preserves_all_cpu_workloads_without_claiming_allocations(self):
+        profiler = module('secure_profile', 'secure-profile.py')
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+            root = Path(directory)
+            driver = root / 'driver'
+            driver.touch()
+            output = root / 'profiles'
+            stack.enter_context(patch.object(profiler.sys, 'argv', ['secure-profile.py',
+                '--rust', str(driver), '--cpp', str(driver), '--portable-baseline', str(driver),
+                '--output', str(output), '--instruction-only']))
+            stack.enter_context(patch.object(profiler.r, 'idle_host'))
+            stack.enter_context(patch.object(profiler.r, 'physical_cpus', return_value=([0, 1], 'fixture')))
+            stack.enter_context(patch.object(profiler.r.certificates, 'generate', return_value=root))
+            stack.enter_context(patch.object(profiler.r.topology, 'digest', return_value='fixture'))
+            campaign = stack.enter_context(patch.object(profiler, 'Diagnostic')).return_value
+            campaign.trial.return_value = dict(services=[dict(hop=0)])
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            profiler.main()
+            scope = json.loads((output / 'scope.json').read_text())
+            self.assertTrue(scope['instruction_only'])
+            self.assertFalse(scope['allocation_only'])
+            self.assertEqual(scope['allocation_workloads'], [])
+            self.assertEqual(scope['failures'], [])
+            cases = {case['name']: case for case in runner.catalog()}
+            expected = {(w['transport'], w['case'], label, point)
+                for w in scope['workloads'] for label in scope['binaries'] for point in w['points']
+                if runner.supported(label, w['transport'], cases[w['case']])}
+            actual = {(t['transport'], t['case'], t['implementation'], t['iterations'])
+                for t in scope['trials']}
+            self.assertEqual(actual, expected)
+            self.assertEqual(len(scope['trials']), len(expected))
+            self.assertTrue(all(t['mode'] == 'callgrind' for t in scope['trials']))
+
     def test_plaintext_downgrade_wrong_transport_and_partial_samples_are_rejected(self):
         case = dict(family='loopback', name='loopback-64', payload_bytes=64)
         valid = dict(measurement_version=2, protocol='tcp', payload_bytes=64,

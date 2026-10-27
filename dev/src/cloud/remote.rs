@@ -9,6 +9,7 @@ pub(super) enum Campaign {
     Secure,
     Latency,
     Allocations,
+    Instructions,
 }
 mod timing;
 mod trace;
@@ -401,7 +402,7 @@ pub(super) fn run(
         }
         if matches!(
             campaign,
-            Campaign::Secure | Campaign::Latency | Campaign::Allocations
+            Campaign::Secure | Campaign::Latency | Campaign::Allocations | Campaign::Instructions
         ) {
             return secure::run(
                 commands,
@@ -411,6 +412,7 @@ pub(super) fn run(
                 match campaign {
                     Campaign::Latency => secure::Phase::Latency,
                     Campaign::Allocations => secure::Phase::Allocations,
+                    Campaign::Instructions => secure::Phase::Instructions,
                     _ => secure::Phase::All,
                 },
             );
