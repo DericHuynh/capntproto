@@ -20,7 +20,9 @@ to that bridge.
 
 Legacy and portable now share the bounded atomic notification FIFO in
 `capntproto-rpc-engine::ready_queue`. Its storage and transitions require only
-`core`; callers own the consumer cursor, wakeups and task generations. Hosted
+`core`; callers own the consumer cursor, wakeups and task generations.
+This helper is available on targets with byte and pointer atomics; the rest of
+the caller-polled engine keeps its existing target requirements. Hosted
 drivers add their executor wakers around the same implementation. Portable keeps
 its exact generation checks, and larger hosted operation sets retain the bounded
 overflow mailbox. Ordinary wakeups no longer lock that mailbox. This ports the
