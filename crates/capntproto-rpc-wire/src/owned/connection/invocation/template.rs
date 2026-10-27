@@ -473,6 +473,12 @@ impl<'a> EncodedCall<'a> {
         allow_handoff: bool,
         options: capnp::message::ReaderOptions,
     ) -> Result<Frame<'pool>, super::super::super::Error> {
+        // Certify the original immutable payload under this publication's
+        // policy. Appending a target preserves every payload pointer, its
+        // nesting depth and its envelope traversal charge. The append checks
+        // the larger serialized word count independently, so walking the
+        // unchanged payload again would provide no additional validation.
+        self.for_policy(method, options)?;
         if let Some(frame) = self.append_promised(
             messages,
             question,
@@ -482,7 +488,7 @@ impl<'a> EncodedCall<'a> {
             allow_handoff,
             options,
         )? {
-            return Self::validate_promised(frame, messages);
+            return Ok(frame);
         }
         let segments = [self.segment, self.second.unwrap_or(&[])];
         let segments = &segments[..if self.second.is_some() { 2 } else { 1 }];
@@ -962,6 +968,57 @@ mod tests {
                 original,
                 capnp::serialize::write_message_to_words(call.message())
             );
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn promised_payload_certificate_preserves_nesting_and_traversal_limits() {
+        for depth in [0, 1, 8] {
+            let mut call =
+                PreparedCall::new(capnp::message::Builder::new_default(), 17, 3).unwrap();
+            let mut field = call.params();
+            for _ in 0..depth {
+                field = field.initn_as::<capnp::any_pointer_list::Builder>(1).get(0);
+            }
+            field.set_as::<capnp::data::Owned>(&b"payload"[..]).unwrap();
+            let method = call.method;
+            let encoded = call.encoded(method, Default::default()).unwrap().unwrap();
+            let mut storage = Word::allocate_zeroed_vec(256);
+            let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(
+                &mut storage,
+            ))];
+            messages::with_messages(&mut buffers, &mut [], |messages| {
+                for nesting_limit in 0..16 {
+                    for traversal_limit_in_words in [None, Some(8), Some(16), Some(32), Some(64)] {
+                        let options = capnp::message::ReaderOptions {
+                            nesting_limit,
+                            traversal_limit_in_words,
+                        };
+                        let question = QuestionId::from_wire(7);
+                        let parent = QuestionId::from_wire(3);
+                        let path = pipeline::Path::new(&[0]);
+                        let Some(reference) = encoded.append_promised(
+                            messages, question, parent, path, 128, false, options,
+                        ).unwrap() else {
+                            continue; // This case uses the unchanged general encoder.
+                        };
+                        let reference = EncodedCall::validate_promised(reference, messages);
+                        let expected = reference.is_ok();
+                        if let Ok(frame) = reference {
+                            frame.release(messages);
+                        }
+                        let actual = encoded.copy_promised(
+                            messages, question, parent, path, method, 128, false, options,
+                        );
+                        assert_eq!(actual.is_ok(), expected,
+                            "depth={depth}, nesting={nesting_limit}, words={traversal_limit_in_words:?}");
+                        if let Ok(frame) = actual {
+                            frame.release(messages);
+                        }
+                    }
+                }
+            }).unwrap();
         }
     }
 
