@@ -870,6 +870,8 @@ struct Replies {
     consumed: usize,
     progress: Option<Rc<Cell<usize>>>,
     stop: Option<Rc<Signal>>,
+    hide_hint: bool,
+    after_first: Option<Box<dyn FnOnce()>>,
 }
 impl io::Read for Replies {
     type Error = ();
@@ -885,8 +887,13 @@ impl ImportReceiver<()> for Replies {
     fn make_import(&mut self, _: ImportId) {}
 }
 impl transport::Input<()> for Replies {
-    fn has_buffered_next_frame(&mut self) -> bool {
-        !self.frames.is_empty()
+    fn buffered_next_frame_size(&mut self) -> Option<NonZeroUsize> {
+        if self.hide_hint {
+            return None;
+        }
+        self.frames
+            .front()
+            .and_then(|frame| NonZeroUsize::new(frame.len() * 8))
     }
     fn take_buffered_frame<'p>(
         &mut self,
@@ -912,9 +919,245 @@ impl transport::Input<()> for Replies {
         if let Some(progress) = &self.progress {
             progress.set(self.consumed);
         }
+        if self.consumed == 1 {
+            if let Some(ready) = self.after_first.take() {
+                ready();
+            }
+        }
         if let Some(stop) = &self.stop {
             stop.stop();
         }
+    }
+}
+
+#[test]
+fn plain_reply_bursts_drain_before_awakened_service_work_within_the_frame_budget() {
+    #[derive(Clone)]
+    struct Resumed {
+        ready: Rc<Cell<bool>>,
+        wake: Rc<RefCell<Option<Waker>>>,
+        consumed: Rc<Cell<usize>>,
+        observed: Rc<Cell<Option<usize>>>,
+    }
+    impl capability::Server for Resumed {
+        fn as_ptr(&self) -> usize {
+            Rc::as_ptr(&self.ready) as usize
+        }
+        fn dispatch_call(
+            self,
+            _: u64,
+            _: u16,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            let (_, mut results) = context.into_owned();
+            capability::DispatchCallResult {
+                promise: Promise::from_future(async move {
+                    std::future::poll_fn(|cx| {
+                        if self.ready.get() {
+                            self.observed.set(Some(self.consumed.get()));
+                            Poll::Ready(())
+                        } else {
+                            *self.wake.borrow_mut() = Some(cx.waker().clone());
+                            Poll::Pending
+                        }
+                    })
+                    .await;
+                    results.get().set_as::<capnp::text::Owned>("forwarded")
+                }),
+                is_streaming: false,
+                allow_cancellation: true,
+            }
+        }
+    }
+    for (budget, hide_hint, stop_early) in [
+        (1, false, false),
+        (1, true, false),
+        (4, false, false),
+        (4, true, false),
+        (64, false, false),
+        (64, true, false),
+        (4, false, true),
+        (64, true, true),
+    ] {
+        with_peer(|mut driver, messages| {
+            let ready = Rc::new(Cell::new(false));
+            let wake = Rc::new(RefCell::new(None));
+            let consumed = Rc::new(Cell::new(0));
+            let observed = Rc::new(Cell::new(None));
+            let target = expose(
+                &mut driver,
+                Rc::new(crate::local::Client::new(Resumed {
+                    ready: ready.clone(),
+                    wake: wake.clone(),
+                    consumed: consumed.clone(),
+                    observed: observed.clone(),
+                })),
+            );
+            let incoming = Frame::build(messages, 512, Default::default(), |builder| {
+                calls::dynamic_call(
+                    builder,
+                    QuestionId::from_wire(99),
+                    calls::Target::Imported(target),
+                    DynamicCall {
+                        interface: 7,
+                        no_promise_pipelining: true,
+                        ..Default::default()
+                    },
+                    |_| Ok(()),
+                )
+            })
+            .unwrap();
+            driver
+                .receive(
+                    incoming,
+                    messages,
+                    &mut [0; 16],
+                    |_| (),
+                    server::Producer::new,
+                )
+                .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+            let mut hooks = ClientHooks::new(32, 16);
+            let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+            let mut opts = options();
+            opts.budget = NonZeroUsize::new(budget).unwrap();
+            let mut coordinator =
+                Coordinator::new(driver, hooks, NonZeroUsize::new(16).unwrap(), None, opts)
+                    .unwrap();
+            let responses: Vec<_> = (0..12)
+                .map(|_| {
+                    client
+                        .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                            7,
+                            0,
+                            None,
+                            capability::CallHints {
+                                no_promise_pipelining: true,
+                                ..Default::default()
+                            },
+                        )
+                        .send()
+                })
+                .collect();
+            let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+            let pipe = Rc::new(RefCell::new(Pipe::default()));
+            let mut bytes = Writer(pipe.clone());
+            let mut writer = transport::Writer(&mut bytes);
+            let mut control = Policy {
+                direct_returns: true,
+                preserve_plain: true,
+                ..Default::default()
+            };
+            let mut cx = Context::from_waker(Waker::noop());
+            let waker = coordinator.notifications.waker();
+            let mut sent = Vec::new();
+            for _ in 0..4096 {
+                coordinator
+                    .poll_io_work::<(), _, _>(
+                        messages,
+                        &mut queue,
+                        &mut writer,
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut control,
+                        &mut cx,
+                    )
+                    .unwrap();
+                sent.extend(pipe.borrow_mut().bytes.drain(..));
+                if let Some(wake) = pipe.borrow_mut().write_wake.take() {
+                    wake.wake();
+                }
+                if coordinator.schedule.active == WorkSet::NONE
+                    && queue.is_empty()
+                    && coordinator.output.is_clean()
+                {
+                    break;
+                }
+            }
+            assert!(wake.borrow().is_some(), "service must be parked first");
+            let stop_signal = Rc::new(Signal::default());
+            let mut input = Replies {
+                hide_hint,
+                stop: stop_early.then(|| stop_signal.clone()),
+                progress: Some(consumed.clone()),
+                after_first: Some(Box::new(move || {
+                    ready.set(true);
+                    wake.borrow_mut().take().unwrap().wake();
+                })),
+                ..Default::default()
+            };
+            let mut sent = sent.as_slice();
+            while !sent.is_empty() {
+                let message = capnp::serialize::read_message(&mut sent, opts.reader).unwrap();
+                let crate::rpc_capnp::message::Call(call) = message
+                    .get_root::<crate::rpc_capnp::message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("Call")
+                };
+                let mut reply = capnp::message::Builder::new_default();
+                let mut returned = reply
+                    .init_root::<crate::rpc_capnp::message::Builder>()
+                    .init_return();
+                returned.set_answer_id(call.unwrap().get_question_id());
+                returned.set_no_finish_needed(true);
+                returned.set_release_param_caps(false);
+                returned.init_results();
+                let encoded = capnp::serialize::write_message_to_words(&reply);
+                let mut words = capnp::Word::allocate_zeroed_vec(encoded.len() / 8);
+                capnp::Word::words_to_bytes_mut(&mut words).copy_from_slice(&encoded);
+                input.frames.push_back(words);
+            }
+            assert_eq!(input.frames.len(), 12);
+            let mut pending = None;
+            let mut pump = Pump::default();
+            let mut stop = std::pin::pin!(stop_signal.wait());
+            for _ in 0..4096 {
+                let before = input.consumed;
+                if let Poll::Ready(result) = coordinator.poll_prepared(
+                    messages,
+                    &mut queue,
+                    &mut input,
+                    &mut writer,
+                    &mut [0; 32],
+                    &NoResources,
+                    &mut control,
+                    stop.as_mut(),
+                    &mut pending,
+                    &mut pump,
+                    &mut cx,
+                    &waker,
+                ) {
+                    assert_eq!(result.unwrap(), None, "stop must precede the next reply");
+                    assert!(stop_early);
+                    break;
+                }
+                assert!(input.consumed - before <= budget.min(32));
+                pipe.borrow_mut().bytes.clear();
+                if let Some(wake) = pipe.borrow_mut().write_wake.take() {
+                    wake.wake();
+                }
+                if input.frames.is_empty() && observed.get().is_some() {
+                    break;
+                }
+            }
+            assert_eq!(
+                observed.get(),
+                (!stop_early).then_some(budget.min(12)),
+                "budget {budget}, hidden hint {hide_hint}, stop {stop_early}"
+            );
+            assert_eq!(input.consumed, if stop_early { 1 } else { 12 });
+            drop((responses, client));
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                messages,
+                &mut queue,
+                &mut control,
+                Ok(()),
+            ))
+            .unwrap();
+            reclaimed(messages);
+        });
     }
 }
 

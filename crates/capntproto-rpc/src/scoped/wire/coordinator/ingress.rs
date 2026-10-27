@@ -90,6 +90,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             if pump.frames < self.input_budget()
                                 && (self.calls.can_batch_replies() || !self.worker.is_empty())
                             {
+                                pump.drain_plain = self.calls.can_batch_replies();
                                 continue;
                             }
                             pump.frames = 0;
@@ -263,7 +264,8 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 if completed.is_some()
                     && self.worker.is_empty()
-                    && (!reader.has_buffered_next_frame() || pump.frames >= self.input_budget())
+                    && (reader.buffered_next_frame_size().is_none()
+                        || pump.frames >= self.input_budget())
                 {
                     // Let the application enqueue its next call before
                     // scanning cleanup when no bounded buffered successor is
@@ -276,17 +278,85 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
             if pump.frames >= self.input_budget() {
                 pump.frames = 0;
+                pump.drain_plain = false;
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
+            let mut read_pending = false;
+            let mut prepared_size = None;
+            if std::mem::take(&mut pump.drain_plain)
+                && self.control_idle
+                && self.notifications.pending() & WorkSet::CONTROL == WorkSet::NONE
+                && controls.accepts_direct_plain_return()
+                && self.policy.poll_ready(cx).is_ready()
+            {
+                // Match the receive loop's bounded continuation chain: admit
+                // ready data-only replies before polling the service futures
+                // they wake. Forwarding completions can then publish together
+                // instead of forming one output batch per received frame.
+                if let Poll::Ready(result) = self.poll_stop(stop.as_mut(), cx) {
+                    return Poll::Ready(
+                        result
+                            .map(|_| None)
+                            .map_err(|error| Box::new(Cause::Protocol(error))),
+                    );
+                }
+                match reader.poll_frame_size(cx) {
+                    Poll::Pending => read_pending = true,
+                    Poll::Ready(Err(error)) => {
+                        return Poll::Ready(Err(Box::new(Cause::Input(
+                            tasks::ReceiveError::Input(capntproto_rpc_wire::io::ReceiveError::Io(
+                                error,
+                            )),
+                        ))))
+                    }
+                    Poll::Ready(Ok(Some(size))) if size > self.options.input_bytes.get() => {
+                        return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(
+                            capnp::ErrorKind::BufferNotLargeEnough,
+                        )))));
+                    }
+                    Poll::Ready(Ok(Some(_))) => {
+                        // Large replies retain their existing shared-allocation
+                        // path. Capacity pressure gets the ordinary work/flush
+                        // turn before another input owner is reserved.
+                        if let Some(bytes) = reader.buffered_frame() {
+                            prepared_size = core::num::NonZeroUsize::new(bytes.len());
+                            if bytes.len() <= 32 * 1024
+                                && bytes.len() <= self.options.input_bytes.get()
+                                && messages.can_reserve(bytes.len())
+                            {
+                                if let Some((index, message)) = self
+                                    .driver
+                                    .try_receive_plain_buffered(
+                                        bytes,
+                                        self.options.reader,
+                                        messages,
+                                        |key, owner| self.calls.plain_receiver(key, owner),
+                                    )
+                                    .map_err(|error| Box::new(Cause::Protocol(wire_error(error))))?
+                                {
+                                    reader.consume_buffered_frame();
+                                    self.delivered_plain(index, message, controls);
+                                    pump.frames += 1;
+                                    pump.drain_plain = pump.frames < self.input_budget()
+                                        && self.calls.can_batch_replies();
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    Poll::Ready(Ok(None)) => (),
+                }
+            }
             // Buffered input can continue within the ordinary frame budget.
             // Output publication has no separate batching policy here.
-            let buffered_input = reader.has_buffered_next_frame();
+            let buffered_size = prepared_size.or_else(|| reader.buffered_next_frame_size());
+            let buffered_input = buffered_size.is_some();
             let end_input_turn = !buffered_input
                 || pump.frames + 1 >= self.input_budget()
                 || !messages.can_reserve(
-                    self.options
-                        .input_bytes
+                    buffered_size
+                        .unwrap()
                         .get()
                         .max(self.options.output_bytes.get()),
                 )
@@ -306,6 +376,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Ok(true) if buffered_input => (),
                 Ok(true) => return Poll::Pending,
                 Ok(false) => (),
+            }
+            if read_pending {
+                return Poll::Pending;
             }
             std::task::ready!(self.policy.poll_ready(cx));
             let size = std::task::ready!(reader.poll_frame_size(cx)).map_err(|error| {
@@ -362,6 +435,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         if pump.frames < self.input_budget()
                             && (self.calls.can_batch_replies() || !self.worker.is_empty())
                         {
+                            pump.drain_plain = self.calls.can_batch_replies();
                             continue;
                         }
                         pump.frames = 0;

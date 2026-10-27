@@ -23,11 +23,11 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
     ) -> Result<Option<Frame<'p>>, capntproto_rpc_wire::owned::Error> {
         Ok(None)
     }
-    /// A complete next frame is buffered after finishing the previous one.
+    /// Exact size of a complete next frame buffered after the previous one.
     /// Inspect only; do not read bytes or consume ancillary resources here.
     /// Validated framing metadata may be retained for the next receive.
-    fn has_buffered_next_frame(&mut self) -> bool {
-        false
+    fn buffered_next_frame_size(&mut self) -> Option<NonZeroUsize> {
+        None
     }
     /// Borrow an untouched complete frame after poll_frame_size, without IO.
     /// A successful direct admission calls consume_buffered_frame; rejection

@@ -427,11 +427,11 @@ pub trait IncomingMessageStream {
 /// Dropping the stream ends reception. Partial progress survives Pending.
 #[cfg(feature = "std")]
 pub trait IncomingFrameStream {
-    /// A complete next frame is available without IO or transferring ownership.
-    /// This hint permits bounded reply batching; false always remains valid.
+    /// Exact byte length of a complete next frame available without IO or
+    /// transferring ownership. None may conservatively omit this hint.
     /// Validated framing metadata may be retained for the next receive.
-    fn has_buffered_next_frame(&mut self) -> bool {
-        false
+    fn buffered_next_frame_size(&mut self) -> Option<core::num::NonZeroUsize> {
+        None
     }
     fn poll_frame(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<Option<&[u8]>>>;
     fn frame(&self) -> Option<&[u8]>;

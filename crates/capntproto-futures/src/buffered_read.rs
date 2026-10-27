@@ -564,12 +564,12 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         self.borrowed || self.streaming.is_some() || !self.buffer.exclusive()
     }
 
-    /// Whether the next complete frame is already buffered, without reading or
+    /// Size of the next complete frame already buffered, without reading or
     /// transferring its ownership. Validated header metadata is retained for
     /// the receive path. Errors remain for the ordinary receive path.
-    pub fn has_buffered_next_frame(&mut self) -> bool {
+    pub fn buffered_next_frame_size(&mut self) -> Option<core::num::NonZeroUsize> {
         if self.terminal.is_some() || self.has_outstanding_short_lived_message() {
-            return false;
+            return None;
         }
         if self.frame.is_none() && self.end - self.begin >= 8 {
             // Keep validated segment offsets in the existing framing state.
@@ -581,7 +581,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         }
         self.frame
             .as_ref()
-            .is_some_and(|frame| frame.bytes <= self.end - self.begin)
+            .filter(|frame| frame.bytes <= self.end - self.begin)
+            .and_then(|frame| core::num::NonZeroUsize::new(frame.bytes))
     }
 
     fn advance(&mut self, bytes: usize) -> Result<()> {
@@ -2040,21 +2041,21 @@ mod tests {
         source.extend_from_slice(&[0xff; 8]);
         let mut input = BufferedRead::new(futures::io::Cursor::new(source), Default::default());
         let mut cx = Context::from_waker(std::task::Waker::noop());
-        assert!(!input.has_buffered_next_frame());
+        assert!(input.buffered_next_frame_size().is_none());
         assert_eq!(input.get_ref().position(), 0);
         assert!(matches!(
             input.poll_stream_frame_size(&mut cx),
             Poll::Ready(Ok(Some(_)))
         ));
         assert!(
-            !input.has_buffered_next_frame(),
+            input.buffered_next_frame_size().is_none(),
             "current frame still borrowed"
         );
         input.finish_borrowed_frame();
         let read = input.get_ref().position();
         let consumed = input.consumed_bytes();
-        assert!(input.has_buffered_next_frame());
-        assert!(input.has_buffered_next_frame());
+        assert_eq!(input.buffered_next_frame_size().unwrap().get(), frame.len());
+        assert_eq!(input.buffered_next_frame_size().unwrap().get(), frame.len());
         assert_eq!(input.get_ref().position(), read);
         assert_eq!(input.consumed_bytes(), consumed);
         assert!(matches!(
@@ -2063,14 +2064,14 @@ mod tests {
         ));
         input.finish_borrowed_frame();
         assert!(
-            !input.has_buffered_next_frame(),
+            input.buffered_next_frame_size().is_none(),
             "bad header remains for receive"
         );
         assert!(matches!(
             input.poll_stream_frame_size(&mut cx),
             Poll::Ready(Err(_))
         ));
-        assert!(!input.has_buffered_next_frame());
+        assert!(input.buffered_next_frame_size().is_none());
     }
 
     #[test]
@@ -2089,11 +2090,11 @@ mod tests {
             Poll::Ready(Some(8))
         );
         input.finish_borrowed_frame();
-        assert!(input.has_buffered_next_frame());
+        assert!(input.buffered_next_frame_size().is_some());
         let position = input.get_ref().position();
         let allocations = allocation_counter::measure(|| {
             for _ in 0..8 {
-                assert!(input.has_buffered_next_frame());
+                assert!(input.buffered_next_frame_size().is_some());
             }
             assert_eq!(
                 input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
@@ -2107,17 +2108,17 @@ mod tests {
         assert_eq!(input.get_ref().position(), position);
         assert_eq!(input.consumed_bytes(), 48);
         assert!(
-            !input.has_buffered_next_frame(),
+            input.buffered_next_frame_size().is_none(),
             "current frame is still borrowed"
         );
         input.finish_borrowed_frame();
-        assert!(input.has_buffered_next_frame());
+        assert!(input.buffered_next_frame_size().is_some());
         assert_eq!(
             input.poll_stream_frame_size(&mut cx).map(Result::unwrap),
             Poll::Ready(Some(16))
         );
         input.finish_borrowed_frame();
-        assert!(!input.has_buffered_next_frame());
+        assert!(input.buffered_next_frame_size().is_none());
     }
 
     #[test]
@@ -2134,9 +2135,9 @@ mod tests {
             Poll::Ready(Some(frame.len()))
         );
         input.finish_borrowed_frame();
-        assert!(!input.has_buffered_next_frame());
+        assert!(input.buffered_next_frame_size().is_none());
         let position = input.get_ref().position();
-        assert!(!input.has_buffered_next_frame());
+        assert!(input.buffered_next_frame_size().is_none());
         assert_eq!(input.get_ref().position(), position);
         for _ in 0..2 {
             assert!(matches!(

@@ -98,7 +98,7 @@ fn frame_contract_preserves_raw_bytes_and_explicit_flush() {
     let (outgoing, bytes) = frame("legacy transport");
     let mut input = Input(bytes.clone());
     let mut cx = Context::from_waker(Waker::noop());
-    assert!(!input.has_buffered_next_frame());
+    assert!(input.buffered_next_frame_size().is_none());
     assert!(input.share_frame().is_none());
     assert_eq!(
         input.poll_frame_size(&mut cx).map(|r| r.unwrap()),

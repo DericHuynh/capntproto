@@ -70,6 +70,7 @@ struct Pump<'id> {
     frames: usize,
     returned: Option<(capntproto_rpc_engine::questions::Key<'id>, Option<usize>)>,
     blocked: bool,
+    drain_plain: bool,
 }
 
 /// One hosted connection, owning application futures and the portable driver.
