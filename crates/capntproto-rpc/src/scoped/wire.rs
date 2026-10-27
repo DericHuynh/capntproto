@@ -688,7 +688,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     if matches!(self.route, CallRoute::Remote(_))
                         && pipeline.operation.get().is_some()
                     {
-                        match self.projections.insert(endpoint.clone(), cap) {
+                        match self.projections.insert(endpoint.clone(), cap, hooks) {
                             Ok(index) => {
                                 *endpoint.direct_parent.borrow_mut() = Rc::downgrade(pipeline);
                                 endpoint.direct.set(Some(index));
@@ -882,7 +882,12 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> capnp::Result<()> {
-        self.projections.release(&mut driver.capabilities());
+        if !self.projections.is_empty() {
+            self.projections.release(
+                &mut driver.capabilities(),
+                &Error::disconnected("wire call canceled".into()),
+            );
+        }
         match self.route {
             CallRoute::Queued(task) => {
                 if !driver.cancel_invocation(task, messages) {

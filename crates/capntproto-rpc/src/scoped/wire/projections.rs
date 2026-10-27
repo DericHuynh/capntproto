@@ -21,13 +21,27 @@ impl<'id> DirectProjections<'id> {
         &mut self,
         endpoint: Rc<Endpoint>,
         client: Client<'id>,
+        hooks: &ClientHooks<'id>,
     ) -> Result<usize, Client<'id>> {
+        if hooks.entries.len() - hooks.free.len() + hooks.inbox.direct_clients.get()
+            >= hooks.maximum_clients
+        {
+            return Err(client);
+        }
         let projection = Projection { endpoint, client };
         if self.first.is_none() {
             self.first = Some(projection);
+            hooks
+                .inbox
+                .direct_clients
+                .set(hooks.inbox.direct_clients.get() + 1);
             Ok(0)
         } else if self.rest.try_reserve(1).is_ok() {
             self.rest.push(projection);
+            hooks
+                .inbox
+                .direct_clients
+                .set(hooks.inbox.direct_clients.get() + 1);
             Ok(self.rest.len())
         } else {
             Err(projection.client)
@@ -52,6 +66,9 @@ impl<'id> DirectProjections<'id> {
         let mut result: capnp::Result<()> = Ok(());
         for projection in first.into_iter().chain(rest) {
             projection.endpoint.direct.set(None);
+            if let Some(inbox) = projection.endpoint.inbox.upgrade() {
+                inbox.direct_clients.set(inbox.direct_clients.get() - 1);
+            }
             if let Err(error) = &result {
                 graph.release(projection.client);
                 projection.endpoint.forward_projection(Err(error.clone()));
@@ -64,10 +81,14 @@ impl<'id> DirectProjections<'id> {
         }
         result
     }
-    pub(super) fn release(&mut self, graph: &mut impl Capabilities<'id>) {
+    pub(super) fn release(&mut self, graph: &mut impl Capabilities<'id>, error: &Error) {
         for projection in self.first.take().into_iter().chain(self.rest.drain(..)) {
             projection.endpoint.direct.set(None);
+            if let Some(inbox) = projection.endpoint.inbox.upgrade() {
+                inbox.direct_clients.set(inbox.direct_clients.get() - 1);
+            }
             graph.release(projection.client);
+            projection.endpoint.forward_projection(Err(error.clone()));
         }
     }
 }

@@ -1424,7 +1424,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.invocations.terminate(driver, messages);
         for mut entry in self.entries.into_iter().flatten() {
             entry.wire.release_tail(driver, messages);
-            entry.wire.projections.release(&mut driver.capabilities());
+            entry
+                .wire
+                .projections
+                .release(&mut driver.capabilities(), &error);
             entry.wire.cancel_with_error(error.clone());
             if let Some(local) = entry.local {
                 drop(local.stage);

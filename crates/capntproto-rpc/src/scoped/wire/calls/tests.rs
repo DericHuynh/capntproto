@@ -2279,6 +2279,11 @@ fn promised_answer_calls_publish_without_hosted_endpoint_materialization() {
             "sending needs no hosted binding"
         );
         assert_eq!(hooks.entries.iter().flatten().count(), 1);
+        assert_eq!(
+            hooks.inbox.direct_clients.get(),
+            1,
+            "the direct route retains its endpoint credit"
+        );
         let bytes = drain(&mut queue, messages);
         let mut source = bytes.as_slice();
         let parent_message =

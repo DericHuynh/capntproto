@@ -73,6 +73,7 @@ struct Inbox {
     live_calls: Cell<usize>,
     maximum_calls: usize,
     maximum_clients: usize,
+    direct_clients: Cell<usize>,
 }
 /// One shared work owner for endpoint destruction and metadata notifications.
 /// Hooks retain this through their inbox; the scoped registry consumes the same
@@ -323,6 +324,7 @@ impl<'id> ClientHooks<'id> {
                 live_calls: Cell::new(0),
                 maximum_calls,
                 maximum_clients,
+                direct_clients: Cell::new(0),
             }),
             entries: Vec::new(),
             unsettled: 0,
@@ -520,6 +522,12 @@ impl<'id> ClientHooks<'id> {
             return Err(Error::overloaded(
                 "scoped binding capacity exhausted".into(),
             ));
+        }
+        if self.entries.len() - self.free.len() + self.inbox.direct_clients.get()
+            >= self.maximum_clients
+        {
+            graph.release(client);
+            return Err(Error::overloaded("scoped client capacity exhausted".into()));
         }
         let index = self.free.last().copied().unwrap_or(self.entries.len());
         if index == self.entries.len() {
