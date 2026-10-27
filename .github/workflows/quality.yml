@@ -1,40 +1,79 @@
-name: Quality
+name: Coverage
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '19 3 * * 1'
 permissions:
   contents: read
 concurrency:
-  group: quality-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  group: coverage-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_BUILD_JOBS: '2'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  RUST_BACKTRACE: '1'
 jobs:
-  cargo:
-    name: Cargo tests and coverage
-    uses: ./.github/workflows/verification-tests.yml # zizmor: ignore[self-repository]
-  models:
-    name: Formal proofs and distributed models
-    uses: ./.github/workflows/verification-models.yml # zizmor: ignore[self-repository]
-  fuzz:
-    name: Fuzzing
-    uses: ./.github/workflows/verification-fuzz.yml # zizmor: ignore[self-repository]
-  extended:
-    name: Memory safety and mutation controls
-    uses: ./.github/workflows/verification-extended.yml # zizmor: ignore[self-repository]
-  result:
-    name: Quality result
-    needs: [cargo, models, fuzz, extended]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+  coverage:
+    name: First-party LLVM coverage
+    runs-on: ubuntu-26.04
+    timeout-minutes: 350
     steps:
-      - name: Report every quality lane
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # Use the source from checkout; actionlint 1.7.12 does not support $/ syntax.
+      - uses: ./.github/actions/quality-setup # zizmor: ignore[self-repository]
+        with:
+          lane: coverage
+      - name: Run Cargo partition once with LLVM coverage
         env:
-          RESULTS: ${{ toJSON(needs) }}
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: cargo run --locked -p capntproto-quality -- coverage target/quality/coverage
+      - name: Upload independent C++ and Rust interoperability matrix
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: upstream-rpc-interoperability
+          path: |
+            target/verification/upstream-interop/README.md
+            target/verification/upstream-interop/matrix.json
+            target/verification/upstream-interop/**/*.log
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Validate counters and generate README with comparison bar charts
+        if: success() || failure()
+        run: cargo run --locked -p capntproto-quality -- report target/quality coverage
+      - name: Export compact README data (including failed test runs)
+        if: success() || failure()
+        run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind coverage --output target/readme-data/publication.json --report-output target/quality/coverage-report
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: readme-data-coverage-${{ github.run_attempt }}
+          path: target/readme-data/publication.json
+          if-no-files-found: warn
+          retention-days: 90
+      - id: report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: coverage-report
+          overwrite: true
+          path: target/quality/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Job summary
+        if: always()
+        env:
+          REPORT_URL: ${{ steps.report.outputs.artifact-url }}
         run: |
-          {
-            printf '# Independent quality verification\n\n'
-            jq -r 'to_entries[] | "- \(.key): \(.value.result)"' <<< "$RESULTS"
-          } >> "$GITHUB_STEP_SUMMARY"
-          jq -e 'to_entries | all(.[]; .value.result == "success")' <<< "$RESULTS"
+          if test -f target/quality/README.md; then
+            sed '/^## Comparison bar charts/,$d' target/quality/README.md >> "$GITHUB_STEP_SUMMARY"
+            printf '\n## Comparison bar charts\n\n[Download the README, SVG chart suite and plotted values](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi

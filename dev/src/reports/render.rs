@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
-const LANES: [&str; 5] = ["full", "cargo", "models", "fuzz", "benchmark"];
+const LANES: [&str; 6] = ["full", "cargo", "coverage", "models", "fuzz", "benchmark"];
 const COLORS: [&str; 5] = ["#0868d4", "#00ac7b", "#ef4444", "#e89200", "#8b5cf6"];
 fn esc(s: &str) -> String {
     html_escape::encode_safe(s).into_owned()
@@ -25,7 +25,7 @@ pub(super) fn markdown_text(s: &str) -> String {
         .collect()
 }
 pub fn empty_history() -> Value {
-    json!({"format":1,"full":[],"cargo":[],"models":[],"fuzz":[],"benchmark":null})
+    json!({"format":1,"full":[],"cargo":[],"coverage":[],"models":[],"fuzz":[],"benchmark":null})
 }
 pub fn validate_record(record: &Value) -> Result<()> {
     let fields = [
@@ -88,10 +88,16 @@ pub fn validate_history(history: &Value) -> Result<()> {
         ["format", "full", "benchmark"]
             .iter()
             .all(|k| o.contains_key(*k))
-            && o.keys().all(
-                |k| ["format", "full", "benchmark", "cargo", "models", "fuzz"]
-                    .contains(&k.as_str())
-            )
+            && o.keys().all(|k| [
+                "format",
+                "full",
+                "benchmark",
+                "cargo",
+                "coverage",
+                "models",
+                "fuzz"
+            ]
+            .contains(&k.as_str()))
             && history["format"] == 1,
         "invalid history format"
     );
@@ -164,7 +170,7 @@ pub fn merge(history: &Value, record: &Value) -> Result<Value> {
             records.drain(..records.len() - 365);
         }
     }
-    for lane in ["full", "cargo", "models", "fuzz"] {
+    for lane in ["full", "cargo", "coverage", "models", "fuzz"] {
         if let Some(records) = history[lane].as_array_mut() {
             let end = records.len().saturating_sub(1);
             for old in &mut records[..end] {
@@ -674,10 +680,11 @@ pub fn render(template: &str, history: &Value, output: &Path) -> Result<Vec<Path
         section.push_str(if kind=="models"{"[Failed model replay tests](docs/reports/failed-models.md). Expected mutation counterexamples are successful checks, not unexpected failures.\n\n"}else{"AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.\n\n"});
     }
     section.push_str("### LLVM coverage\n\n");
-    if let Some(r) = cargo
-        .or(full)
-        .filter(|r| !r["data"]["charts"].as_array().unwrap().is_empty())
-    {
+    let coverage = latest(history, "coverage").or(cargo).or(full);
+    if let Some(r) = coverage {
+        section.push_str(&format!("Latest coverage run: {}\n\n", run_text(r)?));
+    }
+    if let Some(r) = coverage.filter(|r| !r["data"]["charts"].as_array().unwrap().is_empty()) {
         section.push_str(&charts_text(r, &assets)?);
     } else {
         section.push_str("No validated coverage/baseline comparison is available for the latest run. Missing or unmapped counters are never presented as 100% coverage.\n\n");

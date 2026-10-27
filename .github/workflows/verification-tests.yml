@@ -17,10 +17,10 @@ env:
   CARGO_PROFILE_TEST_DEBUG: '0'
   RUST_BACKTRACE: '1'
 jobs:
-  coverage:
-    name: Cargo tests and first-party coverage
+  tests:
+    name: Workspace tests and doctests
     runs-on: ubuntu-26.04
-    timeout-minutes: 350
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -28,11 +28,11 @@ jobs:
       # Use the source from checkout; actionlint 1.7.12 does not support $/ syntax.
       - uses: ./.github/actions/quality-setup # zizmor: ignore[self-repository]
         with:
-          lane: coverage
-      - name: Run Cargo partition once with LLVM coverage
+          lane: cargo
+      - name: Run ordinary Cargo partition without coverage instrumentation
         env:
           TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
-        run: cargo run --locked -p capntproto-quality -- coverage target/quality/coverage
+        run: cargo run --locked -p capntproto-quality -- cargo target/quality/cargo
       - name: Advisory checks
         if: success() || failure()
         run: cargo run --locked -p capntproto-quality -- security target/quality/security
@@ -47,9 +47,6 @@ jobs:
             target/verification/upstream-interop/**/*.log
           if-no-files-found: warn
           retention-days: 30
-      - name: Validate counters and generate README with comparison bar charts
-        if: success() || failure()
-        run: cargo run --locked -p capntproto-quality -- report target/quality coverage,security
       - name: Export compact README data (including failed test runs)
         if: success() || failure()
         run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind cargo --output target/readme-data/publication.json --failures-output target/quality/FAILED-TESTS.md --report-output target/quality/cargo-tests
@@ -78,7 +75,6 @@ jobs:
           if test -f target/quality/FAILED-TESTS.md; then
             cat target/quality/FAILED-TESTS.md >> "$GITHUB_STEP_SUMMARY"
           fi
-          if test -f target/quality/README.md; then
-            sed '/^## Comparison bar charts/,$d' target/quality/README.md >> "$GITHUB_STEP_SUMMARY"
-            printf '\n## Comparison bar charts\n\n[Download the README, SVG chart suite and plotted values](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          if test -f target/quality/cargo-tests/README.md; then
+            cat target/quality/cargo-tests/README.md >> "$GITHUB_STEP_SUMMARY"
           fi
