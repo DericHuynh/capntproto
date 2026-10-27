@@ -160,7 +160,7 @@ impl Notify {
             // The slot, rather than its generation, owns one reservation.
             // Its current Notify retains the generation-specific WOKEN bit;
             // a stale reservation cannot make a replacement runnable.
-            shared.fast.enqueue(self.index);
+            shared.fast.enqueue_notified(self.index, &shared.notified);
             return;
         }
         let notify = {
@@ -204,6 +204,14 @@ impl Drop for Ready {
 }
 impl Queue {
     fn drain(&self) {
+        // Preserve the original one-load idle check. Borrow local FIFO state
+        // only after a producer has published readiness into either mailbox.
+        if !self.shared.notified.load(Ordering::Acquire) {
+            return;
+        }
+        // Acquiring the latest publication also observes producers that
+        // coalesced an already-true flag before this consumer took the batch.
+        self.shared.notified.swap(false, Ordering::AcqRel);
         {
             let mut state = self.state.borrow_mut();
             while let Some(index) = self.shared.fast.front(self.next_fast.get()) {
@@ -223,10 +231,9 @@ impl Queue {
         if self.shared.fast.pending(self.next_fast.get()) {
             return;
         }
-        if !self.shared.notified.load(Ordering::Acquire) {
-            return;
+        if self.shared.overflow.load(Ordering::Acquire) {
+            self.drain_locked(&mut self.shared.pending.lock().unwrap());
         }
-        self.drain_locked(&mut self.shared.pending.lock().unwrap());
     }
     fn drain_locked(&self, pending: &mut VecDeque<Arc<Notify>>) {
         let mut state = self.state.borrow_mut();
@@ -238,7 +245,6 @@ impl Queue {
             }
             notify.queued.store(false, Ordering::Release);
         }
-        self.shared.notified.store(false, Ordering::Release);
     }
 
     /// Bind a wakeup owner, optionally ready now. Remote requests are installed
