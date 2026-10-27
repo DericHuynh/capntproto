@@ -29,6 +29,12 @@ portable protocol and storage contracts. Owned `ClientHook` and server-future
 adapters still require allocation; their lifetimes must be preserved as further
 legacy paths move into caller-backed engine components.
 
+The answer and import ledgers also use legacy's direct-index lookup technique
+for dense wire IDs, validating the candidate slot before using it. Sparse IDs,
+out-of-order admission and IDs displaced by retained retired answers keep their
+ordinary lookup. This adds no index allocation, table capacity or trusted wire
+identity; generation and lifetime checks remain authoritative.
+
 ## Legacy scheduling, framing and deep copying
 
 The active hosted driver uses Tokio. Its task set distinguishes ordinary ready

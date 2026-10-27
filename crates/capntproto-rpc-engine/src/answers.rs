@@ -2,7 +2,7 @@
 //! An early Finish can cancel queued work; a running method is cancelled only
 //! when its generated policy permits it. Return is still owed after cancellation.
 #![forbid(unsafe_code)]
-use crate::ids::AnswerId;
+use crate::ids::{AnswerId, WireId};
 use core::marker::PhantomData;
 #[cfg(capntproto_verus)]
 use vstd::prelude::*;
@@ -628,6 +628,18 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
         self.reclaim(index)
     }
     fn wire_index(&self, id: AnswerId) -> Option<usize> {
+        // Like legacy's directly indexed peer table, dense wire IDs usually
+        // occupy their matching slot. Retained retired answers can displace a
+        // reused ID, so identity and wire lifetime must both validate the hint.
+        if let Ok(index) = usize::try_from(id.to_wire()) {
+            if self.slots.get(index).is_some_and(|slot| {
+                slot.record
+                    .as_ref()
+                    .is_some_and(|r| r.id == id && r.wire_live())
+            }) {
+                return Some(index);
+            }
+        }
         self.slots.iter().position(|s| {
             s.record
                 .as_ref()

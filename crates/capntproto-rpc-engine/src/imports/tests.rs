@@ -32,6 +32,39 @@ use crate::ids::WireId;
 use core::cell::Cell;
 
 #[test]
+fn indexed_import_lookup_preserves_dense_sparse_displaced_and_pending_release_ids() {
+    for ids in [[0, 1, 2, u32::MAX], [2, 0, 1, u32::MAX]] {
+        let mut slots = [const { Slot::EMPTY }; 4];
+        with_imports(&mut slots, |imports| {
+            let owners = ids.map(|id| imports.admit(ImportId::from_wire(id), id).unwrap());
+            let allocations = allocation_counter::measure(|| {
+                for id in ids {
+                    let alias = imports.receive(ImportId::from_wire(id)).unwrap();
+                    assert_eq!(imports.get(&alias), &id);
+                    imports.release(alias);
+                }
+                assert!(!imports.contains(ImportId::from_wire(3)));
+            });
+            assert_eq!(allocations.count_total, 0);
+            assert_eq!(allocations.bytes_total, 0);
+            for owner in owners {
+                imports.release(owner);
+            }
+            // Releasing the local owner does not invalidate an ID until its
+            // actual wire Release is accepted, including the indexed ID zero.
+            for id in ids {
+                assert!(imports.contains(ImportId::from_wire(id)));
+            }
+            while let Some(release) = imports.next_release() {
+                release.commit();
+            }
+            assert!(imports.is_empty());
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn local_aliases_wire_grants_and_rejected_cleanup_have_distinct_lifetimes() {
     let mut storage = [const { Slot::EMPTY }; 2];
     with_imports(&mut storage, |imports| {

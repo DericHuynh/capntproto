@@ -33,7 +33,11 @@
 //!     assert!(imports.is_empty());
 //! }).unwrap();
 //! ```
-use crate::{ids::ImportId, promise, references::ImportRefs};
+use crate::{
+    ids::{ImportId, WireId},
+    promise,
+    references::ImportRefs,
+};
 use core::{fmt, marker::PhantomData};
 #[cfg(capntproto_verus)]
 use vstd::prelude::*;
@@ -317,6 +321,17 @@ impl<'id, T> Imports<'id, '_, T> {
     }
 
     fn index(&self, id: ImportId) -> Option<usize> {
+        // Port legacy's dense-ID lookup without reserving extra storage or
+        // trusting a peer ID as a local slot/generation identity.
+        if let Ok(index) = usize::try_from(id.to_wire()) {
+            if self
+                .slots
+                .get(index)
+                .is_some_and(|slot| slot.entry.as_ref().is_some_and(|entry| entry.wire == id))
+            {
+                return Some(index);
+            }
+        }
         self.slots
             .iter()
             .position(|slot| slot.entry.as_ref().is_some_and(|entry| entry.wire == id))

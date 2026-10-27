@@ -3,33 +3,60 @@ use crate::ids::WireId;
 
 #[test]
 fn retirement_queue_observes_deferred_pipeline_release_across_id_reuse() {
-    let mut slots = [Slot::EMPTY, Slot::EMPTY];
-    with_answers(&mut slots, |answers| {
-        assert!(answers.reclamation_is_idle());
-        assert!(answers.reclamation_is_idle());
-        let id = AnswerId::from_wire(7);
-        let old = answers.admit(id, 41).unwrap();
-        assert!(answers.reclamation_is_idle());
-        assert!(answers.dispatch(old, false).unwrap());
-        assert!(answers.reclamation_is_idle());
-        let pipeline = answers.pipeline(id).unwrap();
-        assert!(answers.prepare_return(old).unwrap().accept().is_none());
-        assert!(answers.reclamation_is_idle());
-        assert!(answers.finish(id, false).retired.is_none());
-        assert!(answers.reclamation_is_idle());
-        let next = answers.admit(id, 43).unwrap();
-        assert!(answers.reclamation_is_idle());
-        answers.release_pipeline_deferred(pipeline);
-        assert!(!answers.reclamation_is_idle());
-        assert_eq!(answers.take_finished(0), Some(41));
-        assert!(answers.reclamation_is_idle());
-        assert_eq!(answers.get(next), Ok(&43));
-        assert!(answers.finish(id, false).retired.is_none());
-        assert!(answers.reclamation_is_idle());
-        assert_eq!(answers.prepare_return(next).unwrap().accept(), Some(43));
-        assert!(answers.reclamation_is_idle());
-    })
-    .unwrap();
+    for wire_id in [0, 1, 7, u32::MAX] {
+        let mut slots = [Slot::EMPTY, Slot::EMPTY];
+        with_answers(&mut slots, |answers| {
+            assert!(answers.reclamation_is_idle());
+            assert!(answers.reclamation_is_idle());
+            let id = AnswerId::from_wire(wire_id);
+            let old = answers.admit(id, 41).unwrap();
+            assert!(answers.reclamation_is_idle());
+            assert!(answers.dispatch(old, false).unwrap());
+            assert!(answers.reclamation_is_idle());
+            let pipeline = answers.pipeline(id).unwrap();
+            assert!(answers.prepare_return(old).unwrap().accept().is_none());
+            assert!(answers.reclamation_is_idle());
+            assert!(answers.finish(id, false).retired.is_none());
+            assert!(answers.reclamation_is_idle());
+            let next = answers.admit(id, 43).unwrap();
+            assert_eq!(
+                answers.lookup(id),
+                Some(next),
+                "retired slot is not the reused wire identity"
+            );
+            assert!(answers.reclamation_is_idle());
+            answers.release_pipeline_deferred(pipeline);
+            assert!(!answers.reclamation_is_idle());
+            assert_eq!(answers.take_finished(0), Some(41));
+            assert!(answers.reclamation_is_idle());
+            assert_eq!(answers.get(next), Ok(&43));
+            assert!(answers.finish(id, false).retired.is_none());
+            assert!(answers.reclamation_is_idle());
+            assert_eq!(answers.prepare_return(next).unwrap().accept(), Some(43));
+            assert!(answers.reclamation_is_idle());
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn indexed_answer_lookup_preserves_dense_sparse_and_displaced_identities() {
+    for ids in [[0, 1, 2, u32::MAX], [2, 0, 1, u32::MAX]] {
+        let mut slots = [const { Slot::EMPTY }; 4];
+        with_answers(&mut slots, |answers| {
+            let keys = ids.map(|id| answers.admit(AnswerId::from_wire(id), id).unwrap());
+            let allocations = allocation_counter::measure(|| {
+                for (id, key) in ids.into_iter().zip(keys) {
+                    assert_eq!(answers.lookup(AnswerId::from_wire(id)), Some(key));
+                    assert_eq!(answers.get(key), Ok(&id));
+                }
+                assert!(answers.lookup(AnswerId::from_wire(3)).is_none());
+            });
+            assert_eq!(allocations.count_total, 0);
+            assert_eq!(allocations.bytes_total, 0);
+        })
+        .unwrap();
+    }
 }
 
 #[test]
