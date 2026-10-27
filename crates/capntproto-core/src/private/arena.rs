@@ -187,21 +187,34 @@ impl<S: ReaderSegments, B: Borrow<ReadBudget>> ReaderArenaImpl<S, B> {
     }
 }
 
-/// Cache the common segment only after its arena has a stable address. The
-/// private constructors accept either a live borrow or an owning Rc; neither
-/// exposes mutable access or moves the arena while cached pointers exist.
+/// Cache the common segment while its arena is borrowed or held in an Rc.
+/// An inline owner refreshes the descriptor before each borrow. The private
+/// constructors never expose mutation or moves while a view uses the cache.
 #[derive(Clone)]
 pub(crate) struct CachedReaderArena<O> {
     inner: O,
     first: core::cell::Cell<(*const u8, u32)>,
 }
-#[cfg(feature = "alloc")]
 pub(crate) struct OwnedArena<S>(ReaderArenaImpl<S>);
-#[cfg(feature = "alloc")]
 impl<S> core::ops::Deref for OwnedArena<S> {
     type Target = ReaderArenaImpl<S>;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+impl<S: ReaderSegments> CachedReaderArena<OwnedArena<S>> {
+    // Only InlinePointerReader owns this unpinned form. It refreshes first
+    // before exposing any view; that view's borrow then prevents owner moves.
+    pub(crate) fn for_borrow(arena: ReaderArenaImpl<S>) -> Self {
+        Self {
+            inner: OwnedArena(arena),
+            first: core::cell::Cell::new((core::ptr::null(), 0)),
+        }
+    }
+    #[inline(always)]
+    pub(crate) fn refresh_first(&self) -> Result<()> {
+        self.first.set(self.inner.get_segment(0)?);
+        Ok(())
     }
 }
 #[cfg(feature = "alloc")]
@@ -240,8 +253,10 @@ impl<
     }
 }
 // SAFETY: private constructors cache first only after borrowing the arena or
-// placing the complete cache in an Rc. Neither constructor exposes mutation
-// or moves its segment owner afterward. ReaderSegments keeps returned storage live until that owner drops.
+// placing the complete cache in an Rc, or refreshing the descriptor before
+// exposing an InlinePointerReader view. Such views borrow the complete owner
+// and prevent moves while cached pointers can be accessed. No constructor exposes mutable segments.
+// ReaderSegments keeps returned storage live until that owner drops.
 // Other segments and the traversal budget belong to the same retained arena.
 unsafe impl<
         S: ReaderSegments,
