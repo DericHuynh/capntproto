@@ -1,6 +1,6 @@
 # Failed TLA+ replay tests
 
-[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/40374809355) · commit `23337007ed47c9e8725db30f8467421505472e27` · attempt 1
+[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/40423956285) · commit `c521184eb741231f6099b583c2249f8e7f40c931` · attempt 1
 
 Recorded: **0 failed**, **0 without a terminal result**, 233 passed and 7 skipped.
 

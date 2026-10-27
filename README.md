@@ -14,27 +14,47 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-26T18:06:40Z · run 40374809355 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40374809355) · commit `23337007ed47` · **failure**
+Latest Cargo run: [2026-10-27T00:04:04Z · run 40423956285 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40423956285) · commit `c521184eb741` · **failure**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
 | Total | Passed | Failed | Errors | Skipped |
 | ---: | ---: | ---: | ---: | ---: |
-| 2524 | 2504 | [0](docs/reports/failed-tests.md) | 0 | 20 |
+| 2530 | 2510 | [0](docs/reports/failed-tests.md) | 0 | 20 |
 
 [Show all failed tests and diagnostics](docs/reports/failed-tests.md). Cargo tests and doctests exclude the dedicated TLA+, fuzz, Miri and mutation campaigns. Filtered tests are not counted as passes or skips. [Reporting contract](https://github.com/DericHuynh/capntproto/blob/main/docs/wiki/README-Reports.md).
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-26T18:06:40Z · run 40374809355 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40374809355) · commit `23337007ed47` · **failure**
+[2026-10-27T00:04:04Z · run 40423956285 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40423956285) · commit `c521184eb741` · **failure**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
+
+![TLA&#43; checks and expected counterexamples](docs/reports/tla-outcomes.svg)
+
+Unique module&#47;configuration&#47;expected&#45;exit checks&#46; Expected invariant violations are successful controls&#46;
+
+![TLA&#43; explored states by model](docs/reports/tla-states.svg)
+
+Counts sum independent bounded configurations&#59; they are not globally distinct states or a proof beyond those bounds&#46;
 
 [Failed model replay tests](docs/reports/failed-models.md). Expected mutation counterexamples are successful checks, not unexpected failures.
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-26T18:06:40Z · run 40374809355 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40374809355) · commit `23337007ed47` · **failure**
+[2026-10-27T00:04:04Z · run 40423956285 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40423956285) · commit `c521184eb741` · **failure**
+
+![Fuzzing executions by engine](docs/reports/fuzz-executions.svg)
+
+Bounded campaigns including seed calibration&#59; execution counts are not comparable performance benchmarks&#46;
+
+![Fuzzer feedback by engine](docs/reports/fuzz-coverage.svg)
+
+Engine&#45;local counters&#44; not LLVM source coverage&#46; Do not compare counts across engines or builds&#46;
+
+![Saved fuzzing findings](docs/reports/fuzz-findings.svg)
+
+Saved crashes&#47;hangs are findings requiring triage&#44; not confirmed unique bugs&#46; Missing results remain unknown&#46;
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
