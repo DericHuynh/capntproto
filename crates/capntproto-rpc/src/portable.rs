@@ -118,7 +118,6 @@ pub struct RpcSystem<V: 'static> {
     connections: Rc<Connections<State>>,
     tasks: TaskSet<Error>,
     output: Option<Promise<(), Error>>,
-    output_yield: fn(&mut Context<'_>),
 }
 impl<V: 'static> RpcSystem<V> {
     pub fn get_joiner(&self) -> Joiner<V> {
@@ -178,7 +177,6 @@ impl<V: 'static> RpcSystem<V> {
         options: Options,
     ) -> capnp::Result<Self> {
         options.validate()?;
-        let output_yield = network.task_yield();
         let output = network.take_output_driver();
         let join_network = network.join_network();
         let (mut tasks, driver) = TaskSet::new(Box::new(crate::SystemTaskReaper));
@@ -222,7 +220,6 @@ impl<V: 'static> RpcSystem<V> {
             connections,
             tasks: driver,
             output,
-            output_yield,
         };
         let network = system.network.clone();
         let context = system.context.clone();
