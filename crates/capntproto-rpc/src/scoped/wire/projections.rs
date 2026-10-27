@@ -49,7 +49,7 @@ impl<'id> DirectProjections<'id> {
     ) -> capnp::Result<()> {
         let first = self.first.take();
         let rest = std::mem::take(&mut self.rest);
-        let mut result = Ok(());
+        let mut result: capnp::Result<()> = Ok(());
         for projection in first.into_iter().chain(rest) {
             projection.endpoint.direct.set(None);
             if let Err(error) = &result {

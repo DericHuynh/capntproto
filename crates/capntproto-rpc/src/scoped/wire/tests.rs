@@ -5,23 +5,21 @@ fn single_capability_storage_and_completed_pipeline_need_no_adapter_allocation()
     let mut capability = Some(crate::broken::new_cap(Error::failed(
         "inline capability".into(),
     )));
+    let mut stored = None;
     let count = allocation_counter::measure(|| {
-        let caps = PayloadCaps::collect(1, |_| Ok(capability.take())).unwrap();
-        assert_eq!(caps.len(), 1);
-        assert_eq!(
-            caps[0].as_ref().unwrap().get_failure().unwrap().extra,
-            "inline capability"
-        );
-    });
-    // Cloning an error string above is application work; isolate the storage
-    // operation itself with a null capability occupying the same table slot.
-    assert!(count.count_total <= 1);
-    let count = allocation_counter::measure(|| {
-        let caps = PayloadCaps::collect(1, |_| Ok(None)).unwrap();
-        assert_eq!(caps.len(), 1);
+        stored = Some(PayloadCaps::collect(1, |_| Ok(capability.take())).unwrap());
     });
     assert_eq!(count.count_total, 0);
     assert_eq!(count.bytes_total, 0);
+    assert_eq!(
+        stored.as_ref().unwrap()[0]
+            .as_ref()
+            .unwrap()
+            .get_failure()
+            .unwrap()
+            .extra,
+        "inline capability"
+    );
 
     let mut message = capnp::message::Builder::new_default();
     let mut caps = Vec::new();
@@ -119,7 +117,7 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
                         let payload = Payload::retain_or_copy(
                             content,
                             frame.retain_pointer(messages, content).unwrap(),
-                            Vec::new(),
+                            PayloadCaps::Empty,
                         )
                         .unwrap();
                         assert!(matches!(payload.body, PayloadBody::Shared { .. }));

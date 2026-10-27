@@ -203,8 +203,7 @@ impl Endpoint {
         if self.direct.get().is_some() {
             let parent = self.direct_parent.borrow().upgrade();
             if let Some(parent) = parent {
-                parent.materialize.set(true);
-                parent.notify_owner();
+                parent.request_materialization();
             }
         }
     }

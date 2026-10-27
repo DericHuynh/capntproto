@@ -61,6 +61,15 @@ impl std::ops::Deref for PayloadCaps {
         }
     }
 }
+impl std::ops::DerefMut for PayloadCaps {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Empty => &mut [],
+            Self::One(caps) => caps,
+            Self::Many(caps) => caps,
+        }
+    }
+}
 impl<'a> IntoIterator for &'a PayloadCaps {
     type Item = &'a Option<Box<dyn ClientHook>>;
     type IntoIter = std::slice::Iter<'a, Option<Box<dyn ClientHook>>>;
@@ -1373,6 +1382,10 @@ impl PipelineState {
             previous.is_none(),
             "pipeline already has an operation owner"
         );
+    }
+    pub(super) fn request_materialization(&self) {
+        self.materialize.set(true);
+        self.notify_owner();
     }
     fn notify_owner(&self) {
         let wake = self.owner_wake.borrow().clone();
