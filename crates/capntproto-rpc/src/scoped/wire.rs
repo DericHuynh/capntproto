@@ -35,72 +35,10 @@ pub(super) struct RejectedOwner<T> {
     output_blocked: bool,
 }
 
-// Immutable replies commonly have zero or one capability. Their table lives
-// inside the payload owner; only larger replies need independent storage.
-enum PayloadCaps {
-    Empty,
-    One([Option<Box<dyn ClientHook>>; 1]),
-    Many(Vec<Option<Box<dyn ClientHook>>>),
-}
-impl From<Vec<Option<Box<dyn ClientHook>>>> for PayloadCaps {
-    fn from(mut caps: Vec<Option<Box<dyn ClientHook>>>) -> Self {
-        match caps.len() {
-            0 => Self::Empty,
-            1 => Self::One([caps.pop().unwrap()]),
-            _ => Self::Many(caps),
-        }
-    }
-}
-impl std::ops::Deref for PayloadCaps {
-    type Target = [Option<Box<dyn ClientHook>>];
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Empty => &[],
-            Self::One(caps) => caps,
-            Self::Many(caps) => caps,
-        }
-    }
-}
-impl std::ops::DerefMut for PayloadCaps {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            Self::Empty => &mut [],
-            Self::One(caps) => caps,
-            Self::Many(caps) => caps,
-        }
-    }
-}
-impl<'a> IntoIterator for &'a PayloadCaps {
-    type Item = &'a Option<Box<dyn ClientHook>>;
-    type IntoIter = std::slice::Iter<'a, Option<Box<dyn ClientHook>>>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-impl PayloadCaps {
-    fn collect(
-        count: usize,
-        mut cap: impl FnMut(usize) -> capnp::Result<Option<Box<dyn ClientHook>>>,
-    ) -> capnp::Result<Self> {
-        match count {
-            0 => Ok(Self::Empty),
-            1 => Ok(Self::One([cap(0)?])),
-            _ => {
-                let mut caps = Vec::new();
-                caps.try_reserve_exact(count).map_err(wire_error)?;
-                for index in 0..count {
-                    caps.push(cap(index)?);
-                }
-                Ok(Self::Many(caps))
-            }
-        }
-    }
-}
-
 /// An owned message whose cap table is independent of scoped wire receipts.
 pub(crate) struct Payload {
     body: PayloadBody,
-    caps: PayloadCaps,
+    caps: Vec<Option<Box<dyn ClientHook>>>,
 }
 enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
@@ -158,7 +96,7 @@ impl Payload {
     ) -> Self {
         Self {
             body: PayloadBody::Owned(Box::new(message)),
-            caps: caps.into(),
+            caps,
         }
     }
     pub(super) fn copy(reader: any_pointer::Reader<'_>) -> capnp::Result<Self> {
@@ -178,7 +116,7 @@ impl Payload {
                 capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
             >,
         >,
-        caps: PayloadCaps,
+        caps: Vec<Option<Box<dyn ClientHook>>>,
     ) -> capnp::Result<Self> {
         // The wire owner selects content from its original arena. Bound hooks
         // keep the exact admitted descriptor order; reads remain lazy and share
@@ -989,7 +927,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         if let Err(message) = call.results.complete_plain(&call.completion, message) {
             let result = call.results.finish_plain(Payload {
                 body: PayloadBody::Admitted(message),
-                caps: PayloadCaps::Empty,
+                caps: Vec<Option<Box<dyn ClientHook>>>::Empty,
             });
             call.complete_boxed(result);
         }
@@ -1058,7 +996,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     let mut call = self.call.take().expect("wire completion once");
                     let result = call.results.finish_plain(Payload {
                         body: PayloadBody::Admitted(message),
-                        caps: PayloadCaps::Empty,
+                        caps: Vec<Option<Box<dyn ClientHook>>>::Empty,
                     });
                     call.complete_boxed(result);
                     return Ok(());
@@ -1150,21 +1088,22 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 .and_then(core::convert::identity),
             CallOutput::Remote(remote) => {
                 if let Some(message) = remote.take_plain_results() {
-                    Ok(Payload { body: PayloadBody::Admitted(message), caps: PayloadCaps::Empty })
+                    Ok(Payload { body: PayloadBody::Admitted(message), caps: Vec<Option<Box<dyn ClientHook>>>::Empty })
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
                         hooks.collect(&mut driver.capabilities());
-                        let caps = PayloadCaps::collect(payload.capability_count(), |index| {
+                        let mut caps = Vec::with_capacity(payload.capability_count());
+                        for index in 0..payload.capability_count() {
                             let cap = payload.capability_at(index as u32).map_err(wire_error)?;
-                            match cap {
-                                None => Ok(None),
+                            caps.push(match cap {
+                                None => None,
                                 Some(cap) => {
                                     let cap = driver.bind_capability(cap).map_err(wire_error)?.into_client();
-                                    Ok(Some(hooks.import_after_collect(&mut driver.capabilities(), cap)?.hook))
+                                    Some(hooks.import_after_collect(&mut driver.capabilities(), cap)?.hook)
                                 }
-                            }
-                        })?;
+                            });
+                        }
                         Payload::retain_or_copy(payload.content(), remote.retain_results(messages, payload.content()).map_err(wire_error)?, caps)
                     }
                     owned::Reply::Exception(error) => {

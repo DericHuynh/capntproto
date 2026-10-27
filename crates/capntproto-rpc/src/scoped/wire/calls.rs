@@ -1030,7 +1030,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     }
     fn direct_target<'a>(
         entries: &'a [Option<Entry<'p, 'id, I, C, H>>],
-        endpoint: &Rc<Endpoint>,
+        endpoint: &Rc<crate::scoped::Endpoint>,
     ) -> Option<&'a Client<'id>> {
         let parent = endpoint.direct_parent.borrow().upgrade()?;
         let entry = entries.get(parent.operation.get()?)?.as_ref()?;

@@ -78,6 +78,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if core::mem::replace(&mut self.exchanges[index].ordered, false) {
             self.ordered_propagation -= 1;
         }
+        if self.exchanges[index].exchange.is_none() {
+            self.free_exchanges
+                .release(index, &mut self.exchanges, |slot| &mut slot.free);
+        }
     }
     /// A completion is ready only after its exact observer fence settles.
     /// The caller validates the question generation against its hosted owner.

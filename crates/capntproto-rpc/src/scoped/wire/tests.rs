@@ -1,26 +1,7 @@
 use super::*;
 
 #[test]
-fn single_capability_storage_and_completed_pipeline_need_no_adapter_allocation() {
-    let mut capability = Some(crate::broken::new_cap(Error::failed(
-        "inline capability".into(),
-    )));
-    let mut stored = None;
-    let count = allocation_counter::measure(|| {
-        stored = Some(PayloadCaps::collect(1, |_| Ok(capability.take())).unwrap());
-    });
-    assert_eq!(count.count_total, 0);
-    assert_eq!(count.bytes_total, 0);
-    assert_eq!(
-        stored.as_ref().unwrap()[0]
-            .as_ref()
-            .unwrap()
-            .get_failure()
-            .unwrap()
-            .extra,
-        "inline capability"
-    );
-
+fn completed_pipeline_shares_its_payload_without_adapter_allocation() {
     let mut message = capnp::message::Builder::new_default();
     let mut caps = Vec::new();
     let mut root = message.init_root::<any_pointer::Builder>();
@@ -117,7 +98,7 @@ fn data_payloads_share_validated_frames_and_outlive_the_driver_scope() {
                         let payload = Payload::retain_or_copy(
                             content,
                             frame.retain_pointer(messages, content).unwrap(),
-                            PayloadCaps::Empty,
+                            Vec::new(),
                         )
                         .unwrap();
                         assert!(matches!(payload.body, PayloadBody::Shared { .. }));

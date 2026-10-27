@@ -608,9 +608,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let count = invocation.count;
         let template = invocation.template.filter(|_| import.is_some());
         if let Some(template) = template {
-            let slot_index = self
-                .exchanges
-                .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
+            let slot_index = ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges)
                 .ok_or(Error::Busy)?;
             let slot = &mut self.exchanges[slot_index];
             let output = queue
@@ -663,6 +661,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .bind_owner(question.key(), slot_index)
                 .expect("new exchange owner");
             slot.completion_owner = completion_owner;
+            let reserved = self
+                .free_exchanges
+                .take(&mut self.exchanges, |slot| &mut slot.free);
+            debug_assert_eq!(reserved, slot_index);
+            let slot = &mut self.exchanges[slot_index];
             slot.exchange = Some(Exchange::Pending(question));
             slot.canceled = false;
             slot.tail_taken = false;
@@ -740,10 +743,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             *key = client.as_ref().map(clients::Client::key);
         }
         drop(ready);
-        let slot_index = self
-            .exchanges
-            .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
-            .ok_or(Error::Busy)?;
+        let slot_index =
+            ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges).ok_or(Error::Busy)?;
         let slot = &mut self.exchanges[slot_index];
         let mut output = queue
             .reserve_with(resources)
@@ -865,6 +866,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .bind_owner(question.key(), slot_index)
             .expect("new exchange owner");
         slot.completion_owner = completion_owner;
+        let reserved = self
+            .free_exchanges
+            .take(&mut self.exchanges, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, slot_index);
+        let slot = &mut self.exchanges[slot_index];
         slot.exchange = Some(Exchange::Pending(question));
         slot.canceled = false;
         slot.tail_taken = false;

@@ -98,11 +98,11 @@ impl CompletedPayload {
         match self {
             Self::Plain(_) => Rc::new(Payload {
                 body: PayloadBody::Produced(owner.clone()),
-                caps: PayloadCaps::Empty,
+                caps: Vec::new(),
             }),
             Self::Shared(message) => Rc::new(Payload {
                 body: PayloadBody::Return(message.clone()),
-                caps: PayloadCaps::Empty,
+                caps: Vec::new(),
             }),
             Self::General(payload) => payload.clone(),
         }
@@ -692,7 +692,7 @@ impl Drop for Hook {
             message => CompletedPayload::General(Rc::new(match message {
                 Some(message) => Payload {
                     body: PayloadBody::Return(Rc::new(message)),
-                    caps: caps.into(),
+                    caps,
                 },
                 None => Payload::owned(Default::default(), caps),
             })),
