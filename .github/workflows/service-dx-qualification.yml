@@ -1,0 +1,57 @@
+name: Qualify tests in CI and independent coverage
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-quality-reporting
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+jobs:
+  reporting:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: b74677a31e0bb3f4defb1ebdb279170f385ae321
+      - name: Install toolchain and initialize source references
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          rustup toolchain install nightly-2026-08-29 --profile minimal
+          git submodule update --init --depth 1 vendor/capnproto vendor/verus-tla
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: ci-workflows
+          cache-on-failure: true
+      - name: Test development tools and reporting regressions
+        run: |
+          cargo test --locked -p capntproto-dev -- --nocapture
+          cargo test --locked -p capntproto-quality --lib
+          cargo build --locked -p capntproto-quality --bin capntproto-quality
+          cargo +nightly-2026-08-29 test --locked --ignore-rust-version -p capntproto-rpc-engine --doc -- -Z unstable-options --format=json
+      - name: Enforce new workflow, repository and documentation contracts
+        run: |
+          cargo run --locked -p capntproto-dev -- check-workflows
+          cargo run --locked -p capntproto-dev -- check-repository
+          cargo run --locked -p capntproto-dev -- wiki check
+          cargo run --locked -p capntproto-dev -- reports render --output "$RUNNER_TEMP/report-preview"
+      - name: Check formatting and diagnostics
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked -p capntproto-dev -p capntproto-quality --all-targets -- -D warnings
+          python3 -m unittest discover -s benchmarks/rpc -p 'test_*.py'
+      - name: Preserve synthetic renderer output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: synthetic-report-preview
+          path: ${{ runner.temp }}/report-preview/
+          if-no-files-found: warn
