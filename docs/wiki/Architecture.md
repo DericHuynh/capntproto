@@ -37,6 +37,30 @@ out-of-order admission and IDs displaced by retained retired answers keep their
 ordinary lookup. This adds no index allocation, table capacity or trusted wire
 identity; generation and lifetime checks remain authoritative.
 
+Portable admission now reuses legacy's lowest-free-index heap algorithm. Its
+heap cells live inside the existing caller-owned answer, import, export, graph,
+operation, invocation and exchange slots. Preflight only inspects an available
+index; commit consumes it, and final retirement returns it. A displaced-record
+count also lets answer/import lookup reject an absent dense ID directly, while
+sparse IDs and retained generations preserve their bounded fallback search.
+
+Hosted promised-answer calls retain their graph route in the originating
+operation instead of immediately allocating a hosted endpoint binding. The
+original graph still owns remote promise ordering and reflected-call barriers.
+Descriptor export, general forwarding and Return materialize that same route
+when a hosted binding is needed. Direct routes consume the existing endpoint
+budget; private operation and endpoint identities prevent slot reuse from
+retargeting a hook. Terminal cleanup releases the route and rejects its observers.
+
+Completed hosted pipelines can retain the immutable response payload directly;
+ordinary completion needs no boxed pipeline adapter or cloned adapter. Server
+publication keeps one retained capability reference inline, with the ordinary
+bounded path for larger tables. Known call, admission and worker transitions
+preserve unrelated scheduler idle certificates; route/policy controls retain
+the broader invalidation path. Operation notifications still own parked futures,
+and cooperative budgets and physical output ordering remain unchanged.
+
+
 ## Legacy scheduling, framing and deep copying
 
 The active hosted driver uses Tokio. Its task set distinguishes ordinary ready

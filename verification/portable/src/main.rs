@@ -57,6 +57,15 @@ pub extern "C" fn _start() -> ! {
         Ok(capntproto_rpc_engine::question::Delivery::Discard)
     );
     assert!(question.release().reclaim);
+    let mut vacancies = capntproto_rpc_engine::free_slots::FreeSlots::new();
+    let mut slots = [const { capntproto_rpc_engine::free_slots::Link::EMPTY }; 3];
+    let first = black_box(vacancies.take(&mut slots, |slot| slot));
+    let second = black_box(vacancies.take(&mut slots, |slot| slot));
+    vacancies.release(second, &mut slots, |slot| slot);
+    vacancies.release(first, &mut slots, |slot| slot);
+    assert_eq!(vacancies.take(&mut slots, |slot| slot), first);
+    assert_eq!(vacancies.take(&mut slots, |slot| slot), second);
+
     // Link the shared legacy/portable scheduler storage without a global
     // allocator, executor, OS primitives or a hosted waker implementation.
     #[cfg(all(target_has_atomic = "ptr", target_has_atomic = "8"))]

@@ -864,7 +864,7 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
 
     #[inline]
     fn deliver_result<A, P: Copy + Eq, S, const PATH: usize>(
-        slots: &mut SlotStorage<'s, InvocationSlot<'wait, 'pool, 'id, I, CAPS>>,
+        slots: &mut SlotStorage<'_, InvocationSlot<'wait, 'pool, 'id, I, CAPS>>,
         index: usize,
         live: &mut usize,
         free: &mut capntproto_rpc_engine::free_slots::FreeSlots,
