@@ -19,6 +19,9 @@ use std::{
 trait Driver {
     fn progress(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>>;
     fn output(&mut self, cx: &mut Context<'_>);
+    fn output_yield(&self) -> Option<fn(&mut Context<'_>)> {
+        None
+    }
 }
 impl<V: 'static> Driver for RpcSystem<V> {
     fn progress(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>> {
@@ -26,6 +29,9 @@ impl<V: 'static> Driver for RpcSystem<V> {
     }
     fn output(&mut self, cx: &mut Context<'_>) {
         self.poll_output(cx);
+    }
+    fn output_yield(&self) -> Option<fn(&mut Context<'_>)> {
+        self.output.as_ref().map(|_| self.output_yield)
     }
 }
 
@@ -99,6 +105,8 @@ impl Drop for Turn<'_> {
 /// application continuations and ready protocol input before polling writers.
 /// Output-only wakes do not extend the progress phase. A bounded number of rounds prevents a
 /// continuously waking application from starving output or its executor.
+/// A network with physical output gets one deferred host turn before flushing,
+/// allowing peer IO readiness to join the same batch.
 /// Dropping the runtime aborts its systems and closes its handles.
 pub struct Runtime {
     pending: Rc<RefCell<Pending>>,
@@ -106,6 +114,7 @@ pub struct Runtime {
     activity: Arc<Activity>,
     application: Arc<Lane>,
     application_waker: Waker,
+    output_deferred: bool,
 }
 impl Runtime {
     /// Bound the number of systems, including systems queued by a handle.
@@ -123,6 +132,7 @@ impl Runtime {
             activity,
             application,
             application_waker,
+            output_deferred: false,
         }
     }
     pub fn handle(&self) -> RuntimeHandle {
@@ -202,6 +212,26 @@ impl Runtime {
                     break;
                 }
             }
+            // As with legacy's evalLast-style task, allow the host's IO and
+            // application queue one turn before physical output. Ready socket
+            // events may not have reached their per-system wakers yet. Drain
+            // those wakes on the next poll, then flush without deferring again.
+            // The shared round budget always forces output for hot producers.
+            if !self.output_deferred && rounds < 32 {
+                if let Some(defer) = self.systems.iter().find_map(|system| {
+                    system
+                        .output
+                        .ready
+                        .load(Ordering::Acquire)
+                        .then(|| system.driver.output_yield())
+                        .flatten()
+                }) {
+                    self.output_deferred = true;
+                    defer(cx);
+                    return Poll::Pending;
+                }
+            }
+            self.output_deferred = false;
             for system in &mut self.systems {
                 if system.output.ready.swap(false, Ordering::AcqRel) {
                     system

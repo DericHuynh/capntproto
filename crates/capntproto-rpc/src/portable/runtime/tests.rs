@@ -17,6 +17,7 @@ struct Probe {
     complete_on_output: bool,
     progress_waker: Option<Waker>,
     progress_polls: Rc<Cell<usize>>,
+    output_yield: Option<fn(&mut Context<'_>)>,
 }
 impl Driver for Probe {
     fn progress(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>> {
@@ -38,6 +39,9 @@ impl Driver for Probe {
             self.flushed.borrow_mut().push(queued);
         }
     }
+    fn output_yield(&self) -> Option<fn(&mut Context<'_>)> {
+        self.output_yield
+    }
 }
 impl Drop for Probe {
     fn drop(&mut self) {
@@ -55,7 +59,64 @@ fn probe() -> Probe {
         complete_on_output: false,
         progress_waker: None,
         progress_polls: Rc::default(),
+        output_yield: None,
     }
+}
+#[test]
+fn deferred_physical_output_admits_host_readiness_once_before_each_batch() {
+    let mut runtime = Runtime::new(1.try_into().unwrap());
+    let mut driver = probe();
+    driver.output_yield = Some(|cx| cx.waker().wake_by_ref());
+    let queued = driver.queued.clone();
+    let flushed = driver.flushed.clone();
+    let _completion = runtime.handle().add_driver(Box::new(driver)).unwrap();
+    let wakes = Arc::new(Wakes::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let mut app = pin!(std::future::pending::<()>());
+    queued.set(1);
+    assert!(runtime.poll(app.as_mut(), &mut cx).is_pending());
+    assert!(flushed.borrow().is_empty());
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+    // Another peer becomes readable during the deferred host turn. Its
+    // application continuation must run before the already-ready writer.
+    let mut added = false;
+    let mut ready_peer = pin!(std::future::poll_fn(|_| {
+        if !added {
+            queued.set(queued.get() + 1);
+            added = true;
+        }
+        Poll::<()>::Pending
+    }));
+    runtime.application_waker.wake_by_ref();
+    assert!(runtime.poll(ready_peer.as_mut(), &mut cx).is_pending());
+    assert_eq!(&*flushed.borrow(), &[2]);
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 2);
+    // Deferral renews only for a new output wake, and never postpones the
+    // same batch twice, even when the next progress phase has more work.
+    queued.set(1);
+    runtime.systems[0].output_waker.wake_by_ref();
+    assert!(runtime.poll(app.as_mut(), &mut cx).is_pending());
+    assert_eq!(&*flushed.borrow(), &[2]);
+    assert!(runtime.poll(app.as_mut(), &mut cx).is_pending());
+    assert_eq!(&*flushed.borrow(), &[2, 1]);
+}
+
+#[test]
+fn deferred_physical_output_cannot_be_starved_by_continuous_progress() {
+    let mut runtime = Runtime::new(1.try_into().unwrap());
+    let mut driver = probe();
+    driver.output_yield = Some(|_| panic!("budget exhaustion must force output"));
+    let queued = driver.queued.clone();
+    let flushed = driver.flushed.clone();
+    let _completion = runtime.handle().add_driver(Box::new(driver)).unwrap();
+    let app = std::future::poll_fn(|cx| {
+        queued.set(queued.get() + 1);
+        cx.waker().wake_by_ref();
+        Poll::<()>::Pending
+    });
+    assert!(poll(pin!(runtime.run(app))).is_pending());
+    assert_eq!(&*flushed.borrow(), &[32]);
 }
 fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
     future.poll(&mut Context::from_waker(Waker::noop()))
