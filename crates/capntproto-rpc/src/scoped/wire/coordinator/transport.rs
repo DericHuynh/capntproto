@@ -42,8 +42,10 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
     }
 
     /// Transfer an already buffered complete frame after `poll_frame_size`.
-    /// Implementations must enforce the supplied reader options, perform no IO,
-    /// and retain attachments until `finish_frame`, including admission retries.
+    /// Implementations must record the supplied reader options in the returned
+    /// frame, perform no IO, and retain attachments until `finish_frame`,
+    /// including admission retries. Protocol admission validates the framing
+    /// and reader limits before publishing any state or invoking application code.
     /// None uses the ordinary fragmented byte reader and its caller-owned task.
     fn take_buffered_frame<'p>(
         &mut self,

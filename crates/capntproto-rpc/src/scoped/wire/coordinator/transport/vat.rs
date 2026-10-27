@@ -293,7 +293,13 @@ impl Input<resources::Import> for Reader {
         if bytes.len() != self.remaining {
             return Err(capntproto_rpc_wire::owned::Error::WrongMessage);
         }
-        let frame = Frame::copy_from(messages, bytes, options)?;
+        // Admission immediately decodes this immutable owner under `options`.
+        // Parsing its segment table here as well duplicates that validation,
+        // including another pool lookup and borrow for every small Call.
+        let lease = messages
+            .copy_from(bytes)
+            .map_err(capntproto_rpc_wire::owned::Error::Storage)?;
+        let frame = Frame::new(lease, options);
         self.position = bytes.len();
         self.remaining = 0;
         Ok(Some(frame))

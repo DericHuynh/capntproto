@@ -328,7 +328,7 @@ fn attachment_storage_is_lazy_and_preserves_limits_and_ownership() {
 }
 
 #[test]
-fn buffered_frame_transfer_validates_bytes_and_holds_the_message_through_admission() {
+fn buffered_frame_transfer_preserves_reader_policy_and_ownership_through_validation() {
     for (length, limit, valid) in [
         (24, 2, true),
         (16, 2, false),
@@ -354,8 +354,10 @@ fn buffered_frame_transfer_validates_bytes_and_holds_the_message_through_admissi
                     ..Default::default()
                 },
             );
-            assert_eq!(result.is_ok(), valid);
             if let Ok(Some(frame)) = result {
+                // The transport transfers bytes once; protocol admission owns
+                // the single framing/limit check under the recorded policy.
+                assert_eq!(frame.size_in_words(messages).is_ok(), valid);
                 assert!(
                     reader.input.frame().is_some(),
                     "admission still owns the message and attachments"
@@ -365,6 +367,8 @@ fn buffered_frame_transfer_validates_bytes_and_holds_the_message_through_admissi
                     .unwrap()
                     .is_none());
                 frame.release(messages);
+            } else {
+                panic!("buffered storage transfer must succeed before validation");
             }
             assert_eq!(state.reads.get(), 0);
             reader.finish_frame();
