@@ -117,9 +117,9 @@ pub fn send<'pool, 'a, A>(
     })
 }
 
-/// Internal fast path for a privately built data-only result whose immutable
-/// frame was validated under the current reader limits. The caller checks the
-/// certificate's answer ID and no-Finish bit before selecting this path.
+/// Internal fast path for a privately built data-only result admitted under the
+/// driver's writer policy. The caller checks its immutable header's answer ID
+/// and no-Finish bit before selecting this path.
 pub(super) fn send_prepared<'pool, 'a, A>(
     key: answers::Key<'a>,
     answers: &mut answers::Answers<'a, '_, State<'pool, A>>,

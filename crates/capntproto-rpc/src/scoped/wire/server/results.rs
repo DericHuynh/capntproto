@@ -54,7 +54,7 @@ enum CompletedPayload {
     Shared(Rc<connection::FrozenReturn<capnp::message::HeapAllocator>>),
     General(Rc<Payload>),
 }
-/// A checked result envelope available for direct publication. Only segmented
+/// A locally built result envelope available for direct publication. Only segmented
 /// replies need an independent owner retained by asynchronous output.
 #[derive(Clone, Copy)]
 pub enum PlainPayload<'a> {
@@ -514,7 +514,7 @@ impl Results {
                     // Whole-envelope copies need no payload traversal for
                     // sizing. Retain the general codec's two staging/tag
                     // words as well: transferred results can use that path.
-                    // The driver still validates before publication.
+                    // Publication still enforces the driver's writer policy.
                     return bytes.checked_add(16).ok_or_else(overflow);
                 }
             }

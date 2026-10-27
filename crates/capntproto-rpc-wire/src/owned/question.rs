@@ -49,7 +49,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
     }
     /// Internal publication of a template already checked by the invocation
     /// encoder and patched with this reservation's ID. The caller must preserve
-    /// its Caller destination, empty descriptor table and reader limits. No
+    /// its Caller destination, empty descriptor table and writer policy. No
     /// public API accepts a raw frame through this path.
     #[inline(always)]
     pub(super) fn publish_template(

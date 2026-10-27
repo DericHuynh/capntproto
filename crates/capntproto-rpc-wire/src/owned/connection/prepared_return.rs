@@ -63,8 +63,8 @@ impl<A: capnp::message::Allocator> PreparedReturn<A> {
     pub fn results(&mut self) -> capnp::any_pointer::Builder<'_> {
         self.message.get()
     }
-    /// End application mutation. Layout and successful validation belong to this
-    /// immutable owner and survive output backpressure and publication retries.
+    /// End application mutation and retain its framing layout. Checked writers
+    /// cache successful validation here across backpressure and publication retries.
     pub fn freeze(self) -> FrozenReturn<A> {
         use capnp::message::ReaderSegments;
         let message = self.message.message();
@@ -560,8 +560,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Retain a hosted result envelope with a separately owned capability table.
     /// This is local answer storage, not publishable wire output: send_answer
     /// still stages grants and constructs the descriptor table transactionally.
-    /// Every index is validated before retaining any supplied client, and an
-    /// error returns all temporary frame and graph ownership.
+    /// Checked writers validate payload indices before retaining supplied clients.
+    /// Both writer policies check capability capacity and preserve exact client
+    /// ownership; an error returns all temporary frame and graph ownership.
     #[allow(clippy::too_many_arguments)]
     pub fn local_answer_prepared_with_capabilities<'c, B: capnp::message::Allocator>(
         &mut self,

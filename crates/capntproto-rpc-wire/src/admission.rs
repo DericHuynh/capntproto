@@ -131,8 +131,8 @@ pub(crate) fn check_question(
                 return Err(Error::Unsupported);
             }
             c.get_target()?.which().map_err(|_| Error::Unsupported)?;
-            // Granting admission composes this lifecycle check with publication,
-            // which validates the entire content against its descriptor table.
+            // Granting admission composes this lifecycle check with publication's
+            // descriptor/grant checks and its selected payload policy.
             if !allow_grants {
                 payload
                     .get_content()

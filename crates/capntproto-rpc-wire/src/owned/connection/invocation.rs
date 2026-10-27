@@ -629,10 +629,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     options,
                 )
                 .map_err(Error::Input)?;
-            // The source was fully validated before this unforgeable private
-            // template was cached. Copying changes only this reservation's ID,
-            // the resolved imported target and advisory bits. Stricter or
-            // different reader limits still require full publication checks.
+            // This private template retains its checked layout and source
+            // writer policy. Copying changes only this reservation's ID, the
+            // resolved imported target and advisory bits. Checked publication
+            // under different reader limits still requires full validation.
             let source_options = invocation.frame.options;
             let question = if options.traversal_limit_in_words
                 == source_options.traversal_limit_in_words
