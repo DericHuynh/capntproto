@@ -36,6 +36,9 @@ pub mod promise;
 pub mod provision;
 pub mod question;
 pub mod questions;
+#[doc(hidden)]
+#[cfg(all(target_has_atomic = "ptr", target_has_atomic = "8"))]
+pub mod ready_queue;
 pub mod references;
 #[doc(hidden)]
 pub mod storage;

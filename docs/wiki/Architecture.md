@@ -18,6 +18,17 @@ it also prepares admitted parameters for existing owned server hooks without
 replacing their result contexts. The default network runtime has not switched
 to that bridge.
 
+Legacy and portable now share the bounded atomic notification FIFO in
+`capntproto-rpc-engine::ready_queue`. Its storage and transitions require only
+`core`; callers own the consumer cursor, wakeups and task generations. Hosted
+drivers add their executor wakers around the same implementation. Portable keeps
+its exact generation checks, and larger hosted operation sets retain the bounded
+overflow mailbox. Ordinary wakeups no longer lock that mailbox. This ports the
+legacy algorithm into the allocator-free engine while preserving the existing
+portable protocol and storage contracts. Owned `ClientHook` and server-future
+adapters still require allocation; their lifetimes must be preserved as further
+legacy paths move into caller-backed engine components.
+
 ## Legacy scheduling, framing and deep copying
 
 The active hosted driver uses Tokio. Its task set distinguishes ordinary ready
