@@ -262,6 +262,7 @@ fn nonempty_storage_rejection_and_terminal_unwind_preserve_ownership() {
     extern crate std;
     let drops = Cell::new(0);
     let mut slots = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
         generation: 9,
