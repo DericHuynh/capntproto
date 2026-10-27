@@ -257,6 +257,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     fn retire_entry(&mut self, index: usize) {
         self.ready.remove(index);
         let entry = self.entries[index].take().expect("live call owner");
+        debug_assert!(
+            entry.wire.projections.is_empty(),
+            "direct routes retire with their owner"
+        );
+        if let Some(pipeline) = &entry.wire.pipeline {
+            pipeline.operation.set(None);
+        }
         self.unpublished -= usize::from(entry.unpublished);
         self.published -= usize::from(entry.published);
         self.live -= 1;
@@ -274,6 +281,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             _ => None,
         };
         if let Some(pipeline) = &entry.wire.pipeline {
+            pipeline.operation.set(Some(index));
             pipeline.bind_owner(entry.waker.clone());
         }
         let canceled = entry.wire.call.as_mut().is_some_and(|call| {
@@ -330,6 +338,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         if question != Some(key) {
             return Ok(());
         }
+        let entry = self.entries[index]
+            .as_mut()
+            .expect("validated pipeline owner");
+        entry
+            .wire
+            .projections
+            .materialize(hooks, &mut driver.capabilities())?;
         // A used path retains its original ordering route through its fence.
         if let Some(state) = &entry.wire.pipeline {
             if !state.used.get() {
@@ -1013,6 +1028,22 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         }));
         Ok(Some(Progress::Advanced))
     }
+    fn direct_target<'a>(
+        entries: &'a [Option<Entry<'p, 'id, I, C, H>>],
+        endpoint: &Rc<Endpoint>,
+    ) -> Option<&'a Client<'id>> {
+        let parent = endpoint.direct_parent.borrow().upgrade()?;
+        let entry = entries.get(parent.operation.get()?)?.as_ref()?;
+        if !entry
+            .wire
+            .pipeline
+            .as_ref()
+            .is_some_and(|pipeline| Rc::ptr_eq(pipeline, &parent))
+        {
+            return None;
+        }
+        entry.wire.projections.target(endpoint)
+    }
     #[allow(clippy::too_many_arguments)]
     #[inline(never)]
     fn admit<A, P: Copy + Eq>(
@@ -1084,7 +1115,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             self.pending.take().unwrap().complete_boxed(Err(error));
             return Ok(Some(Progress::Advanced));
         }
-        if call.endpoint.needs_binding()
+        if (call.endpoint.needs_binding() && call.endpoint.direct.get().is_none())
             || call.params.capability_table().is_some_and(|caps| {
                 caps.iter()
                     .flatten()
@@ -1110,7 +1141,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.admission_parked = false;
         self.admission_wait = None;
         let call = self.pending.as_ref().expect("ready admission");
-        if call.endpoint.index.get().is_none() {
+        let direct_target = Self::direct_target(&self.entries, &call.endpoint);
+        if call.endpoint.index.get().is_none() && direct_target.is_none() {
             let forwarded = call
                 .endpoint
                 .introduced
@@ -1123,7 +1155,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             };
             hooks.bind_projection(&mut driver.capabilities(), cap, call.endpoint.clone())?;
         }
-        let target = hooks.target(call)?;
+        let target = match direct_target {
+            Some(target) => target,
+            None => hooks.target(call)?,
+        };
         if !call.hints.only_promise_pipeline
             && call.third_party.is_none()
             && call.endpoint.remote.get()
@@ -1231,6 +1266,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         call: Some(call),
                         route: CallRoute::Remote(question),
                         pipeline,
+                        projections: Default::default(),
                         local_results: None,
                     },
                     local: None,
@@ -1272,6 +1308,32 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         )?;
                 }
                 return Ok(Some(progress));
+            }
+        }
+        let parent = self
+            .pending
+            .as_ref()
+            .and_then(|call| call.endpoint.direct_parent.borrow().upgrade());
+        if let Some(parent) = parent {
+            if let Some(operation) = parent.operation.get() {
+                if let Some(entry) = self
+                    .entries
+                    .get_mut(operation)
+                    .and_then(Option::as_mut)
+                    .filter(|entry| {
+                        entry
+                            .wire
+                            .pipeline
+                            .as_ref()
+                            .is_some_and(|pipeline| Rc::ptr_eq(pipeline, &parent))
+                    })
+                {
+                    entry
+                        .wire
+                        .projections
+                        .materialize(hooks, &mut driver.capabilities())?;
+                    refresh(hooks, driver);
+                }
             }
         }
         self.admit_queued(index, hooks, driver, messages, options, import)
@@ -1362,6 +1424,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.invocations.terminate(driver, messages);
         for mut entry in self.entries.into_iter().flatten() {
             entry.wire.release_tail(driver, messages);
+            entry.wire.projections.release(&mut driver.capabilities());
             entry.wire.cancel_with_error(error.clone());
             if let Some(local) = entry.local {
                 drop(local.stage);

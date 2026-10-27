@@ -17,6 +17,7 @@ use capntproto_rpc_wire::{
 mod calls;
 pub mod coordinator;
 pub mod foreign;
+mod projections;
 pub(crate) mod ready;
 pub mod resources;
 pub mod server;
@@ -442,6 +443,7 @@ impl<'id> ClientHooks<'id> {
                 }
             },
             pipeline,
+            projections: Default::default(),
             local_results: None,
         })
     }
@@ -459,6 +461,8 @@ impl<'id> ClientHooks<'id> {
             Rc::new(PipelineState {
                 used: Cell::new(false),
                 owner_wake: RefCell::new(None),
+                operation: Cell::new(None),
+                materialize: Cell::new(false),
                 adopted: RefCell::default(),
                 cached: RefCell::default(),
                 _credit: Cell::new(call.credit.clone()),
@@ -507,6 +511,7 @@ pub struct WireCall<'pool, 'id, I, const CAPS: usize> {
     call: Option<Box<Call>>,
     route: CallRoute<'pool, 'id, I, CAPS>,
     pipeline: Option<Rc<PipelineState>>,
+    projections: projections::DirectProjections<'id>,
     // Local result publication can precede final completion and survives the
     // transition out of Tracked. It is an application context, not a wire route.
     local_results: Option<server::Results>,
@@ -612,6 +617,11 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         let Some(pipeline) = &self.pipeline else {
             return Ok(());
         };
+        if pipeline.materialize.replace(false) {
+            self.projections
+                .materialize(hooks, &mut driver.capabilities())?;
+            refresh(hooks, driver);
+        }
         let budget = pipeline.waiting.borrow().len();
         for _ in 0..budget {
             let Some(projection) = pipeline.waiting.borrow_mut().pop_front() else {
@@ -675,6 +685,26 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             };
             match client {
                 ProjectionTarget::Direct(endpoint) => {
+                    if matches!(self.route, CallRoute::Remote(_))
+                        && pipeline.operation.get().is_some()
+                    {
+                        match self.projections.insert(endpoint.clone(), cap) {
+                            Ok(index) => {
+                                *endpoint.direct_parent.borrow_mut() = Rc::downgrade(pipeline);
+                                endpoint.direct.set(Some(index));
+                                pipeline
+                                    .remember(projection.path, &Hook(endpoint.clone(), None))?;
+                                endpoint.notify_binding();
+                            }
+                            Err(cap) => {
+                                driver.capabilities().release(cap);
+                                endpoint.forward_projection(Err(Error::overloaded(
+                                    "direct pipeline storage exhausted".into(),
+                                )));
+                            }
+                        }
+                        continue;
+                    }
                     let result =
                         hooks.bind_projection(&mut driver.capabilities(), cap, endpoint.clone());
                     refresh(hooks, driver);
@@ -852,6 +882,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> capnp::Result<()> {
+        self.projections.release(&mut driver.capabilities());
         match self.route {
             CallRoute::Queued(task) => {
                 if !driver.cancel_invocation(task, messages) {
@@ -943,6 +974,8 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         ),
         local_hook: impl FnMut(&S) -> Option<Box<dyn ClientHook>>,
     ) -> capnp::Result<()> {
+        self.projections
+            .materialize(hooks, &mut driver.capabilities())?;
         // The admitted reader already owns the immutable, capability-free
         // payload. Transfer it straight to the result sink; preserve the
         // same credit, metadata refresh and wire cleanup as general completion.
@@ -1253,6 +1286,8 @@ impl ProjectionCache {
 pub(crate) struct PipelineState {
     used: Cell<bool>,
     owner_wake: RefCell<Option<Waker>>,
+    operation: Cell<Option<usize>>,
+    materialize: Cell<bool>,
     adopted: RefCell<Option<Box<dyn PipelineHook>>>,
     cached: RefCell<ProjectionCache>,
     _credit: Cell<Option<Rc<admission::Credit>>>,
@@ -1302,6 +1337,8 @@ impl PipelineState {
         Rc::new(Self {
             used: Cell::new(false),
             owner_wake: RefCell::new(None),
+            operation: Cell::new(None),
+            materialize: Cell::new(false),
             adopted: RefCell::default(),
             cached: RefCell::default(),
             // Admission owns the credit until the wire call takes this state.

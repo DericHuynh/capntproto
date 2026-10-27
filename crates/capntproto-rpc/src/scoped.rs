@@ -164,6 +164,8 @@ struct Endpoint {
     inbox: Weak<Inbox>,
     index: Cell<Option<usize>>,
     binding_wakes: RefCell<Vec<Waker>>,
+    direct: Cell<Option<usize>>,
+    direct_parent: RefCell<Weak<wire::PipelineState>>,
     settled: Cell<bool>,
     metadata_generation: Cell<u64>,
     metadata_changes: std::cell::OnceCell<Rc<MetadataChanges>>,
@@ -181,6 +183,8 @@ impl Endpoint {
             inbox,
             index: Cell::new(None),
             binding_wakes: RefCell::default(),
+            direct: Cell::new(None),
+            direct_parent: RefCell::default(),
             settled: Cell::new(false),
             metadata_generation: Cell::new(0),
             metadata_changes: std::cell::OnceCell::new(),
@@ -194,6 +198,15 @@ impl Endpoint {
         self.index.get().is_none()
             && self.introduced.borrow().is_none()
             && self.failure.borrow().is_none()
+    }
+    fn request_materialization(&self) {
+        if self.direct.get().is_some() {
+            let parent = self.direct_parent.borrow().upgrade();
+            if let Some(parent) = parent {
+                parent.materialize.set(true);
+                parent.notify_owner();
+            }
+        }
     }
     fn binding_pending(&self, cx: &mut Context<'_>) -> bool {
         if !self.needs_binding() {
@@ -580,6 +593,8 @@ impl<'id> ClientHooks<'id> {
                 inbox: Rc::downgrade(&self.inbox),
                 index: Cell::new(None),
                 binding_wakes: RefCell::default(),
+                direct: Cell::new(None),
+                direct_parent: RefCell::default(),
                 settled: Cell::new(!pending),
                 metadata_generation: Cell::new(0),
                 metadata_changes: std::cell::OnceCell::new(),
@@ -1019,14 +1034,24 @@ impl<'id> ClientHooks<'id> {
         let hook = wire::direct_response_hook(hook)
             .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()));
         hook.is_some_and(|hook| {
-            hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.needs_binding()
+            if hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.needs_binding() {
+                hook.0.request_materialization();
+                true
+            } else {
+                false
+            }
         })
     }
     fn projection_pending(&self, hook: &dyn ClientHook, cx: &mut Context<'_>) -> bool {
         let hook = wire::direct_response_hook(hook)
             .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()));
         hook.is_some_and(|hook| {
-            hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.binding_pending(cx)
+            if hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) {
+                hook.0.request_materialization();
+                hook.0.binding_pending(cx)
+            } else {
+                false
+            }
         })
     }
     fn bind_projection(
