@@ -1,0 +1,93 @@
+name: Qualify portable CPU and buffered-frame optimizations
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-shared-rpc-core
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+jobs:
+  parity:
+    env:
+      CC: clang
+      CXX: clang++
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 8f4ec2154101ab2b3ba285b17bd2435bb14c10da
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler libssl-dev
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          git submodule update --init --depth 1 vendor/capnproto
+          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$RUNNER_TEMP/tla2tools.jar"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: dedicated-benchmarks
+          cache-on-failure: true
+          workspaces: |
+            . -> target
+            benchmarks/rpc -> target
+      - name: Final hosted regression batch and lint
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: |
+          rm -rf target/cpp-reference
+          cargo test --locked -p capntproto-rpc --lib
+          cargo test --locked -p capntproto --test rpc --test buffered_input --test cancellation --test secure_rpc --test flow_control --test result_pipeline --test rpc_admission --test answer_adoption
+          cargo clippy --locked -p capntproto-rpc -p capntproto-rpc-wire -p capntproto-rpc-engine --all-targets -- -D warnings
+          cargo fmt --all -- --check
+  miri:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 8f4ec2154101ab2b3ba285b17bd2435bb14c10da
+      - name: Install memory interpreter
+        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: shared-notification-miri
+          cache-on-failure: true
+      - name: Interpret slot reuse, payload certificates and deferred frame validation
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance
+        run: |
+          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-engine --lib free_slots::
+          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --features alloc --lib promised_payload_certificate
+          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --no-default-features --lib plain_promised_call
+          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib buffered_frame_transfer_preserves_reader_policy
+  verus:
+    if: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 8f4ec2154101ab2b3ba285b17bd2435bb14c10da
+      - run: git submodule update --init vendor/verus-tla
+      - uses: ./.github/actions/dev-setup
+        with:
+          cache-key: verus-0.2026.10.04.426d8b0
+      - run: cargo run --locked -p capntproto-dev -- verus install
+      - run: cargo run --locked -p capntproto-dev -- verus verify --output target/verification/verus
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: portable-direct-verus
+          path: target/verification/verus/
