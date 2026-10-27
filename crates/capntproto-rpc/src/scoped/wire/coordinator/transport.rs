@@ -29,15 +29,6 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
     fn has_buffered_next_frame(&mut self) -> bool {
         false
     }
-    /// Try to prepare the next complete frame before ending an input batch.
-    /// Pending must retain partial input and register a wake; it does not stop
-    /// already queued output from flushing. A prepared frame and any error
-    /// must remain available to `poll_frame_size`, even if the coordinator
-    /// yields before consuming them. Do not advance past the current frame or
-    /// transfer its ancillary resources here.
-    fn poll_buffered_next_frame(&mut self, _: &mut Context<'_>) -> Poll<bool> {
-        Poll::Ready(self.has_buffered_next_frame())
-    }
     /// Borrow an untouched complete frame after poll_frame_size, without IO.
     /// A successful direct admission calls consume_buffered_frame; rejection
     /// leaves this frame and its ancillary resources available for normal input.

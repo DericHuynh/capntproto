@@ -279,26 +279,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
-            // A ready frame may begin in the next transport read, including
-            // another TLS record. Drain it within the same bounded input turn
-            // before flushing; an exhausted read still flushes pending output.
-            let can_batch_input = pump.frames + 1 < self.input_budget()
-                && messages.can_reserve(
+            // Buffered input can continue within the ordinary frame budget.
+            // Output publication has no separate batching policy here.
+            let buffered_input = reader.has_buffered_next_frame();
+            let end_input_turn = !buffered_input
+                || pump.frames + 1 >= self.input_budget()
+                || !messages.can_reserve(
                     self.options
                         .input_bytes
                         .get()
                         .max(self.options.output_bytes.get()),
                 )
-                && self.policy.poll_ready(cx).is_ready();
-            let buffered = if reader.has_buffered_next_frame() {
-                Poll::Ready(true)
-            } else if can_batch_input {
-                reader.poll_buffered_next_frame(cx)
-            } else {
-                Poll::Ready(false)
-            };
-            let buffered_input = buffered == Poll::Ready(true);
-            let end_input_turn = !buffered_input || !can_batch_input;
+                || self.policy.poll_ready(cx).is_pending();
             match self.poll_io_work_turn(
                 messages,
                 queue,
@@ -314,11 +306,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Ok(true) if buffered_input => (),
                 Ok(true) => return Poll::Pending,
                 Ok(false) => (),
-            }
-            // The probe already registered this turn's read wake. Do not
-            // repeat a pending transport read after flushing its output.
-            if buffered.is_pending() {
-                return Poll::Pending;
             }
             std::task::ready!(self.policy.poll_ready(cx));
             let size = std::task::ready!(reader.poll_frame_size(cx)).map_err(|error| {
