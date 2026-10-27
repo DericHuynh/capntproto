@@ -1,0 +1,47 @@
+name: Qualify shared legacy and portable notification implementation
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-shared-rpc-core
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 44a1dcf297984c36b474ab7c4b57edd57941046d
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler libssl-dev
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          git submodule update --init --depth 1 vendor/capnproto
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: dedicated-benchmarks
+          cache-on-failure: true
+          workspaces: |
+            . -> target
+            benchmarks/rpc -> target
+      - name: Test both hosted drivers and shared notification races
+        run: cargo test --locked -p capntproto-rpc --lib -- --nocapture
+      - name: Test mixed legacy and portable lifecycle and pipeline paths
+        run: cargo test --locked -p capntproto --test answer_adoption --test scoped_vat --test scoped_unix --test rpc_reply --test rpc_tables --test rpc_admission --test streaming --test revocable_streaming --test result_pipeline -- --skip tlc
+      - name: Check portable profiles and diagnostics
+        run: |
+          cargo check --locked -p capntproto-rpc --no-default-features
+          cargo check --locked -p capntproto-rpc --no-default-features --features alloc
+          cargo clippy --locked -p capntproto-rpc --all-targets -- -D warnings
+          cargo fmt --all -- --check
