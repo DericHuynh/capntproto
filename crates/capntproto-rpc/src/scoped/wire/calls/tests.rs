@@ -2259,6 +2259,98 @@ fn one_canceled_remote_operation_does_not_poll_parked_siblings() {
 }
 
 #[test]
+fn direct_projection_credit_is_bounded_and_terminal_failure_reaches_retained_hooks() {
+    with_peer(|mut driver, messages| {
+        let mut hooks = ClientHooks::new(2, 8);
+        let client = remote(&mut driver, &mut hooks);
+        let parent = request(&client, 1).send();
+        let first = parent.pipeline.hook.get_pipelined_cap(&[]);
+        let second = parent
+            .pipeline
+            .hook
+            .get_pipelined_cap(&[PipelineOp::GetPointerField(0)]);
+        let endpoint = direct_response_hook(&*first).unwrap().0.clone();
+        let inbox = hooks.inbox.clone();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+        assert!(endpoint.direct.get().is_some());
+        assert!(endpoint.index.get().is_none());
+        assert_eq!(inbox.direct_clients.get(), 1);
+        assert_eq!(
+            second.get_failure().unwrap().kind,
+            capnp::ErrorKind::Overloaded
+        );
+        teardown(calls, hooks, driver, messages, &mut queue);
+        assert_eq!(inbox.direct_clients.get(), 0);
+        assert!(endpoint.direct.get().is_none());
+        assert_eq!(first.get_failure().unwrap().extra, "wire call canceled");
+        drop((first, second, parent, client));
+    });
+}
+
+#[test]
+fn promised_answer_calls_publish_without_hosted_endpoint_materialization() {
+    with_peer(|mut driver, messages| {
+        driver.use_owned_output_queues(true);
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let parent = request(&client, 1).send();
+        let projected = parent.pipeline.hook.get_pipelined_cap(&[]);
+        let endpoint = direct_response_hook(&*projected).unwrap().0.clone();
+        let child = capability::Client::new(projected);
+        let child_response = request(&child, 2).send();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 8).unwrap();
+        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+        assert_eq!(queue.len(), 2, "parent and child share their output batch");
+        assert!(endpoint.direct.get().is_some());
+        assert!(
+            endpoint.index.get().is_none(),
+            "sending needs no hosted binding"
+        );
+        assert_eq!(hooks.entries.iter().flatten().count(), 1);
+        assert_eq!(
+            hooks.inbox.direct_clients.get(),
+            1,
+            "the direct route retains its endpoint credit"
+        );
+        let bytes = drain(&mut queue, messages);
+        let mut source = bytes.as_slice();
+        let parent_message =
+            capnp::serialize::read_message(&mut source, Default::default()).unwrap();
+        let rpc_capnp::message::Call(parent_call) = parent_message
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("parent Call")
+        };
+        let parent_question = parent_call.unwrap().get_question_id();
+        let child_message =
+            capnp::serialize::read_message(&mut source, Default::default()).unwrap();
+        let rpc_capnp::message::Call(child_call) = child_message
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("child Call")
+        };
+        let rpc_capnp::message_target::PromisedAnswer(target) =
+            child_call.unwrap().get_target().unwrap().which().unwrap()
+        else {
+            panic!("direct promised-answer target")
+        };
+        assert_eq!(target.unwrap().get_question_id(), parent_question);
+        assert!(source.is_empty());
+        drop((parent, child, child_response, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn direct_projection_is_memoized_before_binding_and_imports_its_question_route() {
     with_peer(|mut driver, messages| {
         driver.use_owned_output_queues(true);

@@ -31,9 +31,13 @@ struct Entry<'wait, 'pool, 'id, I, const CAPS: usize> {
 }
 pub struct InvocationSlot<'wait, 'pool, 'id, I, const CAPS: usize> {
     entry: Option<Entry<'wait, 'pool, 'id, I, CAPS>>,
+    free: capntproto_rpc_engine::free_slots::Link,
 }
 impl<I, const CAPS: usize> InvocationSlot<'_, '_, '_, I, CAPS> {
-    pub const EMPTY: Self = Self { entry: None };
+    pub const EMPTY: Self = Self {
+        entry: None,
+        free: capntproto_rpc_engine::free_slots::Link::EMPTY,
+    };
 }
 #[must_use = "retry enqueue or cancel the rejected sender"]
 pub struct RejectedInvocation<'wait, 'pool, 'id, I, const CAPS: usize> {
@@ -110,6 +114,7 @@ pub struct Invocations<'s, 'wait, 'pool, 'id, I, const CAPS: usize> {
     slots: SlotStorage<'s, InvocationSlot<'wait, 'pool, 'id, I, CAPS>>,
     live: usize,
     queued: usize,
+    free: capntproto_rpc_engine::free_slots::FreeSlots,
 }
 impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 'id, I, CAPS> {
     pub fn new(slots: &'s mut [InvocationSlot<'wait, 'pool, 'id, I, CAPS>]) -> Result<Self, Error> {
@@ -120,6 +125,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             slots: SlotStorage::borrowed(slots),
             live: 0,
             queued: 0,
+            free: capntproto_rpc_engine::free_slots::FreeSlots::new(),
         })
     }
     /// Grow completion bindings independently of dispatch. Reply slots and the
@@ -129,6 +135,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         Ok(Self {
             live: 0,
             queued: 0,
+            free: capntproto_rpc_engine::free_slots::FreeSlots::new(),
             slots: SlotStorage::growing(initial, maximum, || InvocationSlot::EMPTY)
                 .ok_or(Error::Input(super::super::Error::Capacity))?,
         })
@@ -284,10 +291,10 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         ) -> Result<InvocationKey<'id>, Error>,
     ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
-        let Some(index) = self
-            .slots
-            .vacant(|_, slot| slot.entry.is_none(), || InvocationSlot::EMPTY)
-        else {
+        if self.free.peek(&self.slots, |slot| &slot.free).is_none() {
+            self.slots.grow(1, || InvocationSlot::EMPTY);
+        }
+        let Some(index) = self.free.peek(&self.slots, |slot| &slot.free) else {
             return Err(RejectedInvocation {
                 error: Error::Busy,
                 sender,
@@ -302,6 +309,8 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             .get_mut(task)
             .expect("new operation binding")
             .binding = Some(index);
+        let reserved = self.free.take(&mut self.slots, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, index);
         self.slots[index].entry = Some(Entry {
             task,
             delivery: sender.track(),
@@ -679,6 +688,8 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                         self.live -= 1;
                         self.queued -= usize::from(matches!(entry.stage, Stage::Queued));
                         driver.operations.unbind(entry.task);
+                        self.free
+                            .release(index, &mut self.slots, |slot| &mut slot.free);
                     }
                     return Ok(CallProgress::Canceled);
                 }
@@ -752,6 +763,8 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                         self.live -= 1;
                         self.queued -= usize::from(matches!(entry.stage, Stage::Queued));
                         driver.operations.unbind(entry.task);
+                        self.free
+                            .release(index, &mut self.slots, |slot| &mut slot.free);
                     }
                     return Ok(CallProgress::Canceled);
                 }
@@ -766,7 +779,15 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                 // take_output already waits for remote pipeline observers.
                 // Deliver directly instead of moving the affine response into
                 // Completed and immediately extracting it again below.
-                return Self::deliver_result(slot, &mut self.live, driver, messages, result);
+                return Self::deliver_result(
+                    &mut self.slots,
+                    index,
+                    &mut self.live,
+                    &mut self.free,
+                    driver,
+                    messages,
+                    result,
+                );
             }
             Stage::Completed(result) => {
                 let operation = driver.operations.get(entry.task)?;
@@ -820,6 +841,8 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
                     self.live -= 1;
                     self.queued -= usize::from(matches!(entry.stage, Stage::Queued));
                     driver.operations.unbind(entry.task);
+                    self.free
+                        .release(index, &mut self.slots, |slot| &mut slot.free);
                 }
                 return Ok(progress);
             }
@@ -829,8 +852,10 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
             unreachable!()
         };
         Self::deliver_result(
-            slot,
+            &mut self.slots,
+            index,
             &mut self.live,
+            &mut self.free,
             driver,
             messages,
             result.map(CallOutput::Local),
@@ -839,12 +864,15 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
 
     #[inline]
     fn deliver_result<A, P: Copy + Eq, S, const PATH: usize>(
-        slot: &mut InvocationSlot<'wait, 'pool, 'id, I, CAPS>,
+        slots: &mut SlotStorage<'_, InvocationSlot<'wait, 'pool, 'id, I, CAPS>>,
+        index: usize,
         live: &mut usize,
+        free: &mut capntproto_rpc_engine::free_slots::FreeSlots,
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         result: CallResult<'pool, 'id, I, CAPS>,
     ) -> Result<CallProgress, Error> {
+        let slot = &mut slots[index];
         let entry = slot.entry.as_mut().expect("live invocation completion");
         debug_assert!(matches!(entry.stage, Stage::Sent(_) | Stage::Delivered));
         entry.stage = Stage::Delivered;
@@ -855,6 +883,7 @@ impl<'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'_, 'wait, 'pool, 'id,
             if let Some(entry) = slot.entry.take() {
                 *live -= 1;
                 driver.operations.unbind(entry.task);
+                free.release(index, slots, |slot| &mut slot.free);
             }
             Ok(CallProgress::Reclaimed)
         } else {

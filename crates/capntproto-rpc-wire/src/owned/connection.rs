@@ -92,6 +92,7 @@ impl<'id, I, const CAPS: usize> Exchange<'_, 'id, I, CAPS> {
 }
 pub struct ExchangeSlot<'pool, 'id, I, const CAPS: usize> {
     exchange: Option<Exchange<'pool, 'id, I, CAPS>>,
+    free: capntproto_rpc_engine::free_slots::Link,
     authorized: bool,
     completion_owner: Option<core::num::NonZeroUsize>,
     outgoing_work: work_queue::Link,
@@ -106,6 +107,7 @@ pub struct ExchangeSlot<'pool, 'id, I, const CAPS: usize> {
 impl<'pool, 'id, I, const CAPS: usize> ExchangeSlot<'pool, 'id, I, CAPS> {
     pub const EMPTY: Self = Self {
         exchange: None,
+        free: capntproto_rpc_engine::free_slots::Link::EMPTY,
         authorized: false,
         completion_owner: None,
         outgoing_work: work_queue::Link::EMPTY,
@@ -117,6 +119,16 @@ impl<'pool, 'id, I, const CAPS: usize> ExchangeSlot<'pool, 'id, I, CAPS> {
         retain_handoff_routes: false,
         handoff: None,
     };
+
+    fn vacant(
+        slots: &mut SlotStorage<'_, Self>,
+        free: &capntproto_rpc_engine::free_slots::FreeSlots,
+    ) -> Option<usize> {
+        if free.peek(slots, |slot| &slot.free).is_none() {
+            slots.grow(1, || Self::EMPTY);
+        }
+        free.peek(slots, |slot| &slot.free)
+    }
 
     /// Follow the question's explicit local owner binding. A wire ID neither
     /// selects storage directly nor grows it. Verify the exact generation at
@@ -202,6 +214,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     exported: binding::exporting::Bindings<'s, 'id, 'id>,
     outgoing: outgoing::Bindings<'s, 'id, P, PATH>,
     exchanges: SlotStorage<'s, ExchangeSlot<'pool, 'id, I, CAPS>>,
+    free_exchanges: capntproto_rpc_engine::free_slots::FreeSlots,
     call: Option<Request<'pool, 'id, I, CAPS, PATH>>,
     resolution: Option<Resolution<'pool, 'id, 'id, 'id, I>>,
     loopbacks: super::loopback::Bindings<'s, 'id>,
@@ -539,6 +552,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             exported,
             outgoing,
             exchanges: storage.exchanges,
+            free_exchanges: capntproto_rpc_engine::free_slots::FreeSlots::new(),
             call: None,
             resolution: None,
             loopbacks,
@@ -563,9 +577,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         &mut self,
         question: Question<'pool, 'id>,
     ) -> Result<questions::Key<'id>, Question<'pool, 'id>> {
-        let Some(slot_index) = self
-            .exchanges
-            .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
+        let Some(slot_index) = ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges)
         else {
             return Err(question);
         };
@@ -575,6 +587,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         let slot = &mut self.exchanges[slot_index];
         slot.completion_owner = None;
+        let reserved = self
+            .free_exchanges
+            .take(&mut self.exchanges, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, slot_index);
+        let slot = &mut self.exchanges[slot_index];
         slot.exchange = Some(Exchange::Pending(question));
         slot.authorized = true;
         slot.canceled = false;
@@ -660,10 +677,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         ) -> capnp::Result<()>,
     ) -> Result<questions::Key<'id>, Error> {
         self.check_live()?;
-        let slot_index = self
-            .exchanges
-            .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
-            .ok_or(Error::Busy)?;
+        let slot_index =
+            ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges).ok_or(Error::Busy)?;
         let slot = &mut self.exchanges[slot_index];
         let output = queue
             .reserve()
@@ -686,6 +701,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .bind_owner(question.key(), slot_index)
             .expect("new exchange owner");
         slot.completion_owner = None;
+        let reserved = self
+            .free_exchanges
+            .take(&mut self.exchanges, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, slot_index);
+        let slot = &mut self.exchanges[slot_index];
         slot.exchange = Some(Exchange::Pending(question));
         slot.authorized = true;
         slot.canceled = false;
@@ -1624,9 +1644,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         producer: None,
                     });
                 }
-                let Some(slot_index) = self
-                    .exchanges
-                    .vacant(|_, slot| slot.exchange.is_none(), || ExchangeSlot::EMPTY)
+                let Some(slot_index) =
+                    ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges)
                 else {
                     return Err(Rejected {
                         error: Error::Busy,
@@ -1642,6 +1661,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                             .bind_owner(question.key(), slot_index)
                             .expect("new exchange owner");
                         slot.completion_owner = None;
+                        let reserved = self
+                            .free_exchanges
+                            .take(&mut self.exchanges, |slot| &mut slot.free);
+                        debug_assert_eq!(reserved, slot_index);
+                        let slot = &mut self.exchanges[slot_index];
                         slot.exchange = Some(Exchange::Pending(question));
                         slot.authorized = false;
                         slot.canceled = false;

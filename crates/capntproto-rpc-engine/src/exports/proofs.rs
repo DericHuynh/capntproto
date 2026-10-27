@@ -10,6 +10,7 @@ fn exported_resolution_requires_output_acceptance() {
     let mut refs = ExportRefs::new();
     refs.retain(count - 1).unwrap();
     let mut slots = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
         generation: 1,
@@ -24,6 +25,11 @@ fn exported_resolution_requires_output_acceptance() {
         }),
     }];
     let mut exports = Exports {
+        free: crate::free_slots::FreeSlots::from_storage(
+            &mut slots,
+            |slot| slot.entry.is_none() && slot.generation != u64::MAX,
+            |slot| &mut slot.free,
+        ),
         unavailable: slots
             .iter()
             .filter(|s| s.entry.is_some() || s.generation == u64::MAX)
@@ -87,6 +93,11 @@ fn descriptor_multiset_matches_reservations() {
         }
     }
     let mut exports = Exports {
+        free: crate::free_slots::FreeSlots::from_storage(
+            &mut slots,
+            |slot| slot.entry.is_none() && slot.generation != u64::MAX,
+            |slot| &mut slot.free,
+        ),
         unavailable: slots
             .iter()
             .filter(|s| s.entry.is_some() || s.generation == u64::MAX)
@@ -152,6 +163,7 @@ fn descriptor_count_admission_never_wraps() {
     kani::assume(count <= reserved);
     let rejected: bool = kani::any();
     let slots = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
         generation: 1,
@@ -191,6 +203,7 @@ fn export_publication_and_lease_lifecycle() {
     let generation: u64 = kani::any();
     let accept: bool = kani::any();
     let mut slots = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
         generation,
@@ -270,6 +283,7 @@ fn export_reservations_preserve_published_counts() {
         State::Live(refs)
     };
     let mut slots = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
         generation: 1,
@@ -284,6 +298,11 @@ fn export_reservations_preserve_published_counts() {
         }),
     }];
     let mut exports = Exports {
+        free: crate::free_slots::FreeSlots::from_storage(
+            &mut slots,
+            |slot| slot.entry.is_none() && slot.generation != u64::MAX,
+            |slot| &mut slot.free,
+        ),
         unavailable: slots
             .iter()
             .filter(|s| s.entry.is_some() || s.generation == u64::MAX)

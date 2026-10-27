@@ -225,6 +225,21 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
                 self.imports.binding_revision = self.imports.binding_revision.saturating_add(1);
                 self.imports.unlink_release(plan.index);
             }
+            if self.imports.slots[plan.index].entry.is_none() {
+                loop {
+                    let index = self
+                        .imports
+                        .free
+                        .take(&mut self.imports.slots, |slot| &mut slot.free);
+                    if self.imports.slots[index].generation != u64::MAX {
+                        assert_eq!(
+                            index, plan.index,
+                            "preflighted lowest available import slot"
+                        );
+                        break;
+                    }
+                }
+            }
             let slot = &mut self.imports.slots[plan.index];
             let wire = receipt.wire.take().expect("planned wire identity");
             if let Some(entry) = slot.entry.as_mut() {
@@ -238,6 +253,8 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
                     .receive(1)
                     .expect("preflighted remote references");
             } else {
+                self.imports.displaced +=
+                    usize::from(usize::try_from(wire.to_wire()).ok() != Some(plan.index));
                 let mut remote = ImportRefs::new();
                 remote.receive(1).unwrap();
                 slot.entry = Some(Entry {

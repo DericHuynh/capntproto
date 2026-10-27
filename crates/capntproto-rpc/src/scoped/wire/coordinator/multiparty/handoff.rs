@@ -234,6 +234,8 @@ impl<
                         // Projections and final-interest drops belong to this
                         // network control, not the ordinary outgoing-call lane.
                         owner_wake: RefCell::new(Some(cx.waker().clone())),
+                        operation: Cell::new(None),
+                        materialize: Cell::new(false),
                         adopted: RefCell::default(),
                         cached: RefCell::default(),
                         _credit: Cell::new(None),

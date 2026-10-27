@@ -1973,7 +1973,7 @@ fn plain_burst_preserves_idle_lanes_and_stays_within_actual_work_budget() {
 #[test]
 fn plain_admission_does_not_repoll_a_parked_sibling() {
     #[derive(Clone)]
-    struct Parked(Rc<Cell<usize>>);
+    struct Parked(Rc<Cell<usize>>, bool);
     impl capability::Server for Parked {
         fn as_ptr(&self) -> usize {
             Rc::as_ptr(&self.0) as usize
@@ -1991,6 +1991,14 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
                     let _ = &mut results;
                     Poll::Pending
                 }))
+            } else if self.1 {
+                results
+                    .get()
+                    .set_as_capability(Box::new(crate::local::Client::new(Parked(
+                        Rc::new(Cell::new(0)),
+                        false,
+                    ))));
+                Promise::ok(())
             } else {
                 Promise::from(results.get().set_as::<capnp::text::Owned>("independent"))
             };
@@ -2001,133 +2009,146 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
             }
         }
     }
-    for owned in [false, true] {
-        for budget in [1, 8, 64] {
-            for busy in [false, true] {
-                with_peer(|mut driver, messages| {
-                    driver.use_owned_output_queues(owned);
-                    let polls = Rc::new(Cell::new(0));
-                    let target = expose(
-                        &mut driver,
-                        Rc::new(crate::local::Client::new(Parked(polls.clone()))),
-                    );
-                    let mut opts = options();
-                    opts.budget = NonZeroUsize::new(budget).unwrap();
-                    let mut coordinator = Coordinator::new(
-                        driver,
-                        ClientHooks::new(8, 8),
-                        NonZeroUsize::new(8).unwrap(),
-                        None,
-                        opts,
-                    )
-                    .unwrap();
-                    let mut queue = messages::Queue::new_growing(0, 1).unwrap();
-                    let pipe = Rc::new(RefCell::new(Pipe::default()));
-                    let mut writer = Writer(pipe.clone());
-                    let mut control = Policy {
-                        preserve_plain: true,
-                        ..Default::default()
-                    };
-                    let mut reader = BufferedInput;
-                    let mut pump = Pump::default();
-                    let mut stop = std::pin::pin!(std::future::pending());
-                    let mut cx = Context::from_waker(Waker::noop());
-                    let wake = coordinator.notifications.waker();
-                    for method in [0, 1] {
-                        let before = polls.get();
-                        if busy && method == 1 {
-                            coordinator.schedule.active |= WorkSet::MAINTENANCE;
-                        }
-                        let mut pending = Some(
-                            Frame::build(messages, 512, opts.reader, |builder| {
-                                calls::dynamic_call(
-                                    builder,
-                                    QuestionId::from_wire(u32::from(method)),
-                                    calls::Target::Imported(target),
-                                    calls::DynamicCall {
-                                        interface: 7,
-                                        method,
-                                        no_promise_pipelining: true,
-                                        ..Default::default()
-                                    },
-                                    |_| Ok(()),
-                                )
-                            })
-                            .unwrap(),
+    for capability_result in [false, true] {
+        for owned in [false, true] {
+            for budget in [1, 8, 64] {
+                for busy in [false, true] {
+                    with_peer(|mut driver, messages| {
+                        driver.use_owned_output_queues(owned);
+                        let polls = Rc::new(Cell::new(0));
+                        let target = expose(
+                            &mut driver,
+                            Rc::new(crate::local::Client::new(Parked(
+                                polls.clone(),
+                                capability_result,
+                            ))),
                         );
-                        for _ in 0..4096 {
-                            if let Poll::Ready(result) = coordinator.poll_prepared(
-                                messages,
-                                &mut queue,
-                                &mut reader,
-                                &mut transport::Writer(&mut writer),
-                                &mut [0; 32],
-                                &NoResources,
-                                &mut control,
-                                stop.as_mut(),
-                                &mut pending,
-                                &mut pump,
-                                &mut cx,
-                                &wake,
-                            ) {
-                                result.unwrap();
+                        let mut opts = options();
+                        opts.budget = NonZeroUsize::new(budget).unwrap();
+                        let mut coordinator = Coordinator::new(
+                            driver,
+                            ClientHooks::new(8, 8),
+                            NonZeroUsize::new(8).unwrap(),
+                            None,
+                            opts,
+                        )
+                        .unwrap();
+                        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+                        let pipe = Rc::new(RefCell::new(Pipe::default()));
+                        let mut writer = Writer(pipe.clone());
+                        let mut control = Policy {
+                            preserve_plain: true,
+                            ..Default::default()
+                        };
+                        let mut reader = BufferedInput;
+                        let mut pump = Pump::default();
+                        let mut stop = std::pin::pin!(std::future::pending());
+                        let mut cx = Context::from_waker(Waker::noop());
+                        let wake = coordinator.notifications.waker();
+                        for method in [0, 1] {
+                            let before = polls.get();
+                            if busy && method == 1 {
+                                coordinator.schedule.active |= WorkSet::MAINTENANCE;
                             }
-                            if pending.is_none()
-                                && coordinator.schedule.active == WorkSet::NONE
-                                && coordinator.notifications.pending() == WorkSet::NONE
-                                && queue.is_empty()
-                                && coordinator.output.is_clean()
-                            {
-                                break;
+                            let mut pending = Some(
+                                Frame::build(messages, 512, opts.reader, |builder| {
+                                    calls::dynamic_call(
+                                        builder,
+                                        QuestionId::from_wire(u32::from(method)),
+                                        calls::Target::Imported(target),
+                                        calls::DynamicCall {
+                                            interface: 7,
+                                            method,
+                                            no_promise_pipelining: true,
+                                            ..Default::default()
+                                        },
+                                        |_| Ok(()),
+                                    )
+                                })
+                                .unwrap(),
+                            );
+                            for _ in 0..4096 {
+                                if let Poll::Ready(result) = coordinator.poll_prepared(
+                                    messages,
+                                    &mut queue,
+                                    &mut reader,
+                                    &mut transport::Writer(&mut writer),
+                                    &mut [0; 32],
+                                    &NoResources,
+                                    &mut control,
+                                    stop.as_mut(),
+                                    &mut pending,
+                                    &mut pump,
+                                    &mut cx,
+                                    &wake,
+                                ) {
+                                    result.unwrap();
+                                }
+                                if pending.is_none()
+                                    && coordinator.schedule.active == WorkSet::NONE
+                                    && coordinator.notifications.pending() == WorkSet::NONE
+                                    && queue.is_empty()
+                                    && coordinator.output.is_clean()
+                                {
+                                    break;
+                                }
+                            }
+                            assert!(
+                                pending.is_none() && coordinator.schedule.active == WorkSet::NONE
+                            );
+                            assert!(!coordinator.worker.is_empty());
+                            if method == 0 {
+                                assert!(polls.get() > 0);
+                            } else {
+                                assert_eq!(
+                                    polls.get(),
+                                    before,
+                                    "owned {owned}, budget {budget}, busy {busy}"
+                                );
                             }
                         }
-                        assert!(pending.is_none() && coordinator.schedule.active == WorkSet::NONE);
-                        assert!(!coordinator.worker.is_empty());
-                        if method == 0 {
-                            assert!(polls.get() > 0);
+                        let bytes: Vec<_> = pipe.borrow_mut().bytes.drain(..).collect();
+                        let mut bytes = bytes.as_slice();
+                        let message =
+                            capnp::serialize::read_message(&mut bytes, opts.reader).unwrap();
+                        let crate::rpc_capnp::message::Return(Ok(returned)) = message
+                            .get_root::<crate::rpc_capnp::message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("Return")
+                        };
+                        assert_eq!(returned.get_answer_id(), 1);
+                        let crate::rpc_capnp::return_::Results(Ok(payload)) =
+                            returned.which().unwrap()
+                        else {
+                            panic!("results")
+                        };
+                        if capability_result {
+                            assert_eq!(payload.get_cap_table().unwrap().len(), 1);
                         } else {
                             assert_eq!(
-                                polls.get(),
-                                before,
-                                "owned {owned}, budget {budget}, busy {busy}"
+                                payload
+                                    .get_content()
+                                    .get_as::<capnp::text::Reader>()
+                                    .unwrap(),
+                                "independent"
                             );
                         }
-                    }
-                    let bytes: Vec<_> = pipe.borrow_mut().bytes.drain(..).collect();
-                    let mut bytes = bytes.as_slice();
-                    let message = capnp::serialize::read_message(&mut bytes, opts.reader).unwrap();
-                    let crate::rpc_capnp::message::Return(Ok(returned)) = message
-                        .get_root::<crate::rpc_capnp::message::Reader>()
-                        .unwrap()
-                        .which()
-                        .unwrap()
-                    else {
-                        panic!("Return")
-                    };
-                    assert_eq!(returned.get_answer_id(), 1);
-                    let crate::rpc_capnp::return_::Results(Ok(payload)) = returned.which().unwrap()
-                    else {
-                        panic!("results")
-                    };
-                    assert_eq!(
-                        payload
-                            .get_content()
-                            .get_as::<capnp::text::Reader>()
-                            .unwrap(),
-                        "independent"
-                    );
-                    assert!(bytes.is_empty());
-                    futures::executor::block_on(
-                        coordinator.terminate::<NoResources, (), &'static str>(
-                            messages,
-                            &mut queue,
-                            &mut control,
-                            Ok(()),
-                        ),
-                    )
-                    .unwrap();
-                    reclaimed(messages);
-                });
+                        assert!(bytes.is_empty());
+                        futures::executor::block_on(
+                            coordinator.terminate::<NoResources, (), &'static str>(
+                                messages,
+                                &mut queue,
+                                &mut control,
+                                Ok(()),
+                            ),
+                        )
+                        .unwrap();
+                        reclaimed(messages);
+                    });
+                }
             }
         }
     }

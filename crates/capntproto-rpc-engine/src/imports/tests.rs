@@ -333,6 +333,7 @@ fn nonempty_backing_is_rejected_without_dropping_its_owner() {
     let mut remote = ImportRefs::new();
     remote.receive(1).unwrap();
     let mut storage = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         release_previous: None,
         release_next: None,
         generation: 7,

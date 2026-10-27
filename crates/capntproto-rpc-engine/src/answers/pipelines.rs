@@ -165,6 +165,14 @@ impl<'receipts, 'id, T> PipelineAdmission<'_, 'receipts, 'id, '_, T> {
         value: T,
         provision: bool,
     ) -> (Key<'id>, &'receipts mut [PipelineSlot<'id>]) {
+        let reserved = self
+            .pending
+            .answers
+            .free
+            .take(&mut self.pending.answers.slots, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, self.key.index);
+        self.pending.answers.displaced +=
+            usize::from(usize::try_from(self.key.id.to_wire()).ok() != Some(self.key.index));
         self.pending.answers.generation = self.key.generation;
         self.pending.answers.slots[self.key.index].record = Some(Record {
             #[cfg(feature = "alloc")]
@@ -200,6 +208,7 @@ mod proofs {
         let parent = AnswerId::from_wire(17);
         let mut slots = [
             Slot {
+                free: crate::free_slots::Link::EMPTY,
                 retirement: crate::work_queue::Link::EMPTY,
                 pipeline_work: crate::work_queue::Link::EMPTY,
                 cancellation: crate::work_queue::Link::EMPTY,
@@ -224,6 +233,20 @@ mod proofs {
             Slot::EMPTY,
         ];
         let mut answers = Answers {
+            displaced: slots
+                .iter()
+                .enumerate()
+                .filter(|(index, slot)| {
+                    slot.record.as_ref().is_some_and(|entry| {
+                        usize::try_from(entry.id.to_wire()).ok() != Some(*index)
+                    })
+                })
+                .count(),
+            free: crate::free_slots::FreeSlots::from_storage(
+                &mut slots,
+                |slot| slot.record.is_none(),
+                |slot| &mut slot.free,
+            ),
             retired: crate::work_queue::Queue::EMPTY,
             pipeline_ready: crate::work_queue::Queue::EMPTY,
             pipeline_registry: None,

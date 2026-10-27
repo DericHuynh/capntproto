@@ -226,6 +226,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 else {
                     unreachable!("selected original reply owner")
                 };
+                self.free_exchanges
+                    .release(index, &mut self.exchanges, |slot| &mut slot.free);
                 let message = question.finish_plain(messages, pending, admitted);
                 Ok(Some((receiver, message)))
             }

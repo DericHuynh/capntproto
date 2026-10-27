@@ -9,6 +9,7 @@ fn import_generation_and_cleanup_lifecycle() {
     let generation: u64 = kani::any();
     let wire = ImportId::from_wire(kani::any());
     let mut storage = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         release_previous: None,
         release_next: None,
         generation,
@@ -85,6 +86,7 @@ fn import_receive_is_atomic() {
     let mut refs = ImportRefs::new();
     refs.receive(remote).unwrap();
     let mut storage = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         release_previous: None,
         release_next: None,
         generation,
@@ -99,6 +101,20 @@ fn import_receive_is_atomic() {
         }),
     }];
     let mut imports = Imports {
+        displaced: storage
+            .iter()
+            .enumerate()
+            .filter(|(index, slot)| {
+                slot.entry
+                    .as_ref()
+                    .is_some_and(|entry| usize::try_from(entry.wire.to_wire()).ok() != Some(*index))
+            })
+            .count(),
+        free: crate::free_slots::FreeSlots::from_storage(
+            &mut storage,
+            |slot| slot.entry.is_none() && slot.generation != u64::MAX,
+            |slot| &mut slot.free,
+        ),
         binding_revision: 0,
         release_head: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         release_tail: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
@@ -151,6 +167,7 @@ fn receipt_metadata_preserves_ownership() {
         promise::ImportState::Hosted
     };
     let mut storage = [Slot {
+        free: crate::free_slots::Link::EMPTY,
         release_previous: None,
         release_next: None,
         generation,
@@ -165,6 +182,20 @@ fn receipt_metadata_preserves_ownership() {
         }),
     }];
     let mut imports = Imports {
+        displaced: storage
+            .iter()
+            .enumerate()
+            .filter(|(index, slot)| {
+                slot.entry
+                    .as_ref()
+                    .is_some_and(|entry| usize::try_from(entry.wire.to_wire()).ok() != Some(*index))
+            })
+            .count(),
+        free: crate::free_slots::FreeSlots::from_storage(
+            &mut storage,
+            |slot| slot.entry.is_none() && slot.generation != u64::MAX,
+            |slot| &mut slot.free,
+        ),
         binding_revision: 0,
         release_head: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
         release_tail: (local == 0).then(|| core::num::NonZeroUsize::new(1).unwrap()),
