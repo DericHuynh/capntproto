@@ -38,7 +38,7 @@ on:
         default: ''
         type: string
       campaign:
-        description: Latency, CPU/syscall profiles, full diagnostics, allocations, or VPC workflows
+        description: Latency only (fast), full encrypted diagnostics, allocations, or VPC workflows
         default: run-latency
         type: choice
         options: [run-latency, run-secure, run-instructions, run-allocations, run-remote]

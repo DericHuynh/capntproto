@@ -8,16 +8,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn maintenance_effects(&self) -> MaintenanceEffects {
         self.maintenance_effects
     }
-    /// Whether freeing output capacity can invalidate an existing maintenance
-    /// idle certificate. This does not certify idle: runnable producer queues
-    /// and their notifications must still be polled normally.
-    pub fn maintenance_has_resource_waiters(&self) -> bool {
-        self.control_waiting != 0
-            || self.outgoing.has_resource_waiters()
-            || self.pipelines.has_resource_waiters()
-            || self.exported.has_resource_waiters()
-            || self.invocation_has_resource_waiters()
-    }
     /// Read readiness from producer-owned queues. There is no retained idle
     /// certificate: changes are visible on the next poll without invalidation.
     pub fn maintenance_is_idle(
