@@ -1,0 +1,43 @@
+name: Qualify no-alloc ports on targets with and without atomics
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-portable-targets
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+jobs:
+  bare-metal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 130481adf48723f15194540d7c56268cfe8cbe7d
+      - name: Install compiler and targets
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt
+          rustup target add thumbv6m-none-eabi thumbv7em-none-eabi --toolchain 1.97.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: portable-engine
+          cache-on-failure: true
+          workspaces: |
+            . -> target
+            verification/portable -> target
+      - name: Check engine and link real allocator-free RPC fixtures
+        run: |
+          for target in thumbv6m-none-eabi thumbv7em-none-eabi; do
+            cargo check --locked -p capntproto-rpc-engine --no-default-features --target "$target"
+            cargo check --locked -p capntproto-rpc --no-default-features --target "$target"
+            cargo build --locked --release --manifest-path verification/portable/Cargo.toml --target "$target"
+          done
+          cargo fmt --all -- --check
