@@ -20,9 +20,7 @@ impl<'id, 's, T> Answers<'id, 's, T> {
     /// Detached old generations with retained pipeline leases do not reserve
     /// their former wire IDs, but continue occupying their own storage slots.
     pub fn prepare_third_party(&mut self) -> Result<ThirdPartyAdmission<'_, 'id, 's, T>, Error> {
-        self.slots
-            .vacant(|_, slot| slot.is_empty(), || Slot::EMPTY)
-            .ok_or(Error::Full)?;
+        self.vacant().ok_or(Error::Full)?;
         let limit = u32::try_from(self.slots.len())
             .unwrap_or(1 << 30)
             .min(1 << 30);

@@ -169,6 +169,7 @@ impl<T> Record<T> {
 /// local pipeline leases. A retired record no longer reserves its peer ID.
 pub struct Slot<T> {
     record: Option<Record<T>>,
+    free: crate::free_slots::Link,
     retirement: crate::work_queue::Link,
     pipeline_head: Option<usize>,
     pipeline_cursor: Option<usize>,
@@ -180,6 +181,7 @@ pub struct Slot<T> {
 impl<T> Slot<T> {
     pub const EMPTY: Self = Self {
         record: None,
+        free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         pipeline_head: None,
         pipeline_cursor: None,
@@ -224,6 +226,7 @@ pub struct Answers<'id, 'storage, T> {
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
+    free: crate::free_slots::FreeSlots,
     retired: crate::work_queue::Queue,
     pipeline_ready: crate::work_queue::Queue,
     pipeline_registry: Option<u64>,
@@ -257,6 +260,7 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Answers<'id, '_
         observation: Default::default(),
         slots: crate::storage::Storage::borrowed(slots),
         generation: 0,
+        free: crate::free_slots::FreeSlots::new(),
         retired: crate::work_queue::Queue::EMPTY,
         pipeline_ready: crate::work_queue::Queue::EMPTY,
         pipeline_registry: None,
@@ -280,6 +284,7 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
         observation: Default::default(),
         slots,
         generation: 0,
+        free: crate::free_slots::FreeSlots::new(),
         retired: crate::work_queue::Queue::EMPTY,
         pipeline_ready: crate::work_queue::Queue::EMPTY,
         pipeline_registry: None,
@@ -627,6 +632,12 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
         self.slots.get(index)?;
         self.reclaim(index)
     }
+    fn vacant(&mut self) -> Option<usize> {
+        if self.free.peek(&self.slots, |slot| &slot.free).is_none() {
+            self.slots.grow(1, || Slot::EMPTY);
+        }
+        self.free.peek(&self.slots, |slot| &slot.free)
+    }
     fn wire_index(&self, id: AnswerId) -> Option<usize> {
         // Like legacy's directly indexed peer table, dense wire IDs usually
         // occupy their matching slot. Retained retired answers can displace a
@@ -664,7 +675,10 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
             self.pipeline_ready
                 .remove(&mut self.slots, index, |slot| &mut slot.pipeline_work);
             self.slots[index].pipeline_cursor = None;
-            self.slots[index].record.take().map(|r| r.value)
+            let value = self.slots[index].record.take().map(|r| r.value);
+            self.free
+                .release(index, &mut self.slots, |slot| &mut slot.free);
+            value
         } else {
             None
         }

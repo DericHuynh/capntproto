@@ -25,10 +25,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
             .generation
             .checked_add(1)
             .ok_or(Error::GenerationExhausted)?;
-        let index = self
-            .slots
-            .vacant(|_, slot| slot.is_empty(), || Slot::EMPTY)
-            .ok_or(Error::Full)?;
+        let index = self.vacant().ok_or(Error::Full)?;
         let parent = parent
             .map(|id| {
                 let key = self.lookup(id).ok_or(Error::StaleKey)?;
@@ -93,6 +90,11 @@ impl<'id, T> Admission<'_, 'id, '_, T> {
                 .expect("preflight parent")
                 .pipelines += 1;
         }
+        let reserved = self
+            .answers
+            .free
+            .take(&mut self.answers.slots, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, self.key.index);
         self.answers.generation = self.key.generation;
         self.answers.slots[self.key.index].record = Some(Record {
             #[cfg(feature = "alloc")]

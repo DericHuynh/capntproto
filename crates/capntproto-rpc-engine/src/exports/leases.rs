@@ -130,6 +130,7 @@ mod proofs {
     fn receiver_hosted_batch_retains_every_local_reference() {
         let local: u32 = kani::any();
         let mut slots = [Slot {
+            free: crate::free_slots::Link::EMPTY,
             retirement: crate::work_queue::Link::EMPTY,
             publication: crate::work_queue::Link::EMPTY,
             generation: 1,
@@ -144,6 +145,11 @@ mod proofs {
             }),
         }];
         let mut exports = Exports {
+            free: crate::free_slots::FreeSlots::from_storage(
+                &mut slots,
+                |slot| slot.entry.is_none() && slot.generation != u64::MAX,
+                |slot| &mut slot.free,
+            ),
             unavailable: slots
                 .iter()
                 .filter(|s| s.entry.is_some() || s.generation == u64::MAX)

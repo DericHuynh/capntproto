@@ -161,6 +161,7 @@ impl<T> Entry<T> {
 /// vacant generations are retired permanently; storage must be empty on entry.
 pub struct Slot<T> {
     generation: u64,
+    free: crate::free_slots::Link,
     entry: Option<Entry<T>>,
     retirement: crate::work_queue::Link,
     publication: crate::work_queue::Link,
@@ -168,6 +169,7 @@ pub struct Slot<T> {
 impl<T> Slot<T> {
     pub const EMPTY: Self = Self {
         generation: 0,
+        free: crate::free_slots::Link::EMPTY,
         entry: None,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
@@ -215,6 +217,7 @@ pub struct Exports<'id, 'storage, T> {
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
     unavailable: usize,
+    free: crate::free_slots::FreeSlots,
     retired: crate::work_queue::Queue,
     staged: crate::work_queue::Queue,
     open_batch: bool,
@@ -253,6 +256,7 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Exports<'id, '_
         observation: Default::default(),
         unavailable: slots.iter().filter(|s| s.generation == u64::MAX).count(),
         slots: crate::storage::Storage::borrowed(slots),
+        free: crate::free_slots::FreeSlots::new(),
         retired: crate::work_queue::Queue::EMPTY,
         staged: crate::work_queue::Queue::EMPTY,
         open_batch: false,
@@ -276,6 +280,7 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
         observation: Default::default(),
         unavailable: 0,
         slots,
+        free: crate::free_slots::FreeSlots::new(),
         retired: crate::work_queue::Queue::EMPTY,
         staged: crate::work_queue::Queue::EMPTY,
         open_batch: false,
@@ -485,6 +490,10 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         self.retired
             .remove(&mut self.slots, index, |slot| &mut slot.retirement);
         self.unavailable -= usize::from(self.slots[index].generation != u64::MAX);
+        if self.slots[index].generation != u64::MAX {
+            self.free
+                .release(index, &mut self.slots, |slot| &mut slot.free);
+        }
         Some(
             self.slots[index]
                 .entry
@@ -510,6 +519,10 @@ impl<T> Exports<'_, '_, T> {
         let slot = self.slots.get_mut(index)?;
         let entry = slot.entry.take()?;
         self.unavailable -= usize::from(slot.generation != u64::MAX);
+        if slot.generation != u64::MAX {
+            self.free
+                .release(index, &mut self.slots, |slot| &mut slot.free);
+        }
         Some(entry.value)
     }
 }
@@ -537,10 +550,23 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
     /// Reserve the first descriptor and take ownership. Allocation uses the
     /// lowest available wire ID, excluding retired owners/generations.
     pub fn export(&mut self, value: T) -> Result<Grant<'id>, Rejected<T>> {
-        let Some(index) = self.exports.slots.vacant(
-            |_, s| s.entry.is_none() && s.generation != u64::MAX,
-            || Slot::EMPTY,
-        ) else {
+        let index = loop {
+            if let Some(index) = self
+                .exports
+                .free
+                .peek(&self.exports.slots, |slot| &slot.free)
+            {
+                if self.exports.slots[index].generation != u64::MAX {
+                    break Some(index);
+                }
+                self.exports
+                    .free
+                    .take(&mut self.exports.slots, |slot| &mut slot.free);
+            } else if !self.exports.slots.grow(1, || Slot::EMPTY) {
+                break None;
+            }
+        };
+        let Some(index) = index else {
             let error = if self.exports.slots.iter().any(|s| s.entry.is_none()) {
                 Error::GenerationExhausted
             } else if self.exports.slots.len() < self.exports.slots.maximum() {
@@ -550,6 +576,11 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
             };
             return Err(Rejected { error, value });
         };
+        let reserved = self
+            .exports
+            .free
+            .take(&mut self.exports.slots, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, index);
         self.exports.unavailable += 1;
         let slot = &mut self.exports.slots[index];
         slot.generation += 1;

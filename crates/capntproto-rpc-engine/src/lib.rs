@@ -23,6 +23,8 @@ pub mod completion;
 pub mod connection;
 pub mod exports;
 pub mod flow_control;
+#[doc(hidden)]
+pub mod free_slots;
 pub mod handoff;
 pub mod ids;
 pub mod imports;

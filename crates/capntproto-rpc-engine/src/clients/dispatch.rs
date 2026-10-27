@@ -119,6 +119,7 @@ fn new_scope<T, P: Copy + Eq, C>(
                 .filter(|s| s.generation == u64::MAX)
                 .count(),
             slots: crate::storage::Storage::borrowed(storage.clients),
+            free: crate::free_slots::FreeSlots::new(),
             dispatch_sequence: 0,
             retired_head: None,
             retired_tail: None,

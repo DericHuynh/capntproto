@@ -200,6 +200,7 @@ mod proofs {
         let parent = AnswerId::from_wire(17);
         let mut slots = [
             Slot {
+                free: crate::free_slots::Link::EMPTY,
                 retirement: crate::work_queue::Link::EMPTY,
                 pipeline_work: crate::work_queue::Link::EMPTY,
                 cancellation: crate::work_queue::Link::EMPTY,
@@ -224,6 +225,11 @@ mod proofs {
             Slot::EMPTY,
         ];
         let mut answers = Answers {
+            free: crate::free_slots::FreeSlots::from_storage(
+                &mut slots,
+                |slot| slot.record.is_none(),
+                |slot| &mut slot.free,
+            ),
             retired: crate::work_queue::Queue::EMPTY,
             pipeline_ready: crate::work_queue::Queue::EMPTY,
             pipeline_registry: None,

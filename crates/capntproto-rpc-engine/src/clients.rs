@@ -103,6 +103,7 @@ enum Kind<T, P> {
 }
 pub struct Slot<T, P> {
     generation: u64,
+    free: crate::free_slots::Link,
     entry: Option<Entry<T, P>>,
     retired_next: Option<usize>,
     subscribers: Option<usize>,
@@ -114,6 +115,7 @@ pub struct Slot<T, P> {
 impl<T, P> Slot<T, P> {
     pub const EMPTY: Self = Self {
         generation: 0,
+        free: crate::free_slots::Link::EMPTY,
         entry: None,
         retired_next: None,
         subscribers: None,
@@ -126,6 +128,7 @@ impl<T, P> Slot<T, P> {
 pub struct Graph<'id, 'storage, T, P> {
     slots: crate::storage::Storage<'storage, Slot<T, P>>,
     unavailable: usize,
+    free: crate::free_slots::FreeSlots,
     dispatch_sequence: u64,
     retired_head: Option<usize>,
     retired_tail: Option<usize>,
@@ -158,6 +161,7 @@ pub(crate) fn new_scope<'id, 's, T, P>(
     Ok(Graph {
         unavailable: slots.iter().filter(|s| s.generation == u64::MAX).count(),
         slots: crate::storage::Storage::borrowed(slots),
+        free: crate::free_slots::FreeSlots::new(),
         dispatch_sequence: 0,
         retired_head: None,
         retired_tail: None,
@@ -190,6 +194,7 @@ pub(crate) fn new_growing_scope<'id, 's, T, P>(
     Ok(Graph {
         unavailable: 0,
         slots,
+        free: crate::free_slots::FreeSlots::new(),
         dispatch_sequence: 0,
         retired_head: None,
         retired_tail: None,
@@ -352,16 +357,15 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
             .ok_or(Error::Stale)
     }
     fn vacant(&mut self) -> Result<usize, Error> {
-        if let Some(index) = self
-            .slots
-            .iter()
-            .position(|s| s.entry.is_none() && s.generation != u64::MAX)
-        {
-            return Ok(index);
-        }
-        let index = self.slots.len();
-        if self.slots.grow(1, || Slot::EMPTY) {
-            return Ok(index);
+        loop {
+            if let Some(index) = self.free.peek(&self.slots, |slot| &slot.free) {
+                if self.slots[index].generation != u64::MAX {
+                    return Ok(index);
+                }
+                self.free.take(&mut self.slots, |slot| &mut slot.free);
+            } else if !self.slots.grow(1, || Slot::EMPTY) {
+                break;
+            }
         }
         Err({
             if self.slots.iter().any(|s| s.entry.is_none()) {
@@ -374,6 +378,8 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
         })
     }
     fn insert(&mut self, index: usize, kind: Kind<T, P>) -> Client<'id> {
+        let reserved = self.free.take(&mut self.slots, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, index);
         let slot = &mut self.slots[index];
         slot.generation += 1;
         slot.entry = Some(Entry { refs: 1, kind });
@@ -798,6 +804,10 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
                     debug_assert!(prior.is_none(), "barrier retains a local reference");
                     let next = target.take();
                     self.slots[raw.index].entry = None;
+                    if self.slots[raw.index].generation != u64::MAX {
+                        self.free
+                            .release(raw.index, &mut self.slots, |slot| &mut slot.free);
+                    }
                     self.unavailable -= usize::from(self.slots[raw.index].generation != u64::MAX);
                     self.notify_abandoned(raw.index);
                     if let Some(next) = next {
@@ -821,6 +831,10 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
             unreachable!()
         };
         self.unavailable -= usize::from(self.slots[index].generation != u64::MAX);
+        if self.slots[index].generation != u64::MAX {
+            self.free
+                .release(index, &mut self.slots, |slot| &mut slot.free);
+        }
         Some(owner)
     }
     pub fn is_empty(&self) -> bool {

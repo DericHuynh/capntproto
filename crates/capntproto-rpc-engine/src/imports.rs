@@ -98,6 +98,7 @@ struct Entry<T> {
 #[cfg_attr(capntproto_verus, verus_verify)]
 pub struct Slot<T> {
     generation: u64,
+    free: crate::free_slots::Link,
     release_previous: Option<core::num::NonZeroUsize>,
     release_next: Option<core::num::NonZeroUsize>,
     entry: Option<Entry<T>>,
@@ -105,6 +106,7 @@ pub struct Slot<T> {
 impl<T> Slot<T> {
     pub const EMPTY: Self = Self {
         generation: 0,
+        free: crate::free_slots::Link::EMPTY,
         release_previous: None,
         release_next: None,
         entry: None,
@@ -176,6 +178,7 @@ pub struct Imports<'id, 'storage, T> {
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
+    free: crate::free_slots::FreeSlots,
     release_head: Option<core::num::NonZeroUsize>,
     release_tail: Option<core::num::NonZeroUsize>,
     brand: Brand<'id>,
@@ -205,6 +208,10 @@ impl<T> Imports<'_, '_, T> {
         let entry = self.slots.get_mut(index)?.entry.take()?;
         if entry.local == 0 {
             self.unlink_release(index);
+        }
+        if self.slots[index].generation != u64::MAX {
+            self.free
+                .release(index, &mut self.slots, |slot| &mut slot.free);
         }
         Some(entry.value)
     }
@@ -237,6 +244,7 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Imports<'id, '_
         return Err(Error::NonemptyStorage);
     }
     Ok(Imports {
+        free: crate::free_slots::FreeSlots::new(),
         release_head: None,
         release_tail: None,
         binding_revision: 0,
@@ -255,6 +263,7 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
     let slots =
         crate::storage::Storage::growing(initial, maximum, || Slot::EMPTY).ok_or(Error::Full)?;
     Ok(Imports {
+        free: crate::free_slots::FreeSlots::new(),
         release_head: None,
         release_tail: None,
         binding_revision: 0,
@@ -356,10 +365,17 @@ impl<'id, T> Imports<'id, '_, T> {
                 value,
             });
         }
-        let Some(index) = self.slots.vacant(
-            |_, slot| slot.entry.is_none() && slot.generation != u64::MAX,
-            || Slot::EMPTY,
-        ) else {
+        let index = loop {
+            if let Some(index) = self.free.peek(&self.slots, |slot| &slot.free) {
+                if self.slots[index].generation != u64::MAX {
+                    break Some(index);
+                }
+                self.free.take(&mut self.slots, |slot| &mut slot.free);
+            } else if !self.slots.grow(1, || Slot::EMPTY) {
+                break None;
+            }
+        };
+        let Some(index) = index else {
             let error = if self.slots.iter().any(|slot| slot.entry.is_none()) {
                 Error::GenerationExhausted
             } else {
@@ -367,6 +383,8 @@ impl<'id, T> Imports<'id, '_, T> {
             };
             return Err(Rejected { error, value });
         };
+        let reserved = self.free.take(&mut self.slots, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, index);
         let slot = &mut self.slots[index];
         let mut remote = ImportRefs::new();
         remote.receive(1).expect("first remote reference");
@@ -452,6 +470,7 @@ impl<'id, T> Imports<'id, '_, T> {
         }
         Some(Release {
             binding_revision: &mut self.binding_revision,
+            free: &mut self.free,
             slots: &mut self.slots,
             index,
             head: &mut self.release_head,
@@ -520,6 +539,7 @@ fn unlink_release<T>(
 #[must_use = "commit only after output acceptance; dropping retains pending cleanup"]
 pub struct Release<'a, T> {
     binding_revision: &'a mut usize,
+    free: &'a mut crate::free_slots::FreeSlots,
     slots: &'a mut [Slot<T>],
     index: usize,
     head: &'a mut Option<core::num::NonZeroUsize>,
@@ -553,6 +573,10 @@ impl<T> Release<'_, T> {
             .pending_release()
             .expect("nonzero remote references")
             .commit();
+        if self.slots[self.index].generation != u64::MAX {
+            self.free
+                .release(self.index, self.slots, |slot| &mut slot.free);
+        }
         entry.value
     }
 }
