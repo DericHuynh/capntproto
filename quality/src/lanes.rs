@@ -10,6 +10,95 @@ pub const CARGO_SKIPS: &[&str] = &[
     "authority_and_transition_coverage",
 ];
 
+/// The ordinary CI partition, independent of LLVM instrumentation and floors.
+pub fn cargo(r: &mut Runner) -> Result<()> {
+    let filter = format!(
+        "not ({})",
+        CARGO_SKIPS
+            .iter()
+            .map(|name| format!("test({name})"))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    );
+    let inventory = r.run_stdout(
+        "workspace-inventory",
+        v::command("cargo").args([
+            "auditable",
+            "nextest",
+            "list",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--features",
+            "capntproto/quic",
+            "--message-format=json",
+        ]),
+    )?;
+    let inventory_path = r.directory.join("workspace-inventory.json");
+    std::fs::write(&inventory_path, &inventory)?;
+    // Build the service workspace before concurrent tests so cold QUIC builds
+    // do not consume the bounded service-test subprocess deadline.
+    r.run(
+        "service-examples-build",
+        v::command("cargo")
+            .args([
+                "auditable",
+                "build",
+                "--locked",
+                "--manifest-path",
+                "examples/kv/Cargo.toml",
+                "--bins",
+                "--features",
+                "quic",
+                "--target-dir",
+            ])
+            .arg(v::root().join("target/service-examples")),
+    )?;
+    let tests = r.nextest(
+        "workspace-tests",
+        v::command("cargo")
+            .args([
+                "auditable",
+                "nextest",
+                "run",
+                "--locked",
+                "--workspace",
+                "--all-targets",
+                "--features",
+                "capntproto/quic",
+                "--no-fail-fast",
+                "-E",
+                &filter,
+            ])
+            .env("CAPNTPROTO_CI_LANE", "cargo")
+            .env("CAPNTPROTO_TEST_INVENTORY", &inventory_path)
+            .env("CAPNTPROTO_TEST_INVENTORY_SHA256", v::sha256(&inventory)),
+    );
+    // Use the existing pinned native verification nightly for libtest JSON.
+    // Always retain doctest results even after an ordinary test failure.
+    let docs = r.cargo(
+        "workspace-doctests",
+        &[
+            "+nightly-2026-08-29",
+            "test",
+            "--locked",
+            "--ignore-rust-version",
+            "--workspace",
+            "--features",
+            "capntproto/quic",
+            "--doc",
+            "--no-fail-fast",
+            "--",
+            "-Z",
+            "unstable-options",
+            "--format=json",
+        ],
+    );
+    tests?;
+    docs?;
+    Ok(())
+}
+
 pub fn models(r: &mut Runner) -> Result<()> {
     let measurements = r.directory.join("models");
     if measurements.exists() {

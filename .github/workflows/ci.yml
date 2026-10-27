@@ -258,7 +258,7 @@ jobs:
           if-no-files-found: warn
   report:
     name: Required CI result
-    needs: [workflows, documentation, portability, platforms, performance, cleanup]
+    needs: [workflows, documentation, portability, platforms, cargo, models, fuzz, extended, performance, cleanup]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -282,7 +282,7 @@ jobs:
           {
             printf '\n## Pipeline results\n\n'
             jq -r 'to_entries[] | "- \(.key): \(.value.result)"' <<< "$RESULTS"
-            printf '\nCoverage, formal checks, fuzzing and extended verification run in the independent Quality workflow and have their own badge. Main CI requires platform, documentation, portability and benchmark checks. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
+            printf '\nMain CI requires workspace tests, formal checks, fuzzing, extended verification, platform, documentation, portability and benchmark checks. LLVM coverage and its regression thresholds run independently with their own Coverage badge. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
           } >> README.md
           cat README.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -302,6 +302,22 @@ jobs:
         run: |
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$RESULTS"
           jq -e --arg cloud "$CLOUD" 'to_entries | all(.[]; if .key == "cleanup" and $cloud == "false" then .value.result == "skipped" else .value.result == "success" end)' <<< "$RESULTS"
+  cargo:
+    name: Verify workspace tests and doctests
+    needs: [platforms, documentation, portability]
+    uses: ./.github/workflows/verification-tests.yml # zizmor: ignore[self-repository]
+  models:
+    name: Verify formal proofs and distributed models
+    needs: [platforms, documentation]
+    uses: ./.github/workflows/verification-models.yml # zizmor: ignore[self-repository]
+  fuzz:
+    name: Verify fuzz targets
+    needs: [platforms, documentation]
+    uses: ./.github/workflows/verification-fuzz.yml # zizmor: ignore[self-repository]
+  extended:
+    name: Verify memory safety and mutation controls
+    needs: [platforms, documentation]
+    uses: ./.github/workflows/verification-extended.yml # zizmor: ignore[self-repository]
   performance:
     name: Build and measure release benchmarks
     needs: workflows

@@ -16,6 +16,7 @@ fn main() -> Result<()> {
     let mut r = Runner::new(&args[0], Path::new(&args[1]))?;
     let result = match args[0].as_str() {
         "coverage" => coverage::collect(&mut r),
+        "cargo" => capntproto_quality::lanes::cargo(&mut r),
         "qualification" => qualification(&mut r),
         "models" => capntproto_quality::lanes::models(&mut r),
         "benchmark-build" => benchmark::bundle(&mut r),
