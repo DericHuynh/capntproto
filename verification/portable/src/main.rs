@@ -57,6 +57,15 @@ pub extern "C" fn _start() -> ! {
         Ok(capntproto_rpc_engine::question::Delivery::Discard)
     );
     assert!(question.release().reclaim);
+    // Link the shared legacy/portable scheduler storage without a global
+    // allocator, executor, OS primitives or a hosted waker implementation.
+    let ready = capntproto_rpc_engine::ready_queue::ReadyQueue::new();
+    let index = black_box(3);
+    assert!(ready.enqueue(index));
+    assert!(!ready.enqueue(index));
+    assert_eq!(ready.front(0), Some(index));
+    ready.consume(0, index);
+    assert!(!ready.pending(1));
     loop {
         core::hint::spin_loop();
     }
