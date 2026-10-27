@@ -1,8 +1,8 @@
 {
   "benchmark": {
     "attempt": 1,
-    "commit": "23337007ed47c9e8725db30f8467421505472e27",
-    "conclusion": "failure",
+    "commit": "be8c1c7d73046cdc3c3ef506ed3b849267232d22",
+    "conclusion": "cancelled",
     "data": {
       "charts": [],
       "format": 1,
@@ -10,17 +10,17 @@
       "note": "No measurement evidence was produced.",
       "origin": {
         "attempt": 1,
-        "commit": "23337007ed47c9e8725db30f8467421505472e27",
+        "commit": "be8c1c7d73046cdc3c3ef506ed3b849267232d22",
         "repository": "DericHuynh/capntproto",
-        "run_id": 40374809355
+        "run_id": 40420218360
       },
       "source_id": null,
       "status": "unavailable",
       "tests": null
     },
-    "date": "2026-10-26T18:06:40Z",
-    "run_id": 40374809355,
-    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40374809355"
+    "date": "2026-10-26T23:30:27Z",
+    "run_id": 40420218360,
+    "url": "https://github.com/DericHuynh/capntproto/actions/runs/40420218360"
   },
   "cargo": [
     {

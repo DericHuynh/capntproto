@@ -1,5 +1,8 @@
 # Capntproto verification reports
 
+[![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
+[![Quality](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml)
+
 [Project and supported APIs](https://github.com/DericHuynh/capntproto) · [Reporting contract](https://github.com/DericHuynh/capntproto/blob/main/docs/wiki/README-Reports.md)
 
 This branch contains generated evidence only. See each result's measured commit
@@ -41,13 +44,20 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-26T18:06:40Z · run 40374809355 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40374809355) · commit `23337007ed47` · **failure**
+Latest benchmark run: [2026-10-26T23:30:27Z · run 40420218360 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40420218360) · commit `be8c1c7d7304` · **cancelled**
 
 Measurement evidence: **unavailable**. No measurement evidence was produced&#46;
 
-Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Capntproto TCP, upstream Rust Cap’n Proto (`capnp-rust`), and C++ Cap’n Proto use matched plaintext TCP; native QUIC remains a separate encrypted comparison. gRPC and WebSocket baselines use plaintext TCP. Bars compare this workload, not universal protocol performance.
+Separate client/server processes, one outstanding request, several payload sizes and five repetitions. Current TCP fixtures use TLS 1.3, including upstream Rust Cap’n Proto, C++, gRPC over HTTP/2 and WebSockets over WSS; native encrypted transports and standard QUIC are identified separately. Historical data retains its recorded fixture contract. The dedicated campaign also reports recursive data, concurrent calls and independent service chains for gRPC and binary Protobuf WebSockets in its encrypted comparison artifact. Bars compare the recorded workload, rather than universal protocol performance.
 
 ![Benchmark measurements pending](docs/reports/benchmarks-pending.svg)
 
 [Machine-readable history and exact plotted values](docs/reports/history.json). Full logs, raw samples and LLVM exports are retained in the linked workflow artifacts.
+
+
+## Exhaustive benchmark tables
+
+Measured run: [2026-10-26T23:30:27Z · run 40420218360 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/40420218360) · commit `be8c1c7d7304` · **cancelled**
+
+No validated benchmark tables were produced for this run. See its original artifacts; unavailable data is not zero.
 
