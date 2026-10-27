@@ -168,6 +168,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 self.allow_answer_handoff,
                 id,
             ),
+            self.writer_policy == WriterPolicy::Checked,
         )
         .map_err(|error| Error::Input(super::super::super::Error::Output(error)))?;
         let key = question.key();

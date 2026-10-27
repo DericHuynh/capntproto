@@ -123,6 +123,18 @@ impl<'pool, 'q> Question<'pool, 'q> {
         scratch: &mut [u32],
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
     ) -> Result<Self, crate::admission::Error> {
+        Self::send_granting_using(reservation, batch, messages, frame, scratch, queue, true)
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn send_granting_using<E>(
+        reservation: questions::Reservation<'_, 'q, '_>,
+        batch: exports::Batch<'_, '_, '_, E>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        frame: Frame<'pool>,
+        scratch: &mut [u32],
+        queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+        check_payload: bool,
+    ) -> Result<Self, crate::admission::Error> {
         let original = match messages.retain(&frame.lease) {
             Ok(lease) => Frame::new(lease, frame.options),
             Err(error) => {
@@ -130,13 +142,14 @@ impl<'pool, 'q> Question<'pool, 'q> {
                 return Err(crate::admission::Error::Storage(error));
             }
         };
-        let accepted = crate::admission::granting_question(
+        let accepted = crate::admission::granting_question_using(
             reservation,
             batch,
             messages,
             frame.lease,
             scratch,
             frame.options,
+            check_payload,
         )
         .map(|prepared| prepared.accept(queue));
         let local = match accepted {
@@ -165,14 +178,16 @@ impl<'pool, 'q> Question<'pool, 'q> {
         scratch: &mut [u32],
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
         metadata: inbound::full::OriginalMetadata,
+        check_payload: bool,
     ) -> Result<Self, crate::admission::Error> {
-        let local = crate::admission::granting_question(
+        let local = crate::admission::granting_question_using(
             reservation,
             batch,
             messages,
             frame.lease,
             scratch,
             frame.options,
+            check_payload,
         )?
         .accept(queue);
         Ok(Self {

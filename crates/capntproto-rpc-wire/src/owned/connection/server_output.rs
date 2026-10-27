@@ -286,10 +286,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let result = result.as_ref().unwrap_or_else(|_| unreachable!());
             let certified =
                 result.count == 0 && result.prepared_return == Some((key.id(), can_omit_finish));
-            prepared = certified
+            // Native results need no second body walk. Reuse below checks the
+            // exact Return header; rebuilding constructs that header here.
+            prepared = (certified
                 && result.frame.options.traversal_limit_in_words
                     == options.traversal_limit_in_words
-                && result.frame.options.nesting_limit == options.nesting_limit;
+                && result.frame.options.nesting_limit == options.nesting_limit)
+                || (self.writer_policy == WriterPolicy::Native && result.count == 0);
             let reusable = certified
                 || (result.count == 0
                     && result
@@ -311,8 +314,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         .map_err(|e| Error::Input(e.into()))?);
             if reusable {
                 // Keep an independent publication lease; rejection releases it
-                // without consuming the answer's retained result. Admission
-                // still validates against current policy and reader limits.
+                // without consuming the answer's retained result. Checked
+                // writers still enforce the current output reader limits.
                 Frame::new(
                     messages
                         .retain(&result.frame.lease)
@@ -417,7 +420,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             drop(batch);
             answer::send(key, &mut self.ledgers.answers, messages, frame, output)
         } else {
-            answer::send_granting(
+            answer::send_granting_using(
                 key,
                 &mut self.ledgers.answers,
                 batch,
@@ -425,6 +428,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 frame,
                 scratch,
                 output,
+                self.writer_policy == WriterPolicy::Checked,
             )
         }
         .map_err(Error::Input)?;

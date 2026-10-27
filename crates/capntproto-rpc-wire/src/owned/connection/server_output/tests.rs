@@ -6,6 +6,96 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn native_grant_publication_checks_descriptors_and_preserves_failed_output() {
+    let measured = allocation_counter::measure(|| {
+        for native in [false, true] {
+            with_driver(|mut driver, messages| {
+                let (call, target) = request(&mut driver, messages, false);
+                if native {
+                    driver.use_native_writer();
+                }
+                let options = if native {
+                    capnp::message::ReaderOptions {
+                        traversal_limit_in_words: Some(1),
+                        nesting_limit: 1,
+                    }
+                } else {
+                    Default::default()
+                };
+                let result = driver
+                    .local_answer_dynamic(
+                        call.answer(),
+                        7,
+                        9,
+                        &[Some(&target)],
+                        messages,
+                        512,
+                        options,
+                        |content| content.set_capability_index(0),
+                    )
+                    .unwrap();
+                driver
+                    .complete_answer(&call, Ok(result), messages)
+                    .unwrap_or_else(|_| panic!("completion"));
+                let mut slots = [None];
+                let mut queue = messages::Queue::new(&mut slots).unwrap();
+                // Grant validation still needs its bounded descriptor scratch.
+                // Failure must preserve the owed answer and FIFO.
+                assert!(driver
+                    .send_answer(
+                        call.answer(),
+                        messages,
+                        &mut queue,
+                        512,
+                        options,
+                        &mut [],
+                        |_, _| Ok(())
+                    )
+                    .is_err());
+                assert!(queue.is_empty());
+                assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+                assert!(driver
+                    .send_answer(
+                        call.answer(),
+                        messages,
+                        &mut queue,
+                        512,
+                        options,
+                        &mut [0; 8],
+                        |_, _| Ok(())
+                    )
+                    .unwrap()
+                    .is_none());
+                drain(&mut queue, messages, |root| {
+                    let rpc_capnp::message::Return(returned) = root.which().unwrap() else {
+                        panic!("Return")
+                    };
+                    let rpc_capnp::return_::Results(payload) = returned.unwrap().which().unwrap()
+                    else {
+                        panic!("Results")
+                    };
+                    let payload = payload.unwrap();
+                    assert_eq!(payload.get_cap_table().unwrap().len(), 1);
+                    assert_eq!(payload.get_content().capability_index().unwrap(), 0);
+                    payload
+                        .get_content()
+                        .validate_capability_indices(1)
+                        .unwrap();
+                });
+                driver.release_call(call, messages);
+                driver.runtime.release(target);
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::<()>::new(&mut []).unwrap(),
+                );
+            });
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn native_writer_keeps_input_limits_storage_and_capability_authority_checked() {
     let limits = capnp::message::ReaderOptions {
         traversal_limit_in_words: Some(1),

@@ -90,6 +90,7 @@ pub fn question<
                 .ok_or(Error::ReflectionMismatch)?;
             super::check_reference(descriptor, slot, references.imports, reservation.ledger())
         },
+        true,
     )?;
     if count != references.params.len() {
         return Err(Error::ReflectionMismatch.into());

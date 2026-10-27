@@ -62,8 +62,8 @@ impl From<exports::DescriptorError> for Error {
     }
 }
 
-/// Exclusive ownership of a validated frame, its offered send and its grant
-/// batch. Drop rejects all three. There is no public send key before accept.
+/// Exclusive ownership of an immutable frame, its offered send and validated
+/// grant batch. Drop rejects all three. No public send key exists before accept.
 #[must_use = "accept into the connection's output or drop to abort publication"]
 pub struct Prepared<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T> {
     batch: Option<exports::Batch<'a, 'exports, 'table, T>>,
@@ -94,7 +94,34 @@ pub fn prepare<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
     scratch: &mut [u32],
     options: capnp::message::ReaderOptions,
 ) -> Result<Prepared<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>, Error> {
-    prepare_with(batch, messages, lease, scratch, options, |_, _| Ok(false))
+    prepare_with(
+        batch,
+        messages,
+        lease,
+        scratch,
+        options,
+        |_, _| Ok(false),
+        true,
+    )
+}
+
+/// Native local output still validates every descriptor and exact grant count.
+pub(crate) fn prepare_native<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
+    batch: exports::Batch<'a, 'exports, 'table, T>,
+    messages: &'a mut messages::Messages<'pool, 'storage, 'bytes>,
+    lease: messages::Lease<'pool>,
+    scratch: &mut [u32],
+    options: capnp::message::ReaderOptions,
+) -> Result<Prepared<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>, Error> {
+    prepare_with(
+        batch,
+        messages,
+        lease,
+        scratch,
+        options,
+        |_, _| Ok(false),
+        false,
+    )
 }
 
 fn prepare_with<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
@@ -104,6 +131,7 @@ fn prepare_with<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
     scratch: &mut [u32],
     options: capnp::message::ReaderOptions,
     reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
+    check_payload: bool,
 ) -> Result<Prepared<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>, Error> {
     let mut prepared = Prepared {
         batch: Some(batch),
@@ -111,12 +139,13 @@ fn prepare_with<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
         lease: Some(lease),
         offer: None,
     };
-    validate(
+    validate_using(
         prepared.batch.as_ref().unwrap(),
         &prepared.messages.read(prepared.lease.as_ref().unwrap()),
         scratch,
         options,
         reflected,
+        check_payload,
     )?;
     prepared.offer = Some(
         prepared
@@ -134,13 +163,23 @@ pub(crate) fn validate<T>(
     options: capnp::message::ReaderOptions,
     reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
 ) -> Result<(), Error> {
+    validate_using(batch, bytes, scratch, options, reflected, true)
+}
+fn validate_using<T>(
+    batch: &exports::Batch<'_, '_, '_, T>,
+    bytes: &[u8],
+    scratch: &mut [u32],
+    options: capnp::message::ReaderOptions,
+    reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
+    check_payload: bool,
+) -> Result<(), Error> {
     let mut input = bytes;
     let frame = capnp::serialize::read_message_from_flat_slice_no_alloc(&mut input, options)?;
     if !input.is_empty() {
         return Err(Error::TrailingBytes);
     }
     let root = frame.get_root::<rpc_capnp::message::Reader<'_>>()?;
-    validate_root(batch, root, scratch, reflected).map(|_| ())
+    validate_root_using(batch, root, scratch, reflected, check_payload).map(|_| ())
 }
 
 /// Cleanup facts from the same descriptor walk that authorizes publication.
@@ -173,7 +212,24 @@ pub(crate) fn validate_root<T>(
     batch: &exports::Batch<'_, '_, '_, T>,
     root: rpc_capnp::message::Reader<'_>,
     scratch: &mut [u32],
+    reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
+) -> Result<ResultExports, Error> {
+    validate_root_using(batch, root, scratch, reflected, true)
+}
+pub(crate) fn validate_native_root<T>(
+    batch: &exports::Batch<'_, '_, '_, T>,
+    root: rpc_capnp::message::Reader<'_>,
+    scratch: &mut [u32],
+    reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
+) -> Result<ResultExports, Error> {
+    validate_root_using(batch, root, scratch, reflected, false)
+}
+fn validate_root_using<T>(
+    batch: &exports::Batch<'_, '_, '_, T>,
+    root: rpc_capnp::message::Reader<'_>,
+    scratch: &mut [u32],
     mut reflected: impl FnMut(rpc_capnp::cap_descriptor::Reader<'_>, usize) -> Result<bool, Error>,
+    check_payload: bool,
 ) -> Result<ResultExports, Error> {
     let mut grants = ResultExports::Empty;
     let message = root.which()?;
@@ -220,9 +276,11 @@ pub(crate) fn validate_root<T>(
         _ => return Err(Error::UnsupportedMessage),
     };
     let descriptors = payload.get_cap_table()?;
-    payload
-        .get_content()
-        .validate_capability_indices(descriptors.len())?;
+    if check_payload {
+        payload
+            .get_content()
+            .validate_capability_indices(descriptors.len())?;
+    }
     let mut check = batch.descriptors(scratch)?;
     for (i, descriptor) in descriptors.iter().enumerate() {
         if let Some(id) = check_descriptor(descriptor, &mut check, no_finish, |d| reflected(d, i))?

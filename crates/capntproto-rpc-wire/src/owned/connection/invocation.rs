@@ -649,13 +649,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 )
                 .map_err(Error::Input)?
             } else {
-                Question::send_granting(
+                Question::send_granting_using(
                     reservation,
                     self.ledgers.exports.batch(),
                     messages,
                     frame,
                     scratch,
                     output,
+                    self.writer_policy == WriterPolicy::Checked,
                 )
                 .map_err(|error| Error::Input(super::super::Error::Output(error)))?
             };
@@ -861,9 +862,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .copy_with_capabilities(source.get_params()?.get_content(), mapping)
             })
             .map_err(Error::Input)?;
-        let question =
-            Question::send_granting(reservation, batch, messages, frame, scratch, output)
-                .map_err(|error| Error::Input(super::super::Error::Output(error)))?;
+        let question = Question::send_granting_using(
+            reservation,
+            batch,
+            messages,
+            frame,
+            scratch,
+            output,
+            self.writer_policy == WriterPolicy::Checked,
+        )
+        .map_err(|error| Error::Input(super::super::Error::Output(error)))?;
         let key = question.key();
         self.ledgers
             .questions

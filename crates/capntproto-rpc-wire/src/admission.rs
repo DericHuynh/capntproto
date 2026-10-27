@@ -234,7 +234,35 @@ pub fn granting_question<'a, 'id, 'questions, 'exports, 'table, 'pool, 'storage,
     GrantingQuestion<'a, 'id, 'questions, 'exports, 'table, 'pool, 'storage, 'bytes, T>,
     Error,
 > {
-    let publication = crate::publication::prepare(batch, messages, lease, scratch, options)?;
+    granting_question_using(reservation, batch, messages, lease, scratch, options, true)
+}
+pub(crate) fn granting_question_using<
+    'a,
+    'id,
+    'questions,
+    'exports,
+    'table,
+    'pool,
+    'storage,
+    'bytes,
+    T,
+>(
+    reservation: questions::Reservation<'a, 'id, 'questions>,
+    batch: exports::Batch<'a, 'exports, 'table, T>,
+    messages: &'a mut messages::Messages<'pool, 'storage, 'bytes>,
+    lease: messages::Lease<'pool>,
+    scratch: &mut [u32],
+    options: capnp::message::ReaderOptions,
+    check_payload: bool,
+) -> Result<
+    GrantingQuestion<'a, 'id, 'questions, 'exports, 'table, 'pool, 'storage, 'bytes, T>,
+    Error,
+> {
+    let publication = if check_payload {
+        crate::publication::prepare(batch, messages, lease, scratch, options)?
+    } else {
+        crate::publication::prepare_native(batch, messages, lease, scratch, options)?
+    };
     let view = publication.bytes();
     let mut bytes = &*view;
     let message = capnp::serialize::read_message_from_flat_slice_no_alloc(&mut bytes, options)?;

@@ -107,6 +107,7 @@ pub fn prepare<
                 .ok_or(Error::ReflectionMismatch)?;
             check_reference(descriptor, slot, references.imports, references.questions)
         },
+        true,
     )?;
     if count != references.slots.len() {
         return Err(Error::ReflectionMismatch);
