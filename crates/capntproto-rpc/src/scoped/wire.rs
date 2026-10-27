@@ -35,10 +35,63 @@ pub(super) struct RejectedOwner<T> {
     output_blocked: bool,
 }
 
+// Immutable replies commonly have zero or one capability. Their table lives
+// inside the payload owner; only larger replies need independent storage.
+enum PayloadCaps {
+    Empty,
+    One([Option<Box<dyn ClientHook>>; 1]),
+    Many(Vec<Option<Box<dyn ClientHook>>>),
+}
+impl From<Vec<Option<Box<dyn ClientHook>>>> for PayloadCaps {
+    fn from(mut caps: Vec<Option<Box<dyn ClientHook>>>) -> Self {
+        match caps.len() {
+            0 => Self::Empty,
+            1 => Self::One([caps.pop().unwrap()]),
+            _ => Self::Many(caps),
+        }
+    }
+}
+impl std::ops::Deref for PayloadCaps {
+    type Target = [Option<Box<dyn ClientHook>>];
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Empty => &[],
+            Self::One(caps) => caps,
+            Self::Many(caps) => caps,
+        }
+    }
+}
+impl<'a> IntoIterator for &'a PayloadCaps {
+    type Item = &'a Option<Box<dyn ClientHook>>;
+    type IntoIter = std::slice::Iter<'a, Option<Box<dyn ClientHook>>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+impl PayloadCaps {
+    fn collect(
+        count: usize,
+        mut cap: impl FnMut(usize) -> capnp::Result<Option<Box<dyn ClientHook>>>,
+    ) -> capnp::Result<Self> {
+        match count {
+            0 => Ok(Self::Empty),
+            1 => Ok(Self::One([cap(0)?])),
+            _ => {
+                let mut caps = Vec::new();
+                caps.try_reserve_exact(count).map_err(wire_error)?;
+                for index in 0..count {
+                    caps.push(cap(index)?);
+                }
+                Ok(Self::Many(caps))
+            }
+        }
+    }
+}
+
 /// An owned message whose cap table is independent of scoped wire receipts.
 pub(crate) struct Payload {
     body: PayloadBody,
-    caps: Vec<Option<Box<dyn ClientHook>>>,
+    caps: PayloadCaps,
 }
 enum PayloadBody {
     Owned(Box<capnp::message::Builder<capnp::message::HeapAllocator>>),
@@ -96,7 +149,7 @@ impl Payload {
     ) -> Self {
         Self {
             body: PayloadBody::Owned(Box::new(message)),
-            caps,
+            caps: caps.into(),
         }
     }
     pub(super) fn copy(reader: any_pointer::Reader<'_>) -> capnp::Result<Self> {
@@ -116,7 +169,7 @@ impl Payload {
                 capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
             >,
         >,
-        caps: Vec<Option<Box<dyn ClientHook>>>,
+        caps: PayloadCaps,
     ) -> capnp::Result<Self> {
         // The wire owner selects content from its original arena. Bound hooks
         // keep the exact admitted descriptor order; reads remain lazy and share
@@ -927,7 +980,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         if let Err(message) = call.results.complete_plain(&call.completion, message) {
             let result = call.results.finish_plain(Payload {
                 body: PayloadBody::Admitted(message),
-                caps: Vec::new(),
+                caps: PayloadCaps::Empty,
             });
             call.complete_boxed(result);
         }
@@ -996,7 +1049,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     let mut call = self.call.take().expect("wire completion once");
                     let result = call.results.finish_plain(Payload {
                         body: PayloadBody::Admitted(message),
-                        caps: Vec::new(),
+                        caps: PayloadCaps::Empty,
                     });
                     call.complete_boxed(result);
                     return Ok(());
@@ -1088,26 +1141,21 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 .and_then(core::convert::identity),
             CallOutput::Remote(remote) => {
                 if let Some(message) = remote.take_plain_results() {
-                    Ok(Payload { body: PayloadBody::Admitted(message), caps: Vec::new() })
+                    Ok(Payload { body: PayloadBody::Admitted(message), caps: PayloadCaps::Empty })
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
                         hooks.collect(&mut driver.capabilities());
-                        let mut caps = Vec::with_capacity(payload.capability_count());
-                        for index in 0..payload.capability_count() {
+                        let caps = PayloadCaps::collect(payload.capability_count(), |index| {
                             let cap = payload.capability_at(index as u32).map_err(wire_error)?;
-                            let cap = match cap {
-                                None => None,
+                            match cap {
+                                None => Ok(None),
                                 Some(cap) => {
-                                    let cap = driver.bind_capability(cap)
-                                        .map_err(wire_error)?
-                                        .into_client();
-                                    let result = hooks.import_after_collect(&mut driver.capabilities(), cap);
-                                    Some(result?.hook)
+                                    let cap = driver.bind_capability(cap).map_err(wire_error)?.into_client();
+                                    Ok(Some(hooks.import_after_collect(&mut driver.capabilities(), cap)?.hook))
                                 }
-                            };
-                            caps.push(cap);
-                        }
+                            }
+                        })?;
                         Payload::retain_or_copy(payload.content(), remote.retain_results(messages, payload.content()).map_err(wire_error)?, caps)
                     }
                     owned::Reply::Exception(error) => {
@@ -1283,6 +1331,28 @@ impl ProjectionCache {
         Ok(())
     }
 }
+enum CompletedPipeline {
+    Hook(Box<dyn PipelineHook>),
+    Payload(Rc<Payload>),
+}
+impl CompletedPipeline {
+    fn add_ref(&self) -> Self {
+        match self {
+            Self::Hook(hook) => Self::Hook(hook.add_ref()),
+            Self::Payload(payload) => Self::Payload(payload.clone()),
+        }
+    }
+    fn get_pipelined_cap(&self, path: &[PipelineOp]) -> Box<dyn ClientHook> {
+        match self {
+            Self::Hook(hook) => hook.get_pipelined_cap(path),
+            Self::Payload(payload) => payload
+                .reader()
+                .and_then(|reader| reader.get_pipelined_cap(path))
+                .unwrap_or_else(crate::broken::new_cap),
+        }
+    }
+}
+
 pub(crate) struct PipelineState {
     used: Cell<bool>,
     owner_wake: RefCell<Option<Waker>>,
@@ -1292,7 +1362,7 @@ pub(crate) struct PipelineState {
     cached: RefCell<ProjectionCache>,
     _credit: Cell<Option<Rc<admission::Credit>>>,
     waiting: RefCell<VecDeque<Projection>>,
-    finished: RefCell<Option<Box<dyn PipelineHook>>>,
+    finished: RefCell<Option<CompletedPipeline>>,
     inbox: Weak<Inbox>,
     maximum: usize,
 }
@@ -1390,6 +1460,12 @@ impl PipelineState {
         self.cached.borrow_mut().remember(path, hook, self.maximum)
     }
     pub(super) fn finish(&self, pipeline: Box<dyn PipelineHook>) {
+        self.finish_completed(CompletedPipeline::Hook(pipeline));
+    }
+    pub(super) fn finish_payload(&self, payload: Rc<Payload>) {
+        self.finish_completed(CompletedPipeline::Payload(payload));
+    }
+    fn finish_completed(&self, pipeline: CompletedPipeline) {
         let pipeline_ref = pipeline.add_ref();
         let old = self.finished.replace(Some(pipeline));
         drop(old);

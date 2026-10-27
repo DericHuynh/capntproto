@@ -348,13 +348,15 @@ impl Results {
         let sender = direct.sender.take().expect("checked direct sender");
         let response = if let Some(pipeline) = pipeline {
             let payload = Rc::new(payload);
-            let completed = early_pipeline()
-                .unwrap_or_else(|| Box::new(wire::PayloadPipeline(payload.clone())));
+            let completed = early_pipeline();
             let response = Box::new(SharedPayloadResponse {
-                payload,
+                payload: payload.clone(),
                 _context: direct.context.take(),
             });
-            pipeline.finish(completed);
+            match completed {
+                Some(completed) => pipeline.finish(completed),
+                None => pipeline.finish_payload(payload),
+            }
             response as Box<dyn capnp::private::capability::ResponseHook>
         } else {
             owned_response(payload, direct.context.take())

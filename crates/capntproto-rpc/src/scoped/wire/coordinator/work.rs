@@ -26,6 +26,33 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             self.schedule.active |= WorkSet::COMMANDS;
         }
     }
+    /// A completed application step keeps unrelated lanes' idle certificates.
+    /// Exact operation wakes own parked futures; only new admission, descriptor
+    /// work and freed protocol resources need another lane visit.
+    pub(super) fn lane_progressed(&mut self, lane: Lane) {
+        if matches!(lane, Lane::Foreign | Lane::Commands) {
+            // These controls can replace arbitrary routes or policy.
+            self.progressed();
+            return;
+        }
+        self.control_idle = false;
+        self.schedule.active |= lane.work() | WorkSet::MAINTENANCE;
+        if lane == Lane::Accept || self.driver.ledgers().answers.has_changed_producers() {
+            self.schedule.active |= WorkSet::WORKER;
+        }
+        if self.driver.runtime().queued() != 0 || self.driver.has_pending_call() {
+            self.schedule.active |= WorkSet::ACCEPT;
+        }
+        if self.calls.has_unpublished() || !self.hooks.inbox.queue.borrow().is_empty() {
+            self.schedule.active |= WorkSet::CALLS;
+        }
+        if !self.foreign.is_empty() && lane != Lane::Accept {
+            self.schedule.active |= WorkSet::FOREIGN;
+        }
+        if !self.commands.is_empty() {
+            self.schedule.active |= WorkSet::COMMANDS;
+        }
+    }
     /// The wire producer reports transition effects even if its final poll
     /// suspends. Keep exact operation queues and the unfinished fair rotation.
     fn maintenance_changed(&mut self, effects: connection::MaintenanceEffects) {
@@ -208,7 +235,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Poll::Pending
                 }
                 Poll::Ready(Ok(progress)) => {
-                    self.progressed();
+                    self.lane_progressed(Lane::Calls);
                     self.delivered |= progress == Progress::Completed;
                     Poll::Ready(Ok(()))
                 }
@@ -227,7 +254,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 self.schedule.active = WorkSet::WORKER;
                 self.schedule.cursor = Lane::Worker;
             } else {
-                self.progressed();
+                self.lane_progressed(Lane::Accept);
             }
         }
         if self.schedule.active == WorkSet::WORKER && *remaining > 0 {
@@ -280,7 +307,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Poll::Pending
                 }
                 Poll::Ready(Ok(_)) => {
-                    self.progressed();
+                    self.lane_progressed(Lane::Worker);
                     Poll::Ready(Ok(()))
                 }
             };
@@ -566,7 +593,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.schedule.active &= !WorkSet::FOREIGN;
                     }
                 } else if index != Lane::Maintenance {
-                    self.progressed();
+                    self.lane_progressed(index);
                 }
                 advanced = true;
                 // Deliver completion promptly. Publications share the

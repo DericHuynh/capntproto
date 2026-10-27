@@ -98,11 +98,11 @@ impl CompletedPayload {
         match self {
             Self::Plain(_) => Rc::new(Payload {
                 body: PayloadBody::Produced(owner.clone()),
-                caps: Vec::new(),
+                caps: PayloadCaps::Empty,
             }),
             Self::Shared(message) => Rc::new(Payload {
                 body: PayloadBody::Return(message.clone()),
-                caps: Vec::new(),
+                caps: PayloadCaps::Empty,
             }),
             Self::General(payload) => payload.clone(),
         }
@@ -692,7 +692,7 @@ impl Drop for Hook {
             message => CompletedPayload::General(Rc::new(match message {
                 Some(message) => Payload {
                     body: PayloadBody::Return(Rc::new(message)),
-                    caps,
+                    caps: caps.into(),
                 },
                 None => Payload::owned(Default::default(), caps),
             })),
@@ -1076,7 +1076,17 @@ impl<'id> ClientHooks<'id> {
             .get()
             .map(|payload| payload.share(results))
             .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
-        let mut retained = Vec::with_capacity(payload.caps.len());
+        let mut inline = [None];
+        let mut overflow = Vec::new();
+        let retained = if payload.caps.len() <= inline.len() {
+            &mut inline[..payload.caps.len()]
+        } else {
+            overflow
+                .try_reserve_exact(payload.caps.len())
+                .map_err(wire_error)?;
+            overflow.resize_with(payload.caps.len(), || None);
+            &mut overflow[..]
+        };
         let result = (|| {
             if payload.caps.is_empty() {
                 if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
@@ -1100,7 +1110,7 @@ impl<'id> ClientHooks<'id> {
                     "wire result capability capacity exhausted".into(),
                 ));
             }
-            for cap in &payload.caps {
+            for (slot, cap) in retained.iter_mut().zip(&payload.caps) {
                 let client = match cap {
                     None => None,
                     Some(hook) => Some(
@@ -1110,7 +1120,7 @@ impl<'id> ClientHooks<'id> {
                         },
                     ),
                 };
-                retained.push(client);
+                *slot = client;
             }
             if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
                 if let Some(result) = driver
@@ -1145,13 +1155,21 @@ impl<'id> ClientHooks<'id> {
                     capnp::wire_capability::IndexMap::identity(payload.caps.len() as u32),
                 )
             };
-            let references = retained.iter().map(Option::as_ref).collect::<Vec<_>>();
+            let inline_refs;
+            let overflow_refs;
+            let references = if retained.len() <= 1 {
+                inline_refs = [retained.first().and_then(Option::as_ref)];
+                &inline_refs[..retained.len()]
+            } else {
+                overflow_refs = retained.iter().map(Option::as_ref).collect::<Vec<_>>();
+                &overflow_refs[..]
+            };
             let result = if let Some(answer) = answer {
                 driver.local_answer_dynamic(
                     answer,
                     method.interface,
                     method.method,
-                    &references,
+                    references,
                     messages,
                     minimum,
                     options,
@@ -1161,7 +1179,7 @@ impl<'id> ClientHooks<'id> {
                 driver.local_result_dynamic(
                     method.interface,
                     method.method,
-                    &references,
+                    references,
                     messages,
                     minimum,
                     options,
@@ -1170,7 +1188,7 @@ impl<'id> ClientHooks<'id> {
             };
             result.map_err(wire_error)
         })();
-        for client in retained.into_iter().flatten() {
+        for client in retained.iter_mut().filter_map(Option::take) {
             driver.capabilities().release(client);
         }
         result.map(Ok)

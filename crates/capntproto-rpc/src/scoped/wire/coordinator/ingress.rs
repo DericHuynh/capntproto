@@ -255,6 +255,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         self.schedule.cursor = Lane::Calls;
                     }
                     self.schedule.active |= (WorkSet::CALLS) | (WorkSet::MAINTENANCE);
+                } else if completed.is_some() {
+                    self.schedule.resume_at(Lane::Calls);
+                    self.lane_progressed(Lane::Calls);
                 } else {
                     self.resume_at(Lane::Calls);
                 }

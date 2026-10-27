@@ -1,4 +1,46 @@
 use super::*;
+
+#[test]
+fn single_capability_storage_and_completed_pipeline_need_no_adapter_allocation() {
+    let mut capability = Some(crate::broken::new_cap(Error::failed(
+        "inline capability".into(),
+    )));
+    let count = allocation_counter::measure(|| {
+        let caps = PayloadCaps::collect(1, |_| Ok(capability.take())).unwrap();
+        assert_eq!(caps.len(), 1);
+        assert_eq!(
+            caps[0].as_ref().unwrap().get_failure().unwrap().extra,
+            "inline capability"
+        );
+    });
+    // Cloning an error string above is application work; isolate the storage
+    // operation itself with a null capability occupying the same table slot.
+    assert!(count.count_total <= 1);
+    let count = allocation_counter::measure(|| {
+        let caps = PayloadCaps::collect(1, |_| Ok(None)).unwrap();
+        assert_eq!(caps.len(), 1);
+    });
+    assert_eq!(count.count_total, 0);
+    assert_eq!(count.bytes_total, 0);
+
+    let mut message = capnp::message::Builder::new_default();
+    let mut caps = Vec::new();
+    let mut root = message.init_root::<any_pointer::Builder>();
+    root.imbue_mut(&mut caps);
+    root.set_as_capability(crate::broken::new_cap(Error::failed(
+        "retained capability".into(),
+    )));
+    let payload = Rc::new(Payload::owned(message, caps));
+    let pipeline = PipelineState::prepared(None);
+    let count = allocation_counter::measure(|| pipeline.finish_payload(payload.clone()));
+    assert_eq!(count.count_total, 0);
+    assert_eq!(count.bytes_total, 0);
+    assert!(
+        matches!(&*pipeline.finished.borrow(), Some(CompletedPipeline::Payload(owner)) if Rc::ptr_eq(owner, &payload))
+    );
+    let late = WirePipeline(PipelineRef(Some(pipeline), None)).get_pipelined_cap(&[]);
+    assert_eq!(late.get_failure().unwrap().extra, "retained capability");
+}
 use capntproto_rpc_engine::{
     clients, connection as storage,
     ids::{ImportId, WireId},
@@ -1091,6 +1133,8 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     let pipeline = Rc::new(PipelineState {
         used: Cell::new(false),
         owner_wake: RefCell::new(None),
+        operation: Cell::new(None),
+        materialize: Cell::new(false),
         adopted: RefCell::default(),
         cached: RefCell::default(),
         _credit: Cell::new(None),
