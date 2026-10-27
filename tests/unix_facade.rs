@@ -215,19 +215,31 @@ async fn borrowed_cancellation_preserves_original_socket_and_closes_queued_descr
         let closed = client.on_disconnect();
         let mut call = remote.fd_caps_request();
         let calls = Rc::new(Cell::new(0));
-        let fd = descriptor(1);
-        let raw = fd.as_raw_fd();
+        let (fd, mut descriptor_peer) = UnixStream::pair().unwrap();
+        let fd = OwnedFd::from(fd.into_std().unwrap());
         let cap: harness::Client = capnp_rpc::new_fd_client(Echo { number: 1, calls }, fd);
         call.get().init_caps(1).set(0, cap.into_client_hook());
         let call = call.send().promise;
-        assert!(socket_alive(raw));
+        assert_eq!(
+            descriptor_peer.try_read(&mut [0]).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "the queued capability must retain its descriptor"
+        );
         // The queued outgoing message owns its own descriptor until canceled.
         assert!(metrics.snapshot().message_count >= 2);
         drop(client);
         assert!(closed.await.is_err());
         assert_eq!(call.await.err().unwrap().kind, ErrorKind::Disconnected);
         assert_eq!(metrics.snapshot().message_count, 0);
-        assert!(!socket_alive(raw));
+        // A parallel test can reuse the closed FD number. Peer EOF observes
+        // this socket's actual lifetime, including duplicated descriptors.
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(5), descriptor_peer.read(&mut [0]))
+                .await
+                .expect("cancellation retained a queued capability descriptor")
+                .unwrap(),
+            0
+        );
         assert!(socket_alive(a_fd));
         a.write_all(b"reusable").await.unwrap();
         let mut bytes = [0; 8];
