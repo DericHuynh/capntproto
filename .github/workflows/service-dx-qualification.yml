@@ -1,0 +1,107 @@
+name: Qualify portable direct paths and free-slot allocation
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-shared-rpc-core
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+jobs:
+  parity: 
+    if: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 79b43c2b1691794fff5795441c591030565b660f
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler libssl-dev
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          git submodule update --init --depth 1 vendor/capnproto
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: dedicated-benchmarks
+          cache-on-failure: true
+          workspaces: |
+            . -> target
+            benchmarks/rpc -> target
+      - name: Test allocation-free and allocating protocol ledgers
+        run: |
+          cargo test --locked -p capntproto-rpc-engine --no-default-features
+          cargo test --locked -p capntproto-rpc-engine --features alloc
+          cargo test --locked -p capntproto-rpc-wire --lib
+          cargo test --locked -p capntproto-rpc-wire --lib --features alloc
+      - name: Test both hosted drivers and shared notification races
+        run: cargo test --locked -p capntproto-rpc --lib -- --nocapture
+      - name: Test mixed legacy and portable lifecycle and pipeline paths
+        run: cargo test --locked -p capntproto --test answer_adoption --test scoped_vat --test scoped_unix --test rpc_reply --test rpc_tables --test rpc_admission --test streaming --test revocable_streaming --test result_pipeline -- --skip tlc
+      - name: Check portable profiles and diagnostics
+        run: |
+          cargo check --locked -p capntproto-rpc --no-default-features
+          rustup target add thumbv6m-none-eabi thumbv7em-none-eabi --toolchain 1.97.0
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv6m-none-eabi
+          CARGO_TARGET_THUMBV6M_NONE_EABI_LINKER=rust-lld cargo build --locked --release --manifest-path verification/portable/Cargo.toml --target thumbv6m-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi
+          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER=rust-lld cargo build --locked --release --manifest-path verification/portable/Cargo.toml --target thumbv7em-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --features alloc
+          cargo clippy --locked -p capntproto-rpc -p capntproto-rpc-engine --all-targets -- -D warnings
+          cargo fmt --all -- --check
+  miri: 
+    if: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 79b43c2b1691794fff5795441c591030565b660f
+      - name: Install memory interpreter
+        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: shared-notification-miri
+          cache-on-failure: true
+      - name: Check dense and sparse lookups with retained-generation reuse
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance
+        run: |
+          for case in free_slots::tests indexed_answer_lookup_preserves_dense_sparse_and_displaced_identities indexed_import_lookup_preserves_dense_sparse_displaced_and_pending_release_ids retirement_queue_observes_deferred_pipeline_release_across_id_reuse; do
+            cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-engine "$case"
+          done
+      - name: Check direct hosted projection and completion ownership
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance
+        run: |
+          for case in promised_answer_calls_publish_without_hosted_endpoint_materialization completed_pipeline_shares_its_payload_without_adapter_allocation; do
+            cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib "$case"
+          done
+  verus:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 79b43c2b1691794fff5795441c591030565b660f
+      - run: git submodule update --init vendor/verus-tla
+      - uses: ./.github/actions/dev-setup
+        with:
+          cache-key: verus-0.2026.10.04.426d8b0
+      - run: cargo run --locked -p capntproto-dev -- verus install
+      - run: cargo run --locked -p capntproto-dev -- verus verify --output target/verification/verus
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: portable-direct-verus
+          path: target/verification/verus/
