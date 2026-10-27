@@ -31,6 +31,7 @@ use std::sync::{
 use std::task::{Context, Poll};
 
 mod queue;
+pub(crate) mod ready_queue;
 mod ready_set;
 use ready_set::ReadySet;
 

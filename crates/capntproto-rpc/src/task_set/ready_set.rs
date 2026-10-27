@@ -1,63 +1,15 @@
 //! Task sets reuse wake nodes with a bounded multi-producer atomic FIFO.
 //! Exceptional concurrency retains the FuturesUnordered fallback.
-use futures::{stream::FuturesUnordered, task::AtomicWaker, Stream};
+use futures::{stream::FuturesUnordered, Stream};
 use std::{
     future::Future,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     task::{Context, Poll, Wake, Waker},
 };
 
-// Notification storage is bounded independently of task lifetimes. A larger
-// exceptional set uses FuturesUnordered rather than retaining an unbounded pool.
-const REUSABLE_TASKS: usize = 128;
+use super::ready_queue::{ReadyQueue as Ready, CAPACITY as REUSABLE_TASKS};
 
-struct Ready {
-    next: AtomicUsize,
-    entries: [AtomicU8; REUSABLE_TASKS],
-    queued: [AtomicBool; REUSABLE_TASKS],
-    parent: AtomicWaker,
-}
-impl Ready {
-    fn new() -> Self {
-        Self {
-            next: AtomicUsize::new(0),
-            entries: [const { AtomicU8::new(0) }; REUSABLE_TASKS],
-            queued: [const { AtomicBool::new(false) }; REUSABLE_TASKS],
-            parent: AtomicWaker::new(),
-        }
-    }
-    fn enqueue(&self, index: usize) {
-        // Even a duplicate publishes producer data. The consumer clears this
-        // flag with acquire ordering before it polls the future.
-        if self.queued[index].swap(true, Ordering::AcqRel) {
-            return;
-        }
-        // Each slot owns at most one reservation, so at most REUSABLE_TASKS
-        // reservations can be outstanding. The consumer releases the entry
-        // before allowing another reservation for its slot. Thus wrapping this
-        // cursor cannot overwrite a live entry, even if a producer is suspended
-        // between reserving its position and publishing its notification.
-        let position = self.next.fetch_add(1, Ordering::Relaxed) % REUSABLE_TASKS;
-        let previous = self.entries[position].swap(index as u8 + 1, Ordering::AcqRel);
-        debug_assert_eq!(previous, 0);
-        self.parent.wake();
-    }
-    fn front(&self, position: usize) -> Option<usize> {
-        let entry = self.entries[position % REUSABLE_TASKS].load(Ordering::Acquire);
-        (entry != 0).then(|| entry as usize - 1)
-    }
-    fn consume(&self, position: usize, index: usize) {
-        self.entries[position % REUSABLE_TASKS].store(0, Ordering::Release);
-        // A wake before this RMW is observed by the following poll; a wake
-        // after it reserves a new position. Never replace this with a store.
-        let was_queued = self.queued[index].swap(false, Ordering::AcqRel);
-        debug_assert!(was_queued);
-    }
-}
 struct Notify {
     index: usize,
     ready: Arc<Ready>,
@@ -195,7 +147,7 @@ mod tests {
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
-        sync::atomic::AtomicUsize,
+        sync::atomic::{AtomicUsize, Ordering},
     };
     #[derive(Default)]
     struct Counts(AtomicUsize);

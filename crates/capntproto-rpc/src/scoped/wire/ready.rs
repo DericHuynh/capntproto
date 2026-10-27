@@ -1,6 +1,7 @@
 //! Bounded FIFO of operation identities. Wakers carry no driver references.
 //! Slot generations reject notifications retained by an earlier operation.
-use std::cell::RefCell;
+use crate::task_set::ready_queue::{ReadyQueue, CAPACITY};
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -94,14 +95,26 @@ impl State {
         }
     }
 }
-// Only asynchronous notifications enter this mailbox. The local driver owns
-// the FIFO, slot generations and membership; scheduling never locks them.
-#[derive(Default)]
+// Ordinary asynchronous notifications share legacy's atomic FIFO. Larger
+// operation sets retain the original mailbox. The local driver owns exact
+// generations and runnable membership in either representation.
 struct Shared {
+    fast: ReadyQueue,
+    overflow: AtomicBool,
     pending: Mutex<VecDeque<Arc<Notify>>>,
     notified: AtomicBool,
     closed: AtomicBool,
-    parent: futures::task::AtomicWaker,
+}
+impl Default for Shared {
+    fn default() -> Self {
+        Self {
+            fast: ReadyQueue::new(),
+            overflow: AtomicBool::new(false),
+            pending: Mutex::default(),
+            notified: AtomicBool::new(false),
+            closed: AtomicBool::new(false),
+        }
+    }
 }
 // Every wake linearizes against scheduling, poll entry/exit and removal on
 // this one atomic. Independent flags can miss a concurrent queue-to-poll handoff.
@@ -138,6 +151,18 @@ impl Notify {
         let Some(shared) = self.shared.upgrade() else {
             return;
         };
+        if shared.closed.load(Ordering::Acquire)
+            || self.state.load(Ordering::Acquire) & INACTIVE != 0
+        {
+            return;
+        }
+        if !shared.overflow.load(Ordering::Acquire) {
+            // The slot, rather than its generation, owns one reservation.
+            // Its current Notify retains the generation-specific WOKEN bit;
+            // a stale reservation cannot make a replacement runnable.
+            shared.fast.enqueue(self.index);
+            return;
+        }
         let notify = {
             let mut pending = shared.pending.lock().unwrap();
             if shared.closed.load(Ordering::Acquire)
@@ -151,7 +176,7 @@ impl Notify {
         // Reentrant executors run after releasing the mailbox, and one wake
         // covers all notifications until the driver consumes that batch.
         if notify {
-            shared.parent.wake();
+            shared.fast.parent.wake();
         }
     }
 }
@@ -159,6 +184,7 @@ impl Notify {
 pub(crate) struct Queue {
     state: RefCell<State>,
     shared: Arc<Shared>,
+    next_fast: Cell<usize>,
 }
 /// Polling is itself ownership of readiness. Synchronous completion discards
 /// self-wakes; a suspended operation republishes them when its poll ends.
@@ -178,6 +204,25 @@ impl Drop for Ready {
 }
 impl Queue {
     fn drain(&self) {
+        {
+            let mut state = self.state.borrow_mut();
+            while let Some(index) = self.shared.fast.front(self.next_fast.get()) {
+                self.shared.fast.consume(self.next_fast.get(), index);
+                self.next_fast.set(self.next_fast.get().wrapping_add(1));
+                if let Some(notify) = state.slots[index].notify.as_ref() {
+                    let notified = notify.state.load(Ordering::Acquire);
+                    notify.queued.store(false, Ordering::Release);
+                    if notified & (WOKEN | INACTIVE) == WOKEN {
+                        state.push(index);
+                    }
+                }
+            }
+        }
+        // An earlier producer may still be publishing a reserved position.
+        // It owns the wake; overflow must not pass it and change FIFO order.
+        if self.shared.fast.pending(self.next_fast.get()) {
+            return;
+        }
         if !self.shared.notified.load(Ordering::Acquire) {
             return;
         }
@@ -199,18 +244,28 @@ impl Queue {
     /// Bind a wakeup owner, optionally ready now. Remote requests are installed
     /// parked: publishing a question does not require polling for its absent reply.
     pub(crate) fn insert(&self, index: usize, runnable: bool) -> Waker {
+        if index >= CAPACITY {
+            // Promotion is permanent. New notifications use the original
+            // bounded mailbox; earlier atomic reservations drain first.
+            self.shared.overflow.store(true, Ordering::Release);
+        }
+        self.drain();
         // Synchronize even before the mailbox's notified bit is published.
         // A removed owner's in-flight wake must leave the mailbox before reuse;
         // this keeps its reserved capacity bounded to one entry per slot.
-        self.drain_locked(&mut self.shared.pending.lock().unwrap());
+        if self.shared.overflow.load(Ordering::Acquire) {
+            self.drain_locked(&mut self.shared.pending.lock().unwrap());
+        }
         let mut state = self.state.borrow_mut();
         assert!(!state.closed);
         if index >= state.slots.len() {
             state.slots.resize_with(index + 1, Slot::default);
             // One coalesced mailbox entry per slot; waking never grows storage.
-            let mut pending = self.shared.pending.lock().unwrap();
-            let additional = state.slots.len().saturating_sub(pending.len());
-            pending.reserve(additional);
+            if self.shared.overflow.load(Ordering::Acquire) {
+                let mut pending = self.shared.pending.lock().unwrap();
+                let additional = state.slots.len().saturating_sub(pending.len());
+                pending.reserve(additional);
+            }
         }
         let slot = &mut state.slots[index];
         assert!(!slot.active && !slot.queued);
@@ -245,10 +300,10 @@ impl Queue {
         Waker::from(notify)
     }
     pub(crate) fn register(&self, parent: &Waker) {
-        self.shared.parent.register(parent);
+        self.shared.fast.parent.register(parent);
     }
     pub(crate) fn notify_parent(&self) {
-        self.shared.parent.wake();
+        self.shared.fast.parent.wake();
     }
     pub(crate) fn push(&self, index: usize) {
         self.drain();
@@ -283,7 +338,7 @@ impl Queue {
         self.state.borrow_mut().closed = true;
         self.shared.pending.lock().unwrap().clear();
         self.shared.notified.store(false, Ordering::Release);
-        self.shared.parent.take();
+        self.shared.fast.parent.take();
     }
 }
 impl Drop for Queue {
@@ -301,6 +356,79 @@ mod tests {
     impl Wake for Count {
         fn wake(self: Arc<Self>) {
             self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    #[test]
+    fn ordinary_notifications_use_the_shared_atomic_fifo_without_locking() {
+        let queue = Queue::default();
+        let wake = queue.insert(0, false);
+        let mailbox = queue.shared.pending.lock().unwrap();
+        let (sent, received) = std::sync::mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            wake.wake();
+            sent.send(()).unwrap();
+        });
+        let result = received.recv_timeout(std::time::Duration::from_secs(2));
+        // Release before asserting, so the old implementation fails cleanly
+        // rather than leaving a blocked producer or a poisoned Drop path.
+        drop(mailbox);
+        producer.join().unwrap();
+        result.expect("ordinary wake tried to acquire the overflow mailbox");
+        assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
+        assert!(queue.is_empty());
+    }
+    #[test]
+    fn atomic_fifo_wraps_and_promotion_keeps_earlier_notifications_first() {
+        let queue = Queue::default();
+        let mut wakes: Vec<_> = (0..CAPACITY).map(|i| queue.insert(i, false)).collect();
+        for _ in 0..8 {
+            for wake in wakes.iter().rev() {
+                wake.wake_by_ref();
+            }
+            for index in (0..CAPACITY).rev() {
+                assert_eq!(queue.pop().map(|ready| ready.index()), Some(index));
+            }
+            assert!(queue.is_empty());
+        }
+        for wake in wakes.iter().rev() {
+            wake.wake_by_ref();
+        }
+        wakes.push(queue.insert(CAPACITY, false));
+        wakes[CAPACITY].wake_by_ref();
+        for index in (0..CAPACITY).rev().chain([CAPACITY]) {
+            assert_eq!(queue.pop().map(|ready| ready.index()), Some(index));
+        }
+        assert!(queue.is_empty());
+        // After promotion every generation still has its own wake authority.
+        let old = wakes[0].clone();
+        queue.remove(0);
+        let new = queue.insert(0, false);
+        old.wake_by_ref();
+        assert!(queue.is_empty());
+        new.wake();
+        assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
+    }
+    #[test]
+    fn atomic_notifications_from_concurrent_producers_are_coalesced_without_loss() {
+        let queue = Queue::default();
+        let wakes: Vec<_> = (0..CAPACITY).map(|i| queue.insert(i, false)).collect();
+        for _ in 0..8 {
+            std::thread::scope(|threads| {
+                for group in wakes.chunks(16) {
+                    threads.spawn(move || {
+                        for _ in 0..8 {
+                            for wake in group {
+                                wake.wake_by_ref();
+                            }
+                        }
+                    });
+                }
+            });
+            let mut seen = std::collections::BTreeSet::new();
+            while let Some(ready) = queue.pop() {
+                assert!(seen.insert(ready.index()));
+            }
+            assert_eq!(seen, (0..CAPACITY).collect());
         }
     }
     #[test]
