@@ -26,18 +26,18 @@
 <text x="600.00" y="410.00" font-size="13" fill="#64748b">Executions</text>
 <text x="35.00" y="474.00" font-size="20" fill="#1e293b">AFL++ + RPC IJON</text>
 <text x="35.00" y="505.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_framing</text>
-<rect x="600.00" y="490.00" width="257.28" height="23" fill="#0868d4"/>
-<text x="863.28" y="507.00" font-size="13" fill="#334155">811809</text>
+<rect x="600.00" y="490.00" width="300.03" height="23" fill="#0868d4"/>
+<text x="906.03" y="507.00" font-size="13" fill="#334155">1493934</text>
 <text x="35.00" y="547.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_pointers</text>
 <rect x="600.00" y="532.00" width="600.00" height="23" fill="#00ac7b"/>
-<text x="1206.00" y="549.00" font-size="13" fill="#334155">1893222</text>
+<text x="1206.00" y="549.00" font-size="13" fill="#334155">2987540</text>
 <text x="35.00" y="589.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_schema</text>
-<rect x="600.00" y="574.00" width="227.09" height="23" fill="#ef4444"/>
-<text x="833.09" y="591.00" font-size="13" fill="#334155">716556</text>
+<rect x="600.00" y="574.00" width="286.87" height="23" fill="#ef4444"/>
+<text x="892.87" y="591.00" font-size="13" fill="#334155">1428381</text>
 <text x="35.00" y="631.00" font-size="13" fill="#334155">AFL++ &#x2F; rpc_lifecycle</text>
-<rect x="600.00" y="616.00" width="29.16" height="23" fill="#e89200"/>
-<text x="635.16" y="633.00" font-size="13" fill="#334155">92023</text>
+<rect x="600.00" y="616.00" width="25.56" height="23" fill="#e89200"/>
+<text x="631.56" y="633.00" font-size="13" fill="#334155">127254</text>
 <text x="600.00" y="678.00" font-size="13" fill="#64748b">Executions</text>
-<text x="35.00" y="742.00" font-size="13" fill="#64748b">Measured 2026-10-27T02:53:17Z | commit eecb9aef1eaf</text>
+<text x="35.00" y="742.00" font-size="13" fill="#64748b">Measured 2026-10-27T04:42:31Z | commit 130481adf487</text>
 </g>
 </svg>
