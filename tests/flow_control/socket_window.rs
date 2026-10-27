@@ -157,12 +157,22 @@ fn check_live_socket_window(
 }
 
 #[cfg(target_os = "linux")]
+async fn assert_peer_eof(peer: &mut (impl tokio::io::AsyncRead + Unpin)) {
+    use tokio::io::AsyncReadExt;
+    let mut byte = [0];
+    let count = tokio::time::timeout(Duration::from_secs(5), peer.read(&mut byte))
+        .await
+        .expect("send-buffer observer retained the socket")
+        .unwrap();
+    assert_eq!(count, 0, "the closed socket must produce EOF");
+}
+
+#[cfg(target_os = "linux")]
 #[tokio::test(flavor = "current_thread")]
 async fn unix_network_automatically_samples_live_send_buffer_without_retaining_socket() {
-    use std::os::fd::{AsFd, AsRawFd};
-    let (socket, peer) = tokio::net::UnixStream::pair().unwrap();
+    use std::os::fd::AsFd;
+    let (socket, mut peer) = tokio::net::UnixStream::pair().unwrap();
     let probe = socket.as_fd().try_clone_to_owned().unwrap();
-    let raw = socket.as_raw_fd();
     let mut network =
         capntproto::unix_rpc::VatNetwork::new(socket, Side::Client, Default::default());
     let mut connection = network.connect(Side::Server).unwrap();
@@ -171,13 +181,10 @@ async fn unix_network_automatically_samples_live_send_buffer_without_retaining_s
     pending.send(1);
     drop(connection);
     drop(network);
-    // SAFETY: fcntl only checks descriptor validity; it neither adopts nor closes it.
-    assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
-        Some(libc::EBADF)
-    );
     drop(probe);
+    // FD numbers can be reused by parallel tests. EOF observes the socket's
+    // actual lifetime, including any accidental duplicated-descriptor owner.
+    assert_peer_eof(&mut peer).await;
     pending.send(1); // safely falls back after socket destruction
     assert_eq!(pending.outcomes, [1, 1]);
     pending.ack(0, false);
@@ -190,15 +197,15 @@ async fn unix_network_automatically_samples_live_send_buffer_without_retaining_s
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "current_thread")]
 async fn tcp_network_automatically_samples_live_send_buffer_and_releases_output() {
-    use std::os::fd::{AsFd, AsRawFd};
+    use std::os::fd::AsFd;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (socket, peer) = tokio::join!(
         tokio::net::TcpStream::connect(listener.local_addr().unwrap()),
         listener.accept()
     );
     let socket = socket.unwrap();
+    let (mut peer, _) = peer.unwrap();
     let probe = socket.as_fd().try_clone_to_owned().unwrap();
-    let raw = socket.as_raw_fd();
     let mut network = capntproto::rpc::tcp::network(socket, Side::Client, Default::default());
     let mut connection = network.connect(Side::Server).unwrap();
     check_live_socket_window(&mut *connection, &probe);
@@ -206,20 +213,15 @@ async fn tcp_network_automatically_samples_live_send_buffer_and_releases_output(
     pending.send(1);
     drop(connection);
     drop(network);
-    // SAFETY: same descriptor validity check as the Unix case, without FD reuse.
-    assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
-    assert_eq!(
-        std::io::Error::last_os_error().raw_os_error(),
-        Some(libc::EBADF)
-    );
     drop(probe);
+    assert_peer_eof(&mut peer).await;
     pending.send(1);
     assert_eq!(pending.outcomes, [1, 1]);
     pending.ack(0, false);
     pending.ack(1, false);
     pending.drop_controller();
     assert!(pending.done.get());
-    drop(peer.unwrap());
+    drop(peer);
 }
 
 #[test]
