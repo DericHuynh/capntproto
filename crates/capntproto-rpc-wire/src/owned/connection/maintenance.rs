@@ -438,7 +438,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .expect("selected queued request")
                 .into_call()
                 .unwrap_or_else(|_| unreachable!("selected Call")),
-            None => self.call.take().expect("selected retained request"),
+            None => {
+                let call = self.call.take().expect("selected retained request");
+                self.clear_call_target();
+                call
+            }
         };
         self.release_call(call, messages);
         Ok(Some(match retired {

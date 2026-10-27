@@ -216,6 +216,9 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     exchanges: SlotStorage<'s, ExchangeSlot<'pool, 'id, I, CAPS>>,
     free_exchanges: capntproto_rpc_engine::free_slots::FreeSlots,
     call: Option<Request<'pool, 'id, I, CAPS, PATH>>,
+    // A resolved promised target survives dispatch backpressure. Retrying must
+    // not repeat payload traversal or select a different early pipeline.
+    call_target: Option<clients::Client<'id>>,
     resolution: Option<Resolution<'pool, 'id, 'id, 'id, I>>,
     loopbacks: super::loopback::Bindings<'s, 'id>,
     barrier: Option<super::loopback::Ticket<'id>>,
@@ -554,6 +557,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             exchanges: storage.exchanges,
             free_exchanges: capntproto_rpc_engine::free_slots::FreeSlots::new(),
             call: None,
+            call_target: None,
             resolution: None,
             loopbacks,
             barrier: None,
@@ -1095,6 +1099,92 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         Ok(Some((ticket.accept_owned(call), execute)))
     }
 
+    /// Dispatch an already-settled local promised-answer target without an
+    /// intermediate promise, observer or queued task. The producer resolver has
+    /// the same priority over frozen results as ordinary pipeline propagation.
+    /// Pending, failed, remote and capacity-blocked resolutions keep the normal
+    /// ordered path. No request ownership changes until the ticket commits.
+    #[allow(clippy::type_complexity)]
+    pub fn dispatch_immediate_call_with(
+        &mut self,
+        cancellation: bool,
+        messages: &messages::Messages<'pool, '_, '_>,
+        resolve: impl FnOnce(
+            &A,
+            pipeline::Path<'_>,
+            &mut Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH>,
+        ) -> Result<
+            Option<Result<clients::Client<'id>, capnp::ErrorKind>>,
+            pipelines::Error,
+        >,
+    ) -> Result<
+        Option<(
+            dispatch::Running<'id, Request<'pool, 'id, I, CAPS, PATH>>,
+            bool,
+        )>,
+        Error,
+    > {
+        let Some(call) = &self.call else {
+            return self.dispatch_immediate_call(cancellation);
+        };
+        let TargetRef::Promised { answer, path } = call.target() else {
+            return self.dispatch_immediate_call(cancellation);
+        };
+        self.check_live()?;
+        let key = call.answer();
+        if self.runtime.queued() != 0 || self.ledgers.answers.is_third_party(key) != Ok(false) {
+            return Ok(None);
+        }
+        if self.call_target.is_none() {
+            let parent = &self.ledgers.answers.pipelined(answer).owner;
+            let resolved = match resolve(
+                &parent.producer,
+                path,
+                &mut clients::Access::new(&mut self.runtime),
+            ) {
+                Ok(Some(Ok(target))) => Some(target),
+                Ok(None) => parent
+                    .target(path, messages, &mut self.runtime)
+                    .ok()
+                    .flatten(),
+                Ok(Some(Err(_))) | Err(_) => None,
+            };
+            let Some(target) = resolved else {
+                return Ok(None);
+            };
+            self.call_target = Some(target);
+        }
+        let outcome = (|| {
+            let Some(ticket) = self
+                .runtime
+                .prepare_immediate(self.call_target.as_ref().unwrap())
+                .map_err(Error::Dispatch)?
+            else {
+                return Ok(None);
+            };
+            if !matches!(
+                ticket.destination(),
+                clients::Destination::Endpoint {
+                    location: clients::Location::Local | clients::Location::Broken,
+                    ..
+                }
+            ) {
+                return Ok(None);
+            }
+            let execute = self
+                .ledgers
+                .answers
+                .dispatch(key, cancellation)
+                .map_err(|e| Error::Input(super::Error::Admission(inbound::Error::Answer(e))))?;
+            let call = self.call.take().expect("preflighted promised-answer Call");
+            Ok(Some((ticket.accept_owned(call), execute)))
+        })();
+        if matches!(outcome, Ok(Some(_))) {
+            self.clear_call_target();
+        }
+        outcome
+    }
+
     pub fn retry_call(&mut self) -> Result<Option<answers::Key<'id>>, Error> {
         self.check_live()?;
         if self.call.is_some() && !self.normal_dispatch_available() {
@@ -1106,18 +1196,35 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             return Ok(None);
         };
         let key = call.answer();
-        match call.enqueue_wrapped(
-            &mut self.runtime,
-            &self.ledgers.exports,
-            &mut self.ledgers.answers,
-            &mut self.pipelines,
-            Task::Call,
-            |task| {
-                task.into_call()
-                    .unwrap_or_else(|_| unreachable!("unaccepted Call"))
-            },
-        ) {
+        let queued = if let Some(target) = &self.call_target {
+            let mut owner = Some(Task::Call(call));
+            let queued = self
+                .runtime
+                .prepare_call(target, &mut owner)
+                .map(|pending| pending.accept());
+            queued.map_err(|error| EnqueueRejected {
+                error: EnqueueError::Dispatch(error),
+                call: owner
+                    .expect("unaccepted resolved Call")
+                    .into_call()
+                    .unwrap_or_else(|_| unreachable!("unaccepted Call")),
+            })
+        } else {
+            call.enqueue_wrapped(
+                &mut self.runtime,
+                &self.ledgers.exports,
+                &mut self.ledgers.answers,
+                &mut self.pipelines,
+                Task::Call,
+                |task| {
+                    task.into_call()
+                        .unwrap_or_else(|_| unreachable!("unaccepted Call"))
+                },
+            )
+        };
+        match queued {
             Ok(task) => {
+                self.clear_call_target();
                 self.ledgers
                     .answers
                     .get_mut(key)
@@ -2021,6 +2128,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             &mut self.ledgers.exports,
             &mut self.ledgers.answers,
         );
+    }
+    fn clear_call_target(&mut self) {
+        if let Some(target) = self.call_target.take() {
+            self.runtime.release(target);
+        }
     }
     pub fn drain_canceled_response(
         &mut self,

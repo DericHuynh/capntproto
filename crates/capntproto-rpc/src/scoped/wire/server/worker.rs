@@ -142,6 +142,19 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         &mut self,
         driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
     ) -> capnp::Result<bool> {
+        self.accept_using(driver, |driver| {
+            driver.dispatch_immediate_call(true).map_err(wire_error)
+        })
+    }
+    #[inline(always)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn accept_using<P: Copy + Eq>(
+        &mut self,
+        driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
+        immediate: impl FnOnce(
+            &mut Peer<'p, 'id, '_, I, P, C, H>,
+        ) -> capnp::Result<Option<(Running<'p, 'id, I, C, H>, bool)>>,
+    ) -> capnp::Result<bool> {
         if let Some(kind) = driver.disconnected() {
             return Err(Error::from_kind(kind));
         }
@@ -155,9 +168,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             }
             self.entries.try_reserve(1).map_err(wire_error)?;
         }
-        if let Some((running, execute)) =
-            driver.dispatch_immediate_call(true).map_err(wire_error)?
-        {
+        if let Some((running, execute)) = immediate(driver)? {
             let key = running.owner().answer();
             let results = driver
                 .ledgers()

@@ -109,6 +109,7 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
                     if let Some(request) = driver.network.take() {
                         request.release(driver, messages);
                     } else if let Some(call) = driver.call.take() {
+                        driver.clear_call_target();
                         driver.release_call(call, messages);
                     } else {
                         self.phase += 1;

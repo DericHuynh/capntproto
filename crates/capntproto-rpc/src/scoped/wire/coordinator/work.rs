@@ -246,7 +246,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         // as the rotating scanner, without rebuilding its six adapters.
         if self.schedule.active == ((WorkSet::ACCEPT) | (WorkSet::WORKER)) && *remaining > 1 {
             *remaining -= 1;
-            if self.worker.accept(&mut self.driver)?
+            if self.accept_request(messages)?
                 && self.driver.runtime().queued() == 0
                 && !self.driver.has_pending_call()
                 && self.notifications.pending() == WorkSet::NONE
@@ -426,7 +426,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             Poll::Pending => Poll::Pending,
                         }
                     }
-                    Lane::Accept => match self.worker.accept(&mut self.driver) {
+                    Lane::Accept => match self.accept_request(messages) {
                         Ok(false) => Poll::Pending,
                         Ok(true) => Poll::Ready(Ok(())),
                         Err(e) => Poll::Ready(Err(e)),
@@ -651,6 +651,23 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 Self::collect_hooks(hooks, driver, output);
             }
         }
+    }
+
+    fn accept_request(&mut self, messages: &messages::Messages<'p, '_, '_>) -> capnp::Result<bool> {
+        let hooks = &mut self.hooks;
+        let foreign = &mut self.foreign;
+        self.worker.accept_using(&mut self.driver, |driver| {
+            driver
+                .dispatch_immediate_call_with(true, messages, |results, path, runtime| {
+                    hooks
+                        .server_pipeline(results, path, runtime, |runtime, hook| {
+                            foreign.import(runtime, hook)
+                        })
+                        .map(|client| client.map(Ok))
+                        .map_err(|error| pipelines::Error::Input(owned::Error::Wire(error.kind)))
+                })
+                .map_err(wire_error)
+        })
     }
 
     // Inline the small lane adapter into the scheduler so its concrete closures

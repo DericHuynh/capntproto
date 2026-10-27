@@ -5,6 +5,233 @@ use core::num::NonZeroUsize;
 const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
+fn deferred_promised_request<'p, 'id>(
+    driver: &mut Peer<'p, 'id, '_>,
+    messages: &mut messages::Messages<'p, '_, '_>,
+    parent: answers::Key<'id>,
+    question: u32,
+) -> answers::Key<'id> {
+    driver.defer_call_dispatch(true);
+    let frame = Frame::build(messages, 512, Default::default(), |builder| {
+        calls::dynamic_call(
+            builder,
+            QuestionId::from_wire(question),
+            calls::Target::Promised {
+                question: QuestionId::from_wire(parent.id().to_wire()),
+                path: pipeline::Path::new(&[]),
+            },
+            calls::DynamicCall {
+                no_promise_pipelining: true,
+                ..Default::default()
+            },
+            |_| Ok(()),
+        )
+    })
+    .unwrap();
+    let Received::DeferredCall(key) = driver
+        .receive(frame, messages, &mut [0; 8], |_| (), || 84)
+        .unwrap_or_else(|rejected| panic!("{}", rejected.error))
+    else {
+        panic!("deferred Call")
+    };
+    key
+}
+
+#[test]
+fn settled_promised_dispatch_needs_no_observer_and_preserves_early_pipeline_priority() {
+    for early in [false, true] {
+        let measured = allocation_counter::measure(|| {
+            with_driver(|mut driver, messages| {
+                let (parent, target) = request(&mut driver, messages, false);
+                let alternative = driver
+                    .runtime
+                    .endpoint(binding::Route::local(92), clients::Location::Local)
+                    .unwrap();
+                let result = driver
+                    .local_result_dynamic(
+                        7,
+                        9,
+                        &[Some(&target)],
+                        messages,
+                        512,
+                        Default::default(),
+                        |content| content.set_capability_index(0),
+                    )
+                    .unwrap();
+                driver
+                    .complete_answer(&parent, Ok(result), messages)
+                    .unwrap_or_else(|_| panic!("completion"));
+                driver.pipelines = pipelines::Bindings::new(&mut []).unwrap();
+                let child = deferred_promised_request(&mut driver, messages, parent.answer(), 4);
+                assert!(
+                    !driver
+                        .ledgers
+                        .answers
+                        .finish(parent.answer().id(), false)
+                        .cancel
+                );
+                let (running, execute) = driver
+                    .dispatch_immediate_call_with(true, messages, |_, _, graph| {
+                        if early {
+                            graph
+                                .retain_key(alternative.key())
+                                .map(|client| Some(Ok(client)))
+                                .map_err(pipelines::Error::Graph)
+                        } else {
+                            Ok(None)
+                        }
+                    })
+                    .unwrap()
+                    .expect("settled target dispatches without an observer");
+                assert!(execute);
+                assert_eq!(
+                    running.target().key(),
+                    if early {
+                        alternative.key()
+                    } else {
+                        target.key()
+                    }
+                );
+                assert_eq!(running.owner().answer(), child);
+                assert_eq!(driver.runtime.queued(), 0);
+                assert!(driver.call_target.is_none());
+                let call = driver.runtime.complete(running);
+                driver.release_call(call, messages);
+                driver.release_call(parent, messages);
+                driver.runtime.release(target);
+                driver.runtime.release(alternative);
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::<()>::new(&mut []).unwrap(),
+                );
+            })
+        });
+        assert_eq!(measured.count_total, 0);
+    }
+}
+
+#[test]
+fn resolved_promised_dispatch_reuses_target_and_preserves_order_and_cleanup() {
+    for mode in 0..3 {
+        let measured = allocation_counter::measure(|| {
+            with_driver(|mut driver, messages| {
+                let (parent, target) = request(&mut driver, messages, false);
+                let waiting = driver.runtime.promise(&mut None).unwrap();
+                driver.pipelines = pipelines::Bindings::new(&mut []).unwrap();
+                let child = deferred_promised_request(&mut driver, messages, parent.answer(), 4);
+                assert!(driver
+                    .dispatch_immediate_call_with(true, messages, |_, _, graph| {
+                        graph
+                            .retain_key(waiting.key())
+                            .map(|client| Some(Ok(client)))
+                            .map_err(pipelines::Error::Graph)
+                    })
+                    .unwrap()
+                    .is_none());
+                assert!(driver.call_target.is_some());
+                assert!(driver
+                    .dispatch_immediate_call_with(true, messages, |_, _, _| {
+                        panic!("retry must retain its original resolved target")
+                    })
+                    .unwrap()
+                    .is_none());
+                if mode == 1 {
+                    assert_eq!(driver.retry_call().unwrap(), Some(child));
+                    assert!(driver.call_target.is_none());
+                    let later =
+                        deferred_promised_request(&mut driver, messages, parent.answer(), 5);
+                    assert!(driver
+                        .dispatch_immediate_call_with(true, messages, |_, _, _| {
+                            panic!("an older queued call must defer target resolution")
+                        })
+                        .unwrap()
+                        .is_none());
+                    let replacement = driver.runtime.retain_key(target.key()).unwrap();
+                    let barrier = driver
+                        .runtime
+                        .prepare_resolution(
+                            waiting.key(),
+                            &mut Some(replacement),
+                            clients::Source::Direct,
+                        )
+                        .unwrap()
+                        .accept();
+                    assert!(barrier.is_none());
+                    let ready = driver
+                        .runtime
+                        .next_ready()
+                        .unwrap()
+                        .expect("resolved child");
+                    let running = ready.accept();
+                    assert_eq!(running.target().key(), target.key());
+                    let call = driver
+                        .runtime
+                        .complete(running)
+                        .into_call()
+                        .unwrap_or_else(|_| panic!("child Call"));
+                    assert_eq!(call.answer(), child);
+                    driver.release_call(call, messages);
+                    let (running, _) = driver
+                        .dispatch_immediate_call_with(true, messages, |_, _, graph| {
+                            graph
+                                .retain_key(target.key())
+                                .map(|client| Some(Ok(client)))
+                                .map_err(pipelines::Error::Graph)
+                        })
+                        .unwrap()
+                        .expect("later child follows the queued child");
+                    assert_eq!(running.owner().answer(), later);
+                    let call = driver.runtime.complete(running);
+                    driver.release_call(call, messages);
+                } else if mode == 2 {
+                    assert!(driver.ledgers.answers.finish(child.id(), false).cancel);
+                    let mut slots = [None];
+                    let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+                    driver.work_cursor = 11;
+                    assert!(matches!(
+                        driver
+                            .poll_maintenance(
+                                messages,
+                                &mut queue,
+                                128,
+                                Default::default(),
+                                &mut [0; 8],
+                                NonZeroUsize::new(1).unwrap()
+                            )
+                            .unwrap(),
+                        Progress::Producer(84)
+                    ));
+                    assert!(driver.call.is_none());
+                    assert!(
+                        driver.call_target.is_none(),
+                        "cancellation releases the cached target"
+                    );
+                    drain(&mut queue, messages, |root| {
+                        let rpc_capnp::message::Return(Ok(returned)) = root.which().unwrap() else {
+                            panic!("Return")
+                        };
+                        assert_eq!(returned.get_answer_id(), child.id().to_wire());
+                        assert!(matches!(
+                            returned.which().unwrap(),
+                            rpc_capnp::return_::Canceled(())
+                        ));
+                    });
+                }
+                driver.runtime.release(waiting);
+                driver.release_call(parent, messages);
+                driver.runtime.release(target);
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::<()>::new(&mut []).unwrap(),
+                );
+            })
+        });
+        assert_eq!(measured.count_total, 0);
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[test]
 fn direct_prepared_return_preserves_dependencies_and_rolls_back_every_capacity_failure() {
