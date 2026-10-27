@@ -177,6 +177,9 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             .next
             .map(|i| i.get() - 1)
     }
+    pub(crate) fn has_resource_waiters(&self) -> bool {
+        self.retry.has_waiters()
+    }
     pub(crate) fn retry_ready(&self, available: impl FnMut(Requirement) -> bool) -> bool {
         self.retry.has_ready(&self.slots, |s| &s.retry, available)
     }

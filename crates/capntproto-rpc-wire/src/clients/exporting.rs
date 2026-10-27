@@ -109,6 +109,9 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             prefer_event: true,
         })
     }
+    pub(crate) fn has_resource_waiters(&self) -> bool {
+        self.ready.has_waiters()
+    }
     pub(crate) fn has_ready<G: clients::Capabilities<'g>>(
         &self,
         graph: &G,

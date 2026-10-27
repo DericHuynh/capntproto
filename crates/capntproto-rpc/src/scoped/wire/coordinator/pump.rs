@@ -158,7 +158,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
             };
             if queue.len() < queued || (output_ready && self.output_blocked) {
-                self.schedule.active |= WorkSet::MAINTENANCE;
+                // A certified plain publication creates no deferred protocol
+                // work. Output only frees message capacity; without parked
+                // resource owners it cannot invalidate maintenance's idle scan.
+                // Reentrant application wakes still own their lane bits, and
+                // an explicitly blocked output restarts work below as before.
+                if !preserves_control || self.driver.maintenance_has_resource_waiters() {
+                    self.schedule.active |= WorkSet::MAINTENANCE;
+                }
                 if !preserves_control {
                     self.control_idle = false;
                 }

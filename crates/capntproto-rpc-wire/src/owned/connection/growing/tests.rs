@@ -3737,6 +3737,7 @@ fn blocked_projection_does_not_hide_a_ready_sibling_of_the_same_question() {
 fn retained_control_waits_for_output_without_blocking_reference_retirement() {
     with_driver(|mut driver, messages| {
         let mut queue = messages::Queue::new_growing(1, 1).unwrap();
+        assert!(!driver.maintenance_has_resource_waiters());
         let receipt = driver
             .ledgers
             .imports
@@ -3768,11 +3769,13 @@ fn retained_control_waits_for_output_without_blocking_reference_retirement() {
             poll(&mut driver, messages, &mut queue).unwrap(),
             Progress::Yield
         ));
+        assert!(driver.maintenance_has_resource_waiters());
         for _ in 0..32 {
             assert!(matches!(
                 poll(&mut driver, messages, &mut queue).unwrap(),
                 Progress::Idle
             ));
+            assert!(driver.maintenance_has_resource_waiters());
         }
         let server = driver
             .runtime
@@ -3788,6 +3791,7 @@ fn retained_control_waits_for_output_without_blocking_reference_retirement() {
             Progress::Idle
         ));
         drain(&mut queue, messages, |_| {});
+        assert!(driver.maintenance_has_resource_waiters());
         assert!(!driver.maintenance_is_idle(messages, &queue));
         assert!(matches!(
             poll(&mut driver, messages, &mut queue).unwrap(),
@@ -3800,6 +3804,7 @@ fn retained_control_waits_for_output_without_blocking_reference_retirement() {
             ))
         });
         assert!(driver.ledgers.imports.is_empty());
+        assert!(!driver.maintenance_has_resource_waiters());
         close(driver, messages, &mut queue);
     });
 }

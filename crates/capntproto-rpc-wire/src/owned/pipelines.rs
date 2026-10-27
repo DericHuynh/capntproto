@@ -553,6 +553,9 @@ impl<'slots, 'graph, 'a, const P: usize> Bindings<'slots, 'graph, 'a, P> {
         self.live -= 1;
         answers.release_pipeline_deferred(waiter.answer);
     }
+    pub(crate) fn has_resource_waiters(&self) -> bool {
+        self.ready.has_waiters()
+    }
     pub(crate) fn has_ready<T, G: Capabilities<'graph>>(
         &self,
         answers: &answers::Answers<'a, '_, T>,

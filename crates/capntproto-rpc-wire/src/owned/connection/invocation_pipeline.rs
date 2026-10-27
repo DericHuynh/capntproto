@@ -245,6 +245,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         });
         Ok(client)
     }
+    pub(super) fn invocation_has_resource_waiters(&self) -> bool {
+        self.invocation_pipelines.retry.has_waiters()
+    }
     pub(super) fn invocation_work_is_idle(&self) -> bool {
         !self.invocation_pipelines.retry.has_ready(
             &self.invocation_pipelines.slots,
