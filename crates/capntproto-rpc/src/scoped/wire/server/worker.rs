@@ -489,7 +489,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     &mut self.completed_plain,
                     &mut self.completed_ordinary,
                 );
-                if entry.result_revision != entry.results.revision() {
+                // Direct plain publication already retired this answer. There
+                // is no producer or pipeline left to notify in its ledger.
+                if !self.completed_plain && entry.result_revision != entry.results.revision() {
                     entry.result_revision = entry.results.revision();
                     let _ = driver.answers().notify_pipeline(entry.request().answer());
                     advanced = true;
@@ -509,10 +511,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 }
                 break outcome;
             };
-            let redirect_ready = entry
-                .results
-                .redirect()
-                .is_some_and(|redirect| !redirect.sent.get());
+            let redirect_ready = !self.completed_plain
+                && entry
+                    .results
+                    .redirect()
+                    .is_some_and(|redirect| !redirect.sent.get());
             if redirect_ready {
                 self.redirects.push(&mut self.entries, index, |slot| {
                     &mut slot.as_mut().unwrap().redirect_work
@@ -530,7 +533,12 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     self.live -= 1;
                     self.preparing -= usize::from(matches!(entry.stage, Stage::Prepare));
                     self.first_free = self.first_free.min(index);
-                    self.results_cache.recycle(release(entry, driver, messages));
+                    self.results_cache.recycle(release(
+                        entry,
+                        driver,
+                        messages,
+                        self.completed_plain,
+                    ));
                 } else {
                     // Budget exhaustion or a retryable error retains work at
                     // the FIFO tail. Pending sleeps until its own notification
@@ -814,7 +822,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     ) {
         self.ready.close();
         for entry in self.entries.into_iter().flatten() {
-            drop(release(entry, driver, messages));
+            drop(release(entry, driver, messages, false));
         }
     }
 }
@@ -823,9 +831,12 @@ fn release<'p, 'id, I, P: Copy + Eq, const C: usize, const H: usize>(
     entry: Entry<'p, 'id, I, C, H>,
     driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
     messages: &mut messages::Messages<'p, '_, '_>,
+    retired: bool,
 ) -> Results {
     entry.results.unbind_protocol_waker();
-    let _ = driver.answers().unwatch_execution(entry.request().answer());
+    if !retired {
+        let _ = driver.answers().unwatch_execution(entry.request().answer());
+    }
     drop(entry.stage);
     let call = driver.capabilities().complete(entry.running);
     driver.release_call(call, messages);

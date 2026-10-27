@@ -896,8 +896,12 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                     }
                     inbound::caller_question(call.get_question_id()).map_err(Error::Admission)?;
                     let parent = parent?;
-                    prepare_target_path(target, &mut path, path_capacity)?;
-                    let length = pipeline::Path::decode(parent, &mut path)
+                    let prepared = pipeline::PreparedPath::new(parent).map_err(Error::Target)?;
+                    if !path.ensure(path_capacity, prepared.len(), || 0) {
+                        return Err(Error::Capacity);
+                    }
+                    let length = prepared
+                        .decode(&mut path)
                         .map_err(|e| Error::Admission(inbound::Error::Target(e)))?
                         .fields()
                         .len();

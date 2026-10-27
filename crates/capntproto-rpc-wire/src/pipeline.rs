@@ -32,6 +32,47 @@ impl core::error::Error for Error {}
 pub struct Path<'a> {
     fields: &'a [u16],
 }
+/// Validated immutable transform. Retain its reader while reserving caller
+/// storage, so decoding need not fetch and validate the same list again.
+pub(crate) struct PreparedPath<'a> {
+    transform: capnp::struct_list::Reader<'a, rpc_capnp::promised_answer::op::Owned>,
+    length: usize,
+}
+impl<'a> PreparedPath<'a> {
+    pub(crate) fn new(source: rpc_capnp::promised_answer::Reader<'a>) -> Result<Self, Error> {
+        let transform = source.get_transform()?;
+        let mut length = 0usize;
+        for op in transform {
+            match op.which().map_err(|_| Error::UnknownTransform)? {
+                rpc_capnp::promised_answer::op::Noop(()) => (),
+                rpc_capnp::promised_answer::op::GetPointerField(_) => {
+                    length = length.checked_add(1).ok_or(Error::Capacity)?;
+                }
+            }
+        }
+        Ok(Self { transform, length })
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.length
+    }
+    pub(crate) fn decode(self, scratch: &mut [u16]) -> Result<Path<'_>, Error> {
+        if self.length > scratch.len() {
+            return Err(Error::Capacity);
+        }
+        let mut index = 0;
+        for op in self.transform {
+            if let rpc_capnp::promised_answer::op::GetPointerField(field) =
+                op.which().expect("validated immutable transform")
+            {
+                scratch[index] = field;
+                index += 1;
+            }
+        }
+        Ok(Path {
+            fields: &scratch[..self.length],
+        })
+    }
+}
 impl<'a> Path<'a> {
     /// Explicit wire boundary. Values are pointer-section offsets, not ordinals.
     pub const fn new(fields: &'a [u16]) -> Self {
@@ -46,36 +87,10 @@ impl<'a> Path<'a> {
         source: rpc_capnp::promised_answer::Reader<'_>,
         scratch: &'a mut [u16],
     ) -> Result<Self, Error> {
-        let length = Self::required(source)?;
-        if length > scratch.len() {
-            return Err(Error::Capacity);
-        }
-        let transform = source.get_transform()?;
-        let mut index = 0;
-        for op in transform {
-            if let rpc_capnp::promised_answer::op::GetPointerField(field) =
-                op.which().map_err(|_| Error::UnknownTransform)?
-            {
-                scratch[index] = field;
-                index += 1;
-            }
-        }
-        Ok(Self {
-            fields: &scratch[..length],
-        })
+        PreparedPath::new(source)?.decode(scratch)
     }
     pub(crate) fn required(source: rpc_capnp::promised_answer::Reader<'_>) -> Result<usize, Error> {
-        let transform = source.get_transform()?;
-        let mut length = 0usize;
-        for op in transform {
-            match op.which().map_err(|_| Error::UnknownTransform)? {
-                rpc_capnp::promised_answer::op::Noop(()) => (),
-                rpc_capnp::promised_answer::op::GetPointerField(_) => {
-                    length = length.checked_add(1).ok_or(Error::Capacity)?;
-                }
-            }
-        }
-        Ok(length)
+        Ok(PreparedPath::new(source)?.len())
     }
     /// Apply to retained result content under its message reader limits. The
     /// returned index still belongs to that result's capability table.
