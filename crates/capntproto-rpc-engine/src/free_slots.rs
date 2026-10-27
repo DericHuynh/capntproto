@@ -1,7 +1,10 @@
 //! Lowest-free-slot allocation using heap cells embedded in caller storage.
 //! Derived from the direct driver's local-ID table. Occupied values and free
 //! heap cells have independent lifetimes, so release never needs an allocator.
+#[cfg(capntproto_verus)]
+use vstd::prelude::*;
 
+#[cfg_attr(capntproto_verus, verus_verify)]
 #[derive(Debug)]
 pub struct Link(usize);
 impl Link {
