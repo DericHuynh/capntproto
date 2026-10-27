@@ -423,30 +423,31 @@ records their rationale.
 | Workflow | Trigger | Scope and report artifact |
 | --- | --- | --- |
 | [CI](../../.github/workflows/ci.yml) | PR; push to `main`; manual | Library/binary builds and RPC/pipelining, transport and selected feature checks on all three OSes. Linux/macOS also test storage reopen; Linux enforces allocation budgets and QUIC v1 interoperability. `platform-report` |
-| [Quality](../../.github/workflows/quality.yml) | PR; push to `main`; manual | Independent Cargo/coverage, formal, fuzz and extended verification; its own aggregate result and README badge. |
+| [Coverage](../../.github/workflows/quality.yml) | PR; push to `main`; Monday 03:19 UTC; manual | Independent LLVM coverage collection and unchanged regression thresholds; its own Coverage badge and `coverage-report`. |
 | [CI / Workflow validation](../../.github/workflows/ci-workflows.yml) | Called once by CI; manual | Workflow, auditable-build, trigger-test and README-reporting changes: actionlint with ShellCheck/Pyflakes, trigger regression tests, reporting tests and Zizmor |
 | [CI / Documentation](../../.github/workflows/ci-docs.yml) | Called once by CI; Tuesday 05:43 UTC; manual | Documentation/workflow/wiki-tool changes: wiki validation/export and local links. External checks are advisory and run only weekly/manually. `github-wiki`, `documentation-links` |
-| [Verification / Extended](../../.github/workflows/verification-extended.yml) | Called by Quality; Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
-| [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Called by Quality; Monday 03:19 UTC; manual | One LLVM-instrumented Cargo partition, un-instrumented C++ reference suites, advisory checks, coverage regression report. `cargo-test-report` |
-| [Verification / Formal checks](../../.github/workflows/verification-models.yml) | Called by Quality; Monday 03:29 UTC; manual | Verus source/temporal proofs (`verus-report`) including portable ownership/count contracts and mutation controls, then distributed TLC checks and Rust replays (`models-report`). Separate proof-duration and model-state graphs. |
-| [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Called by Quality; Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
+| [Verification / Extended](../../.github/workflows/verification-extended.yml) | Called by CI; Wednesday 04:37 UTC; manual | Bounded Miri endian/seed sweep, native cargo-careful checks, LLVM IR size reports, and guard mutation/coverage controls in independent jobs |
+| [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) | Called by CI; Monday 03:19 UTC; manual | Ordinary uninstrumented workspace tests/doctests, independent C++ reference suites and advisory checks. `cargo-test-report` |
+| [Verification / Formal checks](../../.github/workflows/verification-models.yml) | Called by CI; Monday 03:29 UTC; manual | Verus source/temporal proofs (`verus-report`) including portable ownership/count contracts and mutation controls, then distributed TLC checks and Rust replays (`models-report`). Separate proof-duration and model-state graphs. |
+| [Verification / Fuzzing](../../.github/workflows/verification-fuzz.yml) | Called by CI; Monday 03:39 UTC; manual | Six libFuzzer/ASan targets and four AFL++ targets with RPC IJON guidance. Engine-specific execution, feedback and finding graphs. `fuzz-report` |
 | [Performance / Dedicated benchmarks](../../.github/workflows/performance.yml) | Called by CI; manual | Build and smoke-test release artifacts on every PR; trusted routine runs measure all 48 encrypted loopback cases on a dedicated droplet, with five fresh-process repetitions. Full tracing/profiling (`run-secure`), allocations (`run-allocations`) and two-peer VPC workflows (`run-remote`) are manual options. `benchmark-bundle`, `benchmark-build-provenance`, `dedicated-benchmark-report` |
 | [Benchmark droplet cleanup](../../.github/workflows/maintenance-benchmarks.yml) | After CI benchmarks, even on failure; every hour at :17 UTC; manual | Destroy this repository's abandoned benchmark resources older than two hours; requires trusted credentials |
-| [Reports / Publish](../../.github/workflows/reports.yml) | CI, Quality or standalone Cargo, formal-check, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
+| [Reports / Publish](../../.github/workflows/reports.yml) | CI, Coverage or standalone Cargo, formal-check, fuzzing or benchmark completion; manual run ID | Validate trusted default-branch producer artifacts and publish to `reports`; it does not rerun their tests |
 
 ## Trigger and concurrency policy
 
-CI and Quality are independent automatic push/PR entry points. CI calls workflow
+CI and Coverage are independent automatic push/PR entry points. CI calls workflow
 validation and documentation, then starts platform and portability checks after
-workflow validation. Release benchmarks also start after workflow validation.
-Its unconditional **Required CI result** checks workflow validation, documentation,
-platforms, portability, benchmarks and cleanup, including failed or skipped jobs.
+workflow validation. Ordinary Cargo tests, models, fuzzing and extended verification
+run after the platform/documentation checks. Release benchmarks start after workflow
+validation, alongside verification. The unconditional **Required CI result** checks
+every main lane, including failed or skipped jobs.
 
-Quality starts Cargo/coverage, models, fuzzing and extended verification in parallel,
-without waiting for CI. Its unconditional **Quality result** requires every quality
-lane to succeed. Coverage floors and quality checks are unchanged; a quality failure
-makes the Quality badge fail without blocking the main CI result or release gate.
-Branch protection should require only **Required CI result** for this policy.
+Coverage runs only LLVM-instrumented coverage collection and its existing regression
+thresholds in `quality.yml`, independently of main CI. Its own **Coverage** badge
+reflects that workflow. A coverage failure does not block main CI or its release gate.
+Normal tests, doctests, formal checks, fuzzing, Miri and mutation controls remain
+required by main CI. Require **Required CI result** in branch protection.
 
 The default `run-latency` campaign retains all 48 TLS/QUIC cases and every supported
 gRPC/WebSocket comparison, five repetitions, 100 warmups and 1,000 measured operations
@@ -456,7 +457,7 @@ They do not delay routine latency reports. The reports template lists every
 validated latency, profiler and syscall cell, plus unsupported comparisons.
 Branch work runs through `pull_request`; only `main` has an automatic `push`
 trigger. Feature branches without a PR can dispatch either workflow manually.
-Tag pushes do not start CI or Quality.
+Tag pushes do not start CI or Coverage.
 
 New commits to the same PR cancel its stale checks. Main runs are serialized
 without cancelling an active paid measurement. Workflow, event and PR/ref
@@ -473,16 +474,16 @@ Fork and Dependabot PRs compile the same optimized benchmark bundle without
 secrets; cloud measurement and cloud cleanup are explicitly skipped. Same-repository
 PRs and main use the `Benchmarking` environment and its configured protections.
 Missing credentials fail trusted measurement instead of recording a benchmark pass.
-No PR publishes the default-branch dashboard. CI publishes only its benchmark artifact. Quality publishes its three uniquely
-named `readme-data-*` Cargo, model and fuzz artifacts atomically. Each artifact is
-bound to its lane, attempt and commit; one workflow cannot replace another
-workflow's measurements with unavailable data. Standalone scheduled
+No PR publishes the default-branch dashboard. CI publishes its four uniquely named `readme-data-*` Cargo, model, fuzz and
+benchmark artifacts atomically. Coverage publishes only its coverage artifact.
+Each artifact is bound to its lane, attempt and commit; coverage and ordinary
+test histories cannot replace one another. Standalone scheduled
 or manual lane runs remain publishable. Reusable calls do not trigger separate
 publication runs.
 
 The two GitHub-managed **Dependabot Updates** jobs come from the separate Cargo
 and GitHub Actions ecosystems in [dependabot.yml](../../.github/dependabot.yml).
-They update dependencies; they are not duplicate Quality runs. GitHub-managed
+They update dependencies; they are not duplicate verification runs. GitHub-managed
 **Dependency Graph** analysis also has a distinct purpose: it does not run the
 platform tests. The README
 publisher pushes with `GITHUB_TOKEN`, which GitHub excludes from ordinary
@@ -500,9 +501,10 @@ cargo run --locked -p capntproto-dev -- check-workflows
 
 Require **Required CI result** in branch protection (replace the former
 **Required platform report** check when adopting this workflow layout). This gate
-includes platform/portability checks, documentation, workflow validation and
-benchmark compilation/measurement according to the credential policy above.
-Quality is independent and has its own badge. Windows also exercises
+includes ordinary tests/doctests, formal checks, fuzzing, extended verification,
+platform/portability checks, documentation, workflow validation and benchmark
+compilation/measurement according to the credential policy above.
+Coverage is independent and has its own badge. Windows also exercises
 component storage and retained snapshots; CI does not establish power-loss
 durability. Platform
 qualification requires successful hosted checks; local Linux validation is not
@@ -517,16 +519,16 @@ flowchart TD
   checks --> platforms[CI: Linux / macOS / Windows builds and tests]
   checks --> portable[CI: allocation-free ARM checks and link fixture]
   checks --> benchmark[Release benchmark build; trusted cloud latency]
-  benchmark --> cleanup[Trusted cleanup, even after failure]
-  checks & docs & platforms & portable & benchmark & cleanup --> result[Required CI result]
-  quality[PR / main push / manual Quality] --> cargo[Cargo tests + LLVM coverage]
-  quality --> verus[Verus contracts + temporal induction]
+  platforms & docs & portable --> cargo[Ordinary Cargo tests + doctests]
+  platforms & docs --> verus[Verus contracts + temporal induction]
   verus --> models[TLA+ checks + Rust replays]
-  quality --> fuzz[libFuzzer + AFL++ IJON]
-  quality --> extended[Extended verification]
-  cargo & models & fuzz & extended --> qualityresult[Independent Quality result]
+  platforms & docs --> fuzz[libFuzzer + AFL++ IJON]
+  platforms & docs --> extended[Miri + mutation and memory checks]
+  benchmark --> cleanup[Trusted cleanup, even after failure]
+  checks & docs & platforms & portable & cargo & models & fuzz & extended & benchmark & cleanup --> result[Required CI result]
+  coverage[PR / main push / weekly / manual Coverage] --> llvm[LLVM coverage + regression thresholds]
   result --> publish[Validate evidence and publish on main]
-  qualityresult --> publish
+  llvm --> publish
   standalone[Weekly / manual lane runs] --> publish
   janitor[Independent hourly cleanup]
   codeql[GitHub-managed CodeQL default setup]
@@ -545,7 +547,8 @@ expensive campaigns explicit owners:
 
 - Cargo selects all ordinary tests/doctests, filtering `tlc`, `native_fuzz_smoke`,
   `serialization_and_ownership_miri`, and the two `authority_and_transition_*`
-  controls. LLVM coverage combines the nextest run and the separate doctest run.
+  controls. The independent coverage workflow repeats this partition with LLVM instrumentation;
+  its coverage combines nextest and the separate doctest run.
 - [Verus](Formal-Verification.md) check inventoried production proofs
   and required fault controls before the TLC job. Verus also checks unbounded
   temporal induction through the verified verus-tla library. Each lane has
@@ -707,11 +710,17 @@ shorter than the main compiler pin. Tool failures fail their respective jobs.
 
 ```sh
 cargo run --locked -p capntproto-quality -- coverage target/quality/coverage
-cargo run --locked -p capntproto-quality -- security target/quality/security
-cargo run --locked -p capntproto-quality -- report target/quality coverage,security
+cargo run --locked -p capntproto-quality -- report target/quality coverage
 ```
 
-The collector uses pinned nightly Rust/LLVM 22. It runs the Cargo partition once
+Ordinary tests run separately in main CI:
+
+```sh
+cargo run --locked -p capntproto-quality -- cargo target/quality/cargo
+cargo run --locked -p capntproto-quality -- security target/quality/security
+```
+
+The coverage collector uses pinned nightly Rust/LLVM 22. It runs the Cargo partition once
 with default features and collects ordinary nested Rust crate profiles. Miri,
 sanitizer and mutation subprocesses retain their own toolchains. The independent
 C++ reference suites still execute, without coverage instrumentation or counters

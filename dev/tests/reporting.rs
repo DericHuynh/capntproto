@@ -26,6 +26,53 @@ fn record(id: u64, kind: &str, date: &str, attempt: u64) -> Value {
 }
 const DATE: &str = "2026-09-28T10:00:00Z";
 const XML: &str = r#"<testsuites tests="4" failures="1" errors="1" skipped="1"><testsuite name="crate" tests="4" failures="1" errors="1" skipped="1"><testcase name="ok" classname="crate"/><testcase name="ignored" classname="crate"><skipped/></testcase><testcase name="bad" classname="crate"><failure>assertion failed</failure></testcase><testcase name="abort" classname="crate"><error>signal 6</error></testcase></testsuite></testsuites>"#;
+
+#[test]
+fn ordinary_test_and_coverage_evidence_remain_independent() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let mut evidence = json!({"format":1,"lane":"cargo","source_id":"a".repeat(64),"passed":false,"steps":[{"name":"workspace-tests","command":["cargo","nextest","run","--workspace","--no-fail-fast","-E","not test(tlc)"],"passed":false,"log_sha256":hash(b"test failures")}],"data":{"test_reports":{"workspace-tests":{"file":"workspace-tests.xml","sha256":hash(XML)}}}});
+    write(path.join("cargo/logs/workspace-tests.log"), "test failures").unwrap();
+    write(path.join("cargo/logs/workspace-tests.xml"), XML).unwrap();
+    write_json(path.join("cargo/evidence.json"), &evidence).unwrap();
+    evidence["lane"] = json!("coverage");
+    evidence["passed"] = json!(true);
+    evidence["steps"] = json!([]);
+    evidence["source_id"] = json!("b".repeat(64));
+    write_json(path.join("coverage/evidence.json"), &evidence).unwrap();
+    let tests = data::collect(path, "cargo").unwrap();
+    let coverage = data::collect(path, "coverage").unwrap();
+    assert_eq!(tests["status"], "failed");
+    assert_eq!(tests["tests"]["failed"], 1);
+    assert_eq!(tests["source_id"], "a".repeat(64));
+    assert_eq!(coverage["status"], "passed");
+    assert!(coverage["tests"].is_null());
+    assert_eq!(coverage["source_id"], "b".repeat(64));
+    let history = render::merge(&render::empty_history(), &record(1, "cargo", DATE, 1)).unwrap();
+    let history = render::merge(&history, &record(2, "coverage", DATE, 1)).unwrap();
+    assert_eq!(history["cargo"][0]["run_id"], 1);
+    assert_eq!(history["coverage"][0]["run_id"], 2);
+}
+
+#[test]
+fn failed_new_coverage_cannot_display_old_successful_cargo_coverage() {
+    let directory = tempfile::tempdir().unwrap();
+    let template = "{{REPORTS}}\n{{BENCHMARK_TABLES}}";
+    let mut old = record(1, "cargo", DATE, 1);
+    old["data"]["charts"] = json!([{"name":"coverage-lines","title":"Old combined coverage","unit":"Percent","note":"Synthetic fixture","panels":[{"title":"Lines","bars":[{"label":"Runtime","value":75.}]}]}]);
+    let history = render::merge(&render::empty_history(), &old).unwrap();
+    let mut coverage = record(2, "coverage", DATE, 1);
+    coverage["conclusion"] = json!("failure");
+    coverage["data"]["status"] = json!("failed");
+    let history = render::merge(&history, &coverage).unwrap();
+    render::render(template, &history, directory.path()).unwrap();
+    assert!(!directory
+        .path()
+        .join("docs/reports/coverage-lines.svg")
+        .exists());
+    let readme = std::fs::read_to_string(directory.path().join("README.md")).unwrap();
+    assert!(readme.contains("No validated coverage/baseline comparison"));
+}
 #[test]
 fn collect_origin_is_explicit_and_malformed_ci_metadata_fails_closed() {
     let directory = tempfile::tempdir().unwrap();

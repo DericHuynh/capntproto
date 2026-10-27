@@ -369,6 +369,10 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     for (job, file) in [
         ("workflows", "ci-workflows"),
         ("documentation", "ci-docs"),
+        ("cargo", "verification-tests"),
+        ("models", "verification-models"),
+        ("fuzz", "verification-fuzz"),
+        ("extended", "verification-extended"),
         ("performance", "performance"),
         ("cleanup", "maintenance-benchmarks"),
     ] {
@@ -389,6 +393,10 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
                 "documentation",
                 "portability",
                 "platforms",
+                "cargo",
+                "models",
+                "fuzz",
+                "extended",
                 "performance",
                 "cleanup"
             ]),
@@ -410,29 +418,33 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
         quality["on"]["pull_request"].is_null(),
         "quality cannot be path filtered"
     );
-    for (job, file) in [
-        ("cargo", "verification-tests"),
-        ("models", "verification-models"),
-        ("fuzz", "verification-fuzz"),
-        ("extended", "verification-extended"),
-    ] {
-        ensure!(
-            quality["jobs"][job]["uses"] == format!("./.github/workflows/{file}.yml")
-                && all[file]["on"].get("workflow_call").is_some()
-                && quality["jobs"][job].get("needs").is_none()
-                && quality["jobs"][job].get("if").is_none()
-                && quality["jobs"][job].get("continue-on-error").is_none(),
-            "quality verification must run independently of main CI"
-        );
-    }
     ensure!(
-        quality["jobs"]["result"]["needs"] == json!(["cargo", "models", "fuzz", "extended"])
-            && quality["jobs"]["result"]["if"] == "always()"
-            && keys(&quality["jobs"])?
-                == BTreeSet::from(
-                    ["cargo", "models", "fuzz", "extended", "result"].map(str::to_owned)
-                ),
-        "quality badge must reflect every independent quality lane"
+        keys(&quality["jobs"])? == BTreeSet::from(["coverage".into()])
+            && quality["jobs"]["coverage"].get("if").is_none()
+            && quality["jobs"]["coverage"]
+                .get("continue-on-error")
+                .is_none(),
+        "independent coverage must not own ordinary verification lanes"
+    );
+    let coverage_steps = quality["jobs"]["coverage"]["steps"]
+        .as_array()
+        .context("missing coverage steps")?;
+    ensure!(
+        coverage_steps.iter().any(|s| s["run"]
+            == "cargo run --locked -p capntproto-quality -- coverage target/quality/coverage"
+            && s.get("if").is_none()
+            && s.get("continue-on-error").is_none()),
+        "coverage badge must execute the unchanged instrumented coverage gate"
+    );
+    let test_steps = all["verification-tests"]["jobs"]["tests"]["steps"]
+        .as_array()
+        .context("missing normal test steps")?;
+    ensure!(
+        test_steps.iter().any(|s| s["run"]
+            == "cargo run --locked -p capntproto-quality -- cargo target/quality/cargo"
+            && s.get("if").is_none()
+            && s.get("continue-on-error").is_none()),
+        "main CI must execute ordinary tests independently of coverage"
     );
     ensure!(
         jobs["portability"]["needs"] == "workflows",
@@ -511,6 +523,7 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     }
     for (file, lane) in [
         ("verification-tests", "cargo"),
+        ("quality", "coverage"),
         ("verification-models", "models"),
         ("verification-fuzz", "fuzz"),
         ("performance", "benchmark"),
@@ -594,7 +607,7 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
                     "workflow_dispatch".into(),
                     "workflow_call".into()
                 ]),
-            "verification must be called by Quality, not duplicate push/PR triggers"
+            "verification must be called by CI, not duplicate push/PR triggers"
         );
     }
     ensure!(

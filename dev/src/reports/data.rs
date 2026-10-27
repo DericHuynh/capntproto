@@ -348,7 +348,7 @@ fn merge_tests(native: Option<Counts>, docs: Option<Counts>) -> Option<Counts> {
 }
 pub fn chart_kind(name: &str, kind: &str) -> bool {
     match kind {
-        "full" | "cargo" => name.starts_with("coverage-"),
+        "full" | "cargo" | "coverage" => name.starts_with("coverage-"),
         "models" => name.starts_with("tla-"),
         "fuzz" => name.starts_with("fuzz-"),
         _ => !["coverage-", "tla-", "fuzz-"]
@@ -423,7 +423,8 @@ pub fn validate_publication(value: &Value) -> Result<()> {
         super::benchmarks::validate(tables)?;
     }
     ensure!(
-        value["format"] == 1 && ["full", "cargo", "models", "fuzz", "benchmark"].contains(&kind),
+        value["format"] == 1
+            && ["full", "cargo", "coverage", "models", "fuzz", "benchmark"].contains(&kind),
         "invalid publication format/kind"
     );
     ensure!(
@@ -541,7 +542,11 @@ pub fn unavailable(kind: &str, note: &str) -> Value {
 }
 pub fn collect(directory: &Path, kind: &str) -> Result<Value> {
     let lane = match kind {
-        "full" | "cargo" => "coverage",
+        "full" | "coverage" => "coverage",
+        // Read historical combined publications without letting them replace a
+        // fresh ordinary-test artifact from the new separate Cargo lane.
+        "cargo" if !directory.join("cargo/evidence.json").exists() => "coverage",
+        "cargo" => "cargo",
         "models" => "models",
         "fuzz" => "fuzz",
         "benchmark" => "benchmark",
@@ -655,7 +660,7 @@ pub fn collect(directory: &Path, kind: &str) -> Result<Value> {
     if nextest && ["full", "cargo"].contains(&kind) {
         ensure!(
             !passed || docs.is_some(),
-            "successful coverage lane is missing doctests"
+            "successful test lane is missing doctests"
         );
         tests = merge_tests(tests, docs);
     }

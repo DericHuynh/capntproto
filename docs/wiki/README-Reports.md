@@ -8,17 +8,19 @@ resolve within that branch. The source README links to that dashboard and its fa
 ## What updates automatically
 
 [Verification / Cargo tests](../../.github/workflows/verification-tests.yml) runs
-ordinary workspace tests/doctests once with LLVM coverage. [TLA+ models](../../.github/workflows/verification-models.yml)
+ordinary workspace tests/doctests without coverage instrumentation.
+[Coverage](../../.github/workflows/quality.yml) separately owns LLVM coverage and
+its regression thresholds. [TLA+ models](../../.github/workflows/verification-models.yml)
 owns the bounded model checks and Rust replays. [Fuzzing](../../.github/workflows/verification-fuzz.yml)
 owns libFuzzer/ASan and AFL++/IJON campaigns. [Dedicated benchmarks](../../.github/workflows/performance.yml)
 remains the performance producer. CI calls benchmarks after workflow validation.
-The independent Quality workflow calls Cargo/coverage, models, fuzzing and extended
-verification without depending on main CI. Each exports an identity-bound `readme-data-<lane>-<attempt>`
+Main CI also calls ordinary Cargo tests, models, fuzzing and extended verification.
+Coverage runs independently of main CI. Each exports an identity-bound `readme-data-<lane>-<attempt>`
 artifact and its own README, graphs and diagnostics, including on test failure.
 
 [Reports / Publish](../../.github/workflows/reports.yml) runs after each producer
-finishes, or once after the encompassing CI or Quality run completes. CI publishes
-only benchmark results; Quality merges its Cargo, model and fuzz artifacts atomically.
+finishes, or once after the encompassing CI or Coverage run completes. CI merges Cargo, model, fuzz and benchmark artifacts
+atomically. Coverage publishes only its separate `coverage` artifact.
 Each workflow preserves the other workflow's histories and graphs.
 It updates only the dashboard `README.md` and renderer-owned files in
 `docs/reports/` on the **reports branch**. The first publication creates an orphan
@@ -28,13 +30,13 @@ updates with bounded retries after concurrent report writes. The default branch
 is read only: its code and template are trusted, its ref is never mutated. No PR
 code or executable artifact is run by the publisher.
 
-The publisher accepts only completed runs of CI, Quality or the four named workflow files (plus their former filenames for manually publishing
+The publisher accepts only completed runs of CI, Coverage or the four named workflow files (plus their former filenames for manually publishing
 runs started before the workflow migration), from
 this repository's default branch, triggered by push, schedule or manual dispatch.
 It checks the measured commit's ancestry and the artifact's repository, run ID,
 attempt and commit. It downloads only the bounded JSON publication artifact;
 archive members cannot select output paths.
-CI and Quality lanes use unique immutable artifact names. Historical standalone `readme-data`
+CI and Coverage lanes use unique immutable artifact names. Historical standalone `readme-data`
 artifacts remain readable, but neither composite workflow accepts that ambiguous shared name.
 Reruns replace their earlier attempt;
 late-finishing older runs do not replace newer benchmark results. Failed or
@@ -42,7 +44,7 @@ cancelled runs with missing data are recorded as unavailable, never as success.
 A failing composite workflow preserves individually validated successful lane data;
 the aggregate workflow conclusion remains visible beside it.
 
-The history keeps the latest 365 attempts separately for Cargo, TLA+ and fuzzing (one entry per run ID per lane), the legacy combined history, and the latest benchmark attempt. Shared run IDs must agree on commit, date and URL across lanes. Historical entries keep test counts, commit,
+The history keeps the latest 365 attempts separately for Cargo, coverage, TLA+ and fuzzing (one entry per run ID per lane), the legacy combined history, and the latest benchmark attempt. Shared run IDs must agree on commit, date and URL across lanes. Historical entries keep test counts, commit,
 source fingerprint and CI links; only current coverage/benchmark bars retain
 plotted values. The generated report assets are excluded from executable source
 fingerprints, so a report-only commit does not invalidate its own evidence.
@@ -97,6 +99,10 @@ with saved findings still fails the job. Missing engine results stay unknown.
 AFL++ records stability and corpus sizes in its artifact; RPC targets must
 acknowledge IJON at the forkserver handshake. These metrics do not substitute for
 LLVM source coverage or compare engine performance.
+
+Coverage and ordinary Cargo tests retain independent histories and measured commits.
+Historical combined artifacts remain readable; a new coverage result cannot overwrite
+normal test counts, and a test-only result cannot erase coverage charts.
 
 Older combined results stay in `history.json` and `test-history.svg`. New Cargo
 and TLA+ histories start at their first measurements; historical totals are not
@@ -173,7 +179,7 @@ cargo run --locked -p capntproto-dev -- reports collect --input target/quality -
   --output target/readme-data/publication.json
 ```
 
-Use `--kind models`, `--kind fuzz`, or `--kind benchmark` for the other producers.
+Use `--kind coverage`, `--kind models`, `--kind fuzz`, or `--kind benchmark` for the other producers.
 For encrypted benchmark summaries, also pass
 `--benchmark-manifest target/benchmark-build/bundle/manifest.json`.
 `--report-output DIRECTORY` writes standalone SVG graphs and a report README.

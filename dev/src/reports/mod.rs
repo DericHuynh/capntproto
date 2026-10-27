@@ -11,6 +11,7 @@ use std::path::PathBuf;
 pub enum Kind {
     Full,
     Cargo,
+    Coverage,
     Models,
     Fuzz,
     Benchmark,
@@ -20,6 +21,7 @@ impl Kind {
         match self {
             Self::Full => "full",
             Self::Cargo => "cargo",
+            Self::Coverage => "coverage",
             Self::Models => "models",
             Self::Fuzz => "fuzz",
             Self::Benchmark => "benchmark",

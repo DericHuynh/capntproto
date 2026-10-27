@@ -225,15 +225,23 @@ fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
                 "cargo"
             ]),
         ),
+        ("quality", "/jobs/coverage/continue-on-error", json!(true)),
+        ("quality", "/jobs/coverage/if", json!("false")),
         (
             "quality",
-            "/jobs/result/needs",
-            json!(["cargo", "models", "fuzz"]),
+            "/jobs/cargo",
+            json!({"uses":"./.github/workflows/verification-tests.yml"}),
         ),
-        ("quality", "/jobs/result/if", json!("success()")),
-        ("quality", "/jobs/cargo/continue-on-error", json!(true)),
-        ("quality", "/jobs/fuzz/needs", json!(["cargo"])),
-        ("quality", "/jobs/models/if", json!("false")),
+        (
+            "ci",
+            "/jobs/cargo/uses",
+            json!("./.github/workflows/quality.yml"),
+        ),
+        (
+            "verification-tests",
+            "/jobs/tests/steps/2/run",
+            json!("cargo run --locked -p capntproto-quality -- coverage target/quality/coverage"),
+        ),
         (
             "quality",
             "/on/pull_request",

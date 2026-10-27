@@ -1,7 +1,7 @@
 # Cap'nt Proto
 
 [![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
-[![Quality](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml)
+[![Coverage](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml)
 [![Rust 1.97](https://img.shields.io/badge/rust-1.97-orange.svg)](rust-toolchain.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -9,9 +9,10 @@ A Rust implementation of Cap'n Proto schemas, serialization and capability RPC,
 with a native schema compiler, compatibility adapters, encrypted transport and
 correctness tooling. Start with the **[project wiki](docs/wiki/Home.md)**.
 
-The CI badge covers platform, smoke, portability, documentation and benchmark checks.
-The independent Quality badge covers Cargo/coverage, Verus/TLA+, fuzzing and extended
-verification; its failures do not block main CI. Fork/Dependabot PRs
+The CI badge covers workspace tests and doctests, Verus/TLA+, fuzzing, extended
+verification, platform, portability, documentation and benchmarks. The independent
+Coverage badge covers LLVM code coverage and its regression thresholds; coverage
+failures do not block main CI. Fork/Dependabot PRs
 build benchmarks without cloud measurement. See the [workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
 and [independent results and graphs](https://github.com/DericHuynh/capntproto/tree/reports).
 
@@ -125,7 +126,7 @@ DigitalOcean droplet, measures Linux loopback RPC and deletes the droplet.
 Credentials stay in GitHub Actions secrets. [Benchmark setup](docs/wiki/Quality-and-Benchmarks.md).
 The [CI workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
 shows the validation gates and how coverage and benchmark results reach the report dashboard.
-The CI and Quality badges link to their independent workflow runs. Measured
+The CI and Coverage badges link to their independent workflow runs. Measured
 coverage, verification results and exhaustive benchmark tables appear in the
 report dashboard.
 

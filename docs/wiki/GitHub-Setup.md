@@ -107,10 +107,11 @@ and [resolving individual alerts](https://docs.github.com/en/code-security/how-t
 
 Follow [Quality and Benchmarks](Quality-and-Benchmarks.md) to configure the DigitalOcean GitHub Actions
 secret, run the hosted workflows, and establish a reviewed LLVM coverage
-baseline. Require **Required CI result** in the default branch's rules. CI runs build, platform, portability, documentation and benchmark checks.
-Quality runs coverage, formal checks, fuzzing and extended verification independently
-on every PR and main push, with its own README badge. Do not require Quality in
-branch protection when keeping that verification independent of main CI. Fork/Dependabot PRs compile release benchmarks without cloud
+baseline. Require **Required CI result** in the default branch's rules. CI runs ordinary workspace tests, doctests, formal checks, fuzzing, extended
+verification, platform, portability, documentation and benchmarks. The separate
+Coverage workflow runs LLVM coverage and its regression thresholds on every PR
+and main push, with its own Coverage badge. Keep coverage out of the required
+main CI result. Fork/Dependabot PRs compile release benchmarks without cloud
 credentials; trusted runs also measure on dedicated hardware. Reports identify
 the checked revision and publish only after trusted default-branch completion.
 

@@ -288,9 +288,9 @@ fn execute(api: &impl Api, event: &Value, repository: &str) -> Result<()> {
     );
     let lane = kind(crate::string(&run, "path")?).unwrap();
     let lanes: &[&str] = if lane == "ci" {
-        &["benchmark"]
+        &["cargo", "models", "fuzz", "benchmark"]
     } else if lane == "quality" {
-        &["cargo", "models", "fuzz"]
+        &["coverage"]
     } else {
         &[lane]
     };
@@ -501,7 +501,7 @@ mod publication_tests {
             if self.ci || self.quality {
                 let id: usize = path.split('/').nth(3).unwrap().parse()?;
                 let mut data = publication(1);
-                data["kind"] = json!(["cargo", "models", "fuzz", "benchmark"][id - 9]);
+                data["kind"] = json!(["cargo", "models", "fuzz", "benchmark", "coverage"][id - 9]);
                 return Ok(archive("publication.json", &data));
             }
             Ok(self.archive.clone())
@@ -539,7 +539,7 @@ mod publication_tests {
                 }
                 "/actions/runs/1/artifacts?per_page=100" => {
                     if self.ci || self.quality {
-                        let artifacts: Vec<_> = ["cargo", "models", "fuzz", "benchmark"].into_iter().enumerate().map(|(i,lane)| json!({"id":i+9,"name":format!("readme-data-{lane}-1"),"expired":false,"size_in_bytes":1024})).collect();
+                        let artifacts: Vec<_> = ["cargo", "models", "fuzz", "benchmark", "coverage"].into_iter().enumerate().map(|(i,lane)| json!({"id":i+9,"name":format!("readme-data-{lane}-1"),"expired":false,"size_in_bytes":1024})).collect();
                         json!({"artifacts":artifacts})
                     } else {
                         json!({"artifacts":[{"id":9,"name":"readme-data","expired":false,"size_in_bytes":self.archive.len()}]})
@@ -607,10 +607,18 @@ mod publication_tests {
                             .unwrap()
                             .iter()
                             .any(|r| r["run_id"] == 1 && r["data"]["kind"] == lane),
-                        quality
+                        !quality
                     );
                 }
                 assert_eq!(history["benchmark"].is_null(), quality);
+                assert_eq!(
+                    history["coverage"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|r| r["run_id"] == 1 && r["data"]["kind"] == "coverage"),
+                    quality
+                );
             }
             drop(calls);
             let mut run = api.request("/actions/runs/1", None, "GET").unwrap();
@@ -633,7 +641,7 @@ mod publication_tests {
             api.quality = quality;
             let mut run = api.request("/actions/runs/1", None, "GET").unwrap();
             run["conclusion"] = json!("failure");
-            let lane = if quality { "cargo" } else { "benchmark" };
+            let lane = if quality { "coverage" } else { "benchmark" };
             assert_eq!(artifact_data(&api, &run, lane).unwrap()["status"], "passed");
             // Neither composite may fall back to an ambiguous shared artifact.
             api.ci = false;
