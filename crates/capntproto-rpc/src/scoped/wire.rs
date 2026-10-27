@@ -927,7 +927,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         if let Err(message) = call.results.complete_plain(&call.completion, message) {
             let result = call.results.finish_plain(Payload {
                 body: PayloadBody::Admitted(message),
-                caps: Vec<Option<Box<dyn ClientHook>>>::Empty,
+                caps: Vec::new(),
             });
             call.complete_boxed(result);
         }
@@ -996,7 +996,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     let mut call = self.call.take().expect("wire completion once");
                     let result = call.results.finish_plain(Payload {
                         body: PayloadBody::Admitted(message),
-                        caps: Vec<Option<Box<dyn ClientHook>>>::Empty,
+                        caps: Vec::new(),
                     });
                     call.complete_boxed(result);
                     return Ok(());
@@ -1088,7 +1088,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 .and_then(core::convert::identity),
             CallOutput::Remote(remote) => {
                 if let Some(message) = remote.take_plain_results() {
-                    Ok(Payload { body: PayloadBody::Admitted(message), caps: Vec<Option<Box<dyn ClientHook>>>::Empty })
+                    Ok(Payload { body: PayloadBody::Admitted(message), caps: Vec::new() })
                 } else { remote
                 .with(messages, |reply| match reply {
                     owned::Reply::Results(payload) => {
