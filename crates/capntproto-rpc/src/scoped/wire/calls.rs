@@ -1188,7 +1188,13 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let encoded = call
                 .params
                 .prepared_call()
-                .map(|builder| builder.encoded(method, options))
+                .map(|builder| {
+                    if driver.uses_native_writer() {
+                        builder.encoded_for_sending(method)
+                    } else {
+                        builder.encoded(method, options)
+                    }
+                })
                 .transpose()
                 .map_err(wire_error)?
                 .flatten();

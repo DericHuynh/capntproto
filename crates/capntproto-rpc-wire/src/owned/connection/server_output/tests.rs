@@ -5,6 +5,89 @@ use core::num::NonZeroUsize;
 const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
+#[test]
+fn native_writer_keeps_input_limits_storage_and_capability_authority_checked() {
+    let limits = capnp::message::ReaderOptions {
+        traversal_limit_in_words: Some(1),
+        nesting_limit: 1,
+    };
+    let measured = allocation_counter::measure(|| {
+        for policy in [WriterPolicy::Checked, WriterPolicy::Native] {
+            with_driver(|mut driver, messages| {
+                assert!(!driver.uses_native_writer());
+                if policy == WriterPolicy::Native {
+                    driver.use_native_writer();
+                }
+                let result =
+                    driver.local_result_dynamic(7, 9, &[], messages, 512, limits, |content| {
+                        content
+                            .cast::<capnp::field_api::Text>()
+                            .copy_from("native publication")
+                    });
+                if policy == WriterPolicy::Checked {
+                    assert!(result.is_err());
+                } else {
+                    let result = result.unwrap();
+                    result
+                        .with(messages, |payload| {
+                            assert_eq!(
+                                payload.content().get_as::<capnp::text::Reader>().unwrap(),
+                                "native publication"
+                            );
+                        })
+                        .unwrap();
+                    // The sender's policy cannot relax the next incoming
+                    // frame's independent reader budget, even on this driver.
+                    let frame = Frame::new(messages.retain(&result.frame.lease).unwrap(), limits);
+                    let rejected = driver
+                        .receive(frame, messages, &mut [0; 8], |_| (), || 0)
+                        .err()
+                        .expect("incoming reader limit must reject");
+                    assert!(matches!(
+                        rejected.error,
+                        Error::Input(super::super::super::Error::Wire(
+                            capnp::ErrorKind::MessageTooLarge(_)
+                                | capnp::ErrorKind::ReadLimitExceeded
+                        ))
+                    ));
+                    rejected.frame.release(messages);
+                    result.release(messages, &mut driver.runtime);
+                    let invalid = driver
+                        .local_result_dynamic(7, 9, &[], messages, 512, limits, |content| {
+                            content.set_capability_index(1)
+                        })
+                        .unwrap();
+                    invalid
+                        .with(messages, |payload| {
+                            let pointer = payload
+                                .content()
+                                .get_as::<capnp::wire_capability::Reader<'_, ()>>()
+                                .unwrap();
+                            assert!(matches!(
+                                payload.capability(pointer),
+                                Err(super::super::super::Error::Capacity)
+                            ));
+                        })
+                        .unwrap();
+                    invalid.release(messages, &mut driver.runtime);
+                    assert!(
+                        driver
+                            .local_result_dynamic(7, 9, &[], messages, 4096, limits, |_| Ok(()))
+                            .is_err(),
+                        "native writers still respect fixed buffer capacity"
+                    );
+                }
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::<()>::new(&mut []).unwrap(),
+                );
+            });
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
 fn deferred_promised_request<'p, 'id>(
     driver: &mut Peer<'p, 'id, '_>,
     messages: &mut messages::Messages<'p, '_, '_>,
@@ -230,6 +313,119 @@ fn resolved_promised_dispatch_reuses_target_and_preserves_order_and_cleanup() {
         });
         assert_eq!(measured.count_total, 0);
     }
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn native_prepared_return_publishes_with_independent_receiver_limits() {
+    let mut prepared = PreparedReturn::from_template(
+        &PreparedReturnTemplate::default(),
+        capnp::message::HeapAllocator::new(),
+    );
+    let mut content = prepared.results();
+    for _ in 0..16 {
+        content = content
+            .initn_as::<capnp::any_pointer_list::Builder>(1)
+            .get(0);
+    }
+    content
+        .set_as::<capnp::text::Owned>("native return")
+        .unwrap();
+    let prepared = prepared.freeze();
+    let limits = capnp::message::ReaderOptions {
+        nesting_limit: 4,
+        ..Default::default()
+    };
+    let measured = allocation_counter::measure(|| {
+        for policy in [WriterPolicy::Checked, WriterPolicy::Native] {
+            with_driver(|mut driver, messages| {
+                let (call, target) = request(&mut driver, messages, false);
+                if policy == WriterPolicy::Native {
+                    driver.use_native_writer();
+                }
+                let result =
+                    driver.local_answer_prepared(call.answer(), 7, 9, &prepared, messages, limits);
+                if policy == WriterPolicy::Checked {
+                    assert!(result.is_err());
+                } else {
+                    let result = result.unwrap().unwrap();
+                    driver
+                        .complete_answer(&call, Ok(result), messages)
+                        .unwrap_or_else(|_| panic!("completion"));
+                    let mut slots = [None];
+                    let mut queue = messages::Queue::new(&mut slots).unwrap();
+                    assert!(driver
+                        .send_answer(
+                            call.answer(),
+                            messages,
+                            &mut queue,
+                            512,
+                            limits,
+                            &mut [0; 8],
+                            |_, _| Ok(())
+                        )
+                        .unwrap()
+                        .is_some());
+                    // Independently decode those exact output bytes under a
+                    // receiver's small depth limit, rather than the sender's
+                    // unlimited view of its own immutable local builder.
+                    let window = queue.window(messages).unwrap().unwrap();
+                    let mut bytes = window.bytes();
+                    let reader =
+                        capnp::serialize::read_message_from_flat_slice_no_alloc(&mut bytes, limits)
+                            .unwrap();
+                    let rpc_capnp::message::Return(received) = reader
+                        .get_root::<rpc_capnp::message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    else {
+                        panic!("Return")
+                    };
+                    let rpc_capnp::return_::Results(payload) = received.unwrap().which().unwrap()
+                    else {
+                        panic!("Results")
+                    };
+                    assert!(payload
+                        .unwrap()
+                        .get_content()
+                        .validate_capability_indices(0)
+                        .is_err());
+                    drop(window);
+                    drain(&mut queue, messages, |root| {
+                        let rpc_capnp::message::Return(received) = root.which().unwrap() else {
+                            panic!("Return")
+                        };
+                        let rpc_capnp::return_::Results(payload) =
+                            received.unwrap().which().unwrap()
+                        else {
+                            panic!("Results")
+                        };
+                        let mut content = payload.unwrap().get_content();
+                        for _ in 0..16 {
+                            content = content
+                                .get_as::<capnp::any_pointer_list::Reader>()
+                                .unwrap()
+                                .get(0);
+                        }
+                        assert_eq!(
+                            content.get_as::<capnp::text::Reader>().unwrap(),
+                            "native return"
+                        );
+                    });
+                    assert!(queue.is_empty());
+                }
+                driver.release_call(call, messages);
+                driver.runtime.release(target);
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::<()>::new(&mut []).unwrap(),
+                );
+            });
+        }
+    });
+    assert_eq!(measured.count_total, 0);
 }
 
 #[cfg(feature = "alloc")]

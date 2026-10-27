@@ -191,6 +191,30 @@ struct PreparedStorage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> 
     operations: SlotStorage<'s, OperationSlot<'id>>,
 }
 
+/// Validation of application payloads during outgoing message construction.
+/// Input decoding, capability grants and bounded storage are independent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum WriterPolicy {
+    /// Recheck payloads against the supplied reader limits before publication.
+    #[default]
+    Checked,
+    /// Publish local builders as legacy/C++ writers do. Payload checks happen
+    /// when the receiver reads them; no extra validation walk runs on send.
+    Native,
+}
+impl WriterPolicy {
+    #[inline]
+    fn options(self, options: capnp::message::ReaderOptions) -> capnp::message::ReaderOptions {
+        match self {
+            Self::Checked => options,
+            Self::Native => capnp::message::ReaderOptions {
+                traversal_limit_in_words: None,
+                nesting_limit: i32::MAX,
+            },
+        }
+    }
+}
+
 /// A connection retains every original question through its late Return, even
 /// after application cancellation. Ordinary input controls may progress while
 /// a Call or Resolve awaits graph/dispatch capacity. The caller must eventually
@@ -199,6 +223,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     allow_answer_handoff: bool,
     defer_calls: bool,
     owned_output: bool,
+    writer_policy: WriterPolicy,
     // Conservative until the ordinary canceled-response scan proves absence.
     // Exchange capacity alone does not make pending questions pollable.
     outgoing_ready: work_queue::Queue,
@@ -540,6 +565,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             allow_answer_handoff: false,
             defer_calls: false,
             owned_output: false,
+            writer_policy: WriterPolicy::Checked,
             outgoing_ready: work_queue::Queue::EMPTY,
             outgoing_source: 0,
             canceled_ready: work_queue::Queue::EMPTY,
@@ -1024,6 +1050,18 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// cleanup obligations are unchanged. Disabled for existing fixed adapters.
     pub fn use_owned_output_queues(&mut self, enabled: bool) {
         self.owned_output = enabled;
+    }
+    /// Permanently select legacy/C++ semantics for locally built outgoing
+    /// payloads. Reader limits apply on reception; protocol authority and
+    /// storage limits stay checked. Explicit builder validation is unchanged.
+    /// This opt-in cannot be reversed while this driver retains native output.
+    #[inline]
+    pub fn use_native_writer(&mut self) {
+        self.writer_policy = WriterPolicy::Native;
+    }
+    #[inline]
+    pub fn uses_native_writer(&self) -> bool {
+        self.writer_policy == WriterPolicy::Native
     }
     /// Whether plain publications are bounded by the output FIFO alone rather
     /// than also consuming separately addressable message-pool send slots.

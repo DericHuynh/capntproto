@@ -30,6 +30,8 @@ pub struct Options {
     /// 128 lets the ordinary call and cleanup lanes complete in one turn while
     /// retaining the coordinator's separate 32-frame input bound.
     pub poll_budget: NonZeroUsize,
+    /// Limits for incoming messages. Local builders are published without an
+    /// additional validation walk, matching legacy/C++ writer semantics.
     pub reader: capnp::message::ReaderOptions,
     pub maximum_fds: usize,
 }

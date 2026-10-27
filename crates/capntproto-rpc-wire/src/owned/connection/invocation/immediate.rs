@@ -2,8 +2,8 @@
 use super::*;
 
 /// Parameters for immediate publication. An encoded Call has one or two unframed
-/// segments, validated under the destination reader policy before copying. Its
-/// method/hints must match; target/question IDs are assigned by the driver.
+/// segments. Checked writers validate its payload before copying. Its method
+/// and hints must match; target/question IDs are assigned by the driver.
 pub enum ImmediateParams<'a> {
     Content(capnp::any_pointer::Reader<'a>),
     EncodedCall(EncodedCall<'a>),
@@ -64,9 +64,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if self.capability_capacity() == 0 {
             return Err(Error::Input(super::super::super::Error::Capacity));
         }
-        params
-            .validate_capability_indices(1)
-            .map_err(|error| Error::Input(error.into()))?;
+        let options = self.writer_policy.options(options);
+        if self.writer_policy == WriterPolicy::Checked {
+            params
+                .validate_capability_indices(1)
+                .map_err(|error| Error::Input(error.into()))?;
+        }
         let words = params
             .target_size()
             .map_err(|error| Error::Input(error.into()))?
@@ -254,6 +257,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         resources: R,
     ) -> Result<Option<questions::Key<'id>>, Error> {
+        let options = self.writer_policy.options(options);
         self.check_live()?;
         if method.only_promise_pipeline || self.call.is_some() || self.echo.is_some() {
             return Ok(None);
@@ -306,7 +310,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 (None, minimum)
             }
             ImmediateParams::EncodedCall(encoded) => {
-                let template = encoded.for_policy(method, options).map_err(Error::Input)?;
+                let template = encoded
+                    .for_publication(method, options, self.writer_policy)
+                    .map_err(Error::Input)?;
                 (Some(template), minimum)
             }
         };
@@ -381,6 +387,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         minimum,
                         self.allow_answer_handoff,
                         options,
+                        self.writer_policy,
                     )
                     .map_err(Error::Input)?,
             },
@@ -401,19 +408,24 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     )
                 })
                 .map_err(Error::Input)?;
-                // Match queued invocation admission, including the final envelope's
-                // traversal/nesting limits. No unvalidated raw frame gets a certificate.
-                let validation = frame
-                    .with(messages, |root| -> capnp::Result<()> {
-                        let rpc_capnp::message::Call(call) = root.which()? else {
-                            unreachable!()
-                        };
-                        call?
-                            .get_params()?
-                            .get_content()
-                            .validate_capability_indices(0)
-                    })
-                    .and_then(|result| result.map_err(super::super::super::Error::from));
+                // Match queued invocation admission under this writer policy.
+                // Checked publication validates the completed envelope; Native
+                // publication keeps the local builder's ordinary write path.
+                let validation = if self.writer_policy == WriterPolicy::Native {
+                    Ok(())
+                } else {
+                    frame
+                        .with(messages, |root| -> capnp::Result<()> {
+                            let rpc_capnp::message::Call(call) = root.which()? else {
+                                unreachable!()
+                            };
+                            call?
+                                .get_params()?
+                                .get_content()
+                                .validate_capability_indices(0)
+                        })
+                        .and_then(|result| result.map_err(super::super::super::Error::from))
+                };
                 if let Err(error) = validation {
                     frame.release(messages);
                     return Err(Error::Input(error));

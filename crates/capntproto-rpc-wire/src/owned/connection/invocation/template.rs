@@ -1,4 +1,4 @@
-//! Relocate a validated, data-only Call template without rebuilding its graph.
+//! Relocate a local Call template without rebuilding its graph.
 //! Relative pointers remain valid when the entire frame is copied. Only the
 //! two scalar IDs and advisory bits change. The private publication path uses
 //! the original validation certificate; changed reader limits revalidate it.
@@ -46,7 +46,8 @@ impl PreparedCallTemplate {
 /// An owning Call envelope whose only mutable public field is its parameters.
 /// The immutable header is constructed here, so publication need not rediscover
 /// its method, target layout, empty descriptor table or scheduling flags. The
-/// application payload is still checked under the receiving driver's limits.
+/// Checked writers validate the application payload before publication. Native
+/// writers leave payload validation to incoming reads, as legacy/C++ do.
 #[cfg(feature = "alloc")]
 pub struct PreparedCall<A: capnp::message::Allocator> {
     message: capnp::message::SelectedBuilder<A>,
@@ -171,6 +172,24 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         method: calls::DynamicCall,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<EncodedCall<'_>>, super::super::super::Error> {
+        self.encode_layout(method, Some(options))
+    }
+    /// Retain a local Call layout without pre-reading its application payload.
+    /// A Native writer can publish it directly; Checked writers still validate
+    /// it before publication. Capability tables are supplied separately, so
+    /// hosted callers use this only when their parameter hook table is empty.
+    pub fn encoded_for_sending(
+        &self,
+        method: calls::DynamicCall,
+    ) -> Result<Option<EncodedCall<'_>>, super::super::super::Error> {
+        self.encode_layout(method, None)
+    }
+    #[inline(always)]
+    fn encode_layout(
+        &self,
+        method: calls::DynamicCall,
+        options: Option<capnp::message::ReaderOptions>,
+    ) -> Result<Option<EncodedCall<'_>>, super::super::super::Error> {
         if (self.method.interface, self.method.method) != (method.interface, method.method)
             || method.only_promise_pipeline
         {
@@ -187,49 +206,53 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             _ => return Ok(None),
         };
         let segment = message.get_segment(0).expect("prepared Call root segment");
-        let words = segment.len() / 8 + second.map_or(0, |segment| segment.len() / 8);
-        if options
-            .traversal_limit_in_words
-            .is_some_and(|limit| words > limit)
-        {
-            return Err(capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into());
-        }
-        if !self
-            .validation
-            .get()
-            .is_some_and(|proof| proof.matches(0, options))
-        {
-            // The private immutable envelope has exactly these three struct
-            // layouts. The public editor can only change the selected content.
-            // Charge their normal traversal/nesting cost, then validate that
-            // selection directly instead of decoding the same envelope again.
-            // Its pointer-word charge replaces the ordinary message-root charge.
-            let prefix_words = [
-                rpc_capnp::api::Message::SIZE,
-                rpc_capnp::api::Call::SIZE,
-                rpc_capnp::api::Payload::SIZE,
-            ]
-            .iter()
-            .map(|size| usize::from(size.data) + usize::from(size.pointers))
-            .sum::<usize>();
-            let mut selected_options = options;
-            selected_options.nesting_limit = options
-                .nesting_limit
-                .checked_sub(3)
-                .filter(|limit| *limit >= 0)
-                .ok_or_else(|| {
-                    capnp::Error::from_kind(
-                        capnp::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
-                    )
-                })?;
-            if let Some(limit) = &mut selected_options.traversal_limit_in_words {
-                *limit = limit
-                    .checked_sub(prefix_words)
-                    .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::ReadLimitExceeded))?;
+        if let Some(options) = options {
+            let words = segment.len() / 8 + second.map_or(0, |segment| segment.len() / 8);
+            if options
+                .traversal_limit_in_words
+                .is_some_and(|limit| words > limit)
+            {
+                return Err(
+                    capnp::Error::from_kind(capnp::ErrorKind::MessageTooLarge(words)).into(),
+                );
             }
-            self.message
-                .validate_capability_indices(0, selected_options)?;
-            self.validation.set(Validation::new(0, options));
+            if !self
+                .validation
+                .get()
+                .is_some_and(|proof| proof.matches(0, options))
+            {
+                // The private immutable envelope has exactly these three struct
+                // layouts. The public editor can only change the selected content.
+                // Charge their normal traversal/nesting cost, then validate that
+                // selection directly instead of decoding the same envelope again.
+                // Its pointer-word charge replaces the ordinary message-root charge.
+                let prefix_words = [
+                    rpc_capnp::api::Message::SIZE,
+                    rpc_capnp::api::Call::SIZE,
+                    rpc_capnp::api::Payload::SIZE,
+                ]
+                .iter()
+                .map(|size| usize::from(size.data) + usize::from(size.pointers))
+                .sum::<usize>();
+                let mut selected_options = options;
+                selected_options.nesting_limit = options
+                    .nesting_limit
+                    .checked_sub(3)
+                    .filter(|limit| *limit >= 0)
+                    .ok_or_else(|| {
+                        capnp::Error::from_kind(
+                            capnp::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
+                        )
+                    })?;
+                if let Some(limit) = &mut selected_options.traversal_limit_in_words {
+                    *limit = limit.checked_sub(prefix_words).ok_or_else(|| {
+                        capnp::Error::from_kind(capnp::ErrorKind::ReadLimitExceeded)
+                    })?;
+                }
+                self.message
+                    .validate_capability_indices(0, selected_options)?;
+                self.validation.set(Validation::new(0, options));
+            }
         }
         Ok(Some(EncodedCall {
             segment,
@@ -290,15 +313,16 @@ impl messages::Parts for FramedCallParts {
     }
 }
 
-/// An immutable data-only Call constructed by a safe message builder.
+/// An immutable local Call constructed by a safe message builder.
 /// Builder ownership excludes overlapping wire objects; changing scalar IDs
 /// therefore cannot change parameters, pointers, or capability descriptors.
-/// Raw wire bytes cannot construct this certificate.
+/// Raw wire bytes cannot construct this layout. Checked writers validate its
+/// payload unless it already carries a matching validation certificate.
 pub struct EncodedCall<'a> {
     segment: &'a [u8],
     second: Option<&'a [u8]>,
     template: PlainTemplate,
-    options: capnp::message::ReaderOptions,
+    options: Option<capnp::message::ReaderOptions>,
     #[cfg(feature = "alloc")]
     owner: Option<alloc::rc::Rc<PreparedCall<capnp::message::HeapAllocator>>>,
 }
@@ -472,13 +496,15 @@ impl<'a> EncodedCall<'a> {
         minimum: usize,
         allow_handoff: bool,
         options: capnp::message::ReaderOptions,
+        writer: WriterPolicy,
     ) -> Result<Frame<'pool>, super::super::super::Error> {
         // Certify the original immutable payload under this publication's
         // policy. Appending a target preserves every payload pointer, its
         // nesting depth and its envelope traversal charge. The append checks
         // the larger serialized word count independently, so walking the
         // unchanged payload again would provide no additional validation.
-        self.for_policy(method, options)?;
+        let options = writer.options(options);
+        self.for_publication(method, options, writer)?;
         if let Some(frame) = self.append_promised(
             messages,
             question,
@@ -528,7 +554,10 @@ impl<'a> EncodedCall<'a> {
                 },
             )
         })?;
-        Self::validate_promised(frame, messages)
+        match writer {
+            WriterPolicy::Checked => Self::validate_promised(frame, messages),
+            WriterPolicy::Native => Ok(frame),
+        }
     }
     fn validate_promised<'pool>(
         frame: Frame<'pool>,
@@ -581,7 +610,7 @@ impl<'a> EncodedCall<'a> {
             #[cfg(feature = "alloc")]
             owner: None,
             template: PlainTemplate::read_segment(segment, method, options)?,
-            options,
+            options: Some(options),
         })
     }
     #[cfg(test)]
@@ -589,10 +618,11 @@ impl<'a> EncodedCall<'a> {
         self.segment
     }
     #[inline(always)]
-    pub(super) fn for_policy(
+    pub(super) fn for_publication(
         &self,
         method: calls::DynamicCall,
         options: capnp::message::ReaderOptions,
+        writer: WriterPolicy,
     ) -> Result<PlainTemplate, super::super::super::Error> {
         if self.template.method != (method.interface, method.method)
             || self.template.no_promise_pipelining != method.no_promise_pipelining
@@ -600,8 +630,11 @@ impl<'a> EncodedCall<'a> {
         {
             return Err(super::super::super::Error::WrongMessage);
         }
-        if options.traversal_limit_in_words == self.options.traversal_limit_in_words
-            && options.nesting_limit == self.options.nesting_limit
+        if writer == WriterPolicy::Native
+            || self.options.is_some_and(|validated| {
+                options.traversal_limit_in_words == validated.traversal_limit_in_words
+                    && options.nesting_limit == validated.nesting_limit
+            })
         {
             Ok(self.template)
         } else {
@@ -890,7 +923,8 @@ mod tests {
                                     method,
                                     128,
                                     allow_handoff,
-                                    Default::default()
+                                    Default::default(),
+                                    WriterPolicy::Checked
                                 )
                                 .is_err());
                             messages.discard(occupied);
@@ -919,6 +953,7 @@ mod tests {
                                     128,
                                     allow_handoff,
                                     Default::default(),
+                                    WriterPolicy::Checked,
                                 )
                                 .unwrap();
                             let actual = frame.with(messages, canonical).unwrap();
@@ -953,7 +988,8 @@ mod tests {
                                     method,
                                     128,
                                     allow_handoff,
-                                    strict
+                                    strict,
+                                    WriterPolicy::Checked
                                 )
                                 .is_err());
                             // Rejected validation returns its buffer to the pool.
@@ -1010,7 +1046,7 @@ mod tests {
                         }
                         let actual = encoded.copy_promised(
                             messages, question, parent, path, method, 128, false, options,
-                        );
+                         WriterPolicy::Checked);
                         assert_eq!(actual.is_ok(), expected,
                             "depth={depth}, nesting={nesting_limit}, words={traversal_limit_in_words:?}");
                         if let Ok(frame) = actual {
@@ -1046,14 +1082,20 @@ mod tests {
                 let encoded = call.encoded(method, Default::default()).unwrap().unwrap();
                 let mut changed = capnp::message::ReaderOptions::new();
                 changed.nesting_limit -= 1;
-                assert!(encoded.for_policy(method, changed).is_ok());
+                assert!(encoded
+                    .for_publication(method, changed, WriterPolicy::Checked)
+                    .is_ok());
                 changed.nesting_limit = 0;
-                assert!(encoded.for_policy(method, changed).is_err());
+                assert!(encoded
+                    .for_publication(method, changed, WriterPolicy::Checked)
+                    .is_err());
                 let wrong = calls::DynamicCall {
                     no_promise_pipelining: !no_promise_pipelining,
                     ..method
                 };
-                assert!(encoded.for_policy(wrong, Default::default()).is_err());
+                assert!(encoded
+                    .for_publication(wrong, Default::default(), WriterPolicy::Checked)
+                    .is_err());
                 let mut words = Word::allocate_zeroed_vec(1024);
                 let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
                 messages::with_messages(&mut buffers, &mut [], |messages| {
@@ -1160,7 +1202,9 @@ mod tests {
                 .map_err(crate::owned::Error::from);
                 assert_eq!(call.encoded(call.method, options).map(|_| ()), expected);
                 assert_eq!(
-                    encoded.for_policy(call.method, options).is_ok(),
+                    encoded
+                        .for_publication(call.method, options, WriterPolicy::Checked)
+                        .is_ok(),
                     expected.is_ok()
                 );
             }
@@ -1288,7 +1332,9 @@ mod tests {
                     traversal_limit_in_words: Some(1),
                     ..Default::default()
                 };
-                assert!(encoded.for_policy(call.method, strict).is_err());
+                assert!(encoded
+                    .for_publication(call.method, strict, WriterPolicy::Checked)
+                    .is_err());
             },
         )
         .unwrap();
@@ -1329,6 +1375,67 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn native_prepared_call_defers_payload_limits_but_checked_publication_revalidates() {
+        let mut call = PreparedCall::from_template(
+            &PreparedCallTemplate::default(),
+            capnp::message::HeapAllocator::new(),
+            7,
+            9,
+        )
+        .unwrap();
+        let mut content = call.params();
+        for _ in 0..16 {
+            content = content
+                .initn_as::<capnp::any_pointer_list::Builder>(1)
+                .get(0);
+        }
+        content
+            .set_as::<capnp::text::Owned>("deep native payload")
+            .unwrap();
+        let limits = capnp::message::ReaderOptions {
+            nesting_limit: 4,
+            ..Default::default()
+        };
+        assert!(call.encoded(call.method, limits).is_err());
+        let encoded = call.encoded_for_sending(call.method).unwrap().unwrap();
+        assert!(encoded
+            .for_publication(call.method, limits, WriterPolicy::Checked)
+            .is_err());
+        assert!(encoded
+            .for_publication(call.method, limits, WriterPolicy::Native)
+            .is_ok());
+        assert!(encoded
+            .for_publication(
+                calls::DynamicCall {
+                    method: 10,
+                    ..call.method
+                },
+                limits,
+                WriterPolicy::Native
+            )
+            .is_err());
+        let segments = [encoded.segment];
+        let reader =
+            capnp::message::Reader::new(capnp::message::SegmentArray::new(&segments), limits);
+        let rpc_capnp::message::Call(received) = reader
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("Call")
+        };
+        assert!(received
+            .unwrap()
+            .get_params()
+            .unwrap()
+            .get_content()
+            .validate_capability_indices(0)
+            .is_err());
     }
 
     #[cfg(feature = "alloc")]
@@ -1538,12 +1645,13 @@ mod tests {
                 assert_eq!(encoded.is_some(), first_segment == 256);
                 if let Some(encoded) = encoded {
                     assert!(encoded
-                        .for_policy(
+                        .for_publication(
                             method,
                             ReaderOptions {
                                 nesting_limit: 1,
                                 ..ReaderOptions::new()
-                            }
+                            },
+                            WriterPolicy::Checked
                         )
                         .is_err());
                     assert!(call
@@ -1607,21 +1715,23 @@ mod tests {
             .unwrap();
             let encoded = EncodedCall::from_fixed(&source, method, Default::default()).unwrap();
             assert!(encoded
-                .for_policy(
+                .for_publication(
                     calls::DynamicCall {
                         method: 0,
                         ..method
                     },
-                    Default::default()
+                    Default::default(),
+                    WriterPolicy::Checked
                 )
                 .is_err());
             assert!(encoded
-                .for_policy(
+                .for_publication(
                     method,
                     capnp::message::ReaderOptions {
                         traversal_limit_in_words: Some(0),
                         ..Default::default()
-                    }
+                    },
+                    WriterPolicy::Checked
                 )
                 .is_err());
             let mut output_words = [ZERO; 256];

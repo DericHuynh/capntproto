@@ -182,6 +182,7 @@ async fn run<V: 'static>(
                 });
                 driver.set_descriptors(coordinator::multiparty::introduction::descriptors());
                 driver.use_owned_output_queues(true);
+                driver.use_native_writer();
                 let mut hooks = ClientHooks::new(options.hooks.get(), options.concurrency.get())
                     .with_message_pool(capnp::message::SegmentPool::new(
                         options.cached_message_words,

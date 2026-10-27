@@ -294,6 +294,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         encode: impl FnOnce(&mut capnp::message::FixedBuilder<'_>) -> capnp::Result<()>,
     ) -> Result<InvocationKey<'id>, Error> {
+        let options = self.writer_policy.options(options);
         self.check_live()?;
         // Deferred input was already admitted before this application call.
         // Give it a dispatch position before admitting newer ordinary work.
@@ -317,9 +318,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     unreachable!()
                 };
                 let call = call?;
-                call.get_params()?
-                    .get_content()
-                    .validate_capability_indices(count)?;
+                if self.writer_policy == WriterPolicy::Checked {
+                    call.get_params()?
+                        .get_content()
+                        .validate_capability_indices(count)?;
+                }
                 Ok(if count == 0 {
                     PlainTemplate::new(call, &messages.read(&frame.lease))
                 } else {
@@ -566,6 +569,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             &mut R,
         ) -> u8,
     ) -> Result<Option<SentInvocation<'id>>, Error> {
+        let options = self.writer_policy.options(options);
         self.check_live()?;
         let Some(ready) = self.runtime.ready().map_err(Error::Dispatch)? else {
             return Ok(None);

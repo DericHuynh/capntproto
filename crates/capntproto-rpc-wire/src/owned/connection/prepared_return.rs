@@ -111,6 +111,7 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
     pub fn reader(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
         self.message.get_reader()
     }
+    #[cfg(test)]
     #[inline(always)]
     fn copy<'pool>(
         &self,
@@ -119,7 +120,14 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<Frame<'pool>>, super::super::Error> {
-        self.copy_with_capabilities(answer, no_finish, 0, messages, options)
+        self.copy_with_capabilities(
+            answer,
+            no_finish,
+            0,
+            messages,
+            options,
+            WriterPolicy::Checked,
+        )
     }
     #[inline(always)]
     fn copy_with_capabilities<'pool>(
@@ -129,7 +137,9 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
         capabilities: u32,
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
+        writer: WriterPolicy,
     ) -> Result<Option<Frame<'pool>>, super::super::Error> {
+        let options = writer.options(options);
         let segments = self.message.message();
         let Some(length) = self.framed_len() else {
             return Ok(None);
@@ -139,8 +149,10 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
         // retaining it separately would enlarge every inline result owner.
         let header = (segments.len() / 2 + 1) * 8;
         let words = (length - header) / 8;
-        self.validate(capabilities, words, options)?;
-        self.copy_validated(
+        if writer == WriterPolicy::Checked {
+            self.validate(capabilities, words, options)?;
+        }
+        self.copy_envelope(
             answer, no_finish, messages, options, segments, header, length,
         )
     }
@@ -194,7 +206,7 @@ impl<A: capnp::message::Allocator> FrozenReturn<A> {
     }
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    fn copy_validated<'pool>(
+    fn copy_envelope<'pool>(
         &self,
         answer: AnswerId,
         no_finish: bool,
@@ -314,6 +326,7 @@ impl FrozenReturn<capnp::message::HeapAllocator> {
         no_finish: bool,
         messages: &mut messages::Messages<'_, '_, '_>,
         options: capnp::message::ReaderOptions,
+        writer: WriterPolicy,
     ) -> Result<Option<messages::SharedParts>, super::super::Error> {
         use capnp::message::ReaderSegments;
         let message = self.message.message();
@@ -331,7 +344,9 @@ impl FrozenReturn<capnp::message::HeapAllocator> {
         let Some(length) = self.framed_len() else {
             return Ok(None);
         };
-        self.validate(0, (length - 16) / 8, options)?;
+        if writer == WriterPolicy::Checked {
+            self.validate(0, (length - 16) / 8, options)?;
+        }
         let mut header = [0; 16];
         header[..4].copy_from_slice(&1u32.to_le_bytes());
         header[4..8].copy_from_slice(&((first.len() / 8) as u32).to_le_bytes());
@@ -434,6 +449,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         resources: R,
     ) -> Result<Option<A>, Error> {
+        let options = self.writer_policy.options(options);
         let key = request.answer();
         self.check_answer_completion(key)?;
         let mut pending = self
@@ -453,7 +469,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if self.owned_output {
             if let Some(shared) = shared {
                 if let Some(parts) = shared
-                    .retain_parts(key.id(), true, messages, options)
+                    .retain_parts(key.id(), true, messages, options, self.writer_policy)
                     .map_err(Error::Input)?
                 {
                     let retired = pending
@@ -469,7 +485,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             }
         }
         let Some(frame) = source
-            .copy(key.id(), true, messages, options)
+            .copy_with_capabilities(key.id(), true, 0, messages, options, self.writer_policy)
             .map_err(Error::Input)?
         else {
             return Ok(None);
@@ -509,6 +525,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error> {
+        let options = self.writer_policy.options(options);
         self.check_live()?;
         let no_finish = self
             .ledgers
@@ -517,7 +534,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?
             .can_omit_finish();
         let Some(frame) = source
-            .copy(answer.id(), no_finish, messages, options)
+            .copy_with_capabilities(
+                answer.id(),
+                no_finish,
+                0,
+                messages,
+                options,
+                self.writer_policy,
+            )
             .map_err(Error::Input)?
         else {
             return Ok(None);
@@ -552,6 +576,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     where
         'id: 'c,
     {
+        let options = self.writer_policy.options(options);
         if capabilities.len() == 0 {
             return self
                 .local_answer_prepared(answer, interface, method, source, messages, options);
@@ -568,16 +593,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .ok_or(Error::Input(super::super::Error::Capacity))?;
         let count = u32::try_from(capabilities.len())
             .map_err(|_| Error::Input(super::super::Error::Capacity))?;
-        let frame =
-            match source.copy_with_capabilities(answer.id(), false, count, messages, options) {
-                Ok(Some(frame)) => frame,
-                // The original builder can retain unreachable words. Let the
-                // ordinary codec compact them before applying the frame-size limit.
-                Ok(None) | Err(super::super::Error::Wire(capnp::ErrorKind::MessageTooLarge(_))) => {
-                    return Ok(None)
-                }
-                Err(error) => return Err(Error::Input(error)),
-            };
+        let frame = match source.copy_with_capabilities(
+            answer.id(),
+            false,
+            count,
+            messages,
+            options,
+            self.writer_policy,
+        ) {
+            Ok(Some(frame)) => frame,
+            // The original builder can retain unreachable words. Let the
+            // ordinary codec compact them before applying the frame-size limit.
+            Ok(None) | Err(super::super::Error::Wire(capnp::ErrorKind::MessageTooLarge(_))) => {
+                return Ok(None)
+            }
+            Err(error) => return Err(Error::Input(error)),
+        };
         let mut result = LocalResult {
             capacity: self.message_capabilities,
             frame,
@@ -710,6 +741,7 @@ mod tests {
                             no_finish,
                             messages,
                             Default::default(),
+                            WriterPolicy::Checked,
                         )
                         .unwrap()
                         .unwrap();
@@ -748,7 +780,13 @@ mod tests {
                     },
                 ] {
                     assert!(source
-                        .retain_parts(AnswerId::from_wire(1), true, messages, strict)
+                        .retain_parts(
+                            AnswerId::from_wire(1),
+                            true,
+                            messages,
+                            strict,
+                            WriterPolicy::Checked
+                        )
                         .is_err());
                 }
             },
@@ -765,7 +803,13 @@ mod tests {
             },
             |messages| {
                 assert!(source
-                    .retain_parts(AnswerId::from_wire(1), true, messages, Default::default())
+                    .retain_parts(
+                        AnswerId::from_wire(1),
+                        true,
+                        messages,
+                        Default::default(),
+                        WriterPolicy::Checked
+                    )
                     .unwrap()
                     .is_none());
                 source
@@ -780,7 +824,13 @@ mod tests {
         let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
         messages::with_messages(&mut buffers, &mut [], |messages| {
             assert!(source
-                .retain_parts(AnswerId::from_wire(1), true, messages, Default::default())
+                .retain_parts(
+                    AnswerId::from_wire(1),
+                    true,
+                    messages,
+                    Default::default(),
+                    WriterPolicy::Checked
+                )
                 .unwrap()
                 .is_none());
             source

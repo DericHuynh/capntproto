@@ -14,8 +14,9 @@ pub struct LocalResult<'pool, 'id, const CAPS: usize> {
     pub(crate) count: usize,
     pub(crate) interface: u64,
     pub(crate) method: u16,
-    // Only a privately built and validated data-only Return can carry this
-    // certificate. The frame is immutable for its entire retained lifetime.
+    // Only a privately built Return with an empty capability table can carry
+    // this header certificate. Payload validation follows the writer policy.
+    // The frame is immutable for its entire retained lifetime.
     pub(crate) prepared_return: Option<(AnswerId, bool)>,
 }
 /// A borrowed local payload retains the same message-origin check used for
@@ -121,6 +122,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         minimum: usize,
         options: capnp::message::ReaderOptions,
     ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
+        let options = self.writer_policy.options(options);
         self.check_live()?;
         let frame = Frame::build(messages, minimum, options, |builder| {
             calls::acknowledge(builder, capntproto_rpc_engine::ids::AnswerId::from_wire(0))
@@ -262,6 +264,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
     ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
+        let options = self.writer_policy.options(options);
         self.check_live()?;
         let retained = self
             .message_capabilities
@@ -290,17 +293,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Ok(())
         })
         .map_err(Error::Input)?;
-        let validation = frame
-            .with(messages, |root| -> capnp::Result<()> {
-                let rpc_capnp::message::Return(result) = root.which()? else {
-                    unreachable!()
-                };
-                let rpc_capnp::return_::Results(payload) = result?.which()? else {
-                    unreachable!()
-                };
-                payload?.get_content().validate_capability_indices(count)
-            })
-            .and_then(|result| result.map_err(super::super::Error::from));
+        let validation = if self.writer_policy == WriterPolicy::Native {
+            Ok(())
+        } else {
+            frame
+                .with(messages, |root| -> capnp::Result<()> {
+                    let rpc_capnp::message::Return(result) = root.which()? else {
+                        unreachable!()
+                    };
+                    let rpc_capnp::return_::Results(payload) = result?.which()? else {
+                        unreachable!()
+                    };
+                    payload?.get_content().validate_capability_indices(count)
+                })
+                .and_then(|result| result.map_err(super::super::Error::from))
+        };
         if let Err(error) = validation {
             frame.release(messages);
             return Err(Error::Input(error));

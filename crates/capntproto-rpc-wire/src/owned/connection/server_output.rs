@@ -232,6 +232,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         ) -> u8,
         exception: impl FnOnce(&A, capnp::field_api::FixedStruct<'_, Exception>) -> capnp::Result<()>,
     ) -> Result<Option<A>, Error> {
+        let options = self.writer_policy.options(options);
         self.check_live()?;
         // Third-party completion requires network authentication and its own
         // Return publication, even when its local producer has completed.
