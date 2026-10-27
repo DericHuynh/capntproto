@@ -1,0 +1,89 @@
+name: Qualify shared legacy and portable notification implementation
+on:
+  push:
+    branches: [codex/service-dx-qualification-20261026]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-shared-rpc-core
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_TERM_COLOR: never
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 961ba67765c4dfa4beadb2471692d7f41113b3ff
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler libssl-dev
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
+          git submodule update --init --depth 1 vendor/capnproto
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: dedicated-benchmarks
+          cache-on-failure: true
+          workspaces: |
+            . -> target
+            benchmarks/rpc -> target
+      - name: Verify the old mutex path fails the new regression
+        run: |
+          python3 - <<'PYNEGATIVE'
+          from pathlib import Path
+          import subprocess
+          path=Path('crates/capntproto-rpc/src/scoped/wire/ready.rs')
+          original=path.read_text()
+          start=original.index('        if !shared.overflow.load(Ordering::Acquire) {')
+          end=original.index('        let notify = {', start)
+          try:
+            path.write_text(original[:start]+original[end:])
+            result=subprocess.run(['cargo','test','--locked','-p','capntproto-rpc','--lib','ordinary_notifications_use_the_shared_atomic_fifo_without_locking','--','--nocapture'], text=True, capture_output=True)
+            output=result.stdout+result.stderr
+            assert result.returncode!=0 and 'ordinary wake tried to acquire the overflow mailbox' in output, output[-4000:]
+            print('NEGATIVE_CONTROL: original mutex path rejected by the new regression')
+          finally:
+            path.write_text(original)
+          PYNEGATIVE
+      - name: Test both hosted drivers and shared notification races
+        run: cargo test --locked -p capntproto-rpc --lib -- --nocapture
+      - name: Test mixed legacy and portable lifecycle and pipeline paths
+        run: cargo test --locked -p capntproto --test answer_adoption --test scoped_vat --test scoped_unix --test rpc_reply --test rpc_tables --test rpc_admission --test streaming --test revocable_streaming --test result_pipeline -- --skip tlc
+      - name: Check portable profiles and diagnostics
+        run: |
+          cargo check --locked -p capntproto-rpc --no-default-features
+          rustup target add thumbv7em-none-eabi --toolchain 1.97.0
+          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi
+          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER=rust-lld cargo build --locked --release --manifest-path verification/portable/Cargo.toml --target thumbv7em-none-eabi
+          cargo check --locked -p capntproto-rpc --no-default-features --features alloc
+          cargo clippy --locked -p capntproto-rpc -p capntproto-rpc-engine --all-targets -- -D warnings
+          cargo fmt --all -- --check
+  miri:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 961ba67765c4dfa4beadb2471692d7f41113b3ff
+      - name: Install memory interpreter
+        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: shared-notification-miri
+          cache-on-failure: true
+      - name: Check hosted handoff, overflow, generations and data publication
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance
+        run: |
+          for case in atomic_fifo_wraps_and_promotion_keeps_earlier_notifications_first wakeups_allocate_nothing_before_and_after_overflow_promotion; do
+            cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc "scoped::wire::ready::tests::$case"
+          done
