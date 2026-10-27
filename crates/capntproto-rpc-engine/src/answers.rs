@@ -227,6 +227,7 @@ pub struct Answers<'id, 'storage, T> {
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
     free: crate::free_slots::FreeSlots,
+    displaced: usize,
     retired: crate::work_queue::Queue,
     pipeline_ready: crate::work_queue::Queue,
     pipeline_registry: Option<u64>,
@@ -261,6 +262,7 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Answers<'id, '_
         slots: crate::storage::Storage::borrowed(slots),
         generation: 0,
         free: crate::free_slots::FreeSlots::new(),
+        displaced: 0,
         retired: crate::work_queue::Queue::EMPTY,
         pipeline_ready: crate::work_queue::Queue::EMPTY,
         pipeline_registry: None,
@@ -285,6 +287,7 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
         slots,
         generation: 0,
         free: crate::free_slots::FreeSlots::new(),
+        displaced: 0,
         retired: crate::work_queue::Queue::EMPTY,
         pipeline_ready: crate::work_queue::Queue::EMPTY,
         pipeline_registry: None,
@@ -651,6 +654,9 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
                 return Some(index);
             }
         }
+        if self.displaced == 0 {
+            return None;
+        }
         self.slots.iter().position(|s| {
             s.record
                 .as_ref()
@@ -675,7 +681,9 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
             self.pipeline_ready
                 .remove(&mut self.slots, index, |slot| &mut slot.pipeline_work);
             self.slots[index].pipeline_cursor = None;
-            let value = self.slots[index].record.take().map(|r| r.value);
+            let record = self.slots[index].record.take().expect("reclaimable answer");
+            self.displaced -= usize::from(usize::try_from(record.id.to_wire()).ok() != Some(index));
+            let value = Some(record.value);
             self.free
                 .release(index, &mut self.slots, |slot| &mut slot.free);
             value
@@ -740,11 +748,9 @@ impl<T> Drop for Answers<'_, '_, T> {
 }
 impl<T> Answers<'_, '_, T> {
     pub(crate) fn take_terminal_owner(&mut self, index: usize) -> Option<T> {
-        self.slots
-            .get_mut(index)?
-            .record
-            .take()
-            .map(|record| record.value)
+        let record = self.slots.get_mut(index)?.record.take()?;
+        self.displaced -= usize::from(usize::try_from(record.id.to_wire()).ok() != Some(index));
+        Some(record.value)
     }
 }
 pub struct Finished<T> {

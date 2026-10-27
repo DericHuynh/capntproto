@@ -30,6 +30,15 @@ fn resolution_is_once_and_preserves_promise_references() {
         Slot::EMPTY,
     ];
     let mut imports = Imports {
+        displaced: slots
+            .iter()
+            .enumerate()
+            .filter(|(index, slot)| {
+                slot.entry
+                    .as_ref()
+                    .is_some_and(|entry| usize::try_from(entry.wire.to_wire()).ok() != Some(*index))
+            })
+            .count(),
         free: crate::free_slots::FreeSlots::from_storage(
             &mut slots,
             |slot| slot.entry.is_none() && slot.generation != u64::MAX,
@@ -97,6 +106,15 @@ fn duplicate_batch_admission_is_atomic_for_all_reference_counts() {
         }),
     }];
     let mut imports = Imports {
+        displaced: slots
+            .iter()
+            .enumerate()
+            .filter(|(index, slot)| {
+                slot.entry
+                    .as_ref()
+                    .is_some_and(|entry| usize::try_from(entry.wire.to_wire()).ok() != Some(*index))
+            })
+            .count(),
         free: crate::free_slots::FreeSlots::from_storage(
             &mut slots,
             |slot| slot.entry.is_none() && slot.generation != u64::MAX,

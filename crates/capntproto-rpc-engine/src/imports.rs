@@ -179,6 +179,7 @@ pub struct Imports<'id, 'storage, T> {
     observation: crate::observation::Counter,
     slots: crate::storage::Storage<'storage, Slot<T>>,
     free: crate::free_slots::FreeSlots,
+    displaced: usize,
     release_head: Option<core::num::NonZeroUsize>,
     release_tail: Option<core::num::NonZeroUsize>,
     brand: Brand<'id>,
@@ -206,6 +207,7 @@ impl<T> Imports<'_, '_, T> {
 
     pub(crate) fn take_terminal_owner(&mut self, index: usize) -> Option<T> {
         let entry = self.slots.get_mut(index)?.entry.take()?;
+        self.displaced -= usize::from(usize::try_from(entry.wire.to_wire()).ok() != Some(index));
         if entry.local == 0 {
             self.unlink_release(index);
         }
@@ -245,6 +247,7 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Imports<'id, '_
     }
     Ok(Imports {
         free: crate::free_slots::FreeSlots::new(),
+        displaced: 0,
         release_head: None,
         release_tail: None,
         binding_revision: 0,
@@ -264,6 +267,7 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
         crate::storage::Storage::growing(initial, maximum, || Slot::EMPTY).ok_or(Error::Full)?;
     Ok(Imports {
         free: crate::free_slots::FreeSlots::new(),
+        displaced: 0,
         release_head: None,
         release_tail: None,
         binding_revision: 0,
@@ -341,6 +345,9 @@ impl<'id, T> Imports<'id, '_, T> {
                 return Some(index);
             }
         }
+        if self.displaced == 0 {
+            return None;
+        }
         self.slots
             .iter()
             .position(|slot| slot.entry.as_ref().is_some_and(|entry| entry.wire == id))
@@ -385,6 +392,7 @@ impl<'id, T> Imports<'id, '_, T> {
         };
         let reserved = self.free.take(&mut self.slots, |slot| &mut slot.free);
         debug_assert_eq!(reserved, index);
+        self.displaced += usize::from(usize::try_from(id.to_wire()).ok() != Some(index));
         let slot = &mut self.slots[index];
         let mut remote = ImportRefs::new();
         remote.receive(1).expect("first remote reference");
@@ -471,6 +479,7 @@ impl<'id, T> Imports<'id, '_, T> {
         Some(Release {
             binding_revision: &mut self.binding_revision,
             free: &mut self.free,
+            displaced: &mut self.displaced,
             slots: &mut self.slots,
             index,
             head: &mut self.release_head,
@@ -540,6 +549,7 @@ fn unlink_release<T>(
 pub struct Release<'a, T> {
     binding_revision: &'a mut usize,
     free: &'a mut crate::free_slots::FreeSlots,
+    displaced: &'a mut usize,
     slots: &'a mut [Slot<T>],
     index: usize,
     head: &'a mut Option<core::num::NonZeroUsize>,
@@ -568,6 +578,8 @@ impl<T> Release<'_, T> {
             .entry
             .take()
             .expect("pending cleanup");
+        *self.displaced -=
+            usize::from(usize::try_from(entry.wire.to_wire()).ok() != Some(self.index));
         entry
             .remote
             .pending_release()

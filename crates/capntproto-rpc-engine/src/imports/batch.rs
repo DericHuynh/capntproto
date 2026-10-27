@@ -253,6 +253,8 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
                     .receive(1)
                     .expect("preflighted remote references");
             } else {
+                self.imports.displaced +=
+                    usize::from(usize::try_from(wire.to_wire()).ok() != Some(plan.index));
                 let mut remote = ImportRefs::new();
                 remote.receive(1).unwrap();
                 slot.entry = Some(Entry {

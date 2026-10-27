@@ -95,6 +95,8 @@ impl<'id, T> Admission<'_, 'id, '_, T> {
             .free
             .take(&mut self.answers.slots, |slot| &mut slot.free);
         debug_assert_eq!(reserved, self.key.index);
+        self.answers.displaced +=
+            usize::from(usize::try_from(self.key.id.to_wire()).ok() != Some(self.key.index));
         self.answers.generation = self.key.generation;
         self.answers.slots[self.key.index].record = Some(Record {
             #[cfg(feature = "alloc")]

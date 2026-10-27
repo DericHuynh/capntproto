@@ -171,6 +171,8 @@ impl<'receipts, 'id, T> PipelineAdmission<'_, 'receipts, 'id, '_, T> {
             .free
             .take(&mut self.pending.answers.slots, |slot| &mut slot.free);
         debug_assert_eq!(reserved, self.key.index);
+        self.pending.answers.displaced +=
+            usize::from(usize::try_from(self.key.id.to_wire()).ok() != Some(self.key.index));
         self.pending.answers.generation = self.key.generation;
         self.pending.answers.slots[self.key.index].record = Some(Record {
             #[cfg(feature = "alloc")]
@@ -231,6 +233,15 @@ mod proofs {
             Slot::EMPTY,
         ];
         let mut answers = Answers {
+            displaced: slots
+                .iter()
+                .enumerate()
+                .filter(|(index, slot)| {
+                    slot.record.as_ref().is_some_and(|entry| {
+                        usize::try_from(entry.id.to_wire()).ok() != Some(*index)
+                    })
+                })
+                .count(),
             free: crate::free_slots::FreeSlots::from_storage(
                 &mut slots,
                 |slot| slot.record.is_none(),

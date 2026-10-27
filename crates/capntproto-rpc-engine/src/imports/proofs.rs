@@ -101,6 +101,15 @@ fn import_receive_is_atomic() {
         }),
     }];
     let mut imports = Imports {
+        displaced: storage
+            .iter()
+            .enumerate()
+            .filter(|(index, slot)| {
+                slot.entry
+                    .as_ref()
+                    .is_some_and(|entry| usize::try_from(entry.wire.to_wire()).ok() != Some(*index))
+            })
+            .count(),
         free: crate::free_slots::FreeSlots::from_storage(
             &mut storage,
             |slot| slot.entry.is_none() && slot.generation != u64::MAX,
@@ -173,6 +182,15 @@ fn receipt_metadata_preserves_ownership() {
         }),
     }];
     let mut imports = Imports {
+        displaced: storage
+            .iter()
+            .enumerate()
+            .filter(|(index, slot)| {
+                slot.entry
+                    .as_ref()
+                    .is_some_and(|entry| usize::try_from(entry.wire.to_wire()).ok() != Some(*index))
+            })
+            .count(),
         free: crate::free_slots::FreeSlots::from_storage(
             &mut storage,
             |slot| slot.entry.is_none() && slot.generation != u64::MAX,
