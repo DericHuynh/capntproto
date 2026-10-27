@@ -231,8 +231,10 @@ impl<'pool, 'graph, const N: usize> Published<'pool, 'graph, N> {
         messages: &messages::Messages<'pool, '_, '_>,
         graph: &mut G,
     ) -> Result<Client<'graph>, Error> {
+        // Only the retained capability escapes this lookup. Borrow the frame
+        // for decoding rather than allocating a shared reader for its bytes.
         self.frame
-            .with(messages, |root| {
+            .with_borrowed_root(messages, |root| {
                 let rpc_capnp::message::Return(result) =
                     root.which().map_err(|_| Error::Missing)?
                 else {
@@ -282,7 +284,9 @@ pub struct Results<'pool, 'graph, A, const N: usize> {
     pub(crate) redirect: Option<capntproto_rpc_engine::questions::Local<'graph>>,
 }
 impl<'pool, 'graph, A, const N: usize> Results<'pool, 'graph, A, N> {
-    pub(crate) fn is_pending(&self) -> bool {
+    /// Whether the producer's final local result has not yet been frozen.
+    /// An explicit early pipeline can still be available while this is true.
+    pub fn is_pending(&self) -> bool {
         self.value.is_none()
     }
     pub fn new(producer: A) -> Self {

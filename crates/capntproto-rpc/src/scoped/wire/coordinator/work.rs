@@ -658,9 +658,16 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         let foreign = &mut self.foreign;
         self.worker.accept_using(&mut self.driver, |driver| {
             driver
-                .dispatch_immediate_call_with(true, messages, |results, path, runtime| {
+                .dispatch_immediate_call_with(true, messages, |answer, path, runtime| {
+                    // Final successful results already retain their exact wire
+                    // capability routes. Importing their original hooks again
+                    // would create duplicate graph endpoints. Explicit early
+                    // pipelines and structured failures keep their hook owner.
+                    if !answer.is_pending() && !answer.producer.has_pipeline_override() {
+                        return Ok(None);
+                    }
                     hooks
-                        .server_pipeline(results, path, runtime, |runtime, hook| {
+                        .server_pipeline(&answer.producer, path, runtime, |runtime, hook| {
                             foreign.import(runtime, hook)
                         })
                         .map(|client| client.map(Ok))

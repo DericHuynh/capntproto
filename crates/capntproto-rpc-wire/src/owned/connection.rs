@@ -1110,7 +1110,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         cancellation: bool,
         messages: &messages::Messages<'pool, '_, '_>,
         resolve: impl FnOnce(
-            &A,
+            &pipelines::Results<'pool, 'id, A, CAPS>,
             pipeline::Path<'_>,
             &mut Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH>,
         ) -> Result<
@@ -1137,11 +1137,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         if self.call_target.is_none() {
             let parent = &self.ledgers.answers.pipelined(answer).owner;
-            let resolved = match resolve(
-                &parent.producer,
-                path,
-                &mut clients::Access::new(&mut self.runtime),
-            ) {
+            let resolved = match resolve(parent, path, &mut clients::Access::new(&mut self.runtime))
+            {
                 Ok(Some(Ok(target))) => Some(target),
                 Ok(None) => parent
                     .target(path, messages, &mut self.runtime)

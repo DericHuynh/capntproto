@@ -210,6 +210,10 @@ impl std::ops::Deref for Producer {
     }
 }
 impl Producer {
+    pub(crate) fn has_pipeline_override(&self) -> bool {
+        self.0 .0.pipeline.borrow().is_some()
+            || matches!(self.0 .0.completion.borrow().as_ref(), Some(Err(_)))
+    }
     pub fn results(&self) -> Results {
         self.0.clone()
     }
