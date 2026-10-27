@@ -886,6 +886,45 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
                         call.get_allow_third_party_tail_call(),
                     ));
                 }
+                if let Ok(rpc_capnp::message_target::PromisedAnswer(parent)) = target.which() {
+                    // A data-only pipeline has exactly one receipt: its parent.
+                    // The answer ledger already admits that dependency and the
+                    // child atomically. Empty import/export batches and parallel
+                    // receipt arrays add no ownership to this transaction.
+                    if capacity.maximum::<N>() == 0 {
+                        return Err(Error::Capacity);
+                    }
+                    inbound::caller_question(call.get_question_id()).map_err(Error::Admission)?;
+                    let parent = parent?;
+                    prepare_target_path(target, &mut path, path_capacity)?;
+                    let length = pipeline::Path::decode(parent, &mut path)
+                        .map_err(|e| Error::Admission(inbound::Error::Target(e)))?
+                        .fields()
+                        .len();
+                    let answer = answers
+                        .prepare_admission(
+                            AnswerId::from_wire(call.get_question_id()),
+                            Some(AnswerId::from_wire(parent.get_question_id())),
+                        )
+                        .map_err(|e| {
+                            Error::Admission(inbound::Error::Reception(reception::Error::Answers(
+                                e.into(),
+                            )))
+                        })?
+                        .allow_handoff(call.get_allow_third_party_tail_call());
+                    #[cfg(feature = "alloc")]
+                    {
+                        plain_params = _frame.retain_plain_payload(_messages, payload)?;
+                    }
+                    let (answer, parent) = answer.accept(owner.take().unwrap());
+                    return Ok((
+                        answer,
+                        Target::Promised(parent.expect("preflighted parent")),
+                        length,
+                        calls::Incoming::new(call).hints(),
+                        call.get_allow_third_party_tail_call(),
+                    ));
+                }
             }
             prepare_target_path(target, &mut path, path_capacity)?;
             let prepared_payload = if plain {

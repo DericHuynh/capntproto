@@ -461,6 +461,160 @@ fn owned_request_retains_frame_receipts_and_target_while_other_io_progresses() {
     assert_eq!(measured.count_total, 0);
 }
 
+#[test]
+fn plain_promised_call_retains_parent_through_finish_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        let mut words = [ZERO; 81];
+        let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
+        messages::with_messages(&mut buffers, &mut [], |messages| {
+            let mut aa = [const { answers::Slot::EMPTY }; 2];
+            capntproto_rpc_engine::connection::with_connection(
+                capntproto_rpc_engine::connection::Storage {
+                    imports: &mut [],
+                    exports: &mut [],
+                    answers: &mut aa,
+                    questions: &mut [],
+                },
+                |connection: &mut capntproto_rpc_engine::connection::Connection<
+                    '_,
+                    '_,
+                    (),
+                    (),
+                    u32,
+                >| {
+                    let parent = connection
+                        .answers
+                        .admit(AnswerId::from_wire(3), 43)
+                        .unwrap();
+                    let frame = encode(messages, ExportId::from_wire(0), false, true);
+                    let call = Call::<_, 1, 2>::admit(
+                        frame,
+                        messages,
+                        &mut connection.imports,
+                        &mut connection.exports,
+                        &mut connection.answers,
+                        47,
+                        |_| panic!("no descriptors"),
+                    )
+                    .unwrap_or_else(|e| panic!("{}", e.error));
+                    let TargetRef::Promised { path, .. } = call.target() else {
+                        panic!("promised target");
+                    };
+                    assert_eq!(path.fields(), &[1, 2]);
+                    connection.answers.finish(parent.id(), false);
+                    assert!(connection.answers.dispatch(parent, true).unwrap());
+                    assert_eq!(
+                        connection.answers.prepare_return(parent).unwrap().accept(),
+                        None
+                    );
+                    let key = call.answer();
+                    call.release(
+                        messages,
+                        &mut connection.imports,
+                        &mut connection.exports,
+                        &mut connection.answers,
+                    );
+                    assert_eq!(connection.answers.take_finished(0), Some(43));
+                    connection.answers.finish(key.id(), false);
+                    assert_eq!(
+                        connection.answers.prepare_return(key).unwrap().accept(),
+                        Some(47)
+                    );
+                    assert!(connection.answers.is_empty());
+                    let writer = messages.reserve(1).unwrap();
+                    messages.discard(writer);
+                },
+            )
+            .unwrap();
+        })
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn plain_promised_call_rejection_preserves_parent_owner_and_frame() {
+    let measured = allocation_counter::measure(|| {
+        // Missing parent, duplicate child, full answer ledger and path limit.
+        for failure in 0..4 {
+            let mut words = [ZERO; 81];
+            let mut buffers = [messages::Buffer::new(Word::words_to_bytes_mut(&mut words))];
+            messages::with_messages(&mut buffers, &mut [], |messages| {
+                let mut aa = [const { answers::Slot::EMPTY }; 2];
+                let limit = if failure == 2 { 1 } else { 2 };
+                capntproto_rpc_engine::connection::with_connection(
+                    capntproto_rpc_engine::connection::Storage {
+                        imports: &mut [],
+                        exports: &mut [],
+                        answers: &mut aa[..limit],
+                        questions: &mut [],
+                    },
+                    |connection: &mut capntproto_rpc_engine::connection::Connection<
+                        '_,
+                        '_,
+                        (),
+                        (),
+                        u32,
+                    >| {
+                        let parent = (failure != 0).then(|| {
+                            connection
+                                .answers
+                                .admit(AnswerId::from_wire(if failure == 1 { 5 } else { 3 }), 43)
+                                .unwrap()
+                        });
+                        let frame = encode(messages, ExportId::from_wire(0), false, true);
+                        let rejected = if failure == 3 {
+                            Call::<_, 1, 1>::admit(
+                                frame,
+                                messages,
+                                &mut connection.imports,
+                                &mut connection.exports,
+                                &mut connection.answers,
+                                47,
+                                |_| panic!("no parameter descriptors"),
+                            )
+                            .err()
+                        } else {
+                            Call::<_, 1, 2>::admit(
+                                frame,
+                                messages,
+                                &mut connection.imports,
+                                &mut connection.exports,
+                                &mut connection.answers,
+                                47,
+                                |_| panic!("no parameter descriptors"),
+                            )
+                            .err()
+                        }
+                        .expect("transaction must reject");
+                        assert_eq!(rejected.owner, 47);
+                        assert_eq!(connection.answers.len(), usize::from(parent.is_some()));
+                        if let Some(parent) = parent {
+                            connection.answers.finish(parent.id(), false);
+                            assert_eq!(
+                                connection.answers.prepare_return(parent).unwrap().accept(),
+                                Some(43)
+                            );
+                        }
+                        rejected
+                            .frame
+                            .with(messages, |root| {
+                                assert!(matches!(root.which(), Ok(rpc_capnp::message::Call(_))));
+                            })
+                            .unwrap();
+                        rejected.frame.release(messages);
+                        let writer = messages.reserve(1).unwrap();
+                        messages.discard(writer);
+                    },
+                )
+                .unwrap();
+            })
+            .unwrap();
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
 #[cfg(feature = "alloc")]
 #[test]
 fn growing_plain_call_keeps_target_alive_without_allocating_receipt_storage() {
