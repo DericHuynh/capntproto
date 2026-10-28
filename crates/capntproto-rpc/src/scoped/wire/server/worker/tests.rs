@@ -1528,3 +1528,104 @@ fn legacy_first_poll_keeps_parked_siblings_asleep() {
         close(worker, hooks, driver, messages, &mut queue);
     });
 }
+
+#[test]
+fn legacy_first_poll_updates_the_parent_of_parked_siblings() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    with_peer(|mut driver, messages| {
+        let waiter = Rc::new(RefCell::new(None::<Waker>));
+        let observed = waiter.clone();
+        let id = expose(
+            &mut driver,
+            server(move |method, mut results| {
+                if method == 0 {
+                    let waiter = observed.clone();
+                    capability::DispatchCallResult::with_cancellation_policy(
+                        Promise::from_future(futures::future::poll_fn(move |cx| {
+                            let _ = &results;
+                            *waiter.borrow_mut() = Some(cx.waker().clone());
+                            Poll::Pending
+                        })),
+                        false,
+                        true,
+                    )
+                } else {
+                    observed.borrow().as_ref().unwrap().wake_by_ref();
+                    results
+                        .get()
+                        .set_as::<capnp::text::Owned>("direct")
+                        .unwrap();
+                    capability::DispatchCallResult::new(Promise::ok(()), false)
+                }
+            }),
+        );
+        let mut worker = Worker::new(2, None);
+        let mut hooks = ClientHooks::new(64, 16);
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        let old = Arc::new(Count::default());
+        let current = Arc::new(Count::default());
+        let old_wake = Waker::from(old.clone());
+        let current_wake = Waker::from(current.clone());
+        incoming(&mut driver, messages, 0, 0, calls::Target::Imported(id));
+        assert!(worker.accept(&mut driver).unwrap());
+        for _ in 0..16 {
+            if worker
+                .poll(
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [0; 16],
+                    &mut Context::from_waker(&old_wake),
+                    NonZeroUsize::new(64).unwrap(),
+                    import,
+                )
+                .is_pending()
+            {
+                break;
+            }
+        }
+        assert!(waiter.borrow().is_some());
+        assert!(worker.ready.is_empty());
+        let old_count = old.0.load(Ordering::SeqCst);
+        incoming(&mut driver, messages, 1, 1, calls::Target::Imported(id));
+        assert!(worker.accept(&mut driver).unwrap());
+        assert!(worker.starting.is_some());
+        assert!(matches!(
+            worker.poll(
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                &mut [0; 16],
+                &mut Context::from_waker(&current_wake),
+                NonZeroUsize::new(64).unwrap(),
+                import
+            ),
+            Poll::Ready(Ok(Progress::Replied))
+        ));
+        assert!(
+            current.0.load(Ordering::SeqCst) > 0,
+            "the parked sibling must wake the current task"
+        );
+        assert_eq!(old.0.load(Ordering::SeqCst), old_count);
+        check(&drain(&mut queue, messages), |reply| {
+            assert_eq!(reply.get_answer_id(), 1)
+        });
+        close(worker, hooks, driver, messages, &mut queue);
+    });
+}

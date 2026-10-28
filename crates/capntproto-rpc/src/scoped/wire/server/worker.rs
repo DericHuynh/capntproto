@@ -463,7 +463,12 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             *remaining_budget = remaining_budget.saturating_sub(1);
             return Poll::Ready(Ok(Progress::Idle));
         }
-        let mut registered = false;
+        // Parked operations can wake while the first-poll handler runs. Keep
+        // their queue attached to the current caller, including task migration.
+        let mut registered = self.starting.is_none() || self.live > 1;
+        if registered {
+            self.ready.register(cx.waker());
+        }
         let mut advanced = false;
         while *remaining_budget != 0 {
             if (self.protocol_turn || self.ready.is_empty())
