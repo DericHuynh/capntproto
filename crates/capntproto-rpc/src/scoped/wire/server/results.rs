@@ -17,11 +17,29 @@ struct State {
     method: Cell<Option<DynamicCall>>,
     payload: std::cell::OnceCell<CompletedPayload>,
     pipeline: RefCell<Option<Rc<dyn PipelineHook>>>,
-    completion: RefCell<Option<capnp::Result<()>>>,
+    completion: RefCell<Completion>,
     wake: RefCell<Waiters>,
     charge: RefCell<Option<coordinator::policy::Charge>>,
     trace_prepared: Cell<bool>,
     trace: RefCell<Option<String>>,
+}
+// Success becomes observable only after both execution and builder ownership
+// have returned. The worker owns its notification; external observers subscribe
+// separately without making the worker subscribe to its own completion.
+#[derive(Default)]
+enum Completion {
+    #[default]
+    Running,
+    AwaitingPayload,
+    Ready(capnp::Result<()>),
+}
+impl Completion {
+    fn poll(&self) -> Poll<capnp::Result<()>> {
+        match self {
+            Self::Ready(result) => Poll::Ready(result.clone()),
+            Self::Running | Self::AwaitingPayload => Poll::Pending,
+        }
+    }
 }
 // A suspended invocation normally has one collector. Extra public observers
 // keep their own notifications without allocating a vector for that first one.
@@ -121,22 +139,60 @@ struct NetworkState {
     )>,
 }
 impl State {
-    fn notify(&self) {
+    fn notify(&self, current: Option<&Waker>) {
         self.revision.set(
             self.revision
                 .get()
                 .checked_add(1)
                 .expect("results revision exhausted"),
         );
+        let owner = self
+            .protocol_wake
+            .borrow()
+            .as_ref()
+            .filter(|owner| current.is_none_or(|current| !owner.will_wake(current)))
+            .cloned();
         let wakes = std::mem::take(&mut *self.wake.borrow_mut());
+        // Both owner and observer callbacks run outside all state borrows.
+        if let Some(owner) = owner {
+            owner.wake();
+        }
         for wake in wakes.first.into_iter().chain(wakes.overflow) {
             wake.wake();
         }
     }
     fn complete(&self, result: capnp::Result<()>) {
-        let previous = self.completion.borrow_mut().replace(result);
+        self.complete_with_waker(result, None);
+    }
+    fn complete_with_waker(&self, result: capnp::Result<()>, current: Option<&Waker>) {
+        let completion = match result {
+            Ok(()) if self.payload.get().is_none() => Completion::AwaitingPayload,
+            result => Completion::Ready(result),
+        };
+        let ready = matches!(completion, Completion::Ready(_));
+        let previous = self.completion.replace(completion);
         drop(previous);
-        self.notify();
+        if ready {
+            self.notify(current);
+        }
+    }
+    fn publish_payload(&self, payload: CompletedPayload) {
+        assert!(
+            self.payload.set(payload).is_ok(),
+            "result payload already published"
+        );
+        let ready = {
+            let mut completion = self.completion.borrow_mut();
+            if matches!(*completion, Completion::AwaitingPayload) {
+                *completion = Completion::Ready(Ok(()));
+                true
+            } else {
+                false
+            }
+        };
+        if ready {
+            self.notify(None);
+        }
     }
 }
 
@@ -146,18 +202,37 @@ impl State {
 #[derive(Clone, Default)]
 pub struct Results(Rc<State>);
 
-/// One idle result context per worker. Retained hooks, pipelines and protected
-/// executions keep their own state and prevent recycling until they release it.
-#[derive(Default)]
-pub(super) struct Cache(Cell<Option<Results>>);
+/// Exclusive idle contexts, bounded by worker concurrency and legacy's 64-entry
+/// retention limit. Shared hooks, pipelines and protected executions are never
+/// retained by this pool. The first context needs no vector access or allocation.
+pub(super) struct Cache {
+    first: Cell<Option<Results>>,
+    overflow: RefCell<Vec<Results>>,
+    maximum: usize,
+}
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new(64)
+    }
+}
 impl Cache {
+    pub(super) fn new(maximum: usize) -> Self {
+        Self {
+            first: Cell::new(None),
+            overflow: RefCell::new(Vec::new()),
+            maximum: maximum.min(64),
+        }
+    }
     #[inline(always)]
     pub(super) fn acquire(
         &self,
         charge: Option<coordinator::policy::Charge>,
         pool: Option<capnp::message::SegmentPool>,
     ) -> Results {
-        let cached = self.0.take();
+        let cached = self
+            .first
+            .take()
+            .or_else(|| self.overflow.borrow_mut().pop());
         match cached {
             Some(mut results) => {
                 let state = Rc::get_mut(&mut results.0).expect("exclusive cached results");
@@ -168,7 +243,6 @@ impl Cache {
             None => Results::with_charge(charge, pool),
         }
     }
-    #[inline(always)]
     pub(super) fn recycle(&self, mut results: Results) {
         let Some(state) = Rc::get_mut(&mut results.0) else {
             return;
@@ -180,7 +254,7 @@ impl Cache {
         drop(state.context.get_mut().take());
         drop(state.payload.take());
         drop(state.pipeline.get_mut().take());
-        drop(state.completion.get_mut().take());
+        drop(std::mem::take(state.completion.get_mut()));
         state.wake.get_mut().clear();
         debug_assert!(state.protocol_wake.get_mut().is_none());
         drop(state.charge.get_mut().take());
@@ -189,18 +263,27 @@ impl Cache {
         state.method.set(None);
         state.trace_prepared.set(false);
         state.revision.set(0);
-        // Restore an existing cache before dropping the unused, empty owner.
-        let cached = self.0.take();
+        if self.maximum == 0 {
+            return;
+        }
+        // Reset owners before borrowing storage: their destructors can reenter
+        // admission and recycle another context into the same pool.
+        let cached = self.first.take();
         if cached.is_none() {
-            self.0.set(Some(results));
+            self.first.set(Some(results));
         } else {
-            self.0.set(cached);
+            self.first.set(cached);
+            let mut overflow = self.overflow.borrow_mut();
+            if overflow.len() < self.maximum - 1 && overflow.try_reserve(1).is_ok() {
+                overflow.push(results);
+            }
         }
     }
 }
 /// The affine protocol owner of a hosted answer. Application Results clones
-/// retain payload and early pipelines; only this owner's retirement wakes the
-/// running operation to release its protocol interest.
+/// retain payload and early pipelines. Retiring this affine owner wakes the
+/// running operation to release its protocol interest; dropping application
+/// clones does not change that interest.
 #[derive(Default)]
 pub struct Producer(Results);
 impl std::ops::Deref for Producer {
@@ -212,7 +295,7 @@ impl std::ops::Deref for Producer {
 impl Producer {
     pub(crate) fn has_pipeline_override(&self) -> bool {
         self.0 .0.pipeline.borrow().is_some()
-            || matches!(self.0 .0.completion.borrow().as_ref(), Some(Err(_)))
+            || matches!(&*self.0 .0.completion.borrow(), Completion::Ready(Err(_)))
     }
     pub fn results(&self) -> Results {
         self.0.clone()
@@ -385,7 +468,7 @@ impl Results {
             method: Cell::new(None),
             payload: std::cell::OnceCell::new(),
             pipeline: RefCell::new(None),
-            completion: RefCell::new(None),
+            completion: RefCell::new(Completion::Running),
             wake: RefCell::new(Waiters::default()),
             trace_prepared: Cell::new(false),
             trace: RefCell::new(None),
@@ -410,10 +493,8 @@ impl Results {
         // This local state cannot change between inspection and registration
         // without running application code. Avoid allocating a waiter for an
         // already-completed synchronous method.
-        match self.0.completion.borrow().as_ref() {
-            Some(Err(error)) => return Poll::Ready(Err(error.clone())),
-            Some(Ok(())) if self.0.payload.get().is_some() => return Poll::Ready(Ok(())),
-            _ => (),
+        if let Poll::Ready(result) = self.poll_owned_completed() {
+            return Poll::Ready(result);
         }
         if !self.0.wake.borrow().contains(cx.waker()) {
             // Custom clone/drop callbacks can reenter completion. Hold no state
@@ -431,11 +512,12 @@ impl Results {
             }
             drop(wake);
         }
-        match self.0.completion.borrow().as_ref() {
-            Some(Err(error)) => Poll::Ready(Err(error.clone())),
-            Some(Ok(())) if self.0.payload.get().is_some() => Poll::Ready(Ok(())),
-            _ => Poll::Pending,
-        }
+        self.poll_owned_completed()
+    }
+    /// The worker already has a generation-scoped producer notification. It
+    /// must not register a second completion waiter while polling execution.
+    pub(super) fn poll_owned_completed(&self) -> Poll<capnp::Result<()>> {
+        self.0.completion.borrow().poll()
     }
     /// Poll execution before subscribing to completion, avoiding a waiter
     /// allocation and a self-wake for a ready method. A method can publish an
@@ -458,18 +540,16 @@ impl Results {
         outcome
     }
     pub fn failure(&self) -> Option<Error> {
-        self.0
-            .completion
-            .borrow()
-            .as_ref()
-            .and_then(|r| r.as_ref().err())
-            .cloned()
+        match &*self.0.completion.borrow() {
+            Completion::Ready(Err(error)) => Some(error.clone()),
+            _ => None,
+        }
     }
     pub(super) fn plain_payload(&self) -> Option<PlainPayload<'_>> {
         if self.transfer_ready()
             || self.redirect().is_some()
             || self.0.pipeline.borrow().is_some()
-            || !matches!(&*self.0.completion.borrow(), Some(Ok(())))
+            || !matches!(&*self.0.completion.borrow(), Completion::Ready(Ok(())))
         {
             return None;
         }
@@ -569,7 +649,7 @@ impl Results {
         if let Some(error) = self.failure() {
             return Some(crate::broken::new_cap(error));
         }
-        if self.0.completion.borrow().is_none() {
+        if !matches!(&*self.0.completion.borrow(), Completion::Ready(_)) {
             return None;
         }
         let payload = self.0.payload.get()?;
@@ -657,22 +737,22 @@ impl Future for Execution {
     type Output = capnp::Result<()>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let Some(operation) = self.operation.as_mut() else {
-            return Poll::Ready(
-                self.results
-                    .0
-                    .completion
-                    .borrow()
-                    .as_ref()
-                    .expect("completed execution")
-                    .clone(),
-            );
+            return Poll::Ready(match &*self.results.0.completion.borrow() {
+                Completion::Ready(result) => result.clone(),
+                Completion::AwaitingPayload => Ok(()),
+                Completion::Running => unreachable!("completed execution"),
+            });
         };
         let result = match Pin::new(operation).poll(cx) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(result) => result,
         };
         drop(self.operation.take());
-        self.results.0.complete(result.clone());
+        // The active worker consumes Ready in this poll. Notify independent
+        // observers, but do not schedule that same worker a second time.
+        self.results
+            .0
+            .complete_with_waker(result.clone(), Some(cx.waker()));
         Poll::Ready(result)
     }
 }
@@ -712,11 +792,7 @@ impl Drop for Hook {
                 None => Payload::owned(Default::default(), caps),
             })),
         };
-        assert!(
-            self.results.0.payload.set(payload).is_ok(),
-            "result payload already published"
-        );
-        self.results.0.notify();
+        self.results.0.publish_payload(payload);
     }
 }
 impl ResultsHook for Hook {
@@ -774,7 +850,7 @@ impl ResultsHook for Hook {
             return Err(Error::failed("set_pipeline() called twice".into()));
         }
         *self.results.0.pipeline.borrow_mut() = Some(Rc::from(pipeline));
-        self.results.0.notify();
+        self.results.0.notify(None);
         Ok(())
     }
     fn allow_cancellation(&self) {
@@ -1079,10 +1155,15 @@ impl<'id> ClientHooks<'id> {
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> capnp::Result<Result<connection::LocalResult<'pool, 'id, CAPS>, capnp::ErrorKind>> {
-        match results.0.completion.borrow().as_ref() {
-            None => return Err(Error::overloaded("server results are pending".into())),
-            Some(Err(error)) => return Ok(Err(error.kind)),
-            Some(Ok(())) => (),
+        match &*results.0.completion.borrow() {
+            Completion::Running => {
+                return Err(Error::overloaded("server results are pending".into()))
+            }
+            Completion::AwaitingPayload => {
+                return Err(Error::overloaded("server still owns its results".into()))
+            }
+            Completion::Ready(Err(error)) => return Ok(Err(error.kind)),
+            Completion::Ready(Ok(())) => (),
         }
         let method = results.0.method.get().expect("started results");
         let payload = results

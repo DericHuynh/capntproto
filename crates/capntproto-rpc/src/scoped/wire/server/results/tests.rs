@@ -210,7 +210,7 @@ fn cached_results_clear_state_and_never_reuse_retained_owners() {
     let second = cache.acquire(None, None);
     assert!(!Rc::ptr_eq(&second.0, &retained.0));
     assert!(second.0.method.get().is_none());
-    assert!(second.0.completion.borrow().is_none());
+    assert!(matches!(*second.0.completion.borrow(), Completion::Running));
     assert_eq!(retained.failure().unwrap().extra, "old result");
     drop(retained);
     let pointer = Rc::as_ptr(&second.0);
@@ -223,7 +223,7 @@ fn cached_results_clear_state_and_never_reuse_retained_owners() {
     let third = cache.acquire(None, None);
     assert_eq!(Rc::as_ptr(&third.0), pointer);
     assert!(third.0.method.get().is_none());
-    assert!(third.0.completion.borrow().is_none());
+    assert!(matches!(*third.0.completion.borrow(), Completion::Running));
     assert!(!third.0.transferred.get());
     assert!(!third.0.trace_prepared.get());
     assert!(third.0.trace.borrow().is_none());
@@ -460,7 +460,10 @@ fn transferred_pipeline_waits_for_results_retained_after_execution_completes() {
         }
     }
     assert_eq!(wake.0.load(Ordering::SeqCst), 0);
-    assert!(results.0.completion.borrow().is_some());
+    assert!(matches!(
+        *results.0.completion.borrow(),
+        Completion::AwaitingPayload
+    ));
     assert!(results.0.payload.get().is_none());
     wake.0.store(0, Ordering::SeqCst);
     drop(hook);
@@ -1288,4 +1291,234 @@ fn suspended_results_keep_one_waiter_inline_and_notify_distinct_observers() {
         assert_eq!(count.0.load(Ordering::SeqCst), 1);
     }
     assert!(results.0.wake.borrow().is_empty());
+}
+
+#[test]
+fn owned_completion_notifies_once_when_execution_and_payload_are_both_ready() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    for execution_first in [false, true] {
+        let owner = Arc::new(Count::default());
+        let observer = Arc::new(Count::default());
+        let results = Results::new();
+        results.bind_protocol_waker(Waker::from(owner.clone()));
+        let observer_wake = Waker::from(observer.clone());
+        assert!(results
+            .poll_completed(&mut Context::from_waker(&observer_wake))
+            .is_pending());
+        let hook = Hook {
+            results: results.clone(),
+            message: None,
+            caps: vec![],
+            executor: None,
+        };
+        let mut execution = Execution {
+            operation: Some(Promise::ok(())),
+            results: results.clone(),
+        };
+        if execution_first {
+            assert!(matches!(poll(&mut execution), Poll::Ready(Ok(()))));
+            assert!(
+                matches!(poll(&mut execution), Poll::Ready(Ok(()))),
+                "execution can be observed again while its builder is retained"
+            );
+            assert!(results.poll_owned_completed().is_pending());
+            assert_eq!(owner.0.load(Ordering::SeqCst), 0);
+            assert_eq!(observer.0.load(Ordering::SeqCst), 0);
+            drop(hook);
+        } else {
+            drop(hook);
+            assert!(results.poll_owned_completed().is_pending());
+            assert_eq!(owner.0.load(Ordering::SeqCst), 0);
+            assert_eq!(observer.0.load(Ordering::SeqCst), 0);
+            assert!(matches!(poll(&mut execution), Poll::Ready(Ok(()))));
+        }
+        assert!(matches!(
+            results.poll_owned_completed(),
+            Poll::Ready(Ok(()))
+        ));
+        assert_eq!(owner.0.load(Ordering::SeqCst), 1);
+        assert_eq!(observer.0.load(Ordering::SeqCst), 1);
+        assert!(results.0.wake.borrow().is_empty());
+        results.unbind_protocol_waker();
+    }
+}
+
+#[test]
+fn owned_pending_execution_uses_no_completion_waiter_and_keeps_early_pipeline_notifications() {
+    let queue = super::super::super::ready::Queue::default();
+    let results = Results::new();
+    results.bind_protocol_waker(queue.insert(0, true));
+    assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
+    let mut execution = Execution {
+        operation: Some(Promise::from_future(core::future::pending())),
+        results: results.clone(),
+    };
+    assert!(poll(&mut execution).is_pending());
+    assert!(results.0.wake.borrow().is_empty());
+    let mut hook = Hook {
+        results: results.clone(),
+        message: None,
+        caps: vec![],
+        executor: None,
+    };
+    hook.set_pipeline().unwrap();
+    assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
+    assert!(results.early_pipeline().is_some());
+    drop(hook);
+    assert_eq!(
+        queue.pop().map(|ready| ready.index()),
+        None,
+        "returning a builder cannot make an unfinished execution collectible"
+    );
+    results.fail(Error::failed("failed while suspended".into()));
+    assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
+    assert!(
+        matches!(results.poll_owned_completed(), Poll::Ready(Err(error)) if error.extra == "failed while suspended")
+    );
+    assert!(results.0.wake.borrow().is_empty());
+    results.unbind_protocol_waker();
+}
+
+#[test]
+fn result_pool_reuses_concurrent_contexts_without_allocating_after_warmup() {
+    for maximum in [0, 1, 2, 8, 32, 65] {
+        let cache = Cache::new(maximum);
+        let retained = maximum.min(64);
+        let mut live = Vec::with_capacity(maximum.max(1));
+        for _ in 0..maximum.max(1) {
+            live.push(cache.acquire(None, None));
+        }
+        let addresses: Vec<_> = live
+            .iter()
+            .take(retained)
+            .map(|r| Rc::as_ptr(&r.0))
+            .collect();
+        for result in live.drain(..) {
+            cache.recycle(result);
+        }
+        let first = cache.first.take();
+        assert_eq!(
+            usize::from(first.is_some()) + cache.overflow.borrow().len(),
+            retained
+        );
+        cache.first.set(first);
+        let measured = allocation_counter::measure(|| {
+            for _ in 0..3 {
+                for _ in 0..retained {
+                    let result = cache.acquire(None, None);
+                    assert!(addresses.contains(&Rc::as_ptr(&result.0)));
+                    assert!(matches!(*result.0.completion.borrow(), Completion::Running));
+                    assert!(result.0.payload.get().is_none());
+                    assert!(result.0.wake.borrow().is_empty());
+                    result
+                        .0
+                        .complete(Err(Error::from_kind(capnp::ErrorKind::Failed)));
+                    live.push(result);
+                }
+                for result in live.drain(..) {
+                    cache.recycle(result);
+                }
+            }
+        });
+        assert_eq!(measured.count_total, 0, "warmed concurrency {maximum}");
+    }
+}
+
+#[test]
+fn result_pool_resets_context_before_reentrant_admission() {
+    struct Reenter {
+        cache: Rc<Cache>,
+        dropped: Rc<Cell<bool>>,
+    }
+    impl Drop for Reenter {
+        fn drop(&mut self) {
+            let result = self.cache.acquire(None, None);
+            self.cache.recycle(result);
+            self.dropped.set(true);
+        }
+    }
+    let cache = Rc::new(Cache::new(2));
+    let dropped = Rc::new(Cell::new(false));
+    let result = cache.acquire(None, None);
+    *result.0.context.borrow_mut() = Some(Rc::new(Reenter {
+        cache: cache.clone(),
+        dropped: dropped.clone(),
+    }));
+    cache.recycle(result);
+    assert!(dropped.get());
+    let first = cache.acquire(None, None);
+    let second = cache.acquire(None, None);
+    assert!(!Rc::ptr_eq(&first.0, &second.0));
+    assert!(first.0.context.borrow().is_none());
+    assert!(second.0.context.borrow().is_none());
+}
+
+#[test]
+fn ready_execution_notifies_observers_without_waking_its_active_owner() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl std::task::Wake for Count {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    for failed in [false, true] {
+        let owner = Arc::new(Count::default());
+        let observer = Arc::new(Count::default());
+        let owner_wake = Waker::from(owner.clone());
+        let observer_wake = Waker::from(observer.clone());
+        let results = Results::new();
+        results.bind_protocol_waker(owner_wake.clone());
+        let mut hook = Some(Hook {
+            results: results.clone(),
+            message: None,
+            caps: vec![],
+            executor: None,
+        });
+        if !failed {
+            drop(hook.take());
+        }
+        assert!(results
+            .poll_completed(&mut Context::from_waker(&observer_wake))
+            .is_pending());
+        let mut execution = Execution {
+            operation: Some(if failed {
+                Promise::err(Error::failed("service failed".into()))
+            } else {
+                Promise::ok(())
+            }),
+            results: results.clone(),
+        };
+        let Poll::Ready(result) =
+            Pin::new(&mut execution).poll(&mut Context::from_waker(&owner_wake))
+        else {
+            panic!("ready service must complete in its active owner's poll");
+        };
+        assert_eq!(result.is_err(), failed);
+        assert_eq!(
+            owner.0.load(Ordering::SeqCst),
+            0,
+            "the owner already observes this completion"
+        );
+        assert_eq!(observer.0.load(Ordering::SeqCst), 1);
+        assert!(results.poll_owned_completed().is_ready());
+        drop(hook);
+        assert_eq!(owner.0.load(Ordering::SeqCst), 0);
+        assert_eq!(observer.0.load(Ordering::SeqCst), 1);
+        results.unbind_protocol_waker();
+    }
 }

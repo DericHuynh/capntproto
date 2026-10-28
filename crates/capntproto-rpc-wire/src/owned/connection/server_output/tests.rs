@@ -1561,6 +1561,43 @@ fn early_pipeline_retry_is_transactional_and_survives_final_failure() {
 }
 
 #[test]
+fn maintenance_selection_skips_later_compound_readiness_checks() {
+    with_driver(|mut driver, messages| {
+        let mut slots = [None];
+        let mut queue = messages::Queue::new(&mut slots).unwrap();
+        let client = driver
+            .runtime
+            .endpoint(
+                binding::Route::Capability(crate::clients::Endpoint::Broken(
+                    capnp::ErrorKind::Failed,
+                )),
+                clients::Location::Broken,
+            )
+            .unwrap();
+        driver.runtime.release(client);
+        driver.work_cursor = 5;
+        driver.readiness_visited.set(0);
+        assert!(!driver.maintenance_is_idle(messages, &queue));
+        assert_eq!(
+            driver.readiness_visited.get(),
+            0,
+            "selection must not inspect later compound producers"
+        );
+        assert_eq!(driver.work_cursor, 5, "idle inspection preserves fairness");
+        driver.work_cursor = 0;
+        driver.readiness_visited.set(0);
+        assert!(!driver.maintenance_is_idle(messages, &queue));
+        assert_eq!(
+            driver.readiness_visited.get(),
+            (1 << 2) | (1 << 3),
+            "only compound producers preceding retirement need inspection"
+        );
+
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn endpoint_retirement_charges_each_owner_and_preserves_fair_selection() {
     with_driver(|mut driver, messages| {
         let mut slots = [None];

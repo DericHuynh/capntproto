@@ -92,7 +92,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             protocol_turn: true,
             completed_plain: false,
             completed_ordinary: false,
-            results_cache: results::Cache::default(),
+            results_cache: results::Cache::new(maximum),
             executor,
         }
     }
@@ -783,7 +783,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     // need no stored Execute state. Charge
                     // the same quantum as the separate Execute step.
                     *remaining_budget -= 1;
-                    if entry.results.poll_work(&mut execution, cx).is_ready() {
+                    if Pin::new(&mut execution).poll(cx).is_ready() {
                         Stage::Collect
                     } else {
                         entry.stage = Stage::Execute(execution);
@@ -809,13 +809,13 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             Stage::Execute(execution) => {
                 // An independently executed protected method may publish an
                 // early pipeline before its completion future wakes this task.
-                if entry.results.poll_work(execution, cx).is_pending() {
+                if Pin::new(execution).poll(cx).is_pending() {
                     return Poll::Pending;
                 }
                 entry.stage = Stage::Collect;
             }
             Stage::Transfer(work) => {
-                if entry.results.poll_work(work, cx).is_pending() {
+                if Pin::new(work).poll(cx).is_pending() {
                     return Poll::Pending;
                 }
                 entry.stage = Stage::Collect;
@@ -828,7 +828,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                         .cancellation_requested(key)
                         .map_err(wire_error)?;
                 if !canceled_transfer
-                    && (entry.results.poll_completed(cx).is_pending()
+                    && (entry.results.poll_owned_completed().is_pending()
                         || entry.results.projections_pending(hooks, cx))
                 {
                     return Poll::Pending;

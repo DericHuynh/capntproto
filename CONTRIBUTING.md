@@ -133,9 +133,11 @@ conventions:
   consider code size when adding monomorphized paths.
 - Match values directly instead of checking a variant and then unwrapping it.
   Format diagnostic text in one operation instead of allocating intermediate strings.
-- Verify allocation budgets and behavior in both drivers. Qualify runtime changes
-  with the dedicated benchmark workflow, comparing instruction and branch counts
-  as well as latency. Style alone does not establish a speedup.
+- Verify allocation budgets and behavior in both drivers. Use local optimized
+  builds for Callgrind instruction, branch and function-call profiles, and DHAT
+  allocation profiles. Record hardware-cycle counter availability separately;
+  simulated counters are not measured CPU cycles. Use dedicated hosts for
+  publishable latency comparisons. Style alone does not establish a speedup.
 
 Chromium-only layout, threading and async rules do not apply to this Cargo project.
 

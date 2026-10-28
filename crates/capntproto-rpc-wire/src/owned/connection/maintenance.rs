@@ -17,41 +17,62 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     ) -> bool {
         self.disconnected.is_none() && self.ready_work(messages, queue) == 0
     }
-    fn ready_work(
-        &self,
-        messages: &messages::Messages<'pool, '_, '_>,
-        queue: &messages::Queue<'pool, '_, impl Sized>,
-    ) -> u32 {
+    fn queued_work(&self) -> u32 {
         let control = match self.runtime.ready_owner() {
             Some(Task::Loopback(_) | Task::Echo(_)) => true,
             Some(Task::ProvisionBarrier(_) | Task::VineBarrier(_)) => self.network.is_none(),
             _ => false,
         };
-        let ready = u32::from(self.call.is_some() || self.runtime.dispatch_is_pending())
+        // Queue-head tests are cheap and compile together. Compound producers
+        // are checked separately, without a per-class dispatch loop.
+        u32::from(self.call.is_some() || self.runtime.dispatch_is_pending())
             | (u32::from(self.resolution.is_some()) << 1)
-            | (u32::from(
-                self.pipelines
-                    .has_ready(&self.ledgers.answers, &self.runtime),
-            ) << 2)
-            | (u32::from(!self.outgoing_maintenance_is_idle()) << 3)
             | (u32::from(!self.ledgers.exports.retirement_is_idle()) << 4)
             | (u32::from(self.runtime.has_retired()) << 5)
             | (u32::from(!self.ledgers.answers.reclamation_is_idle()) << 6)
             | (u32::from(!self.canceled_ready.is_empty()) << 7)
-            | (u32::from(self.exported.has_ready(
-                &self.runtime,
-                &self.ledgers.exports,
-                messages,
-                queue,
-            )) << 8)
             | (u32::from(self.ledgers.questions.has_pending_finish()) << 9)
             | (u32::from(self.ledgers.imports.has_pending_release()) << 10)
             | (u32::from(self.ledgers.answers.has_queued_cancellations()) << 11)
             | (u32::from(control) << 12)
             | (u32::from(self.barrier.is_some()) << 13)
             | (u32::from(self.echo.is_some()) << 14)
-            | (u32::from(!self.invocation_work_is_idle()) << 15);
-        self.filter_control_waits(ready, messages, queue)
+    }
+    fn ready_work(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        queue: &messages::Queue<'pool, '_, impl Sized>,
+    ) -> u32 {
+        let queued = self.filter_control_waits(self.queued_work(), messages, queue);
+        // Inspect compound producers only when they precede the first ready
+        // queue in the fair rotation. Rotating bits avoids an indirect dispatch
+        // for every empty class. An empty queue mask admits all four producers.
+        let distance = (queued as u16)
+            .rotate_right(self.work_cursor)
+            .trailing_zeros();
+        let preceding = (((1u32 << distance) - 1) as u16).rotate_left(self.work_cursor);
+        let candidates = u32::from(preceding) & ((1 << 2) | (1 << 3) | (1 << 8) | (1 << 15));
+        #[cfg(test)]
+        self.readiness_visited
+            .set(self.readiness_visited.get() | candidates);
+        let compound = (u32::from(
+            candidates & (1 << 2) != 0
+                && self
+                    .pipelines
+                    .has_ready(&self.ledgers.answers, &self.runtime),
+        ) << 2)
+            | (u32::from(candidates & (1 << 3) != 0 && !self.outgoing_maintenance_is_idle()) << 3)
+            | (u32::from(
+                candidates & (1 << 8) != 0
+                    && self.exported.has_ready(
+                        &self.runtime,
+                        &self.ledgers.exports,
+                        messages,
+                        queue,
+                    ),
+            ) << 8)
+            | (u32::from(candidates & (1 << 15) != 0 && !self.invocation_work_is_idle()) << 15);
+        queued | self.filter_control_waits(compound, messages, queue)
     }
     fn select_work(
         &mut self,
@@ -64,7 +85,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         let following = ready & (u32::MAX << self.work_cursor);
         let selected = if following != 0 { following } else { ready }.trailing_zeros();
-        self.work_cursor = (selected + 1) % 16;
+        self.work_cursor = (selected + 1) & 15;
         Some(selected)
     }
     #[inline]
@@ -179,7 +200,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// A productive transition may stop before exhausting the allowance. The
     /// caller can spend the remainder on more ready work before flushing output.
     /// Each selected owner costs one step. Empty work classes consume no
-    /// steps and require no cursor walk; an entirely idle poll costs one step.
+    /// steps; an entirely idle poll costs one step.
     /// Selection rotates among ready classes, including on resource errors.
     /// Zero performs no work. Callbacks may create new work in the same poll.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]

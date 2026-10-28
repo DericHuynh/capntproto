@@ -255,6 +255,8 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     message_capabilities: Capacity,
     message_path: Capacity,
     work_cursor: u32,
+    #[cfg(test)]
+    readiness_visited: core::cell::Cell<u32>,
     control_waiting: u32,
     control_waits: [Option<resource_wait::Blocked<'id>>; 16],
     control_minimum: usize,
@@ -593,6 +595,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             invocation_pipelines: invocation_pipeline::Bindings::new(storage.invocation_pipelines),
             operations: operations::Operations::new(storage.operations),
             work_cursor: 0,
+            #[cfg(test)]
+            readiness_visited: core::cell::Cell::new(0),
             control_waiting: 0,
             control_waits: [None; 16],
             control_minimum: 0,
