@@ -257,6 +257,7 @@ jobs:
         if: always()
         with:
           name: encrypted-benchmark-analysis
+          overwrite: true
           path: ${{ runner.temp }}/benchmark-quality/analysis/
           if-no-files-found: warn
           retention-days: 90
