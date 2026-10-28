@@ -1471,18 +1471,28 @@ fn ready_execution_notifies_observers_without_waking_its_active_owner() {
     };
     #[derive(Default)]
     struct Count(AtomicUsize);
-    impl std::task::Wake for Count {
-        fn wake(self: Arc<Self>) {
-            self.0.fetch_add(1, Ordering::SeqCst);
+    impl futures::task::ArcWake for Count {
+        fn wake_by_ref(this: &Arc<Self>) {
+            this.0.fetch_add(1, Ordering::SeqCst);
         }
     }
-    for failed in [false, true] {
+    for (failed, active_owner) in [(false, true), (true, true), (false, false), (true, false)] {
         let owner = Arc::new(Count::default());
         let observer = Arc::new(Count::default());
-        let owner_wake = Waker::from(owner.clone());
-        let observer_wake = Waker::from(observer.clone());
+        // Use the same factory as operation wakers. std::task::Wake can give
+        // cloned wakers distinct vtable addresses under Miri; will_wake() is
+        // allowed to return false in that case, requiring the safe extra wake.
+        let owner_wake = futures::task::waker(owner.clone());
+        let observer_wake = futures::task::waker(observer.clone());
         let results = Results::new();
         results.bind_protocol_waker(owner_wake.clone());
+        assert!(results
+            .0
+            .protocol_wake
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .will_wake(&owner_wake));
         let mut hook = Some(Hook {
             results: results.clone(),
             message: None,
@@ -1503,21 +1513,25 @@ fn ready_execution_notifies_observers_without_waking_its_active_owner() {
             }),
             results: results.clone(),
         };
-        let Poll::Ready(result) =
-            Pin::new(&mut execution).poll(&mut Context::from_waker(&owner_wake))
+        let current = if active_owner {
+            &owner_wake
+        } else {
+            &observer_wake
+        };
+        let Poll::Ready(result) = Pin::new(&mut execution).poll(&mut Context::from_waker(current))
         else {
             panic!("ready service must complete in its active owner's poll");
         };
         assert_eq!(result.is_err(), failed);
         assert_eq!(
             owner.0.load(Ordering::SeqCst),
-            0,
-            "the owner already observes this completion"
+            usize::from(!active_owner),
+            "only the owner already observing completion may skip its wake"
         );
         assert_eq!(observer.0.load(Ordering::SeqCst), 1);
         assert!(results.poll_owned_completed().is_ready());
         drop(hook);
-        assert_eq!(owner.0.load(Ordering::SeqCst), 0);
+        assert_eq!(owner.0.load(Ordering::SeqCst), usize::from(!active_owner));
         assert_eq!(observer.0.load(Ordering::SeqCst), 1);
         results.unbind_protocol_waker();
     }
