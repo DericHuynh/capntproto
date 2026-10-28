@@ -188,6 +188,43 @@ class SavedAnalysisTests(unittest.TestCase):
             self.assertEqual(report['profiles'][0]['per_operation'],dict(Ir=30,Bcm=6,Bim=3))
             self.assertFalse((output/'native-summary.json').exists())
 
+    def test_control_checkout_paths_have_the_same_instruction_categories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'secure'
+            output=Path(directory)/'analysis'
+            save(root.parent/'host.json', {})
+            root.mkdir()
+            (root/'cpu.txt').write_text('synthetic fixture')
+            tools=root.parent/'bin'
+            tools.mkdir()
+            annotate=tools/'callgrind_annotate'
+            annotate.write_text(f'''#!{sys.executable}
+import pathlib,sys
+path=pathlib.Path(sys.argv[-1])
+n=int(path.parent.name.rsplit('-',1)[1])
+variant=path.parent.name.rsplit('-',1)[0]
+prefix='target/'+variant.replace('-baseline','-baseline-source')+'/'
+if variant=='legacy-baseline':prefix='/home/runner/work/capntproto/capntproto/'+prefix
+print(30*n,6*n,'PROGRAM TOTALS')
+for source in ['crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs','crates/capntproto-rpc-wire/src/owned/connection/maintenance.rs','vendor/rustls/src/conn.rs']:
+ print(10*n,2*n,prefix+source+':fixture')
+''')
+            annotate.chmod(0o755)
+            trials=[]
+            for variant in ['portable-baseline','legacy-baseline']:
+                for n in [5,50]:
+                    path=f'{variant}-{n}'
+                    trials.append(dict(path=path,mode='callgrind',transport='tls',case='fixture',implementation=variant,iterations=n,points=[5,50],services=[]))
+                    target=root/'profiles'/path/'client.callgrind'
+                    target.parent.mkdir(parents=True,exist_ok=True)
+                    target.write_text(f'events: Ir Bcm\nsummary: {30*n} {6*n}\n')
+            save(root/'profiles/scope.json',dict(instruction_only=True,diagnostic=True,binaries={},trials=trials,failures=[]))
+            subprocess.run([sys.executable,str(HERE/'analyze-secure-ci.py'),'1',str(output),'--saved-root',str(root),'--measurement-outcome','success'],env=dict(os.environ,GITHUB_SHA='fixture',GITHUB_REPOSITORY='fixture/repo',PATH=str(tools)+os.pathsep+os.environ['PATH']),stdout=subprocess.DEVNULL,check=True)
+            report=json.loads((output/'summary.json').read_text())
+            self.assertEqual(len(report['categories']),2)
+            for row in report['categories']:
+                self.assertEqual(row['categories'],dict.fromkeys(['portable_hosted','portable_wire','tls_crypto'],dict(Ir=10,Bcm=2)))
+
     def test_allocation_only_has_no_native_or_io_claims(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)/'secure'

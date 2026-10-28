@@ -190,7 +190,7 @@ print('SUMMARY_SAVED', directory/'summary.json', 'profile_trials', report['profi
 pattern=re.compile(r'^\s*([\d,]+|\.)\s+([\d,]+|\.)\s+(.*)$')
 num=lambda s:0 if s=='.' else int(s.replace(',',''))
 def normalize(source):
-    for prefix in ['/home/runner/work/capntproto/capntproto/target/legacy-baseline-source/', '/home/runner/work/capntproto/capntproto/target/portable-baseline-source/','/home/runner/work/capntproto/capntproto/']:
+    for prefix in ['/home/runner/work/capntproto/capntproto/', 'target/legacy-baseline-source/', 'target/portable-baseline-source/']:
         source=source.removeprefix(prefix)
     return source
 def category(source):
@@ -202,7 +202,7 @@ def category(source):
     if source.startswith('crates/capntproto-core/'):return 'serialization'
     if source.startswith('src/rpc/'):return 'transport_adapter'
     if '/malloc/' in source:return 'allocator'
-    if 'ring-' in source or 'rustls-' in source:return 'tls_crypto'
+    if 'ring-' in source or 'rustls-' in source or source.startswith('vendor/rustls/'):return 'tls_crypto'
     if 'quiche-' in source or 'boring-' in source:return 'quic_dependencies'
     if 'tokio-' in source or 'mio-' in source or 'futures-' in source:return 'async_dependencies'
     if 'memcpy' in source or 'memmove' in source or 'memset' in source:return 'memory_routines'
