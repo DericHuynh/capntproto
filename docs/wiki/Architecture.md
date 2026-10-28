@@ -146,6 +146,27 @@ registration when the task changes. Terminal teardown releases both notifier
 and cached parent-waker ownership. All 64 ready subsets and six starting lanes
 are checked against an independent rotated-order model.
 
+Wire maintenance derives readiness from producer queues on each visit. It
+checks queue heads together, then inspects compound producers only when they
+precede the first ready queue in the fair rotation. The four compound sources
+are pipeline propagation, outgoing invocations, exported promises and local
+invocations. This selection retains the existing resource waits and budget
+charges without retaining a second readiness mask between polls.
+
+Hosted workers poll execution and transfer futures directly. Their result
+context distinguishes running execution, successful execution awaiting the
+returned builder, and ready completion. An error can complete while an
+application still retains its builder. Notifications retain external observers
+and asynchronous owner wakeups; synchronous completion can skip waking the
+exact owner already polling it. Early pipelines still notify independently.
+
+Each hosted worker reuses at most `min(concurrency, 64)` exclusively owned result
+contexts. Shared results, retained builders and protected execution prevent
+reuse. Resetting a context and dropping application owners happen outside the
+pool borrow, so destructors can reenter RPC. The first reusable context has a
+direct slot; additional contexts use bounded overflow storage. This hosted pool
+does not change the fixed-storage, no-std/no-alloc wire API.
+
 Ownership stays with its existing authority: the engine owns question/answer
 and capability ledgers, `Calls` and `Worker` own application execution, input
 retains ancillary resources until admission, and `io::Output` owns accepted
