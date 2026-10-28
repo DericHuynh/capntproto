@@ -191,7 +191,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 .producer
                 .results();
             driver.answers().watch_execution(key).map_err(wire_error)?;
-            self.install(index, running, execute, results);
+            let ordinary = !running.owner().method().only_promise_pipeline
+                && driver
+                    .prepare_answer_return(key)
+                    .is_ok_and(|pending| !pending.is_redirected());
+            self.install(index, running, execute, results, ordinary);
             return Ok(true);
         }
         let (running, execute, results) = {
@@ -227,7 +231,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             .answers()
             .watch_execution(running.owner().answer())
             .map_err(wire_error)?;
-        self.install(index, running, execute, results);
+        let ordinary = !running.owner().method().only_promise_pipeline
+            && driver
+                .prepare_answer_return(running.owner().answer())
+                .is_ok_and(|pending| !pending.is_redirected());
+        self.install(index, running, execute, results, ordinary);
         Ok(true)
     }
 
@@ -238,6 +246,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         running: Running<'p, 'id, I, C, H>,
         execute: bool,
         results: Results,
+        ordinary: bool,
     ) {
         let entry = Entry {
             #[cfg(test)]
@@ -258,7 +267,10 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
         self.live += 1;
         self.preparing += usize::from(execute);
-        if self.live == 1 {
+        // Like legacy, a fresh ordinary Call may finish immediately while
+        // unrelated operations are asleep. Already-runnable work keeps FIFO
+        // priority; continuous admission cannot starve its registered owners.
+        if ordinary && (self.live == 1 || self.ready.is_empty()) {
             self.starting = Some((index, entry));
         } else {
             self.schedule_entry(index, entry);

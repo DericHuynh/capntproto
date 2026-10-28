@@ -1456,3 +1456,75 @@ fn legacy_first_poll_termination_releases_an_unpolled_request() {
         close(worker, hooks, driver, messages, &mut queue);
     });
 }
+
+#[test]
+fn legacy_first_poll_keeps_parked_siblings_asleep() {
+    with_peer(|mut driver, messages| {
+        let polls = Rc::new(Cell::new(0));
+        let observed = polls.clone();
+        let id = expose(
+            &mut driver,
+            server(move |method, mut results| {
+                if method == 0 {
+                    let observed = observed.clone();
+                    capability::DispatchCallResult::with_cancellation_policy(
+                        Promise::from_future(futures::future::poll_fn(move |_| {
+                            let _ = &results;
+                            observed.set(observed.get() + 1);
+                            Poll::Pending
+                        })),
+                        false,
+                        true,
+                    )
+                } else {
+                    results
+                        .get()
+                        .set_as::<capnp::text::Owned>("direct sibling")
+                        .unwrap();
+                    capability::DispatchCallResult::new(Promise::ok(()), false)
+                }
+            }),
+        );
+        let mut worker = Worker::new(2, None);
+        let mut hooks = ClientHooks::new(64, 16);
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        incoming(&mut driver, messages, 0, 0, calls::Target::Imported(id));
+        assert!(worker.accept(&mut driver).unwrap());
+        for _ in 0..16 {
+            if tick(&mut worker, &mut hooks, &mut driver, messages, &mut queue).is_pending() {
+                break;
+            }
+        }
+        assert!(polls.get() != 0);
+        let before = polls.get();
+        assert_eq!(worker.entries.len(), 1);
+        incoming(&mut driver, messages, 1, 1, calls::Target::Imported(id));
+        assert!(worker.accept(&mut driver).unwrap());
+        assert!(worker.starting.is_some());
+        assert!(matches!(
+            worker.poll(
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                &mut [0; 16],
+                &mut Context::from_waker(Waker::noop()),
+                NonZeroUsize::new(64).unwrap(),
+                import
+            ),
+            Poll::Ready(Ok(Progress::Replied))
+        ));
+        assert_eq!(polls.get(), before);
+        assert_eq!(
+            worker.entries.len(),
+            1,
+            "a ready sibling needs no scheduled slot"
+        );
+        check(&drain(&mut queue, messages), |reply| {
+            assert_eq!(reply.get_answer_id(), 1)
+        });
+        close(worker, hooks, driver, messages, &mut queue);
+    });
+}
