@@ -496,6 +496,7 @@ mod wire_helpers {
                 zero_object(arena, cap_table, segment_id, reff);
             }
             if let Some(ptr) = local {
+                let ptr = ptr.as_ptr();
                 (*reff).set_kind_and_target(kind, ptr);
                 Ok((ptr, reff, segment_id))
             } else {

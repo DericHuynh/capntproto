@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use core::slice;
+use core::{ptr::NonNull, slice};
 
 use crate::message;
 use crate::message::Allocator;
@@ -465,13 +465,13 @@ pub unsafe trait BuilderArena: ReaderArena {
 
     /// On failure, leave both allocated storage and its contents unchanged.
     fn allocate(&mut self, segment_id: u32, amount: WordCount32) -> Option<u32>;
-    /// Allocate initialized words and return their address. The default retains
-    /// compatibility with custom arenas; an arena can combine allocation and
-    /// segment lookup. Zero words may return the segment's one-past-end pointer.
-    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<*mut u8> {
+    /// Allocate initialized words and return a non-null address. Zero words may
+    /// return the segment's one-past-end pointer. The default combines indexed
+    /// allocation and segment lookup; arenas can return the address directly.
+    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<NonNull<u8>> {
         let index = self.allocate(segment_id, amount)?;
         let (base, _) = self.get_segment_mut(segment_id);
-        Some(base.wrapping_add(index as usize * BYTES_PER_WORD))
+        NonNull::new(base.wrapping_add(index as usize * BYTES_PER_WORD))
     }
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32);
     /// Fallible growth boundary. Fixed arenas override this without calling an
@@ -517,17 +517,21 @@ struct BuilderSegment {
 }
 
 impl BuilderSegment {
-    fn allocate(&mut self, amount: WordCount32) -> Option<u32> {
-        #[cfg(feature = "alloc")]
-        if self.external.is_some() {
-            return None;
-        }
-        if amount > self.capacity - self.allocated {
-            return None;
-        }
+    fn reserve(&mut self, amount: WordCount32) -> (bool, u32) {
+        debug_assert!(self.allocated <= self.capacity);
         let index = self.allocated;
-        self.allocated += amount;
-        Some(index)
+        let fits = amount <= self.capacity.wrapping_sub(index);
+        #[cfg(feature = "alloc")]
+        let fits = fits & self.external.is_none();
+        // Construction and tail resizing preserve allocated <= capacity.
+        // A refused reservation commits zero words; an accepted one cannot
+        // overflow. Do not add panic branches to that already checked range.
+        self.allocated = index.wrapping_add(if fits { amount } else { 0 });
+        (fits, index)
+    }
+    fn allocate(&mut self, amount: WordCount32) -> Option<u32> {
+        let (fits, index) = self.reserve(amount);
+        fits.then_some(index)
     }
 }
 
@@ -849,10 +853,11 @@ where
         self.inner.allocate(segment_id, amount)
     }
 
-    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<*mut u8> {
+    fn allocate_ptr(&mut self, segment_id: u32, amount: WordCount32) -> Option<NonNull<u8>> {
         let segment = &mut self.inner.segments[segment_id as usize];
-        let index = segment.allocate(amount)?;
-        Some(segment.ptr.wrapping_add(index as usize * BYTES_PER_WORD))
+        let (fits, index) = segment.reserve(amount);
+        let pointer = segment.ptr.wrapping_add(index as usize * BYTES_PER_WORD);
+        NonNull::new(if fits { pointer } else { core::ptr::null_mut() })
     }
 
     fn allocate_anywhere(&mut self, amount: u32) -> (SegmentId, u32) {
