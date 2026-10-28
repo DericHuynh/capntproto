@@ -1,7 +1,6 @@
 //! Bounded FIFO of operation identities. Wakers carry no driver references.
 //! Slot generations reject notifications retained by an earlier operation.
 use crate::task_set::ready_queue::{ReadyQueue, CAPACITY};
-use futures::task::{waker, waker_ref, ArcWake, WakerRef};
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -131,13 +130,16 @@ struct Notify {
     queued: AtomicBool,
     state: AtomicU8,
 }
-impl ArcWake for Notify {
-    fn wake_by_ref(this: &Arc<Self>) {
+impl Wake for Notify {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
         // A runnable owner will poll; a polling owner publishes a wake only
         // if it suspends. WOKEN coalesces repeated asynchronous notifications.
-        let previous = this.state.fetch_or(WOKEN, Ordering::AcqRel);
+        let previous = self.state.fetch_or(WOKEN, Ordering::AcqRel);
         if previous & (RUNNABLE | POLLING | WOKEN | INACTIVE) == 0 {
-            this.enqueue();
+            self.enqueue();
         }
     }
 }
@@ -190,9 +192,6 @@ pub(crate) struct Ready(Arc<Notify>);
 impl Ready {
     pub(crate) fn index(&self) -> usize {
         self.0.index
-    }
-    pub(crate) fn waker(&self) -> WakerRef<'_> {
-        waker_ref(&self.0)
     }
 }
 impl Drop for Ready {
@@ -308,7 +307,7 @@ impl Queue {
         if runnable {
             state.push(index);
         }
-        waker(notify)
+        Waker::from(notify)
     }
     pub(crate) fn register(&self, parent: &Waker) {
         self.shared.fast.parent.register(parent);
@@ -368,34 +367,6 @@ mod tests {
         fn wake(self: Arc<Self>) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
-    }
-    #[test]
-    fn borrowed_operation_waker_preserves_identity_and_rejects_reused_generations() {
-        let queue = Queue::default();
-        let owned = queue.insert(0, true);
-        let ready = queue.pop().unwrap();
-        let references = Arc::strong_count(&ready.0);
-        let allocation = allocation_counter::measure(|| {
-            for _ in 0..100 {
-                let borrowed = ready.waker();
-                assert!(borrowed.will_wake(&owned));
-                assert_eq!(Arc::strong_count(&ready.0), references);
-                borrowed.wake_by_ref();
-            }
-        });
-        assert_eq!(allocation.count_total, 0);
-        assert_eq!(allocation.bytes_total, 0);
-        let escaped = ready.waker().clone();
-        queue.remove(0);
-        let replacement = queue.insert(0, false);
-        assert!(!ready.waker().will_wake(&replacement));
-        drop(ready);
-        owned.wake();
-        escaped.wake();
-        assert!(queue.is_empty());
-        replacement.wake();
-        assert_eq!(queue.pop().map(|ready| ready.index()), Some(0));
-        assert!(queue.is_empty());
     }
     #[test]
     fn ordinary_notifications_use_the_shared_atomic_fifo_without_locking() {

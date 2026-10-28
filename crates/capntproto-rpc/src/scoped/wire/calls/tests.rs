@@ -1402,7 +1402,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                     .collect();
                 assert_eq!(calls.published, 12);
                 assert_eq!(calls.live, 12);
-                assert_eq!(calls.vacancies.next(), calls.entries.len());
+                assert_eq!(calls.first_free, calls.entries.len());
                 for old in &previous {
                     assert!(
                         calls
@@ -1499,7 +1499,7 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                 }
                 assert!(calls.is_empty());
                 assert_eq!(calls.live, 0);
-                assert_eq!(calls.vacancies.next(), 0);
+                assert_eq!(calls.first_free, 0);
                 assert!(
                     (calls.published == 0),
                     "retirement must release every index entry"
