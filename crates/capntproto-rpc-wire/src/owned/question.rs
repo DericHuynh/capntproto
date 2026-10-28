@@ -605,7 +605,7 @@ pub struct PlainResults {
 #[cfg(feature = "alloc")]
 pub(super) enum PlainReader {
     Unique(
-        capnp::message::InlinePointerReader<
+        capnp::message::CheckedPointerReader<
             capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
         >,
     ),
@@ -617,10 +617,10 @@ pub(super) enum PlainReader {
 }
 #[cfg(feature = "alloc")]
 impl PlainReader {
-    fn root(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
+    fn root(&self) -> capnp::any_pointer::Reader<'_> {
         match self {
             Self::Unique(message) => message.root(),
-            Self::Shared(message) => Ok(message.root()),
+            Self::Shared(message) => message.root(),
         }
     }
 }
@@ -637,7 +637,7 @@ impl PlainResults {
 #[cfg(feature = "alloc")]
 impl capnp::private::capability::ResponseHook for PlainResults {
     fn get(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        self.message.root()
+        Ok(self.message.root())
     }
 }
 #[must_use = "retry Return or terminate this connection"]

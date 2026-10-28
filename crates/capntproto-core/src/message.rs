@@ -304,16 +304,6 @@ pub struct CheckedPointerReader<S: ReaderSegments> {
     reader: Reader<S>,
 }
 impl<S: ReaderSegments> CheckedPointerReader<S> {
-    /// Retain an owning selection with a segment cache refreshed for each
-    /// borrow. This does not allocate or reset traversal/nesting allowances.
-    /// The reader, including providers with inline storage, can move between
-    /// borrows.
-    pub fn into_inline_cached(self) -> InlinePointerReader<S> {
-        InlinePointerReader {
-            root: self.root,
-            arena: crate::private::arena::CachedReaderArena::for_borrow(self.reader.arena),
-        }
-    }
     /// Move this reader into stable shared storage and cache segment zero for
     /// subsequent application reads. This allocates one owner without copying
     /// the message and preserves the existing traversal and nesting budgets.
@@ -334,27 +324,6 @@ impl<S: ReaderSegments> CheckedPointerReader<S> {
         // The cache stores offsets; borrow checks the current extent and uses
         // fresh bases, including after moving an inline segment provider.
         any_pointer::Reader::new(unsafe { self.root.borrow(&self.reader.arena) })
-    }
-}
-
-/// An owning selected pointer with a segment cache refreshed for each borrow.
-/// No extra allocation or pinning is required. Views share the original read
-/// budget, and borrowing a view prevents moving its owner until the view expires.
-pub struct InlinePointerReader<S: ReaderSegments> {
-    root: layout::CachedPointerRoot,
-    arena: crate::private::arena::CachedReaderArena<crate::private::arena::OwnedArena<S>>,
-}
-impl<S: ReaderSegments> InlinePointerReader<S> {
-    #[inline(always)]
-    pub fn root(&self) -> Result<any_pointer::Reader<'_>> {
-        self.arena.refresh_first()?;
-        // SAFETY: selection validated these offsets in the same immutable
-        // reader. Refresh obtained segment zero from its current owner, including
-        // after moves of inline storage. This borrow prevents further moves
-        // while the view or its descendants can access the cached descriptor.
-        Ok(any_pointer::Reader::new(unsafe {
-            self.root.borrow(&self.arena)
-        }))
     }
 }
 

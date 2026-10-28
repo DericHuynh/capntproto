@@ -33,11 +33,7 @@ impl PlainSource<'_> {
                         remaining.set(reader.read_budget().remaining_words());
                     }
                 })
-                .map(|result| {
-                    result.map(|(message, value)| {
-                        (PlainReader::Unique(message.into_inline_cached()), value)
-                    })
-                }),
+                .map(|result| result.map(|(message, value)| (PlainReader::Unique(message), value))),
             Self::Shared(source) => {
                 let Some((pointer, value)) = select(source.get_root()?)? else {
                     return Ok(None);
