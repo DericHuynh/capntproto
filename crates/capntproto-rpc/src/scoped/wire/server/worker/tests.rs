@@ -1410,7 +1410,12 @@ fn legacy_first_poll_completes_sync_calls_without_a_scheduled_worker() {
             );
             assert!(worker.accept(&mut driver).unwrap());
             assert!(worker.starting.is_some());
-            assert!(worker.entries.is_empty());
+            assert!(worker.ready.is_empty());
+            assert!(worker.entries[worker.starting.unwrap()]
+                .as_ref()
+                .unwrap()
+                .waker
+                .will_wake(Waker::noop()));
             assert!(matches!(
                 worker.poll(
                     &mut hooks,
@@ -1428,9 +1433,10 @@ fn legacy_first_poll_completes_sync_calls_without_a_scheduled_worker() {
             ));
             assert!(worker.is_empty());
             assert!(worker.starting.is_none());
+            assert!(worker.entries.iter().all(Option::is_none));
             assert!(
-                worker.entries.is_empty(),
-                "synchronous calls must not allocate a task slot"
+                worker.ready.is_empty(),
+                "synchronous calls must not register a task"
             );
             check(&drain(&mut queue, messages), |reply| {
                 assert_eq!(reply.get_answer_id(), question)
@@ -1517,10 +1523,10 @@ fn legacy_first_poll_keeps_parked_siblings_asleep() {
             Poll::Ready(Ok(Progress::Replied))
         ));
         assert_eq!(polls.get(), before);
-        assert_eq!(
-            worker.entries.len(),
-            1,
-            "a ready sibling needs no scheduled slot"
+        assert!(worker.entries[1].is_none());
+        assert!(
+            worker.ready.is_empty(),
+            "a ready sibling needs no scheduled task"
         );
         check(&drain(&mut queue, messages), |reply| {
             assert_eq!(reply.get_answer_id(), 1)

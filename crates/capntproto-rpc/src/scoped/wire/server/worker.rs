@@ -64,8 +64,8 @@ pub enum Progress {
 pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
     // Legacy handle_message polls an ordinary Call before allocating a task
-    // node. Keep that first owning execution inline until it actually suspends.
-    starting: Option<(usize, Entry<'p, 'id, I, C, H>)>,
+    // node. The owning request stays in its slot; only scheduling is deferred.
+    starting: Option<usize>,
     live: usize,
     first_free: usize,
     maximum: usize,
@@ -170,8 +170,8 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
         // More than one admitted operation uses the ordinary FIFO. A parked
         // first operation must keep its place ahead of newly accepted work.
-        if let Some((index, entry)) = self.starting.take() {
-            self.schedule_entry(index, entry);
+        if let Some(index) = self.starting.take() {
+            self.schedule_entry(index);
         }
         let index = self.first_free;
         if index == self.entries.len() {
@@ -265,32 +265,33 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if !execute {
             entry.results.cancel();
         }
-        self.live += 1;
-        self.preparing += usize::from(execute);
-        // Like legacy, a fresh ordinary Call may finish immediately while
-        // unrelated operations are asleep. Already-runnable work keeps FIFO
-        // priority; continuous admission cannot starve its registered owners.
-        if ordinary && (self.live == 1 || self.ready.is_empty()) {
-            self.starting = Some((index, entry));
-        } else {
-            self.schedule_entry(index, entry);
-        }
-    }
-
-    #[inline(always)]
-    fn schedule_entry(&mut self, index: usize, mut entry: Entry<'p, 'id, I, C, H>) {
-        let waker = self.ready.insert(index, true);
-        entry.results.bind_protocol_waker(waker.clone());
-        entry.waker = waker;
         if index == self.entries.len() {
             self.entries.push(Some(entry));
         } else {
             self.entries[index] = Some(entry);
         }
+        self.live += 1;
+        self.preparing += usize::from(execute);
         self.first_free = self.entries[index + 1..]
             .iter()
             .position(Option::is_none)
             .map_or(self.entries.len(), |offset| index + 1 + offset);
+        // Like legacy, a fresh ordinary Call may finish immediately while
+        // unrelated operations are asleep. Already-runnable work keeps FIFO
+        // priority; continuous admission cannot starve its registered owners.
+        if ordinary && (self.live == 1 || self.ready.is_empty()) {
+            self.starting = Some(index);
+        } else {
+            self.schedule_entry(index);
+        }
+    }
+
+    #[inline(always)]
+    fn schedule_entry(&mut self, index: usize) {
+        let waker = self.ready.insert(index, true);
+        let entry = self.entries[index].as_mut().expect("accepted request");
+        entry.results.bind_protocol_waker(waker.clone());
+        entry.waker = waker;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -489,7 +490,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 }
             }
             self.protocol_turn = true;
-            let mut starting = self.starting.take();
+            let starting = self.starting.take();
             let ready = if starting.is_none() {
                 if !registered {
                     self.ready.register(cx.waker());
@@ -500,7 +501,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 None
             };
             let index = match (&starting, &ready) {
-                (Some((index, _)), _) => *index,
+                (Some(index), _) => *index,
                 (_, Some(ready)) => ready.index(),
                 _ => {
                     *remaining_budget -= 1;
@@ -511,14 +512,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     };
                 }
             };
-            let entry = if let Some((_, entry)) = &mut starting {
-                entry
-            } else {
-                let Some(entry) = self.entries[index].as_mut() else {
-                    *remaining_budget -= 1;
-                    continue;
-                };
-                entry
+            let Some(entry) = self.entries[index].as_mut() else {
+                *remaining_budget -= 1;
+                continue;
             };
             if entry.result_revision != entry.results.revision() {
                 entry.result_revision = entry.results.revision();
@@ -527,7 +523,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 // this method remains parked. Do not certify the lane idle.
                 advanced = true;
             }
-            let waker = entry.waker.clone();
+            // Legacy's first poll borrows the static noop waker. Only an
+            // already scheduled operation needs an owned registration here.
+            let waker = starting.is_none().then(|| entry.waker.clone());
             // A ready completion continues toward Return in this turn, as KJ
             // chains its answer continuation. Only suspension or the shared
             // budget yields the operation; intermediate stages need no enqueue.
@@ -546,7 +544,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     messages,
                     minimum,
                     options,
-                    &mut Context::from_waker(&waker),
+                    &mut Context::from_waker(waker.as_ref().unwrap_or(Waker::noop())),
                     &mut import,
                     &mut refresh,
                     &mut publish,
@@ -583,9 +581,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     .results
                     .redirect()
                     .is_some_and(|redirect| !redirect.sent.get());
-            if let Some((index, entry)) = starting.take() {
+            if starting.is_some() {
                 if matches!(outcome, Poll::Ready(Ok(Progress::Replied))) {
+                    let entry = self.entries[index].take().expect("completed request");
                     self.live -= 1;
+                    self.first_free = self.first_free.min(index);
                     self.preparing -= usize::from(matches!(entry.stage, Stage::Prepare));
                     self.results_cache.recycle(release(
                         entry,
@@ -603,7 +603,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     self.ready.register(cx.waker());
                     registered = true;
                 }
-                self.schedule_entry(index, entry);
+                self.schedule_entry(index);
                 if redirect_ready {
                     self.redirects.push(&mut self.entries, index, |slot| {
                         &mut slot.as_mut().unwrap().redirect_work
@@ -923,9 +923,6 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         messages: &mut messages::Messages<'p, '_, '_>,
     ) {
         self.ready.close();
-        if let Some((_, entry)) = self.starting {
-            drop(release(entry, driver, messages, false));
-        }
         for entry in self.entries.into_iter().flatten() {
             drop(release(entry, driver, messages, false));
         }
