@@ -172,12 +172,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(FixedStruct<'_, Results>) -> capnp::Result<()>,
     ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
-        let mapped =
-            super::invocation::map_capabilities::<CAPS>(capabilities, self.message_capabilities)?;
         self.local_result_dynamic(
             method.interface_id(),
             method.ordinal(),
-            &mapped[..capabilities.len()],
+            capabilities.iter().copied().map(Some),
             messages,
             minimum,
             options,
@@ -187,20 +185,24 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
 
     /// Untyped result construction for hosted generated bindings. Null table
     /// entries keep their indices; capability references are acquired only after
-    /// the entire payload validates against the supplied table.
+    /// the entire payload validates against the supplied table. Accepting an
+    /// iterator avoids a temporary table of borrowed capability references.
     #[allow(clippy::too_many_arguments)]
-    pub fn local_result_dynamic(
+    pub fn local_result_dynamic<'c>(
         &mut self,
         interface: u64,
         method: u16,
-        capabilities: &[Option<&clients::Client<'id>>],
+        capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
+    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error>
+    where
+        'id: 'c,
+    {
         self.local_result_envelope(
             None,
             interface,
@@ -218,26 +220,29 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// whose envelope still matches at publication can reuse these bytes; late
     /// cancellation, redirection and capability grants use normal reconstruction.
     #[allow(clippy::too_many_arguments)]
-    pub fn local_answer_dynamic(
+    pub fn local_answer_dynamic<'c>(
         &mut self,
         answer: answers::Key<'id>,
         interface: u64,
         method: u16,
-        capabilities: &[Option<&clients::Client<'id>>],
+        capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
+    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error>
+    where
+        'id: 'c,
+    {
         let no_finish = self
             .ledgers
             .answers
             .prepare_return(answer)
             .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?
             .can_omit_finish()
-            && capabilities.is_empty();
+            && capabilities.len() == 0;
         self.local_result_envelope(
             Some((answer.id(), no_finish)),
             interface,
@@ -251,19 +256,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn local_result_envelope(
+    fn local_result_envelope<'c>(
         &mut self,
         envelope: Option<(capntproto_rpc_engine::ids::AnswerId, bool)>,
         interface: u64,
         method: u16,
-        capabilities: &[Option<&clients::Client<'id>>],
+        capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
+    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error>
+    where
+        'id: 'c,
+    {
         let options = self.writer_policy.options(options);
         self.check_live()?;
         let retained = self
@@ -313,7 +321,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             return Err(Error::Input(error));
         }
         let mut result = LocalResult {
-            prepared_return: envelope.filter(|_| capabilities.is_empty()),
+            prepared_return: envelope.filter(|_| capabilities.len() == 0),
             capacity: self.message_capabilities,
             frame,
             capabilities: retained,
@@ -321,7 +329,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             interface,
             method,
         };
-        for (index, client) in capabilities.iter().enumerate() {
+        for (index, client) in capabilities.enumerate() {
             let Some(client) = client else { continue };
             match self.runtime.retain(client) {
                 Ok(client) => result.capabilities[index] = Some(client),

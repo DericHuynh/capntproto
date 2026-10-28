@@ -68,7 +68,7 @@ pub fn bounded_server_output() {
                 .local_result_dynamic(
                     0,
                     0,
-                    &[None, Some(&target)],
+                    [None, Some(&target)].into_iter(),
                     messages,
                     512,
                     Default::default(),

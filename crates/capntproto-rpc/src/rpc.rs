@@ -1872,7 +1872,7 @@ where
             }
             None => unreachable!(),
         }
-        let promise = promise.attach(question_ref.clone());
+        let promise = promise.attach(question_ref);
 
         let mut flow = flow.borrow_mut();
         if flow.is_none() {

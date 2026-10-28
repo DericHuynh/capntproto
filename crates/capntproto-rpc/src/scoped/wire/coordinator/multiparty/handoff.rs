@@ -361,7 +361,7 @@ fn freeze<'p, 'id, const C: usize, const H: usize>(
             .local_result_dynamic(
                 method.0,
                 method.1,
-                &clients.iter().map(Option::as_ref).collect::<Vec<_>>(),
+                clients.iter().map(Option::as_ref),
                 messages,
                 minimum(content)?,
                 coordinator.options.reader,

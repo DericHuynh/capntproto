@@ -963,7 +963,7 @@ impl<
                             let result = driver.local_result_dynamic(
                                 0,
                                 0,
-                                &[Some(&client)],
+                                [Some(&client)].into_iter(),
                                 messages,
                                 128,
                                 coordinator.options.reader,

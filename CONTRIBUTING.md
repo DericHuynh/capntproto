@@ -116,6 +116,29 @@ differences. Contributors do not need cloud credentials to submit a patch.
   and local benchmark artifacts out of commits. Preserve reviewed fixtures,
   lockfiles, source provenance, and upstream notices.
 
+### Runtime performance style
+
+Apply the runtime guidance in [Google's Rust style guide](https://google.github.io/styleguide/rustguide.html)
+to first-party Rust code, alongside the project's existing formatting and API
+conventions:
+
+- Borrow data or move an existing owner instead of cloning payloads and paths.
+  Shared capability lifetimes and cross-thread wakeups still require `Rc` or
+  `Arc`; do not replace them with unsafe lifetime assumptions.
+- Accept slices or borrowed values when random access is needed, and iterators
+  when processing a sequence. Return iterators when callers do not need an owned
+  collection. Preserve exact lengths where bounded storage needs admission checks.
+- Prefer generic callbacks and trait parameters when their concrete type is
+  available. Retain trait objects for heterogeneous capabilities and executors;
+  consider code size when adding monomorphized paths.
+- Match values directly instead of checking a variant and then unwrapping it.
+  Format diagnostic text in one operation instead of allocating intermediate strings.
+- Verify allocation budgets and behavior in both drivers. Qualify runtime changes
+  with the dedicated benchmark workflow, comparing instruction and branch counts
+  as well as latency. Style alone does not establish a speedup.
+
+Chromium-only layout, threading and async rules do not apply to this Cargo project.
+
 ## Open a pull request
 
 Use the supplied template to describe the problem, resulting behavior, and

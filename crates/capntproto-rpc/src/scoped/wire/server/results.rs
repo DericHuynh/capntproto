@@ -1170,15 +1170,7 @@ impl<'id> ClientHooks<'id> {
                     capnp::wire_capability::IndexMap::identity(payload.caps.len() as u32),
                 )
             };
-            let inline_refs;
-            let overflow_refs;
-            let references = if retained.len() <= 1 {
-                inline_refs = [retained.first().and_then(Option::as_ref)];
-                &inline_refs[..retained.len()]
-            } else {
-                overflow_refs = retained.iter().map(Option::as_ref).collect::<Vec<_>>();
-                &overflow_refs[..]
-            };
+            let references = retained.iter().map(Option::as_ref);
             let result = if let Some(answer) = answer {
                 driver.local_answer_dynamic(
                     answer,

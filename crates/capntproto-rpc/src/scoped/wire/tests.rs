@@ -557,11 +557,19 @@ fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
                     })
                     .unwrap();
                 let output = driver
-                    .local_result_dynamic(47, 1, &[], messages, 256, Default::default(), |field| {
-                        field
-                            .cast::<capnp::field_api::Text>()
-                            .copy_from("response text")
-                    })
+                    .local_result_dynamic(
+                        47,
+                        1,
+                        core::iter::empty(),
+                        messages,
+                        256,
+                        Default::default(),
+                        |field| {
+                            field
+                                .cast::<capnp::field_api::Text>()
+                                .copy_from("response text")
+                        },
+                    )
                     .unwrap();
                 invocations
                     .complete_local(&mut driver, messages, running, Ok(output))
@@ -652,7 +660,7 @@ fn owned_pipeline_queues_child_before_parent_local_completion() {
                 .local_result_dynamic(
                     47,
                     1,
-                    &[Some(&child_target)],
+                    [Some(&child_target)].into_iter(),
                     messages,
                     256,
                     Default::default(),
@@ -676,11 +684,19 @@ fn owned_pipeline_queues_child_before_parent_local_completion() {
                 )
                 .is_ready());
             let output = driver
-                .local_result_dynamic(47, 2, &[], messages, 256, Default::default(), |field| {
-                    field
-                        .cast::<capnp::field_api::Text>()
-                        .copy_from("child ran")
-                })
+                .local_result_dynamic(
+                    47,
+                    2,
+                    core::iter::empty(),
+                    messages,
+                    256,
+                    Default::default(),
+                    |field| {
+                        field
+                            .cast::<capnp::field_api::Text>()
+                            .copy_from("child ran")
+                    },
+                )
                 .unwrap();
             invocations
                 .complete_local(&mut driver, messages, child_running, Ok(output))
@@ -1389,11 +1405,19 @@ fn late_invalid_local_projection_breaks_instead_of_waiting_for_retry() {
                 .unwrap_or_else(|_| panic!("enqueue"));
             let running = calls.accept_local(&mut driver).unwrap().unwrap();
             let result = driver
-                .local_result_dynamic(47, 1, &[], messages, 256, Default::default(), |field| {
-                    field
-                        .cast::<capnp::field_api::Text>()
-                        .copy_from("not a capability")
-                })
+                .local_result_dynamic(
+                    47,
+                    1,
+                    core::iter::empty(),
+                    messages,
+                    256,
+                    Default::default(),
+                    |field| {
+                        field
+                            .cast::<capnp::field_api::Text>()
+                            .copy_from("not a capability")
+                    },
+                )
                 .unwrap();
             calls
                 .complete_local(&mut driver, messages, running, Ok(result))
@@ -1519,7 +1543,7 @@ fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
                     .local_result_dynamic(
                         47,
                         1,
-                        &caps,
+                        caps.iter().copied(),
                         messages,
                         512,
                         Default::default(),

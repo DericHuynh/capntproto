@@ -6,6 +6,100 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn local_result_iterators_preserve_null_slots_and_capacity_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        for native in [false, true] {
+            for answer in [false, true] {
+                with_driver(|mut driver, messages| {
+                    if native {
+                        driver.use_native_writer();
+                    }
+                    let (call, target) = request(&mut driver, messages, false);
+                    let visited = core::cell::Cell::new(0);
+                    let filled = core::cell::Cell::new(false);
+                    let rejected = driver.local_result_dynamic(
+                        7,
+                        9,
+                        (0..5).map(|_| {
+                            visited.set(visited.get() + 1);
+                            Some(&target)
+                        }),
+                        messages,
+                        512,
+                        Default::default(),
+                        |_| {
+                            filled.set(true);
+                            Ok(())
+                        },
+                    );
+                    assert!(matches!(
+                        rejected,
+                        Err(Error::Input(crate::owned::Error::Capacity))
+                    ));
+                    assert_eq!(visited.get(), 0, "reject capacity before consuming clients");
+                    assert!(!filled.get(), "reject capacity before constructing output");
+
+                    let capabilities = (0..4).map(|index| {
+                        visited.set(visited.get() + 1);
+                        (index % 2 == 0).then_some(&target)
+                    });
+                    let fill = |field: capnp::field_api::FixedField<
+                        '_,
+                        capnp::field_api::Generic<capnp::any_pointer::Owned>,
+                    >| field.set_capability_index(2);
+                    let result = if answer {
+                        driver.local_answer_dynamic(
+                            call.answer(),
+                            7,
+                            9,
+                            capabilities,
+                            messages,
+                            512,
+                            Default::default(),
+                            fill,
+                        )
+                    } else {
+                        driver.local_result_dynamic(
+                            7,
+                            9,
+                            capabilities,
+                            messages,
+                            512,
+                            Default::default(),
+                            fill,
+                        )
+                    }
+                    .unwrap();
+                    assert_eq!(visited.get(), 4, "consume the lazy table exactly once");
+                    let key = target.key();
+                    driver.runtime.release(target);
+                    result
+                        .with(messages, |payload| {
+                            assert_eq!(payload.content().capability_index().unwrap(), 2);
+                            assert_eq!(payload.capabilities().len(), 4);
+                            for (index, client) in payload.capabilities().iter().enumerate() {
+                                assert_eq!(
+                                    client.as_ref().map(clients::Client::key),
+                                    (index % 2 == 0).then_some(key)
+                                );
+                            }
+                        })
+                        .unwrap();
+                    result.release(messages, &mut driver.runtime);
+                    driver.release_call(call, messages);
+                    close(
+                        driver,
+                        messages,
+                        &mut messages::Queue::<()>::new(&mut []).unwrap(),
+                    );
+                });
+            }
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn native_grant_publication_checks_descriptors_and_preserves_failed_output() {
     let measured = allocation_counter::measure(|| {
         for native in [false, true] {
@@ -27,7 +121,7 @@ fn native_grant_publication_checks_descriptors_and_preserves_failed_output() {
                         call.answer(),
                         7,
                         9,
-                        &[Some(&target)],
+                        [Some(&target)].into_iter(),
                         messages,
                         512,
                         options,
@@ -108,12 +202,19 @@ fn native_writer_keeps_input_limits_storage_and_capability_authority_checked() {
                 if policy == WriterPolicy::Native {
                     driver.use_native_writer();
                 }
-                let result =
-                    driver.local_result_dynamic(7, 9, &[], messages, 512, limits, |content| {
+                let result = driver.local_result_dynamic(
+                    7,
+                    9,
+                    core::iter::empty(),
+                    messages,
+                    512,
+                    limits,
+                    |content| {
                         content
                             .cast::<capnp::field_api::Text>()
                             .copy_from("native publication")
-                    });
+                    },
+                );
                 if policy == WriterPolicy::Checked {
                     assert!(result.is_err());
                 } else {
@@ -143,9 +244,15 @@ fn native_writer_keeps_input_limits_storage_and_capability_authority_checked() {
                     rejected.frame.release(messages);
                     result.release(messages, &mut driver.runtime);
                     let invalid = driver
-                        .local_result_dynamic(7, 9, &[], messages, 512, limits, |content| {
-                            content.set_capability_index(1)
-                        })
+                        .local_result_dynamic(
+                            7,
+                            9,
+                            core::iter::empty(),
+                            messages,
+                            512,
+                            limits,
+                            |content| content.set_capability_index(1),
+                        )
                         .unwrap();
                     invalid
                         .with(messages, |payload| {
@@ -162,7 +269,15 @@ fn native_writer_keeps_input_limits_storage_and_capability_authority_checked() {
                     invalid.release(messages, &mut driver.runtime);
                     assert!(
                         driver
-                            .local_result_dynamic(7, 9, &[], messages, 4096, limits, |_| Ok(()))
+                            .local_result_dynamic(
+                                7,
+                                9,
+                                core::iter::empty(),
+                                messages,
+                                4096,
+                                limits,
+                                |_| Ok(())
+                            )
                             .is_err(),
                         "native writers still respect fixed buffer capacity"
                     );
@@ -224,7 +339,7 @@ fn settled_promised_dispatch_needs_no_observer_and_preserves_early_pipeline_prio
                     .local_result_dynamic(
                         7,
                         9,
-                        &[Some(&target)],
+                        [Some(&target)].into_iter(),
                         messages,
                         512,
                         Default::default(),
@@ -673,7 +788,7 @@ fn check_prepared_data_reply(_hosted: bool) {
                             key,
                             7,
                             9,
-                            &[],
+                            core::iter::empty(),
                             messages,
                             512,
                             Default::default(),
@@ -809,7 +924,7 @@ fn introduction_publication_validates_grants_and_retries_without_allocation() {
                 .local_result_dynamic(
                     7,
                     9,
-                    &[Some(&vine)],
+                    [Some(&vine)].into_iter(),
                     messages,
                     256,
                     Default::default(),
@@ -1082,7 +1197,7 @@ fn adopted_output_waits_for_local_completion_and_retains_result_after_finish_wit
                         .local_result_dynamic(
                             7,
                             9,
-                            &[None, Some(&target)],
+                            [None, Some(&target)].into_iter(),
                             messages,
                             512,
                             Default::default(),
@@ -1158,7 +1273,7 @@ fn completed_answer_retries_without_allocating_and_keeps_pipeline_after_finish()
                         .local_result_dynamic(
                             7,
                             9,
-                            &[None, Some(&target)],
+                            [None, Some(&target)].into_iter(),
                             messages,
                             512,
                             Default::default(),
@@ -1309,7 +1424,15 @@ fn wrong_method_and_exception_encoder_failure_preserve_completion() {
         let (call, target) = request(&mut driver, messages, false);
         let key = call.answer();
         let result = driver
-            .local_result_dynamic(7, 10, &[], messages, 512, Default::default(), |_| Ok(()))
+            .local_result_dynamic(
+                7,
+                10,
+                core::iter::empty(),
+                messages,
+                512,
+                Default::default(),
+                |_| Ok(()),
+            )
             .unwrap();
         let rejected = driver
             .complete_answer(&call, Ok(result), messages)

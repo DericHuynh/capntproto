@@ -54,7 +54,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Ok(client) => Ok(self.local_result_dynamic(
                 0,
                 0,
-                &[Some(client)],
+                [Some(client)].into_iter(),
                 messages,
                 minimum,
                 options,

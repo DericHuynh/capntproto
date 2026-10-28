@@ -472,16 +472,15 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
         let mut advanced = false;
         while *remaining_budget != 0 {
-            if (self.protocol_turn || self.ready.is_empty())
-                && driver.ledgers().answers.has_changed_producers()
-            {
-                let results = driver
+            let changed = if self.protocol_turn || self.ready.is_empty() {
+                driver
                     .answers()
                     .take_changed_producer()
-                    .unwrap()
-                    .owner
-                    .producer
-                    .results();
+                    .map(|answer| answer.owner.producer.results())
+            } else {
+                None
+            };
+            if let Some(results) = changed {
                 self.protocol_turn = false;
                 results.protocol_changed();
                 *remaining_budget -= 1;
