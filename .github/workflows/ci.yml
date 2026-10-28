@@ -85,7 +85,7 @@ jobs:
             fi
           done
           exit "$status"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: portable-generated-views
@@ -241,7 +241,7 @@ jobs:
         run: |
           mkdir -p target/platforms
           printf '| %s | %s | %s | %s | %s |\n' "$PLATFORM" "$COMPILE" "$SMOKE" "$ALLOCATIONS" "$AUDITABLE" > "target/platforms/$PLATFORM.md"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: platform-${{ matrix.os }}
@@ -249,7 +249,7 @@ jobs:
           path: target/platforms/
           if-no-files-found: error
       - name: Upload nextest results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: nextest-${{ matrix.os }}
@@ -285,7 +285,7 @@ jobs:
             printf '\nMain CI requires workspace tests, formal checks, fuzzing, extended verification, platform, documentation, portability and benchmark checks. LLVM coverage and its regression thresholds run independently with their own Coverage badge. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
           } >> README.md
           cat README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: platform-report

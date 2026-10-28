@@ -38,7 +38,7 @@ jobs:
       - name: Collect counts, graphs and failed tests
         if: success() || failure()
         run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind fuzz --output target/readme-data/publication.json --failures-output target/quality/fuzz/FAILED-TESTS.md --report-output target/quality/fuzz
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: readme-data-fuzz-${{ github.run_attempt }}
@@ -51,7 +51,7 @@ jobs:
         if: always()
         run: cargo run --locked -p capntproto-dev -- package-fuzz-report
       - id: report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: fuzz-report
