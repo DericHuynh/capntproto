@@ -16,6 +16,8 @@ pub struct Storage<'storage, I, E, A> {
     pub imports: &'storage mut [imports::Slot<I>],
     pub exports: &'storage mut [exports::Slot<E>],
     pub questions: &'storage mut [questions::Slot],
+    /// Separate high-ID capacity. An empty slice disables no-Return calls.
+    pub pipeline_questions: &'storage mut [questions::PipelineSlot],
     pub answers: &'storage mut [answers::Slot<A>],
 }
 
@@ -54,8 +56,12 @@ fn new_scope_with_adoptions<'id, 's, I, E, A>(
     Ok(Connection {
         imports: imports::new_scope(storage.imports).map_err(Error::Imports)?,
         exports: exports::new_scope(storage.exports).map_err(Error::Exports)?,
-        questions: questions::new_scope_with_adoptions(storage.questions, adopted)
-            .map_err(Error::Questions)?,
+        questions: questions::new_scope_with_adoptions(
+            storage.questions,
+            storage.pipeline_questions,
+            adopted,
+        )
+        .map_err(Error::Questions)?,
         answers: answers::new_scope(storage.answers).map_err(Error::Answers)?,
     })
 }

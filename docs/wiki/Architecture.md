@@ -1130,6 +1130,9 @@ return the caller's owner with existing entries and allocation cursors intact.
 High-ID wraparound skips live entries, checking at most occupancy plus one
 candidates. That scan can still take quadratic time with linear sparse storage;
 applications needing large bounded tables can provide a different map.
+This wrapping allocator remains available to legacy. The portable question
+ledger uses explicit high-ID insertion with a monotonic cursor instead, falling
+back to ordinary questions before wraparound to exclude stale Return aliases.
 Empty backing is checked at construction, including storage recovered after a
 forgotten table. Retained owners are cleared when borrowed providers are dropped.
 As with peer tables, detach values before running reentrant destructors. The
@@ -1815,9 +1818,20 @@ question; ordinary results/exceptions are rejected there. `admission::tail_answe
 binds the original answer to a retained redirected question on the same
 connection. The driver must keep that question until the original Finish and
 keep polling the adopted producer. The portable fixture exercises these messages
-through short/Pending/Interrupted IO, dropped output and early Finish. Received
-`onlyPromisePipeline` remains a hint: this profile always sends Return, as the
-protocol permits, and does not originate calls using that optional optimization.
+through short/Pending/Interrupted IO, dropped output and early Finish.
+
+Pipeline-only calls with no parameter capabilities use a separate bounded
+high-ID question ledger and omit Return. Their projections are stable remote
+routes, retaining the question until their last reference is released. Completed
+answers retain local results for dependent calls without serializing a Return.
+High IDs advance monotonically through `u32::MAX`; published IDs never wrap or
+get reused. A rejected, unpublished reservation can retry its last unused ID.
+Exhaustion or full/disabled `pipeline_questions` storage falls back to ordinary
+questions. Capability parameters also use ordinary questions, preserving implicit
+parameter releases from peers that ignore the hint. Finish requests implicit
+result-capability release. Unexpected high-ID Returns are discarded before any
+capability import and disable the optimization for subsequent calls on that
+connection, including when a late Return arrives after Finish.
 
 `inbound::finished` binds a Finish to the retained Return and all implied result
 releases before retiring its answer. Rejected input changes neither ledger;
@@ -2366,8 +2380,7 @@ has not yet migrated to these ledgers and wire bindings.
    and callee-selected answer IDs keep explicit Finish. This avoids a separate
    cleanup packet for data-only round trips.
    Remaining integration: bilateral Join (including fences to migrate previously
-   used pipelines), native tail transfer and the
-   high-ID/no-Return pipeline-only optimization before switching default `RpcSystem`.
+   used pipelines) and native tail transfer before switching default `RpcSystem`.
    Caller-supplied endpoint metadata preserves hosted errors and their reasons;
    wire-created broken routes still retain only an ErrorKind. Full wire promise
    diagnostics need a retained error owner. Direct remote call exceptions

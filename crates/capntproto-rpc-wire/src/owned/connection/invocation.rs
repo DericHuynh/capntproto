@@ -618,14 +618,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let output = queue
                 .reserve_with(resources)
                 .map_err(|error| Error::Input(super::super::Error::Storage(error)))?;
-            let reservation = self.ledgers.questions.reserve().map_err(Error::Question)?;
+            let reservation = if self.pipeline_only_enabled && template.only_promise_pipeline {
+                self.ledgers.questions.reserve_for_pipeline()
+            } else {
+                self.ledgers.questions.reserve()
+            }
+            .map_err(Error::Question)?;
+            let allow_handoff = self.allow_answer_handoff && !reservation.id().is_pipeline_only();
             let frame = template
                 .copy(
                     &invocation.frame,
                     messages,
                     reservation.id(),
                     import.unwrap(),
-                    self.allow_answer_handoff,
+                    allow_handoff,
                     options,
                 )
                 .map_err(Error::Input)?;
@@ -644,7 +650,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     frame,
                     output,
                     template.method,
-                    self.allow_answer_handoff,
+                    allow_handoff,
                     self.owned_output,
                 )
                 .map_err(Error::Input)?
@@ -747,6 +753,19 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         for (key, client) in keys.iter_mut().zip(invocation.capabilities.iter()) {
             *key = client.as_ref().map(clients::Client::key);
         }
+        let pipeline_only = !third_party
+            && count == 0
+            && self.pipeline_only_enabled
+            && invocation
+                .frame
+                .with(messages, |source| {
+                    let rpc_capnp::message::Call(call) = source.which()? else {
+                        unreachable!()
+                    };
+                    Ok::<_, capnp::Error>(call?.get_only_promise_pipeline())
+                })
+                .map_err(Error::Input)?
+                .map_err(|error| Error::Input(error.into()))?;
         drop(ready);
         let slot_index =
             ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges).ok_or(Error::Busy)?;
@@ -756,10 +775,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(|error| Error::Input(super::super::Error::Storage(error)))?;
         let reservation = if third_party {
             self.ledgers.questions.reserve_third_party()
+        } else if pipeline_only {
+            self.ledgers.questions.reserve_for_pipeline()
         } else {
             self.ledgers.questions.reserve()
         }
         .map_err(Error::Question)?;
+        let pipeline_only = reservation.id().is_pipeline_only();
         let mut batch = self.ledgers.exports.batch();
         let mut grants = self
             .message_capabilities
@@ -820,15 +842,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .set(source.get_interface_id());
                 call.scalar(WireCall::METHOD_ID).set(source.get_method_id());
                 call.scalar(WireCall::NO_PROMISE_PIPELINING)
-                    .set(source.get_no_promise_pipelining());
-                // Pipeline-only interest is retained by the caller's completion
-                // adapter. Use an ordinary question until the question ledger
-                // supports high-ID calls without Return obligations. The hint
-                // is advisory; emitting it on an ordinary question would leave
-                // that ledger waiting forever for a Return the peer may omit.
-                call.scalar(WireCall::ONLY_PROMISE_PIPELINE).set(false);
+                    .set(source.get_no_promise_pipelining() && !pipeline_only);
+                call.scalar(WireCall::ONLY_PROMISE_PIPELINE)
+                    .set(pipeline_only);
                 call.scalar(WireCall::ALLOW_THIRD_PARTY_TAIL_CALL)
-                    .set(self.allow_answer_handoff && !third_party);
+                    .set(self.allow_answer_handoff && !third_party && !pipeline_only);
                 if let rpc_capnp::call::send_results_to::ThirdParty(destination) =
                     source.get_send_results_to().which()?
                 {

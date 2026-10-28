@@ -13,6 +13,10 @@ pub struct State<'pool, A> {
     result_exports: ResultExports,
 }
 impl<'pool, A> State<'pool, A> {
+    pub(super) fn without_return(&mut self) {
+        debug_assert!(self.frame.is_none());
+        self.result_exports = ResultExports::Empty;
+    }
     pub fn new(owner: A) -> Self {
         Self {
             owner,

@@ -684,7 +684,10 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             };
             match client {
                 ProjectionTarget::Direct(endpoint) => {
-                    if matches!(self.route, CallRoute::Remote(_))
+                    // The deferred direct-route adapter expects Return to
+                    // publish resolution. A no-Return question instead binds
+                    // its already-settled route immediately, as legacy does.
+                    if matches!(self.route, CallRoute::Remote(question) if !question.id().is_pipeline_only())
                         && pipeline.operation.get().is_some()
                     {
                         match self.projections.insert(endpoint.clone(), cap, hooks) {

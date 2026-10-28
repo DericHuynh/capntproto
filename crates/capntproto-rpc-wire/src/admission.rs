@@ -97,14 +97,20 @@ pub(crate) fn check_question(
 ) -> Result<(), Error> {
     let redirected = destination != questions::ResultsTo::Caller;
     let id = match root.which().map_err(|_| Error::Unsupported)? {
-        rpc_capnp::message::Bootstrap(b) if !redirected => b?.get_question_id(),
-        rpc_capnp::message::Accept(a) if !redirected && !allow_grants => {
+        rpc_capnp::message::Bootstrap(b) if !redirected && !expected.is_pipeline_only() => {
+            b?.get_question_id()
+        }
+        rpc_capnp::message::Accept(a)
+            if !redirected && !allow_grants && !expected.is_pipeline_only() =>
+        {
             let a = a?;
             a.get_provision().validate_capability_indices(0)?;
             a.get_embargo()?;
             a.get_question_id()
         }
-        rpc_capnp::message::Join(j) if !redirected && !allow_grants => {
+        rpc_capnp::message::Join(j)
+            if !redirected && !allow_grants && !expected.is_pipeline_only() =>
+        {
             let j = j?;
             check_network_target(j.get_target()?)?;
             j.get_key_part().validate_capability_indices(0)?;
@@ -114,7 +120,8 @@ pub(crate) fn check_question(
             let c = c?;
             let payload = c.get_params()?;
             let descriptors = payload.get_cap_table()?;
-            if c.get_only_promise_pipeline()
+            if c.get_only_promise_pipeline() != expected.is_pipeline_only()
+                || (expected.is_pipeline_only() && (!descriptors.is_empty() || redirected))
                 || (!allow_grants && !descriptors.is_empty())
                 || match c.get_send_results_to().which() {
                     Ok(rpc_capnp::call::send_results_to::Caller(())) => redirected,

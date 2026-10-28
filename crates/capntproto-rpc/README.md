@@ -151,9 +151,12 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   a completed idle scan with application wakeups registered.
   Default migration still requires authenticated multi-party network lifecycle,
   default VatNetwork task creation, idle notifications and complete limit policies.
-  Pipeline-only wire calls currently use ordinary questions and receive Returns;
-  the application can still retain just the pipeline. This is a compatibility
-  fallback for the advisory hint, not the hosted high-ID/no-Return optimization.
+  Pipeline-only calls without parameter capabilities use separately bounded
+  high-ID questions and omit Return. Their stable remote projections retain the
+  question until Finish. Published high IDs never wrap or get reused; exhaustion,
+  disabled/full high-ID storage, capability parameters or an unexpected Return
+  select ordinary questions. Low-level ledger storage exposes the separate
+  `pipeline_questions` budget; `FixedStorage` includes it automatically.
 
 The application supplies buffers, IO, scheduling, time and authenticated network
 services. The portable target dependency graph contains only the core, engine
@@ -349,9 +352,9 @@ execution share round-robin scheduling with other RPC controls. Calls denied the
 unresolved targets, opaque request wrappers, and unsupported networks keep
 ordinary forwarding.
 
-The portable system remains opt-in. Bilateral Join, native tail transfer and the
-high-ID pipeline-only optimization remain integration work before switching the
-default driver. Previously used pipelines retain their relay route; migrating
+The portable system remains opt-in. Bilateral Join and native tail transfer
+remain integration work before switching the default driver.
+Previously used pipelines retain their relay route; migrating
 them through an authenticated distributed Join fence remains outstanding.
 Unsupported controls fail explicitly. The message bridge still
 copies frames, but reserves received storage using validated frame lengths rather

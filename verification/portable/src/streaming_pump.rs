@@ -52,6 +52,7 @@ fn with_fixed_peer<'pool, const SLOTS: usize, R>(
                 imports: bound,
                 exports: bound,
                 questions: bound,
+                pipeline_questions: bound,
                 answers: bound,
                 clients: connection::Growth {
                     initial: 0,

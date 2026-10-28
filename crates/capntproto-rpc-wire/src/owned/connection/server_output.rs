@@ -9,6 +9,48 @@ mod tests;
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
+    /// Honor an admitted pipeline-only hint after local completion. The result
+    /// remains available to promised-answer calls until Finish, without export
+    /// grants, a serialized Return, or an output-queue reservation.
+    pub fn send_pipeline_only_answer(
+        &mut self,
+        request: &Request<'pool, 'id, I, CAPS, PATH>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<Option<A>, Error> {
+        self.check_live()?;
+        let key = request.answer();
+        if !request.method().only_promise_pipeline {
+            return Err(Error::Input(super::super::Error::WrongMessage));
+        }
+        if self
+            .ledgers
+            .answers
+            .get(key)
+            .map_err(|error| Error::Pipeline(pipelines::Error::Answer(error)))?
+            .owner
+            .is_pending()
+        {
+            return Err(Error::PendingResponse);
+        }
+        let pending = self
+            .ledgers
+            .answers
+            .prepare_return(key)
+            .map_err(|error| Error::Pipeline(pipelines::Error::Answer(error)))?;
+        if pending.is_redirected() {
+            return Err(Error::InvalidNetworkTarget);
+        }
+        let retired = pending.accept();
+        if retired.is_none() {
+            self.ledgers
+                .answers
+                .get_mut(key)
+                .expect("retained pipeline-only answer")
+                .without_return();
+        }
+        Ok(retired.map(|answer| self.release_answer(answer, messages)))
+    }
+
     /// Complete an admitted redirected Call after the authenticated network has
     /// retained its execution for the recipient. Publishing the original answer
     /// then emits ResultsSentElsewhere (or Canceled), never a duplicate payload.

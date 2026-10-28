@@ -162,6 +162,7 @@ pub enum InsertErrorKind {
     Full,
     IdSpaceExhausted,
     InvalidAdoptedId,
+    InvalidPipelineOnlyId,
     Duplicate,
 }
 
@@ -397,6 +398,26 @@ impl<T, D: Storage<T>, H: SparseStorage<QuestionId, T>, A: SparseStorage<Questio
 
     pub fn adopted_len(&self) -> usize {
         self.adopted.len()
+    }
+
+    /// Insert a caller-selected pipeline-only ID. The protocol ledger owns
+    /// monotonic allocation and exhaustion; this provider never sizes storage
+    /// from the numeric ID or changes the wrapping allocator's cursor.
+    pub fn try_insert_high(&mut self, id: QuestionId, value: T) -> Result<(), InsertError<T>> {
+        let kind = if !id.is_pipeline_only() {
+            InsertErrorKind::InvalidPipelineOnlyId
+        } else if self.high.get(&id).is_some() {
+            InsertErrorKind::Duplicate
+        } else {
+            self.high
+                .try_insert(id, value)
+                .map_err(|value| InsertError {
+                    kind: InsertErrorKind::Full,
+                    value,
+                })?;
+            return Ok(());
+        };
+        Err(InsertError { kind, value })
     }
 
     pub fn try_insert_adopted(&mut self, id: QuestionId, value: T) -> Result<(), InsertError<T>> {

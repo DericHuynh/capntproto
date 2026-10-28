@@ -165,6 +165,7 @@ fn connection_scope_preserves_then_detaches_all_domains_on_cancellation() {
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,
+                    pipeline_questions: &mut [],
                     answers: &mut as_,
                 },
                 async |connection| {
@@ -200,6 +201,7 @@ fn connection_scope_preserves_then_detaches_all_domains_on_cancellation() {
                 imports: &mut is,
                 exports: &mut es,
                 questions: &mut qs,
+                pipeline_questions: &mut [],
                 answers: &mut as_,
             },
             |connection| {

@@ -30,7 +30,7 @@ pub fn bounded_provision_exchange(release_first: bool) {
         questions::with_questions(&mut pq, |provider| {
             let mut he = [exports::Slot::EMPTY];
             let mut ha = [answers::Slot::EMPTY];
-            connection::with_connection(connection::Storage {imports:&mut [], exports:&mut he, answers:&mut ha, questions:&mut []}, |host: &mut Host<'_, '_, '_>| {
+            connection::with_connection(connection::Storage {imports:&mut [], exports:&mut he, answers:&mut ha, questions:&mut [], pipeline_questions:&mut []}, |host: &mut Host<'_, '_, '_>| {
                 let mut batch = host.exports.batch();
                 let grant = batch.export(41).unwrap();
                 batch.commit();
@@ -44,10 +44,10 @@ pub fn bounded_provision_exchange(release_first: bool) {
                 let authority = *host.exports.get(target);
                 let mut ci = [imports::Slot::EMPTY];
                 let mut cq = [questions::Slot::EMPTY];
-                connection::with_connection(connection::Storage {imports:&mut ci, exports:&mut [], answers:&mut [], questions:&mut cq}, |recipient: &mut connection::Connection<'_, '_, u8, (), ()>| {
+                connection::with_connection(connection::Storage {imports:&mut ci, exports:&mut [], answers:&mut [], questions:&mut cq, pipeline_questions:&mut []}, |recipient: &mut connection::Connection<'_, '_, u8, (), ()>| {
                     let mut accepted_exports = [exports::Slot::EMPTY];
                     let mut accepted_answers = [answers::Slot::EMPTY];
-                    connection::with_connection(connection::Storage {imports:&mut [], exports:&mut accepted_exports, answers:&mut accepted_answers, questions:&mut []}, |accepting: &mut Host<'_, '_, '_>| {
+                    connection::with_connection(connection::Storage {imports:&mut [], exports:&mut accepted_exports, answers:&mut accepted_answers, questions:&mut [], pipeline_questions:&mut []}, |accepting: &mut Host<'_, '_, '_>| {
                         let mut embargo_slots = [const {provision::Slot::<0>::EMPTY}; 1];
                         provision::with_embargoes(&mut embargo_slots, |embargoes| {
                             if release_first {embargoes.release(b"").unwrap();}

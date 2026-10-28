@@ -431,6 +431,7 @@ fn with_peer_storage<'p, const CAPS: usize, const PATH: usize, R>(
                     imports: bound,
                     exports: bound,
                     questions: bound,
+                    pipeline_questions: bound,
                     answers: bound,
                     clients: bound,
                 },

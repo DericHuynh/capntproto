@@ -260,6 +260,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
             options,
             owner: self.owner.as_ref().and_then(alloc::rc::Weak::upgrade),
             template: PlainTemplate {
+                only_promise_pipeline: false,
                 method: (method.interface, method.method),
                 no_promise_pipelining: method.no_promise_pipelining,
                 call,
@@ -718,6 +719,7 @@ impl<'a> EncodedCall<'a> {
 pub(super) struct PlainTemplate {
     pub(super) method: (u64, u16),
     no_promise_pipelining: bool,
+    pub(super) only_promise_pipeline: bool,
     call: usize,
     target: usize,
     target_data_words: Option<core::num::NonZeroU16>,
@@ -819,6 +821,7 @@ impl PlainTemplate {
         Some(Self {
             method: (call.get_interface_id(), call.get_method_id()),
             no_promise_pipelining: call.get_no_promise_pipelining(),
+            only_promise_pipeline: call.get_only_promise_pipeline(),
             call: offset(
                 call.into_internal_struct_reader()
                     .get_data_section_as_blob(),
@@ -853,9 +856,11 @@ impl PlainTemplate {
             // No pointer, discriminant, schema payload or capability is changed.
             output[self.call..self.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
             output[self.target..self.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
+            let pipeline_only = self.only_promise_pipeline && question.is_pipeline_only();
             output[self.call + 16] = (output[self.call + 16] & !0b111)
                 | u8::from(allow_handoff)
-                | (u8::from(self.no_promise_pipelining) << 1);
+                | (u8::from(self.no_promise_pipelining && !pipeline_only) << 1)
+                | (u8::from(pipeline_only) << 2);
             Ok(())
         })();
         if let Err(error) = result {
@@ -1824,7 +1829,7 @@ mod tests {
     fn copied_template_matches_generated_encoding_and_preserves_source_on_exhaustion() {
         const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
         for flags in 0..8 {
-            for id in [0, 17, u32::MAX] {
+            for id in [0, 17, (1 << 31) - 1, 1 << 31, u32::MAX - 1, u32::MAX] {
                 let mut a = [ZERO; 256];
                 let mut b = [ZERO; 256];
                 let mut c = [ZERO; 256];
@@ -1863,13 +1868,16 @@ mod tests {
                     let allow = flags & 4 != 0;
                     let question = QuestionId::from_wire(id);
                     let target = ImportId::from_wire(!id);
+                    let pipeline_only = method.only_promise_pipeline && question.is_pipeline_only();
                     let expected = Frame::build(messages, 512, Default::default(), |builder| {
                         calls::dynamic_call(
                             builder,
                             question,
                             calls::Target::Imported(target),
                             calls::DynamicCall {
-                                only_promise_pipeline: false,
+                                only_promise_pipeline: pipeline_only,
+                                no_promise_pipelining: method.no_promise_pipelining
+                                    && !pipeline_only,
                                 ..method
                             },
                             |field| field.cast::<Data>().copy_from(&payload),

@@ -562,6 +562,12 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         G: clients::Capabilities<'id, Owner = Route<'id, P, S, PATH>, Peer = P>,
     {
         let local = question.local().ok_or(Error::Canceled)?;
+        if question.key().id().is_pipeline_only() {
+            // No Return will resolve this route. Like C++/legacy, expose a
+            // terminal remote capability and retain the question until its
+            // last pipeline reference is released.
+            return freeze(graph, questions, local, path, self.peer, self.path_capacity);
+        }
         questions.pipeline_id(local).map_err(Error::Question)?;
         if path.fields().len() > self.path_capacity.maximum::<PATH>() {
             return Err(Error::Capacity);

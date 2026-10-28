@@ -135,6 +135,7 @@ pub fn owned_rpc_conversation(chunk: usize, cancel: bool) -> Result<()> {
             connection::Storage {
                 imports: &mut imports,
                 questions: &mut questions,
+                pipeline_questions: &mut [],
                 exports: &mut [],
                 answers: &mut [],
             },
@@ -151,6 +152,7 @@ pub fn owned_rpc_conversation(chunk: usize, cancel: bool) -> Result<()> {
                             connection::Storage {
                                 imports: &mut [],
                                 questions: &mut [],
+                                pipeline_questions: &mut [],
                                 exports: &mut exports,
                                 answers: &mut answers,
                             },

@@ -35,6 +35,7 @@ pub fn graph_connection() {
                     imports: &mut imports_slots,
                     exports: &mut export_slots,
                     questions: &mut question_slots,
+                    pipeline_questions: &mut [],
                     answers: &mut answer_slots,
                     clients: &mut client_slots,
                 })
@@ -208,6 +209,7 @@ pub fn graph_resolution_retry() {
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,
+                    pipeline_questions: &mut [],
                     answers: &mut ans,
                     clients: &mut nodes,
                 })

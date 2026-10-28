@@ -23,6 +23,7 @@ fn retained_plain_results_pin_the_pool_and_survive_connection_teardown() {
                 imports: &mut [],
                 exports: &mut [],
                 questions: &mut [questions::Slot::EMPTY],
+                pipeline_questions: &mut [],
                 answers: &mut [],
             },
             |connection: &mut connection::Connection<'_, '_, (), (), ()>| {
@@ -131,6 +132,7 @@ fn empty_descriptor_results_check_authority_on_access_and_skip_canceled_content(
                         imports: &mut [],
                         exports: &mut [],
                         questions: &mut qq,
+                        pipeline_questions: &mut [],
                         answers: &mut [],
                     },
                     |connection: &mut connection::Connection<'_, '_, (), (), ()>| {
@@ -252,6 +254,7 @@ fn stale_owning_question_cannot_apply_return_to_recycled_wire_id() {
                 imports: &mut [],
                 exports: &mut [],
                 questions: &mut qq,
+                pipeline_questions: &mut [],
                 answers: &mut [],
             },
             |connection: &mut connection::Connection<'_, '_, (), (), ()>| {
@@ -364,6 +367,7 @@ fn exact_request_survives_mismatched_return_and_reflected_final_param_release() 
                     imports: &mut ii,
                     exports: &mut ee,
                     questions: &mut qq,
+                    pipeline_questions: &mut [],
                     answers: &mut [],
                 },
                 |connection: &mut connection::Connection<'_, '_, (), i32, ()>| {
@@ -518,6 +522,7 @@ fn canceled_late_results_need_no_receipt_capacity_and_keep_original_until_return
                 imports: &mut [],
                 exports: &mut [],
                 questions: &mut qq,
+                pipeline_questions: &mut [],
                 answers: &mut [],
             },
             |connection: &mut connection::Connection<'_, '_, (), (), ()>| {

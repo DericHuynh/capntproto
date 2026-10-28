@@ -50,12 +50,16 @@ impl Drop for Fixture {
 }
 impl Fixture {
     async fn new(wrapper: u32) -> Self {
+        Self::with_driver(wrapper, false).await
+    }
+    async fn with_driver(wrapper: u32, portable: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let mut system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
+        let mut system =
+            support::driver::System::new(portable, Box::new(Hub::network(&hub, 1)), None);
         let remote: harness::Client = system.bootstrap(2);
         let mut peer = hub.borrow_mut().connect(2, 1);
-        let task = tokio::task::spawn_local(system);
+        let task = tokio::task::spawn_local(system.run());
         let input = peer.recv().await;
         let message::Bootstrap(b) = input
             .get_body()
@@ -183,13 +187,14 @@ impl Fixture {
         let mut resolve = Box::pin(cap.client.when_resolved());
         // Drive resolution first when both futures are ready. Random selection
         // makes this fixture's exercised paths depend on Tokio's RNG seed.
-        let m = match futures::future::select(&mut resolve, Box::pin(self.next_call())).await {
-            futures::future::Either::Left((result, call)) => {
-                result.unwrap();
-                call.await
-            }
-            futures::future::Either::Right((message, _)) => message,
-        };
+        let (m, resolution_pending) =
+            match futures::future::select(&mut resolve, Box::pin(self.next_call())).await {
+                futures::future::Either::Left((result, call)) => {
+                    result.unwrap();
+                    (call.await, false)
+                }
+                futures::future::Either::Right((message, _)) => (message, true),
+            };
         let message::Call(c) = m
             .get_body()
             .unwrap()
@@ -208,6 +213,11 @@ impl Fixture {
             c.get_send_results_to().which().unwrap(),
             capnp_rpc::rpc_capnp::call::send_results_to::Caller(())
         ));
+        if c.get_only_promise_pipeline() && resolution_pending {
+            // Include a waiter created before the high question was published.
+            // It must be notified without requiring a Return from the peer.
+            resolve.await.unwrap();
+        }
         if second {
             self.b = Some(id);
             assert_ne!(id, self.a);
@@ -338,19 +348,24 @@ async fn wrappers_preserve_pipeline_only_and_disabled_pipeline_hints() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                for wrapper in 0..4 {
-                    let mut f = Fixture::new(wrapper).await;
-                    f.send(false, false).await;
-                    f.child = Some(f.pipeline.as_ref().unwrap().get_cap());
-                    f.pipeline.take();
-                    f.use_child().await;
-                    f.child.take();
-                    settle().await;
-                    f.drain();
-                    assert_eq!(f.finishes.iter().filter(|id| **id == f.a).count(), 1);
-                    f.legacy().await;
-                    f.send(true, false).await;
-                    assert_eq!(f.b.unwrap() & (1 << 31), 0);
+                for portable in [false, true] {
+                    for wrapper in 0..4 {
+                        let mut f = Fixture::with_driver(wrapper, portable).await;
+                        f.send(false, false).await;
+                        f.child = Some(f.pipeline.as_ref().unwrap().get_cap());
+                        // A no-Return pipeline is a stable remote route. Asking
+                        // for resolution must finish even if no Return arrives.
+                        f.child.as_ref().unwrap().client.when_resolved().await.unwrap();
+                        f.pipeline.take();
+                        f.use_child().await;
+                        f.child.take();
+                        settle().await;
+                        f.drain();
+                        assert_eq!(f.finishes.iter().filter(|id| **id == f.a).count(), 1);
+                        f.legacy().await;
+                        f.send(true, false).await;
+                        assert_eq!(f.b.unwrap() & (1 << 31), 0);
+                    }
                 }
                 for wrapper in 0..4 {
                     let mut f = Fixture::new(wrapper).await;

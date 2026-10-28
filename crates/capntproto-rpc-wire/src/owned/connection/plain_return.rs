@@ -187,6 +187,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 return Ok(None);
             }
             let id = result.get_answer_id();
+            if QuestionId::from_wire(id).is_pipeline_only() {
+                return Ok(None);
+            }
             let Some(index) =
                 ExchangeSlot::pending_index(&self.exchanges, &self.ledgers.questions, id)
             else {

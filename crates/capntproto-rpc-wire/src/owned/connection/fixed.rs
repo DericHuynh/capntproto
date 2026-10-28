@@ -24,6 +24,7 @@ impl core::error::Error for InitializeError {}
 /// dispatch slot is reserved for protocol progress. `NODES` bounds graph nodes.
 /// `ADOPTED` reserves separate callee-selected third-party question slots.
 /// `LEDGERS` defaults to `SLOTS`; zero selects optional growing ledgers.
+/// Ordinary and pipeline-only questions each have `LEDGERS` separate slots.
 /// The full array size is explicit in this type; choose stack or hosted storage
 /// according to the application's memory budget. No allocation occurs here.
 pub struct FixedStorage<
@@ -43,6 +44,7 @@ pub struct FixedStorage<
     imports: [imports::Slot<I>; LEDGERS],
     exports: [exports::Slot<clients::Client<'id>>; LEDGERS],
     questions: [questions::Slot; LEDGERS],
+    pipeline_questions: [questions::PipelineSlot; LEDGERS],
     adopted: [questions::AdoptedSlot; ADOPTED],
     answers: [answers::Slot<Answer<'pool, 'id, A, CAPS>>; LEDGERS],
     nodes: [clients::Slot<binding::Route<'id, P, S, PATH>, P>; NODES],
@@ -79,6 +81,7 @@ impl<
             imports: [const { imports::Slot::EMPTY }; LEDGERS],
             exports: [const { exports::Slot::EMPTY }; LEDGERS],
             questions: [const { questions::Slot::EMPTY }; LEDGERS],
+            pipeline_questions: [const { questions::PipelineSlot::EMPTY }; LEDGERS],
             adopted: [const { questions::AdoptedSlot::EMPTY }; ADOPTED],
             answers: [const { answers::Slot::EMPTY }; LEDGERS],
             nodes: [const { clients::Slot::EMPTY }; NODES],
@@ -141,6 +144,7 @@ impl<
                 imports: &mut self.imports,
                 exports: &mut self.exports,
                 questions: &mut self.questions,
+                pipeline_questions: &mut self.pipeline_questions,
                 answers: &mut self.answers,
                 clients: &mut self.nodes,
             },
@@ -199,6 +203,7 @@ impl<
                     imports: storage.imports,
                     exports: storage.exports,
                     questions: storage.questions,
+                    pipeline_questions: storage.pipeline_questions,
                     answers: storage.answers,
                 },
                 adopted,

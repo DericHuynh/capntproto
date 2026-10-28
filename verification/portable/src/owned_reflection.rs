@@ -35,6 +35,7 @@ pub fn owning_reflected_output(reflect_question: bool) {
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,
+                    pipeline_questions: &mut [],
                     answers: &mut ans,
                     clients: &mut nodes,
                 })

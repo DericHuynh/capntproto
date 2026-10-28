@@ -9,6 +9,61 @@ use std::sync::{
 type Remote = capability::RemotePromise<any_pointer::Owned>;
 
 #[test]
+fn projection_bound_to_a_terminal_route_notifies_preexisting_resolution_waiters() {
+    for broken in [false, true] {
+        clients::with_growing_graph::<Error, u8, _>(
+            0,
+            4,
+            clients::NotificationGrowth::bounded(8, 16),
+            |graph| {
+                let mut hooks = ClientHooks::new(4, 4);
+                let endpoint = Endpoint::projection(Rc::downgrade(&hooks.inbox));
+                let hook = Hook(endpoint.clone(), None);
+                let mut complete = hook.when_resolved();
+                let mut more = hook.when_more_resolved().unwrap();
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(Pin::new(&mut complete).poll(&mut cx).is_pending());
+                assert!(Pin::new(&mut more).poll(&mut cx).is_pending());
+                let target = graph
+                    .endpoint(
+                        Error::overloaded("terminal pipeline failure".into()),
+                        if broken {
+                            Location::Broken
+                        } else {
+                            Location::Remote(1)
+                        },
+                    )
+                    .unwrap();
+                let bound = hooks.bind_projection(graph, target, endpoint).unwrap();
+                hooks.collect_with_metadata(graph, |owner| EndpointMetadata {
+                    failure: broken.then(|| owner.clone()),
+                    ..EndpointMetadata::default()
+                });
+                let Poll::Ready(complete) = Pin::new(&mut complete).poll(&mut cx) else {
+                    panic!("terminal binding stranded the existing resolution waiter");
+                };
+                let Poll::Ready(more) = Pin::new(&mut more).poll(&mut cx) else {
+                    panic!("terminal binding stranded the existing partial-resolution waiter");
+                };
+                if broken {
+                    for error in [complete.unwrap_err(), error(more)] {
+                        assert_eq!(error.kind, capnp::ErrorKind::Overloaded);
+                        assert_eq!(error.extra, "terminal pipeline failure");
+                    }
+                } else {
+                    complete.unwrap();
+                    assert!(more.unwrap().when_more_resolved().is_none());
+                    assert!(bound.when_more_resolved().is_none());
+                }
+                assert_eq!(hooks.unsettled, 0);
+                hooks.close(graph, Error::disconnected("done".into()));
+            },
+        )
+        .unwrap();
+    }
+}
+
+#[test]
 fn projection_reports_partial_resolution_before_its_target_settles() {
     for subscribe_before_binding in [false, true] {
         let hooks = ClientHooks::new(8, 8);

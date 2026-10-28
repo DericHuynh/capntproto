@@ -6,7 +6,11 @@ pub fn with_adoptions<'s, R>(
     adopted: &'s mut [AdoptedSlot],
     f: impl for<'id> FnOnce(&mut Questions<'id, 's>) -> R,
 ) -> Result<R, Error> {
-    Ok(f(&mut new_scope_with_adoptions(ordinary, adopted)?))
+    Ok(f(&mut new_scope_with_adoptions(
+        ordinary,
+        &mut [],
+        adopted,
+    )?))
 }
 /// Incoming ThirdPartyAnswer admission. Immutable envelope validation precedes
 /// commit. Authentication may finish later: the owning driver must gate access

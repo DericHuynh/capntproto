@@ -26,6 +26,8 @@ pub struct GraphStorage<'id, 'storage, I, A, T, P> {
     pub imports: &'storage mut [imports::Slot<I>],
     pub exports: &'storage mut [exports::Slot<clients::Client<'id>>],
     pub questions: &'storage mut [questions::Slot],
+    /// Separate high-ID capacity. An empty slice disables no-Return calls.
+    pub pipeline_questions: &'storage mut [questions::PipelineSlot],
     pub answers: &'storage mut [answers::Slot<A>],
     pub clients: &'storage mut [clients::Slot<T, P>],
     pub notifications: clients::NotificationStorage<'storage>,
@@ -54,6 +56,8 @@ pub struct GrowingStorage {
     pub imports: Growth,
     pub exports: Growth,
     pub questions: Growth,
+    /// Separate high-ID budget; zero maximum selects ordinary questions.
+    pub pipeline_questions: Growth,
     pub answers: Growth,
     pub clients: Growth,
     pub notifications: clients::NotificationGrowth,
@@ -83,6 +87,7 @@ impl<'id> Domain<'id> {
         let questions = questions::new_growing_scope(
             storage.questions.initial,
             storage.questions.maximum,
+            storage.pipeline_questions,
             adopted,
         )
         .map_err(Error::Questions)
@@ -104,6 +109,13 @@ impl<'id> Domain<'id> {
         let questions = questions::new_growing_with_adoptions(
             storage.questions.initial,
             storage.questions.maximum,
+            crate::peer_table::SparseSlots::growing(
+                storage.pipeline_questions.initial,
+                storage.pipeline_questions.maximum,
+            )
+            .ok_or(GraphError::Ledgers(Error::Questions(
+                questions::Error::Full,
+            )))?,
             adopted,
         )
         .map_err(Error::Questions)
@@ -172,6 +184,7 @@ impl<'id> Domain<'id> {
                 imports: storage.imports,
                 exports: storage.exports,
                 questions: storage.questions,
+                pipeline_questions: storage.pipeline_questions,
                 answers: storage.answers,
             },
             adopted,

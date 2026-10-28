@@ -50,6 +50,7 @@ mod checks {
             exports: &mut exports,
             answers: &mut answers,
             questions: &mut questions,
+            pipeline_questions: &mut [],
         })
         .unwrap();
         let _import = connection

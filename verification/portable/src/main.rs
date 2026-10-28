@@ -57,6 +57,24 @@ pub extern "C" fn _start() -> ! {
         Ok(capntproto_rpc_engine::question::Delivery::Discard)
     );
     assert!(question.release().reclaim);
+    // Exercise the high-ID/no-Return ledger in the binary that links without
+    // an allocator, including its independent ordinary fallback capacity.
+    use capntproto_rpc_engine::{ids::WireId, questions};
+    let mut ordinary = [questions::Slot::EMPTY];
+    let mut pipeline = [questions::PipelineSlot::EMPTY];
+    questions::with_pipeline_questions(&mut ordinary, &mut pipeline, |questions| {
+        let local = questions.reserve_for_pipeline().unwrap().accept();
+        assert_eq!(local.key().id().to_wire(), black_box(1 << 31));
+        let ordinary = questions.reserve_for_pipeline().unwrap();
+        assert_eq!(ordinary.id().to_wire(), 0);
+        drop(ordinary);
+        questions.release(local);
+        let finish = questions.pending_finish().unwrap();
+        assert!(finish.release_result_caps());
+        finish.accept();
+        assert!(questions.is_empty());
+    })
+    .unwrap();
     let mut vacancies = capntproto_rpc_engine::free_slots::FreeSlots::new();
     let mut slots = [const { capntproto_rpc_engine::free_slots::Link::EMPTY }; 3];
     let first = black_box(vacancies.take(&mut slots, |slot| slot));

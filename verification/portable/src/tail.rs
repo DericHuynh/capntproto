@@ -40,6 +40,7 @@ pub fn bounded_tail_adoption(chunk: usize, canceled: bool) -> Result<()> {
             imports: &mut ai,
             exports: &mut ae,
             questions: &mut aq,
+            pipeline_questions: &mut [],
             answers: &mut aa,
         },
         |a| {
@@ -48,6 +49,7 @@ pub fn bounded_tail_adoption(chunk: usize, canceled: bool) -> Result<()> {
                     imports: &mut bi,
                     exports: &mut be,
                     questions: &mut bq,
+                    pipeline_questions: &mut [],
                     answers: &mut ba,
                 },
                 |b| {

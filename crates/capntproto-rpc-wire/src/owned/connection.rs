@@ -5,7 +5,9 @@ use super::*;
 use crate::clients::{self as binding, outgoing, EndpointOwner};
 use capntproto_rpc_engine::{
     clients::{self, dispatch},
-    connection, questions,
+    connection,
+    ids::QuestionId,
+    questions,
     storage::Storage as SlotStorage,
 };
 
@@ -224,6 +226,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     defer_calls: bool,
     owned_output: bool,
     writer_policy: WriterPolicy,
+    pipeline_only_enabled: bool,
     // Conservative until the ordinary canceled-response scan proves absence.
     // Exchange capacity alone does not make pending questions pollable.
     outgoing_ready: work_queue::Queue,
@@ -370,6 +373,9 @@ pub enum Received<'id, A> {
     DeferredCall(answers::Key<'id>),
     Bootstrap(Bootstrap<'id>),
     Returned(questions::Key<'id>, Option<usize>),
+    /// A late Return for a pipeline-only high ID was discarded; later calls
+    /// use the ordinary protocol on this connection.
+    IgnoredReturn,
     Resolved,
     DeferredResolution,
     Finished(Option<A>),
@@ -398,6 +404,7 @@ enum IncomingKind {
     ThirdPartyAnswer,
     Join,
     Return(u32, bool),
+    PipelineReturn,
     Resolve,
     Finish(AnswerId, bool),
     Release,
@@ -568,6 +575,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             defer_calls: false,
             owned_output: false,
             writer_policy: WriterPolicy::Checked,
+            pipeline_only_enabled: true,
             outgoing_ready: work_queue::Queue::EMPTY,
             outgoing_source: 0,
             canceled_ready: work_queue::Queue::EMPTY,
@@ -1517,6 +1525,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                             fields.r#return()?.into_internal_struct_reader(),
                         );
                         let id = result.get_answer_id();
+                        if self
+                            .ledgers
+                            .questions
+                            .pipeline_id_was_issued(QuestionId::from_wire(id))
+                        {
+                            return Ok(Kind::PipelineReturn);
+                        }
                         let awaiting = ReturnRef::from(result.into_internal_struct_reader()).tag()
                             == ReturnUnionTag::AwaitFromThirdParty;
                         if !awaiting && !propagation_blocked {
@@ -1672,6 +1687,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
         }
         match kind {
+            Kind::PipelineReturn => {
+                self.pipeline_only_enabled = false;
+                frame.release(messages);
+                Ok(Received::IgnoredReturn)
+            }
             Kind::Return(id, awaiting) => {
                 if awaiting && self.network.is_some() {
                     return Err(Rejected {
@@ -2002,7 +2022,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     }),
                 }
             }
-            Kind::Return(..) => unreachable!("reply dispatched before controls"),
+            Kind::Return(..) | Kind::PipelineReturn => {
+                unreachable!("reply dispatched before controls")
+            }
             Kind::Resolve => {
                 if self.resolution.is_some() {
                     return Err(Rejected {
@@ -2193,14 +2215,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         let slot = &mut self.exchanges[index];
         slot.canceled = false;
-        let Some(Exchange::Returned(response)) = slot.exchange.take() else {
-            unreachable!()
-        };
-        let handoff = slot.handoff.take();
-        if let Some(Ok(result)) = handoff {
-            result.release(messages, &mut self.runtime);
+        match slot.exchange.take().expect("canceled exchange") {
+            Exchange::Returned(response) => {
+                let handoff = slot.handoff.take();
+                if let Some(Ok(result)) = handoff {
+                    result.release(messages, &mut self.runtime);
+                }
+                self.release_response(response, messages);
+            }
+            Exchange::Pending(question) => {
+                let key = question.key();
+                debug_assert!(key.id().is_pipeline_only());
+                question.abandon(messages, &mut self.ledgers.questions);
+                self.clear_exchange_work(key);
+                self.ledgers.questions.release_owner(key);
+            }
         }
-        self.release_response(response, messages);
         true
     }
     pub fn drain_next_export(&mut self) -> bool {

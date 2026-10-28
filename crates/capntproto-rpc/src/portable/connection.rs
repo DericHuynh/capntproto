@@ -143,6 +143,7 @@ async fn run<V: 'static>(
                             exports: bound,
                             answers: bound,
                             questions: bound,
+                            pipeline_questions: bound,
                             clients: bound,
                         },
                         storage::Growth {

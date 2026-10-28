@@ -1,5 +1,10 @@
 # 0.1.0 developer preview (unpublished)
 
+- Port pipeline-only high-ID/no-Return calls to portable, including fixed
+  no-alloc storage, stable pipeline routes and capability cleanup. Never reuse
+  published high IDs: fall back to ordinary questions before wrapping. Add
+  boundary, publication retry, late-Return and cross-driver lifetime regressions.
+
 - Give native-route trace replays an outer watchdog that accommodates their
   bounded QUIC authentication operations, and report the exact trace, action
   and model state on timeout. Preserve every route and identity assertion.

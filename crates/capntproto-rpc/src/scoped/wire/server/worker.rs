@@ -792,7 +792,10 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 } else {
                     Stage::Execute(execution)
                 };
-                if *remaining_budget >= 2 && matches!(entry.stage, Stage::Collect) {
+                if *remaining_budget >= 2
+                    && matches!(entry.stage, Stage::Collect)
+                    && !entry.request().method().only_promise_pipeline
+                {
                     if let Some(payload) = entry.results.plain_payload() {
                         if publish_plain(driver, messages, entry.request(), &payload)? {
                             // A synchronous completion needs no suspended
@@ -833,7 +836,10 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 {
                     return Poll::Pending;
                 }
-                if *remaining_budget != 0 && !canceled_transfer {
+                if *remaining_budget != 0
+                    && !canceled_transfer
+                    && !entry.request().method().only_promise_pipeline
+                {
                     if let Some(payload) = entry.results.plain_payload() {
                         if publish_plain(driver, messages, entry.request(), &payload)? {
                             // Collection and publication remain separately
@@ -890,6 +896,21 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     .redirect()
                     .is_some_and(|redirect| redirect.sent.get())
                 {
+                    return Poll::Ready(Ok(Progress::Replied));
+                }
+                if entry.request().method().only_promise_pipeline
+                    && !entry.results.transfer_ready()
+                    && !driver
+                        .prepare_answer_return(key)
+                        .map_err(wire_error)?
+                        .is_redirected()
+                {
+                    drop(
+                        driver
+                            .send_pipeline_only_answer(entry.request(), messages)
+                            .map_err(wire_error)?,
+                    );
+                    entry.results.returned();
                     return Poll::Ready(Ok(Progress::Replied));
                 }
                 prepare(&entry.results);

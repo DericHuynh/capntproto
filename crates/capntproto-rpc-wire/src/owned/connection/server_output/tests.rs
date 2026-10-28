@@ -1024,6 +1024,95 @@ fn introduction_publication_validates_grants_and_retries_without_allocation() {
     assert_eq!(measured.count_total, 0);
 }
 
+#[test]
+fn pipeline_only_sender_exposes_a_settled_route_and_defers_finish_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let mut imported = [imports::ReceiveSlot::new(ImportId::from_wire(41), ())];
+            driver
+                .ledgers
+                .imports
+                .prepare_receive(&mut imported)
+                .unwrap()
+                .commit();
+            let receipt = imported[0].take_local().unwrap();
+            let target = driver
+                .imports
+                .bind(&mut driver.runtime, &mut driver.ledgers.imports, &receipt)
+                .unwrap();
+            driver.ledgers.imports.release(receipt);
+            driver
+                .enqueue_dynamic(
+                    &target,
+                    calls::DynamicCall {
+                        only_promise_pipeline: true,
+                        ..Default::default()
+                    },
+                    &[],
+                    messages,
+                    256,
+                    Default::default(),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            let mut slots = [None];
+            let mut queue = messages::Queue::new(&mut slots).unwrap();
+            let key = driver
+                .send_invocation(messages, &mut queue, 256, Default::default(), &mut [0; 8])
+                .unwrap()
+                .unwrap()
+                .question;
+            assert!(key.id().is_pipeline_only());
+            drain(&mut queue, messages, |root| {
+                let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                    panic!("Call")
+                };
+                assert!(call.unwrap().get_only_promise_pipeline());
+            });
+            let projected = driver.pipeline(key, pipeline::Path::new(&[0])).unwrap();
+            assert!(
+                driver.runtime.is_settled(&projected).unwrap(),
+                "a no-Return pipeline must never wait for Return resolution"
+            );
+            let clients::Destination::Endpoint {
+                owner: binding::Route::Question(route),
+                ..
+            } = driver.runtime.inspect(&projected).unwrap()
+            else {
+                panic!("question route")
+            };
+            let (id, path) = route.target(&driver.ledgers.questions).unwrap();
+            assert_eq!(id, key.id());
+            assert_eq!(path.fields(), &[0]);
+            driver.cancel(key).unwrap();
+            assert!(driver.drain_canceled_response(messages));
+            assert!(
+                !driver
+                    .send_pending_finish(messages, &mut queue, 128, Default::default(),)
+                    .unwrap(),
+                "a live pipeline still owns the high question"
+            );
+            driver.runtime.release(projected);
+            assert!(driver.drain_endpoint().is_some());
+            assert!(driver
+                .send_pending_finish(messages, &mut queue, 128, Default::default(),)
+                .unwrap());
+            drain(&mut queue, messages, |root| {
+                let rpc_capnp::message::Finish(finish) = root.which().unwrap() else {
+                    panic!("Finish")
+                };
+                let finish = finish.unwrap();
+                assert_eq!(finish.get_question_id(), key.id().to_wire());
+                assert!(finish.get_release_result_caps());
+            });
+            assert!(driver.ledgers.questions.is_empty());
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        });
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
 fn with_driver(
     f: impl for<'p, 'id, 's, 'm, 'b> FnOnce(Peer<'p, 'id, 's>, &mut messages::Messages<'p, 'm, 'b>),
 ) {
@@ -1043,6 +1132,14 @@ fn request<'p, 'id>(
     driver: &mut Peer<'p, 'id, '_>,
     messages: &mut messages::Messages<'p, '_, '_>,
     redirected: bool,
+) -> (Request<'p, 'id, (), 4, 4>, clients::Client<'id>) {
+    request_with_hint(driver, messages, redirected, false)
+}
+fn request_with_hint<'p, 'id>(
+    driver: &mut Peer<'p, 'id, '_>,
+    messages: &mut messages::Messages<'p, '_, '_>,
+    redirected: bool,
+    only_pipeline: bool,
 ) -> (Request<'p, 'id, (), 4, 4>, clients::Client<'id>) {
     let target = driver
         .runtime
@@ -1064,6 +1161,7 @@ fn request<'p, 'id>(
             calls::DynamicCall {
                 interface: 7,
                 method: 9,
+                only_promise_pipeline: only_pipeline,
                 ..Default::default()
             },
             |_| Ok(()),
@@ -1098,6 +1196,135 @@ fn request<'p, 'id>(
         .dispatch(call.answer(), true)
         .unwrap());
     (call, target)
+}
+
+#[test]
+fn pipeline_only_completion_retains_capabilities_until_finish_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        for early_finish in [false, true] {
+            with_driver(|mut driver, messages| {
+                let (call, target) = request_with_hint(&mut driver, messages, false, true);
+                let key = call.answer();
+                let lease = driver.ledgers.answers.pipeline(key.id()).unwrap();
+                if early_finish {
+                    assert!(driver
+                        .ledgers
+                        .answers
+                        .finish(key.id(), true)
+                        .retired
+                        .is_none());
+                }
+                let result = driver
+                    .local_result_dynamic(
+                        7,
+                        9,
+                        [Some(&target)].into_iter(),
+                        messages,
+                        512,
+                        Default::default(),
+                        |field| field.set_capability_index(0),
+                    )
+                    .unwrap();
+                driver
+                    .complete_answer(&call, Ok(result), messages)
+                    .unwrap_or_else(|_| panic!("completion"));
+                assert!(driver
+                    .send_pipeline_only_answer(&call, messages)
+                    .unwrap()
+                    .is_none());
+                assert!(
+                    driver.send_pipeline_only_answer(&call, messages).is_err(),
+                    "publication is once-only"
+                );
+                if !early_finish {
+                    let finish = Frame::build(messages, 128, Default::default(), |builder| {
+                        use crate::rpc_capnp::api::Finish;
+                        let root = builder.try_init_root::<Message>()?;
+                        let mut finish = root.into_field(Message::FINISH).init()?;
+                        finish.scalar(Finish::QUESTION_ID).set(key.id().to_wire());
+                        finish.scalar(Finish::RELEASE_RESULT_CAPS).set(true);
+                        Ok(())
+                    })
+                    .unwrap();
+                    assert!(matches!(
+                        driver
+                            .receive(finish, messages, &mut [0; 8], |_| (), || 0)
+                            .unwrap_or_else(|r| panic!("{:?}", r.error)),
+                        Received::Finished(None)
+                    ));
+                }
+                let projected = driver
+                    .ledgers
+                    .answers
+                    .get(key)
+                    .unwrap()
+                    .owner
+                    .target(pipeline::Path::new(&[]), messages, &mut driver.runtime)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(projected.key(), target.key());
+                driver.runtime.release(projected);
+                driver.release_call(call, messages);
+                let retired = driver
+                    .release_answer_pipeline(lease)
+                    .expect("last pipeline retires answer");
+                assert_eq!(driver.release_answer(retired, messages), 73);
+                assert!(driver.ledgers.answers.is_empty());
+                driver.runtime.release(target);
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::<()>::new(&mut []).unwrap(),
+                );
+            });
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn ordinary_and_redirected_calls_cannot_skip_return_publication() {
+    for (redirected, only_pipeline) in [(false, false), (true, true)] {
+        with_driver(|mut driver, messages| {
+            let (call, target) =
+                request_with_hint(&mut driver, messages, redirected, only_pipeline);
+            let result = driver
+                .local_result_dynamic(
+                    7,
+                    9,
+                    [].into_iter(),
+                    messages,
+                    256,
+                    Default::default(),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            driver
+                .complete_answer(&call, Ok(result), messages)
+                .unwrap_or_else(|_| panic!("completion"));
+            assert!(driver.send_pipeline_only_answer(&call, messages).is_err());
+            let mut slots = [None];
+            let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+            driver
+                .send_answer(
+                    call.answer(),
+                    messages,
+                    &mut queue,
+                    256,
+                    Default::default(),
+                    &mut [0; 8],
+                    |_, _| Ok(()),
+                )
+                .unwrap();
+            assert!(
+                !queue.is_empty(),
+                "ordinary Return remains owed after rejection"
+            );
+            driver.release_call(call, messages);
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        });
+    }
 }
 fn drain<'p, R>(
     queue: &mut messages::Queue<'p, '_, R>,

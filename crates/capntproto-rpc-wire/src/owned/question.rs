@@ -11,6 +11,9 @@ pub struct Question<'pool, 'q> {
     key: questions::Key<'q>,
 }
 enum Original<'pool> {
+    // No parameter grants and no response consumer. Ordered output owns the
+    // only request frame; Finish releases any unexpected result grants.
+    PipelineOnly,
     Frame(Frame<'pool>),
     Metadata(inbound::full::OriginalMetadata),
     // A checked template has no parameter grants. Retain the method and handoff
@@ -61,6 +64,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         allows_handoff: bool,
         owned_output: bool,
     ) -> Result<Self, super::Error> {
+        let pipeline_only = reservation.id().is_pipeline_only();
         let local = if owned_output {
             let local = reservation.accept();
             queue.accept_owned(messages, frame.lease);
@@ -76,9 +80,13 @@ impl<'pool, 'q> Question<'pool, 'q> {
         Ok(Self {
             key: local.key(),
             local: Some(local),
-            original: Original::DataOnly {
-                method,
-                allows_handoff,
+            original: if pipeline_only {
+                Original::PipelineOnly
+            } else {
+                Original::DataOnly {
+                    method,
+                    allows_handoff,
+                }
             },
         })
     }
@@ -90,11 +98,15 @@ impl<'pool, 'q> Question<'pool, 'q> {
         frame: Frame<'pool>,
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
     ) -> Result<Self, crate::admission::Error> {
-        let original = match messages.retain(&frame.lease) {
-            Ok(lease) => Frame::new(lease, frame.options),
-            Err(error) => {
-                frame.release(messages);
-                return Err(crate::admission::Error::Storage(error));
+        let original = if reservation.id().is_pipeline_only() {
+            Original::PipelineOnly
+        } else {
+            match messages.retain(&frame.lease) {
+                Ok(lease) => Original::Frame(Frame::new(lease, frame.options)),
+                Err(error) => {
+                    frame.release(messages);
+                    return Err(crate::admission::Error::Storage(error));
+                }
             }
         };
         let accepted =
@@ -108,7 +120,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
             }
         };
         Ok(Self {
-            original: Original::Frame(original),
+            original,
             key: local.key(),
             local: Some(local),
         })
@@ -135,11 +147,15 @@ impl<'pool, 'q> Question<'pool, 'q> {
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
         check_payload: bool,
     ) -> Result<Self, crate::admission::Error> {
-        let original = match messages.retain(&frame.lease) {
-            Ok(lease) => Frame::new(lease, frame.options),
-            Err(error) => {
-                frame.release(messages);
-                return Err(crate::admission::Error::Storage(error));
+        let original = if reservation.id().is_pipeline_only() {
+            Original::PipelineOnly
+        } else {
+            match messages.retain(&frame.lease) {
+                Ok(lease) => Original::Frame(Frame::new(lease, frame.options)),
+                Err(error) => {
+                    frame.release(messages);
+                    return Err(crate::admission::Error::Storage(error));
+                }
             }
         };
         let accepted = crate::admission::granting_question_using(
@@ -160,7 +176,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
             }
         };
         Ok(Self {
-            original: Original::Frame(original),
+            original,
             key: local.key(),
             local: Some(local),
         })
@@ -491,6 +507,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
             })
         };
         let kind = match &self.original {
+            Original::PipelineOnly => return Err(Error::WrongMessage),
             Original::DataOnly {
                 method,
                 allows_handoff,

@@ -38,6 +38,7 @@ fn rejected_call_preserves_attachments_and_accepted_aliases_deliver_once_without
                     exports: &mut ee,
                     answers: &mut aa,
                     questions: &mut [],
+                    pipeline_questions: &mut [],
                 },
                 |connection| {
                     let connection::Connection {
@@ -267,6 +268,7 @@ fn returned_resources_commit_with_live_results_and_remain_with_canceled_input() 
                         exports: &mut [],
                         answers: &mut [],
                         questions: &mut [questions::Slot::EMPTY],
+                        pipeline_questions: &mut [],
                     },
                     |connection: &mut connection::Connection<'_, '_, Option<u32>, (), ()>| {
                         let connection::Connection {

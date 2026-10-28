@@ -4,9 +4,9 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    ids::QuestionId,
+    ids::{QuestionId, WireId},
     local_table::{self, BorrowedSlots, LocalTable},
-    peer_table::{self, BorrowedSparse, NoSparse},
+    peer_table::{self, BorrowedSparse},
     question::{self, Question},
 };
 use core::marker::PhantomData;
@@ -98,11 +98,12 @@ impl Record {
 }
 pub type Slot = local_table::Slot<Record>;
 pub type AdoptedSlot = peer_table::Slot<QuestionId, Record>;
+pub type PipelineSlot = peer_table::Slot<QuestionId, Record>;
 type Table<'s> = LocalTable<
     QuestionId,
     Record,
     QuestionSlots<'s>,
-    NoSparse,
+    BorrowedSparse<'s, QuestionId, Record>,
     BorrowedSparse<'s, QuestionId, Record>,
 >;
 
@@ -174,6 +175,9 @@ pub struct Questions<'id, 'storage> {
     #[cfg(feature = "alloc")]
     observation: crate::observation::Counter,
     table: Table<'storage>,
+    // The exhausted sentinel is 2^32. Published high IDs are never reused on
+    // this connection, even after Finish; a delayed Return cannot alias a call.
+    next_pipeline_id: u64,
     generation: u64,
     finish_head: Option<QuestionId>,
     finish_tail: Option<QuestionId>,
@@ -194,18 +198,22 @@ pub async fn with_questions_async<'storage, R>(
     Ok(f(&mut new_scope(storage)?).await)
 }
 pub(crate) fn new_scope<'id>(storage: &mut [Slot]) -> Result<Questions<'id, '_>, Error> {
-    new_scope_with_adoptions(storage, &mut [])
+    new_scope_with_adoptions(storage, &mut [], &mut [])
 }
 pub(crate) fn new_scope_with_adoptions<'id, 's>(
     storage: &'s mut [Slot],
+    pipeline: &'s mut [PipelineSlot],
     adopted: &'s mut [AdoptedSlot],
 ) -> Result<Questions<'id, 's>, Error> {
-    if storage.iter().any(|slot| !slot.is_empty()) || adopted.iter().any(|slot| !slot.is_empty()) {
+    if storage.iter().any(|slot| !slot.is_empty())
+        || pipeline.iter().any(|slot| !slot.is_empty())
+        || adopted.iter().any(|slot| !slot.is_empty())
+    {
         return Err(Error::NonemptyStorage);
     }
     let table = LocalTable::try_new(
         QuestionSlots::Fixed(BorrowedSlots::new(storage)),
-        NoSparse,
+        BorrowedSparse::new(pipeline),
         BorrowedSparse::new(adopted),
     )
     .map_err(|_| Error::NonemptyStorage)?;
@@ -216,6 +224,7 @@ pub(crate) fn new_scope_with_adoptions<'id, 's>(
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         table,
+        next_pipeline_id: 1 << 31,
         generation: 0,
         finish_head: None,
         finish_tail: None,
@@ -227,23 +236,27 @@ pub(crate) fn new_scope_with_adoptions<'id, 's>(
 pub(crate) fn new_growing_scope<'id, 's>(
     initial: usize,
     maximum: usize,
+    pipeline: crate::connection::Growth,
     adopted: &'s mut [AdoptedSlot],
 ) -> Result<Questions<'id, 's>, Error> {
     if adopted.iter().any(|slot| !slot.is_empty()) {
         return Err(Error::NonemptyStorage);
     }
-    new_growing_with_adoptions(initial, maximum, BorrowedSparse::new(adopted))
+    let pipeline =
+        BorrowedSparse::growing(pipeline.initial, pipeline.maximum).ok_or(Error::Full)?;
+    new_growing_with_adoptions(initial, maximum, pipeline, BorrowedSparse::new(adopted))
 }
 
 #[cfg(feature = "alloc")]
 pub(crate) fn new_growing_with_adoptions<'id, 's>(
     initial: usize,
     maximum: usize,
+    pipeline: BorrowedSparse<'s, QuestionId, Record>,
     adopted: BorrowedSparse<'s, QuestionId, Record>,
 ) -> Result<Questions<'id, 's>, Error> {
     let dense =
         local_table::GrowingSlots::try_with_capacity(initial, maximum).ok_or(Error::Full)?;
-    let table = LocalTable::try_new(QuestionSlots::Growing(dense), NoSparse, adopted)
+    let table = LocalTable::try_new(QuestionSlots::Growing(dense), pipeline, adopted)
         .map_err(|_| Error::NonemptyStorage)?;
     Ok(Questions {
         outgoing_registry: None,
@@ -252,6 +265,7 @@ pub(crate) fn new_growing_with_adoptions<'id, 's>(
         #[cfg(feature = "alloc")]
         observation: Default::default(),
         table,
+        next_pipeline_id: 1 << 31,
         generation: 0,
         finish_head: None,
         finish_tail: None,
@@ -268,7 +282,15 @@ pub fn with_growing_questions<R>(
     adopted: &mut [AdoptedSlot],
     f: impl for<'id> FnOnce(&mut Questions<'id, '_>) -> R,
 ) -> Result<R, Error> {
-    Ok(f(&mut new_growing_scope(initial, maximum, adopted)?))
+    Ok(f(&mut new_growing_scope(
+        initial,
+        maximum,
+        crate::connection::Growth {
+            initial: 0,
+            maximum: 0,
+        },
+        adopted,
+    )?))
 }
 
 /// Independently bounded growth for ordinary and callee-selected questions.
@@ -284,6 +306,7 @@ pub fn with_growing_adoptions<R>(
     Ok(f(&mut new_growing_with_adoptions(
         ordinary.initial,
         ordinary.maximum,
+        BorrowedSparse::new(&mut []),
         adopted,
     )?))
 }
@@ -569,6 +592,15 @@ impl<'id, 'storage> Questions<'id, 'storage> {
         record.references -= 1;
         if record.references == 0 {
             record.finish = record.lifecycle.release().finish;
+            if let Some(finish) = record
+                .finish
+                .as_mut()
+                .filter(|_| record.id.is_pipeline_only())
+            {
+                // Unexpected Returns are ignored. Finish must therefore
+                // release their result grants, including older peers' results.
+                finish.release_result_caps = true;
+            }
             let finish = record.finish.is_some();
             let reclaim = record.reclaimable();
             if finish {
@@ -810,6 +842,10 @@ impl Drop for Reservation<'_, '_, '_> {
     fn drop(&mut self) {
         if !self.committed {
             self.questions.table.remove(self.key.id);
+            let id = u64::from(self.key.id.to_wire());
+            if self.key.id.is_pipeline_only() && self.questions.next_pipeline_id == id + 1 {
+                self.questions.next_pipeline_id = id;
+            }
         }
     }
 }
@@ -845,9 +881,11 @@ impl Finish<'_, '_, '_> {
     }
 }
 
+mod pipeline_only;
 #[cfg(kani)]
 mod proofs;
 mod provision;
+pub use pipeline_only::with_pipeline_questions;
 #[cfg(test)]
 mod tests;
 pub use provision::{Provision, ProvisionReservation};

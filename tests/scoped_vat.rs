@@ -183,6 +183,7 @@ async fn peer(
                             exports: bound,
                             answers: bound,
                             questions: bound,
+                            pipeline_questions: bound,
                             clients: bound,
                         },
                         storage::Growth {

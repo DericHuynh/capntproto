@@ -133,6 +133,7 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
                     imports: &mut is,
                     exports: &mut es,
                     questions: &mut qs,
+                    pipeline_questions: &mut [],
                     answers: &mut ans,
                     clients: &mut ns,
                 },
@@ -158,6 +159,7 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
                         imports: bound,
                         exports: bound,
                         questions: bound,
+                        pipeline_questions: bound,
                         answers: bound,
                         clients: connection::Growth {
                             initial: 0,

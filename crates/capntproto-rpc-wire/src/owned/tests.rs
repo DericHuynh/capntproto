@@ -175,6 +175,7 @@ fn empty_descriptor_call_rejects_capability_authority_on_access() {
                 exports: &mut ee,
                 answers: &mut aa,
                 questions: &mut [],
+                pipeline_questions: &mut [],
             },
             |connection: &mut capntproto_rpc_engine::connection::Connection<'_, '_, (), (), ()>| {
                 let mut batch = connection.exports.batch();
@@ -346,6 +347,7 @@ fn owned_request_retains_frame_receipts_and_target_while_other_io_progresses() {
                     exports: &mut ee,
                     answers: &mut aa,
                     questions: &mut [],
+                    pipeline_questions: &mut [],
                 },
                 |connection| {
                     let capntproto_rpc_engine::connection::Connection {
@@ -474,6 +476,7 @@ fn plain_promised_call_retains_parent_through_finish_without_allocating() {
                     exports: &mut [],
                     answers: &mut aa,
                     questions: &mut [],
+                    pipeline_questions: &mut [],
                 },
                 |connection: &mut capntproto_rpc_engine::connection::Connection<
                     '_,
@@ -548,6 +551,7 @@ fn plain_promised_call_rejection_preserves_parent_owner_and_frame() {
                         exports: &mut [],
                         answers: &mut aa[..limit],
                         questions: &mut [],
+                        pipeline_questions: &mut [],
                     },
                     |connection: &mut capntproto_rpc_engine::connection::Connection<
                         '_,
@@ -631,6 +635,7 @@ fn growing_plain_call_keeps_target_alive_without_allocating_receipt_storage() {
                         exports: &mut ee,
                         answers: &mut aa,
                         questions: &mut [],
+                        pipeline_questions: &mut [],
                     },
                     |connection: &mut capntproto_rpc_engine::connection::Connection<
                         '_,
@@ -740,6 +745,7 @@ fn rejected_owned_admission_preserves_frame_answer_owner_and_all_tables() {
                     exports: &mut ee,
                     answers: &mut aa,
                     questions: &mut [],
+                    pipeline_questions: &mut [],
                 },
                 |connection| {
                     let capntproto_rpc_engine::connection::Connection {

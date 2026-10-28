@@ -1074,6 +1074,10 @@ impl<'id> ClientHooks<'id> {
                 return Err(Error::failed(error.to_string()));
             }
         };
+        // A waiter may already exist on the unbound projection. Even a
+        // terminal target must pass through settlement after metadata refresh
+        // so that waiter receives its completion (including a broken error).
+        let pending = pending || endpoint.resolution.borrow().is_some();
         self.bind_retained(graph, client, pending, false, Some(endpoint))
             .map(|client| client.hook)
     }

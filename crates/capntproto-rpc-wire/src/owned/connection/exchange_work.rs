@@ -24,7 +24,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             && returned.is_some_and(|response| {
                 response.await_method().is_none() || slot.handoff.is_some() || slot.canceled
             });
-        let canceled = slot.canceled && returned.is_some() && !observers;
+        let canceled =
+            slot.canceled && (returned.is_some() || key.id().is_pipeline_only()) && !observers;
         let completed = slot.completion_owner.is_some()
             && slot.authorized
             && !observers
