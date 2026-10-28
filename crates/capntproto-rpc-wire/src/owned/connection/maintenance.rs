@@ -43,12 +43,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &messages::Messages<'pool, '_, '_>,
         queue: &messages::Queue<'pool, '_, impl Sized>,
     ) -> u32 {
-        let queued = self.queued_work();
-        let queued = if self.control_waiting == 0 {
-            queued
-        } else {
-            self.filter_control_waits(queued, messages, queue)
-        };
+        let queued = self.filter_control_waits(self.queued_work(), messages, queue);
         // Inspect compound producers only when they precede the first ready
         // queue in the fair rotation. Rotating bits avoids an indirect dispatch
         // for every empty class. An empty queue mask admits all four producers.
@@ -77,9 +72,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     ),
             ) << 8)
             | (u32::from(candidates & (1 << 15) != 0 && !self.invocation_work_is_idle()) << 15);
-        // These four producers own their retries. control_owner() excludes
-        // them, so park_control() cannot put them in control_waiting.
-        queued | compound
+        queued | self.filter_control_waits(compound, messages, queue)
     }
     fn select_work(
         &mut self,
