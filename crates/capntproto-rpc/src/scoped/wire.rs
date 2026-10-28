@@ -21,6 +21,7 @@ mod projections;
 pub(crate) mod ready;
 pub mod resources;
 pub mod server;
+mod slots;
 pub use calls::{Calls, Progress};
 
 /// Rejected admission preserves the original call and its completion owner.

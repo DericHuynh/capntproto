@@ -167,6 +167,14 @@ pool borrow, so destructors can reenter RPC. The first reusable context has a
 direct slot; additional contexts use bounded overflow storage. This hosted pool
 does not change the fixed-storage, no-std/no-alloc wire API.
 
+Outgoing calls and incoming workers preserve lowest-vacant-slot reuse. A bitmap
+covers the first machine word of slots, matching the engine's free-slot
+allocator; larger indices retain the existing scan. Admission advances this
+state only after installing its owner. The bitmap adds no per-slot field or
+allocation. Ready-operation guards also lend their existing waker during polls,
+using the same waker identity as retained asynchronous observers. Escaped wakers
+continue to carry the original slot generation after retirement and reuse.
+
 Ownership stays with its existing authority: the engine owns question/answer
 and capability ledgers, `Calls` and `Worker` own application execution, input
 retains ancillary resources until admission, and `io::Output` owns accepted

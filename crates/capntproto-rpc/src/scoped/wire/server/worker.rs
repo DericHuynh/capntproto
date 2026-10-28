@@ -67,7 +67,7 @@ pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     // node. The owning request stays in its slot; only scheduling is deferred.
     starting: Option<usize>,
     live: usize,
-    first_free: usize,
+    vacancies: super::super::slots::Vacancies,
     maximum: usize,
     ready: ready::Queue,
     redirects: capntproto_rpc_engine::work_queue::Queue,
@@ -84,7 +84,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             entries: Vec::new(),
             starting: None,
             live: 0,
-            first_free: 0,
+            vacancies: super::super::slots::Vacancies::default(),
             maximum,
             ready: ready::Queue::default(),
             redirects: capntproto_rpc_engine::work_queue::Queue::EMPTY,
@@ -173,7 +173,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if let Some(index) = self.starting.take() {
             self.schedule_entry(index);
         }
-        let index = self.first_free;
+        let index = self.vacancies.next();
         if index == self.entries.len() {
             if index == self.maximum {
                 return Ok(false);
@@ -272,10 +272,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
         self.live += 1;
         self.preparing += usize::from(execute);
-        self.first_free = self.entries[index + 1..]
-            .iter()
-            .position(Option::is_none)
-            .map_or(self.entries.len(), |offset| index + 1 + offset);
+        self.vacancies.commit(index, &self.entries);
         // Like legacy, a fresh ordinary Call may finish immediately while
         // unrelated operations are asleep. Already-runnable work keeps FIFO
         // priority; continuous admission cannot starve its registered owners.
@@ -524,7 +521,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             }
             // Legacy's first poll borrows the static noop waker. Only an
             // already scheduled operation needs an owned registration here.
-            let waker = starting.is_none().then(|| entry.waker.clone());
+            let waker = ready.as_ref().map(ready::Ready::waker);
             // A ready completion continues toward Return in this turn, as KJ
             // chains its answer continuation. Only suspension or the shared
             // budget yields the operation; intermediate stages need no enqueue.
@@ -543,7 +540,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     messages,
                     minimum,
                     options,
-                    &mut Context::from_waker(waker.as_ref().unwrap_or(Waker::noop())),
+                    &mut Context::from_waker(waker.as_deref().unwrap_or(Waker::noop())),
                     &mut import,
                     &mut refresh,
                     &mut publish,
@@ -584,7 +581,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 if matches!(outcome, Poll::Ready(Ok(Progress::Replied))) {
                     let entry = self.entries[index].take().expect("completed request");
                     self.live -= 1;
-                    self.first_free = self.first_free.min(index);
+                    self.vacancies.release(index);
                     self.preparing -= usize::from(matches!(entry.stage, Stage::Prepare));
                     self.results_cache.recycle(release(
                         entry,
@@ -630,7 +627,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     let entry = self.entries[index].take().expect("replied operation");
                     self.live -= 1;
                     self.preparing -= usize::from(matches!(entry.stage, Stage::Prepare));
-                    self.first_free = self.first_free.min(index);
+                    self.vacancies.release(index);
                     self.results_cache.recycle(release(
                         entry,
                         driver,

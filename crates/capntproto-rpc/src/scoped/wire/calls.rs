@@ -103,7 +103,7 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     invocations: connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
     live: usize,
-    first_free: usize,
+    vacancies: super::slots::Vacancies,
     published: usize,
     pending: Option<Box<Call>>,
     maximum: usize,
@@ -126,7 +126,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             invocations: connection::Invocations::new_growing(0, maximum).map_err(wire_error)?,
             entries: Vec::new(),
             live: 0,
-            first_free: 0,
+            vacancies: super::slots::Vacancies::default(),
             published: 0,
             pending: None,
             maximum,
@@ -267,14 +267,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.unpublished -= usize::from(entry.unpublished);
         self.published -= usize::from(entry.published);
         self.live -= 1;
-        self.first_free = self.first_free.min(index);
+        self.vacancies.release(index);
         drop(entry);
     }
     /// Advance allocation only after admission commits. Failed publication
     /// leaves the free position available; retirement restores the lowest
     /// hole without searching from zero for every admission.
     fn insert_entry(&mut self, index: usize, mut entry: Entry<'p, 'id, I, C, H>) {
-        debug_assert_eq!(index, self.first_free);
+        debug_assert_eq!(index, self.vacancies.next());
         entry.waker = self.ready.insert(index, false);
         entry.completion = match entry.wire.route {
             CallRoute::Tracked { task, .. } => Some(task),
@@ -308,10 +308,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             self.entries[index] = Some(entry);
         }
         self.live += 1;
-        self.first_free = self.entries[index + 1..]
-            .iter()
-            .position(Option::is_none)
-            .map_or(self.entries.len(), |offset| index + 1 + offset);
+        self.vacancies.commit(index, &self.entries);
     }
     pub(crate) fn has_unpublished(&self) -> bool {
         self.pending.is_some() || self.unpublished != 0
@@ -799,7 +796,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         {
             entry.polls += 1;
         }
-        let waker = entry.waker.clone();
+        let waker = ready.waker();
         let mut cx = Context::from_waker(&waker);
         let result = if entry.binding_turn || entry.closing {
             entry.binding_turn = false;
@@ -1100,7 +1097,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             // Preserve the new call until that slot is reclaimed.
             return Ok(None);
         }
-        let index = self.first_free;
+        let index = self.vacancies.next();
         if index == self.entries.len() {
             if index == self.maximum {
                 // Accepted calls are bounded independently of the inbox. Keep
