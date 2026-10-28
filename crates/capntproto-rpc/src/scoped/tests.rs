@@ -1305,7 +1305,15 @@ fn request_hints_and_pipeline_only_interest_reach_worker() {
             let route = graph.endpoint(7, Location::Local).unwrap();
             let mut hooks = ClientHooks::new(1, 2);
             let client = hooks.export_snapshot(graph, &route).unwrap();
-            let req = client.new_call::<any_pointer::Owned, any_pointer::Owned>(47, 1, None);
+            let req = client.new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                47,
+                1,
+                None,
+                CallHints {
+                    no_promise_pipelining: true,
+                    only_promise_pipeline: false,
+                },
+            );
             let pipeline = req.send_for_pipeline();
             let call = next(&mut hooks);
             assert!(call.hints().only_promise_pipeline);
@@ -1316,15 +1324,27 @@ fn request_hints_and_pipeline_only_interest_reach_worker() {
             drop(call);
             let hints = CallHints {
                 no_promise_pipelining: true,
-                only_promise_pipeline: false,
+                only_promise_pipeline: true,
             };
             let mut reply = client
                 .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(47, 2, None, hints)
                 .send();
             let call = next(&mut hooks);
             assert!(call.hints().no_promise_pipelining);
+            assert!(
+                !call.hints().only_promise_pipeline,
+                "only send_for_pipeline may discard the response"
+            );
             call.complete(Ok(()));
             ready(&mut reply.promise).unwrap();
+            let mut streaming = client
+                .new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(47, 3, None, hints)
+                .hook
+                .send_streaming();
+            let call = next(&mut hooks);
+            assert!(!call.hints().only_promise_pipeline);
+            call.complete(Ok(()));
+            ready(&mut streaming).unwrap();
             hooks.close(graph, Error::disconnected("done".into()));
             graph.release(route);
         },

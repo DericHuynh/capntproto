@@ -1362,13 +1362,10 @@ impl capnp::private::capability::RequestHook for Call {
         self.third_party = Some(Rc::new(body));
         Ok(())
     }
-    fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
-        if !self.hints.only_promise_pipeline && self.third_party.is_none() && {
-            let unintroduced = self.endpoint.introduced.borrow().is_none()
-                && self.endpoint.introduction.borrow().is_none();
-            unintroduced
-                || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
-        } {
+    fn send(mut self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
+        // Like legacy, only send_for_pipeline() may suppress response interest.
+        self.hints.only_promise_pipeline = false;
+        if self.can_send_directly() {
             return if self.hints.no_promise_pipelining {
                 response::request_prepared(self)
             } else {
@@ -1377,23 +1374,43 @@ impl capnp::private::capability::RequestHook for Call {
         }
         self.into_request().send()
     }
-    fn send_for_pipeline(self: Box<Self>) -> any_pointer::Pipeline {
+    fn send_for_pipeline(mut self: Box<Self>) -> any_pointer::Pipeline {
+        self.hints.only_promise_pipeline = true;
+        self.hints.no_promise_pipelining = false;
+        if self.can_send_directly() {
+            // The pipeline retains the direct completion's interest. Publishing
+            // it must not drop a queued adapter's only reply receiver and cancel
+            // the call before its wire publication.
+            return response::request_pipelined_prepared(self).pipeline;
+        }
         self.into_request().send_for_pipeline()
     }
-    fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
+    fn send_streaming(mut self: Box<Self>) -> Promise<(), Error> {
+        self.hints.only_promise_pipeline = false;
         self.into_request().send_streaming()
     }
     fn tail_send(
-        self: Box<Self>,
+        mut self: Box<Self>,
     ) -> Option<(
         u32,
         Promise<(), Error>,
         Box<dyn capnp::private::capability::PipelineHook>,
     )> {
+        self.hints.only_promise_pipeline = false;
         self.into_request().tail_send()
     }
 }
 impl Call {
+    #[inline(always)]
+    fn can_send_directly(&self) -> bool {
+        self.third_party.is_none() && {
+            let unintroduced = self.endpoint.introduced.borrow().is_none()
+                && self.endpoint.introduction.borrow().is_none();
+            unintroduced
+                || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
+        }
+    }
+
     #[inline(always)]
     fn enqueue_owned(
         mut self: Box<Self>,

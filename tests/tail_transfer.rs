@@ -33,6 +33,74 @@ fn finish(peer: &mut Endpoint, id: u32) {
         f.set_require_early_cancellation_workaround(false);
     });
 }
+
+fn send_tail_call(peer: &mut Endpoint, export: u32, only_pipeline: bool) {
+    peer.send(|m| {
+        let mut c = m.init_call();
+        c.set_question_id(1);
+        c.set_interface_id(harness::Client::TYPE_ID);
+        c.set_method_id(4);
+        c.set_only_promise_pipeline(only_pipeline);
+        c.reborrow().init_target().set_imported_cap(export);
+        let mut payload = c.init_params();
+        let mut caps = vec![];
+        {
+            let mut content = payload.reborrow().get_content();
+            content.imbue_mut(&mut caps);
+            let cap: harness::Client = capnp_rpc::new_client(Tail);
+            content
+                .init_as::<harness::tail_cap_params::Builder>()
+                .set_cap(cap);
+        }
+        payload.init_cap_table(1).get(0).set_sender_hosted(77);
+    });
+}
+
+async fn tail_peer(
+    portable: bool,
+    service: harness::Client,
+) -> (
+    Rc<RefCell<Hub>>,
+    Endpoint,
+    u32,
+    tokio::task::JoinHandle<capnp::Result<()>>,
+) {
+    let hub = Rc::new(RefCell::new(Hub::default()));
+    let system = support::driver::System::new(
+        portable,
+        Box::new(Hub::network(&hub, 1)),
+        Some(service.client),
+    );
+    let task = tokio::task::spawn_local(system.run());
+    let mut peer = hub.borrow_mut().connect(2, 1);
+    peer.send(|m| m.init_bootstrap().set_question_id(0));
+    let msg = peer.recv().await;
+    let message::Return(ret) = msg
+        .get_body()
+        .unwrap()
+        .get_as::<message::Reader>()
+        .unwrap()
+        .which()
+        .unwrap()
+    else {
+        panic!("expected bootstrap return")
+    };
+    let return_::Results(payload) = ret.unwrap().which().unwrap() else {
+        panic!("expected bootstrap capability")
+    };
+    let cap_descriptor::SenderHosted(export) = payload
+        .unwrap()
+        .get_cap_table()
+        .unwrap()
+        .get(0)
+        .which()
+        .unwrap()
+    else {
+        panic!("expected bootstrap export")
+    };
+    (hub, peer, export, task)
+}
+
 struct Fixture {
     peer: Endpoint,
     tail: u32,
@@ -89,25 +157,7 @@ impl Fixture {
         else {
             panic!()
         };
-        peer.send(|m| {
-            let mut c = m.init_call();
-            c.set_question_id(1);
-            c.set_interface_id(harness::Client::TYPE_ID);
-            c.set_method_id(4);
-            c.set_only_promise_pipeline(only_pipeline);
-            c.reborrow().init_target().set_imported_cap(export);
-            let mut payload = c.init_params();
-            let mut caps = vec![];
-            {
-                let mut content = payload.reborrow().get_content();
-                content.imbue_mut(&mut caps);
-                let cap: harness::Client = capnp_rpc::new_client(Tail);
-                content
-                    .init_as::<harness::tail_cap_params::Builder>()
-                    .set_cap(cap);
-            }
-            payload.init_cap_table(1).get(0).set_sender_hosted(77);
-        });
+        send_tail_call(&mut peer, export, only_pipeline);
         if only_pipeline {
             let question = loop {
                 let msg = peer.recv().await;
@@ -698,6 +748,214 @@ async fn pipeline_only_hint_skips_tail_transfer() {
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
                 Fixture::with_hint(true).await.cleanup().await;
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pipeline_only_tail_forwarding_keeps_parent_pending() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                for portable in [false, true] {
+                    for downstream_return in [false, true] {
+                        let (hub, mut peer, export, task) =
+                            tail_peer(portable, capnp_rpc::new_client(Tail)).await;
+                        send_tail_call(&mut peer, export, true);
+                        let question = loop {
+                            let msg = peer.recv().await;
+                            match msg
+                                .get_body()
+                                .unwrap()
+                                .get_as::<message::Reader>()
+                                .unwrap()
+                                .which()
+                                .unwrap()
+                            {
+                                message::Call(call) => {
+                                    let call = call.unwrap();
+                                    // The bounded wire backend currently uses an
+                                    // ordinary question for pipeline-only interest.
+                                    // Legacy uses its high-ID no-Return namespace.
+                                    assert_eq!(call.get_only_promise_pipeline(), !portable);
+                                    assert!(matches!(
+                                        call.get_send_results_to().which().unwrap(),
+                                        call::send_results_to::Caller(())
+                                    ));
+                                    assert_eq!(call.get_question_id() & (1 << 31) != 0, !portable);
+                                    break call.get_question_id();
+                                }
+                                message::Release(_) => (),
+                                _ => {
+                                    panic!("expected pipeline-only child call; portable={portable}")
+                                }
+                            }
+                        };
+                        // A downstream Return must not complete the parent. With
+                        // the bounded backend's ordinary-question fallback, an
+                        // empty result can retire the child before parent Finish.
+                        if downstream_return {
+                            peer.send(|m| {
+                                let mut ret = m.init_return();
+                                ret.set_answer_id(question);
+                                ret.set_release_param_caps(false);
+                                if portable {
+                                    ret.init_results();
+                                } else {
+                                    ret.set_canceled(());
+                                }
+                            });
+                        }
+                        settle().await;
+                        let mut child_finished = false;
+                        while let Some(msg) = peer.receive_incoming_message().now_or_never() {
+                            let msg = msg.unwrap().unwrap();
+                            match msg
+                                .get_body()
+                                .unwrap()
+                                .get_as::<message::Reader>()
+                                .unwrap()
+                                .which()
+                                .unwrap()
+                            {
+                                message::Release(_) => (),
+                                message::Finish(finish) if portable => {
+                                    assert!(downstream_return);
+                                    assert_eq!(finish.unwrap().get_question_id(), question);
+                                    assert!(!child_finished);
+                                    child_finished = true;
+                                }
+                                _ => panic!(
+                                "pipeline-only call completed before Finish; portable={portable}"
+                            ),
+                            }
+                        }
+                        finish(&mut peer, 1);
+                        while !child_finished {
+                            let msg = peer.recv().await;
+                            match msg
+                                .get_body()
+                                .unwrap()
+                                .get_as::<message::Reader>()
+                                .unwrap()
+                                .which()
+                                .unwrap()
+                            {
+                                message::Finish(finish) => {
+                                    assert_eq!(finish.unwrap().get_question_id(), question);
+                                    child_finished = true;
+                                }
+                                message::Release(_) => (),
+                                message::Return(ret) if portable => {
+                                    let ret = ret.unwrap();
+                                    assert_eq!(ret.get_answer_id(), 1);
+                                    assert!(matches!(ret.which().unwrap(), return_::Canceled(())));
+                                }
+                                _ => panic!("pipeline-only tail sent Return; portable={portable}"),
+                            }
+                        }
+                        settle().await;
+                        while let Some(msg) = peer.receive_incoming_message().now_or_never() {
+                            let msg = msg.unwrap().unwrap();
+                            match msg
+                                .get_body()
+                                .unwrap()
+                                .get_as::<message::Reader>()
+                                .unwrap()
+                                .which()
+                                .unwrap()
+                            {
+                                message::Release(_) => (),
+                                message::Return(ret) if portable => {
+                                    let ret = ret.unwrap();
+                                    assert_eq!(ret.get_answer_id(), 1);
+                                    assert!(matches!(ret.which().unwrap(), return_::Canceled(())));
+                                }
+                                _ => panic!("unexpected tail cleanup; portable={portable}"),
+                            }
+                        }
+                        assert_eq!(hub.borrow().provision_count(), 0);
+                        task.abort();
+                        let _ = task.await;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+struct InitializedTail {
+    populated: bool,
+}
+impl harness::Server for InitializedTail {
+    fn tail_cap(
+        self: Rc<Self>,
+        context: harness::TailCapContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, mut results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let cap = params.get()?.get_cap()?;
+            let mut initialized = results.get();
+            if self.populated {
+                initialized.set_cap(cap.clone());
+            }
+            results.hook.tail_call(cap.pending_request().hook).await
+        })
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn initialized_tail_results_are_rejected_by_both_drivers() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                for portable in [false, true] {
+                    for populated in [false, true] {
+                        let (_hub, mut peer, export, task) = tail_peer(
+                            portable,
+                            capnp_rpc::new_client(InitializedTail { populated }),
+                        )
+                        .await;
+                        send_tail_call(&mut peer, export, false);
+                        loop {
+                            let msg = peer.recv().await;
+                            match msg
+                                .get_body()
+                                .unwrap()
+                                .get_as::<message::Reader>()
+                                .unwrap()
+                                .which()
+                                .unwrap()
+                            {
+                                message::Return(ret) => {
+                                    let ret = ret.unwrap();
+                                    assert_eq!(ret.get_answer_id(), 1);
+                                    let return_::Exception(error) = ret.which().unwrap() else {
+                                        panic!("expected initialization error; portable={portable}")
+                                    };
+                                    assert_eq!(
+                                        error.unwrap().get_reason().unwrap().to_str().unwrap(),
+                                        "tail_call after initializing results"
+                                    );
+                                    break;
+                                }
+                                message::Release(_) => (),
+                                _ => panic!(
+                                    "initialized results sent a tail call; portable={portable}"
+                                ),
+                            }
+                        }
+                        finish(&mut peer, 1);
+                        settle().await;
+                        task.abort();
+                        let _ = task.await;
+                    }
+                }
             })
             .await
             .unwrap();

@@ -863,6 +863,31 @@ impl ResultsHook for Hook {
         mut self: Box<Self>,
         mut request: Box<dyn RequestHook>,
     ) -> (Promise<(), Error>, Box<dyn PipelineHook>) {
+        if self.message.is_some() {
+            let error = Error::failed("tail_call after initializing results".into());
+            return (
+                Promise::err(error.clone()),
+                Box::new(crate::broken::Pipeline::new(error)),
+            );
+        }
+        if self
+            .results
+            .0
+            .method
+            .get()
+            .is_some_and(|method| method.only_promise_pipeline)
+        {
+            let pipeline = request.send_for_pipeline();
+            if self.results.0.pipeline.borrow().is_none() {
+                self.set_pipeline_from(pipeline.hook.add_ref())
+                    .expect("unpublished tail pipeline");
+            }
+            let completion = Promise::from_future(async move {
+                let _context = self;
+                futures::future::pending::<capnp::Result<()>>().await
+            });
+            return (completion, pipeline.hook);
+        }
         let origin = self.results.0.tail_origin.borrow().clone();
         if self.results.0.pipeline.borrow().is_none() {
             if let Some(origin) = origin {

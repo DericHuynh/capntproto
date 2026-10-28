@@ -1203,6 +1203,139 @@ fn tail_forwarding_preserves_child_results() {
     );
 }
 
+struct PipelineTailRequest {
+    sent: Rc<Cell<bool>>,
+    dropped: Rc<Cell<bool>>,
+}
+impl Drop for PipelineTailRequest {
+    fn drop(&mut self) {
+        self.dropped.set(true);
+    }
+}
+impl RequestHook for PipelineTailRequest {
+    fn get(&mut self) -> any_pointer::Builder<'_> {
+        panic!("tail forwarding must not rebuild the request")
+    }
+    fn get_brand(&self) -> usize {
+        panic!("pipeline-only or rejected tail call must not inspect the target")
+    }
+    fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
+        panic!("pipeline-only or rejected tail call must not send an ordinary request")
+    }
+    fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
+        panic!("tail call must not send a streaming request")
+    }
+    fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
+        panic!("pipeline-only or rejected tail call must not transfer results")
+    }
+    fn send_for_pipeline(self: Box<Self>) -> any_pointer::Pipeline {
+        self.sent.set(true);
+        any_pointer::Pipeline::new(Box::new(crate::broken::Pipeline::new(Error::failed(
+            "child pipeline".into(),
+        ))))
+    }
+}
+
+#[test]
+fn tail_call_rejects_initialized_results_before_sending() {
+    for only_promise_pipeline in [false, true] {
+        for populated in [false, true] {
+            let results = Results::new();
+            results.0.method.set(Some(DynamicCall {
+                only_promise_pipeline,
+                ..Default::default()
+            }));
+            let mut hook = Box::new(Hook {
+                results: results.clone(),
+                message: None,
+                caps: vec![],
+                executor: None,
+            });
+            let mut root = hook.get().unwrap();
+            if populated {
+                root.set_as::<capnp::text::Owned>("already initialized")
+                    .unwrap();
+            }
+            let sent = Rc::new(Cell::new(false));
+            let dropped = Rc::new(Cell::new(false));
+            let (completion, pipeline) = hook.direct_tail_call(Box::new(PipelineTailRequest {
+                sent: sent.clone(),
+                dropped: dropped.clone(),
+            }));
+            let error = futures::executor::block_on(completion).unwrap_err();
+            assert_eq!(error.extra, "tail_call after initializing results");
+            assert_eq!(
+                pipeline.get_pipelined_cap(&[]).get_failure().unwrap().extra,
+                error.extra
+            );
+            assert!(!sent.get());
+            assert!(dropped.get());
+            assert!(results.0.payload.get().is_some());
+        }
+    }
+}
+
+#[test]
+fn pipeline_only_tail_call_preserves_published_pipeline_and_context_until_cancel() {
+    for early_pipeline in [false, true] {
+        for poll_before_cancel in [false, true] {
+            let results = Results::new();
+            results.0.method.set(Some(DynamicCall {
+                only_promise_pipeline: true,
+                ..Default::default()
+            }));
+            let mut hook = Box::new(Hook {
+                results: results.clone(),
+                message: None,
+                caps: vec![],
+                executor: None,
+            });
+            if early_pipeline {
+                hook.set_pipeline_from(Box::new(crate::broken::Pipeline::new(Error::failed(
+                    "early pipeline".into(),
+                ))))
+                .unwrap();
+            }
+            let sent = Rc::new(Cell::new(false));
+            let dropped = Rc::new(Cell::new(false));
+            let (mut completion, pipeline) = hook.direct_tail_call(Box::new(PipelineTailRequest {
+                sent: sent.clone(),
+                dropped: dropped.clone(),
+            }));
+            assert!(sent.get());
+            assert!(dropped.get());
+            assert_eq!(
+                pipeline.get_pipelined_cap(&[]).get_failure().unwrap().extra,
+                "child pipeline"
+            );
+            assert_eq!(
+                results
+                    .0
+                    .pipeline
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .get_pipelined_cap(&[])
+                    .get_failure()
+                    .unwrap()
+                    .extra,
+                if early_pipeline {
+                    "early pipeline"
+                } else {
+                    "child pipeline"
+                }
+            );
+            assert!(results.0.payload.get().is_none());
+            if poll_before_cancel {
+                assert!(poll(&mut completion).is_pending());
+                assert!(results.0.payload.get().is_none());
+            }
+            drop(completion);
+            assert!(results.0.payload.get().is_some());
+        }
+    }
+}
+
 #[test]
 fn only_affine_protocol_retirement_notifies_running_worker() {
     let queue = super::super::super::ready::Queue::default();
