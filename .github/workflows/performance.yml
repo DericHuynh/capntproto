@@ -132,13 +132,13 @@ jobs:
           LEGACY_BASE: ${{ inputs.legacy_base }}
         run: test "${#LEGACY_BASE}" -eq 40 && test -z "${LEGACY_BASE//[0-9a-f]/}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        if: inputs.legacy_base != ''
+        if: inputs.legacy_base != '' && inputs.legacy_base != inputs.portable_base
         with:
           ref: ${{ inputs.legacy_base }}
           path: target/legacy-baseline-source
           persist-credentials: false
       - name: Build the frozen legacy control with the same compiler
-        if: inputs.legacy_base != ''
+        if: inputs.legacy_base != '' && inputs.legacy_base != inputs.portable_base
         env:
           LEGACY_BASE: ${{ inputs.legacy_base }}
         run: |
@@ -151,6 +151,13 @@ jobs:
           data = dict(commit=os.environ['LEGACY_BASE'], sha256=hashlib.sha256((bundle/'driver-legacy-baseline').read_bytes()).hexdigest(), profile='release; settings from pinned Cargo manifests and compiler defaults', benchmark_manifest_release=tomllib.loads(Path('target/legacy-baseline-source/benchmarks/rpc/Cargo.toml').read_text()).get('profile', {}).get('release', {}), profile_environment={key: os.environ[key] for key in ('CARGO_PROFILE_RELEASE_LTO', 'CARGO_PROFILE_RELEASE_CODEGEN_UNITS', 'CARGO_PROFILE_RELEASE_OPT_LEVEL', 'CARGO_PROFILE_RELEASE_DEBUG', 'CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS') if key in os.environ})
           (bundle/'legacy-baseline.json').write_text(json.dumps(data, indent=2) + '\n')
           PYTHON
+      - name: Reuse the frozen control when both revisions are identical
+        if: inputs.legacy_base != '' && inputs.legacy_base == inputs.portable_base
+        run: |
+          # The executable selects legacy or portable at runtime. Reusing it
+          # avoids another LTO build and keeps both controls' code layout equal.
+          cp target/benchmark-build/bundle/driver-baseline target/benchmark-build/bundle/driver-legacy-baseline
+          cp target/benchmark-build/bundle/portable-baseline.json target/benchmark-build/bundle/legacy-baseline.json
       - name: Archive executable bundle with permissions intact
         run: tar -czf "$RUNNER_TEMP/benchmark-bundle.tar.gz" -C target/benchmark-build bundle
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
