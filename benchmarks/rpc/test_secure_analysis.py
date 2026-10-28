@@ -157,6 +157,37 @@ class SavedAnalysisTests(unittest.TestCase):
             self.assertFalse((invalid/'summary.json').exists())
             self.assertFalse((invalid/'native-summary.json').exists())
 
+    def test_instruction_only_has_no_native_io_or_allocation_claims(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'secure'
+            output=Path(directory)/'analysis'
+            save(root.parent/'host.json', {})
+            root.mkdir()
+            (root/'cpu.txt').write_text('synthetic fixture')
+            trials=[]
+            services=[dict(hop=0),dict(hop=1)]
+            for n in [5,50]:
+                path=f'callgrind-{n}'
+                trials.append(dict(path=path,mode='callgrind',transport='tls',case='fixture',implementation='cpp',iterations=n,points=[5,50],services=services))
+                for peer in ['client','service-0','service-1']:
+                    target=root/'profiles'/path/(peer+'.callgrind')
+                    target.parent.mkdir(parents=True,exist_ok=True)
+                    target.write_text(f'events: Ir Bcm Bim\nsummary: {100+10*n} {20+2*n} {5+n}\n')
+            save(root/'profiles/scope.json',dict(instruction_only=True,diagnostic=True,binaries={'cpp':{}},trials=trials,failures=[]))
+            subprocess.run([sys.executable,str(HERE/'analyze-secure-ci.py'),'1',str(output),'--saved-root',str(root),'--measurement-outcome','success'],env=dict(os.environ,GITHUB_SHA='fixture',GITHUB_REPOSITORY='fixture/repo'),stdout=subprocess.DEVNULL,check=True)
+            report=json.loads((output/'summary.json').read_text())
+            self.assertTrue(report['instruction_only'])
+            self.assertFalse(report['allocation_only'])
+            self.assertEqual(report['native_trials'],0)
+            self.assertEqual(report['latency'],[])
+            self.assertEqual(report['traces'],[])
+            self.assertEqual(report['arena_counts'],[])
+            self.assertNotIn('allocation_comparison',report)
+            self.assertEqual(report['profile_trials'],2)
+            self.assertEqual(len(report['profile_peers']),3)
+            self.assertEqual(report['profiles'][0]['per_operation'],dict(Ir=30,Bcm=6,Bim=3))
+            self.assertFalse((output/'native-summary.json').exists())
+
     def test_allocation_only_has_no_native_or_io_claims(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)/'secure'

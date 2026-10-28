@@ -23,7 +23,7 @@ pub enum Action {
     RunSecure,
     /// Measure all TLS/QUIC latency cases without tracing or profiling.
     RunLatency,
-    /// Measure latency, syscalls and CPU work without the full allocation sweep.
+    /// Profile encrypted CPU work without latency, syscall or allocation sweeps.
     RunInstructions,
     /// Trace cumulative TLS/QUIC allocations on dedicated hosts without timing.
     RunAllocations,

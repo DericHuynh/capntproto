@@ -40,9 +40,9 @@ else:
 # A missing diagnostic scope must not prevent salvaging completed native data.
 profile_scope=root/'profiles/scope.json'
 profiles=json.loads(profile_scope.read_text()) if not (root/'native/summary.json').exists() and profile_scope.exists() and not args.native_only else {}
-if profiles.get('allocation_only'):
+if profiles.get('allocation_only') or profiles.get('instruction_only'):
     assert profiles['diagnostic']
-    report=dict(run=run, measurement_outcome=args.measurement_outcome, allocation_only=True,
+    report=dict(run=run, measurement_outcome=args.measurement_outcome, allocation_only=bool(profiles.get('allocation_only')), instruction_only=bool(profiles.get('instruction_only')),
         host=json.loads((root.parent/'host.json').read_text()), hardware=(root/'cpu.txt').read_text(),
         binaries=profiles['binaries'], native_trials=0, aggregate={}, latency=[])
 else:
@@ -169,7 +169,7 @@ if profiles.get('allocation_workloads'):
 traces=[]
 for n in [10,100]:
     path=root/f'trace-{n}'
-    if profiles.get('allocation_only'): continue
+    if profiles.get('allocation_only') or (profiles.get('instruction_only') and report['native_trials']==0): continue
     trace_scope=json.loads((path/'scope.json').read_text())
     journals=json.loads((path/'ciphertext-counts.json').read_text())['journals']
     groups=collections.defaultdict(list)

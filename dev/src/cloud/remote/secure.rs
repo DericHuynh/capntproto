@@ -21,7 +21,7 @@ pub(super) fn run(
         "DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 openssl strace && mkdir -p /root/results/secure && uname -a > /root/results/secure/kernel.txt && lscpu > /root/results/secure/cpu.txt && valgrind --version > /root/results/secure/valgrind.txt && sha256sum /root/bench/driver /root/bench/capnp-reference /root/bench/*.py /root/bench/*.json > /root/results/secure/hashes.txt", 180, cancel)?;
     // Native measurements are a complete campaign on their own. Expensive
     // diagnostics remain opt-in and always follow timing in a full campaign.
-    let native = if matches!(phase, Phase::Allocations) {
+    let native = if matches!(phase, Phase::Allocations | Phase::Instructions) {
         ""
     } else {
         r#"python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --comparators --output /root/results/secure/native --repetitions 5 --warmup 100 --iterations 1000"#
@@ -31,12 +31,14 @@ pub(super) fn run(
         Phase::Allocations => {
             r#"python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles --allocation-only"#.to_owned()
         }
-        Phase::All | Phase::Instructions => {
-            let profile_mode = if matches!(phase, Phase::Instructions) { " --instruction-only" } else { "" };
-            format!(r#"for n in 10 100; do
-    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${{baseline[@]}}" --comparators --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
+        Phase::Instructions => {
+            r#"python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles --instruction-only"#.to_owned()
+        }
+        Phase::All => {
+            r#"for n in 10 100; do
+    python3 secure-runner.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --comparators --output /root/results/secure/trace-$n --repetitions 5 --warmup 2 --iterations "$n" --cases dependent-read,pipelined-read,fanout-32,concurrent-32,services-4-deep-16-clients-8 --trace
 done
-python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${{baseline[@]}}" --output /root/results/secure/profiles{profile_mode}"#)
+python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles"#.to_owned()
         }
     };
     let command = format!(

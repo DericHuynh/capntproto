@@ -19,7 +19,8 @@ supported TLS cases, alongside legacy, portable and C++. The minimum measured op
 the primary comparison; raw samples, means and spread remain available. It skips instrumented
 workloads so timing results are available without waiting for profiling.
 `run-secure` explicitly requests the full timing, tracing and profiling campaign;
-`run-allocations` requests DHAT only. Both latency and full campaigns use the
+`run-allocations` requests DHAT only. `run-instructions` requests Callgrind only,
+including branch/cache simulation; it skips native timings and syscall sweeps. Both latency and full campaigns use the
 existing CI provisioning, dedicated-vCPU plan selection,
 resource receipts and unconditional cleanup. Encrypted peers run on separate
 guest-reported cores of the client droplet. Deep service chains share those cores as
