@@ -40,7 +40,7 @@ version = "0.25.0"
 path = "../capntproto-core"
 
 [dependencies.pulldown-cmark]
-version = "=0.13.4"
+version = "=0.13.5"
 default-features = false
 
 [dependencies.pulldown-cmark-to-cmark]
