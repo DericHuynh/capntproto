@@ -1479,9 +1479,9 @@ fn ready_execution_notifies_observers_without_waking_its_active_owner() {
     for (failed, active_owner) in [(false, true), (true, true), (false, false), (true, false)] {
         let owner = Arc::new(Count::default());
         let observer = Arc::new(Count::default());
-        // Use the same factory as operation wakers. std::task::Wake can give
-        // cloned wakers distinct vtable addresses under Miri; will_wake() is
-        // allowed to return false in that case, requiring the safe extra wake.
+        // Use a shared-vtable factory to exercise exact identity. std::task::Wake
+        // can give cloned wakers distinct vtable addresses under Miri;
+        // will_wake() may then return false, requiring the safe extra wake.
         let owner_wake = futures::task::waker(owner.clone());
         let observer_wake = futures::task::waker(observer.clone());
         let results = Results::new();
