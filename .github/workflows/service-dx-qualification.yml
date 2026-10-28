@@ -1,115 +1,65 @@
-name: Qualify legacy ports and iterator result publication
+name: Summarize portable runtime qualification
 on:
   push:
     branches: [codex/service-dx-qualification-20261026]
 permissions:
   contents: read
-concurrency:
-  group: qualify-shared-rpc-core
-  cancel-in-progress: false
-env:
-  CARGO_INCREMENTAL: '0'
-  CARGO_PROFILE_DEV_DEBUG: '0'
-  CARGO_PROFILE_TEST_DEBUG: '0'
-  CARGO_BUILD_JOBS: '2'
-  CARGO_TERM_COLOR: never
+  actions: read
 jobs:
-  parity:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
-      CC: clang
-      CXX: clang++
-    runs-on: ubuntu-26.04
-    timeout-minutes: 45
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: DericHuynh/capntproto
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          ref: 53df5ddc0ef5f96385afb4535df530f876997ce9
-      - name: Install prerequisites
+      - name: Verify the measured source
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y cmake ninja-build clang capnproto libcapnp-dev protobuf-compiler libssl-dev
-          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
-          rustup target add thumbv7em-none-eabi --toolchain 1.97.0
-          git submodule update --init --depth 1 vendor/capnproto
-          curl --fail --location --retry 3 https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar -o "$RUNNER_TEMP/tla2tools.jar"
-          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          key: dedicated-benchmarks
-          cache-on-failure: true
-          workspaces: |
-            . -> target
-            benchmarks/rpc -> target
-      - name: Final hosted regression batch and lint
-        env:
-          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
+          test "$(gh api repos/$GH_REPO/actions/runs/40621904041 --jq .head_sha)" = 53df5ddc0ef5f96385afb4535df530f876997ce9
+          test "$(gh api repos/$GH_REPO/actions/runs/40621904041 --jq .conclusion)" = success
+      - name: Download validated analysis
+        run: gh run download 40621904041 --name encrypted-benchmark-analysis --dir "$RUNNER_TEMP/analysis"
+      - name: Compare latency and exclusive CPU attribution
         run: |
-          rm -rf target/cpp-reference
-          cargo test --locked -p capntproto-core --lib --test selected_struct
-          cargo test --locked -p capntproto-rpc -p capntproto-futures --lib
-          cargo test --locked -p capntproto-rpc-wire --features alloc --lib
-          cargo test --locked -p capntproto-rpc-wire --no-default-features --lib
-          cargo test --locked --manifest-path verification/portable/Cargo.toml --lib bounded_server_output
-          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi --lib
-          cargo test --locked -p capntproto --test rpc --test buffered_input --test cancellation --test secure_rpc --test flow_control --test result_pipeline --test rpc_admission --test answer_adoption --test unix_facade
-          cargo clippy --locked -p capntproto-core -p capntproto-rpc -p capntproto-futures -p capntproto-rpc-wire -p capntproto-rpc-engine --all-targets -- -D warnings
-          cargo fmt --all -- --check
-          cargo run --locked -p capntproto-dev -- check-unsafe
-  miri:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          ref: 53df5ddc0ef5f96385afb4535df530f876997ce9
-      - name: Install memory interpreter
-        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          key: shared-notification-miri
-          cache-on-failure: true
-      - name: Interpret slot reuse, payload certificates and deferred frame validation
-        env:
-          MIRIFLAGS: -Zmiri-strict-provenance
-        run: |
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib legacy_
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --no-default-features --lib local_result_iterators
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib pending_dispatch_waits_for_a_wake_before_polling_again
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib portable::runtime::tests::
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib immediate_single_capability_calls_keep_only_reachable_grants
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-engine --lib free_slots::
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --features alloc --lib promised_payload_certificate
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --no-default-features --lib plain_promised_call
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --no-default-features --lib pipeline::tests::
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --no-default-features --lib promised_dispatch
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib buffered_frame_transfer_preserves_reader_policy
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --features alloc --lib retained_control_waits_for_output
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib plain_admission_does_not_repoll_a_parked_sibling
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib buffered_server_bursts_flush_at_budget_end_and_when_input_runs_out
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-futures --lib buffered_successor_hint
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-futures --lib lookahead_reuses_segment_metadata
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc --lib plain_reply_bursts_drain_before_awakened_service_work_within_the_frame_budget
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --features alloc --lib native_
-          cargo +nightly-2026-08-29 miri test --locked --ignore-rust-version -p capntproto-rpc-wire --no-default-features --lib native_
-  verus:
-    if: false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          ref: 53df5ddc0ef5f96385afb4535df530f876997ce9
-      - run: git submodule update --init vendor/verus-tla
-      - uses: ./.github/actions/dev-setup
-        with:
-          cache-key: verus-0.2026.10.04.426d8b0
-      - run: cargo run --locked -p capntproto-dev -- verus install
-      - run: cargo run --locked -p capntproto-dev -- verus verify --output target/verification/verus
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: portable-direct-verus
-          path: target/verification/verus/
+          python3 - <<'PY'
+          import collections, json, os
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'analysis'
+          summary=json.loads((root/'summary.json').read_text())
+          assert summary['measurement_outcome']=='success',summary['measurement_outcome']
+          print('AGGREGATE',json.dumps(summary['aggregate'],sort_keys=True))
+          print('HOST_COUNTERS',json.dumps(summary.get('host_counters',{}),sort_keys=True))
+          for row in summary['latency']:
+              print('LATENCY',json.dumps(dict(transport=row['transport'],case=row['case']['name'],min_us={v:round(c['min_ns']/1000,3) for v,c in row['variants'].items()}),sort_keys=True))
+          by_profile={(r['mode'],r['transport'],r['case'],r['variant']):r['per_operation'] for r in summary['profiles']}
+          for (mode,transport,case,variant),counts in by_profile.items():
+              if variant!='portable':continue
+              metrics=[m for m in ['Ir','Bcm','Bim','blocks','bytes'] if m in counts]
+              changes={}
+              for base in ['portable-baseline','legacy','cpp']:
+                  other=by_profile.get((mode,transport,case,base))
+                  if other is not None:
+                      changes[base]={m:round(100*(counts[m]/other[m]-1),4) if other.get(m) else None for m in metrics}
+              print('PROFILE',json.dumps(dict(mode=mode,transport=transport,case=case,counts={m:round(counts[m],4) for m in metrics},change_percent=changes),sort_keys=True))
+          traces={(r['iterations'],r['transport'],r['case'],r['variant']):r['counts'] for r in summary.get('traces',[])}
+          for (n,transport,case,variant),counts in traces.items():
+              if n!=100:continue
+              short=traces[(10,transport,case,variant)]
+              marginal={k:round((v['mean']-short.get(k,{}).get('mean',0))/90,5) for k,v in counts.items()}
+              print('IO',json.dumps(dict(transport=transport,case=case,variant=variant,per_operation=marginal),sort_keys=True))
+          attribution=json.loads((root/'attribution.json').read_text())
+          costs=collections.defaultdict(lambda:collections.defaultdict(collections.Counter))
+          for row in attribution['marginal']:
+              key=(row['transport'],row['case'],row['variant'])
+              for function,counts in row['functions'].items():
+                  costs[key][function.split(':',1)[-1]].update(counts)
+          for transport in ['tls','quic']:
+              for case in ['pipelined-read','concurrent-32','services-4-deep-16-clients-8']:
+                  current=costs.get((transport,case,'portable'),{})
+                  baseline=costs.get((transport,case,'portable-baseline'),{})
+                  if not current:continue
+                  deltas=[(name,{m:current.get(name,{}).get(m,0)-baseline.get(name,{}).get(m,0) for m in ['Ir','Bcm']}) for name in current.keys()|baseline.keys()]
+                  deltas.sort(key=lambda item:item[1]['Ir'],reverse=True)
+                  selected=deltas[:8]+deltas[-8:]
+                  print('ATTRIBUTION',json.dumps(dict(transport=transport,case=case,delta_vs='portable-baseline',functions=[dict(function=name[:240],**{m:round(n,4) for m,n in counts.items()}) for name,counts in selected]),sort_keys=True))
+          PY
