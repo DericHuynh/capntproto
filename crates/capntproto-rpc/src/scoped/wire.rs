@@ -463,11 +463,10 @@ impl<'id> ClientHooks<'id> {
                 owner_wake: RefCell::new(None),
                 operation: Cell::new(None),
                 materialize: Cell::new(false),
-                adopted: RefCell::default(),
+                variant: RefCell::new(PipelineVariant::Waiting),
                 cached: RefCell::default(),
                 _credit: Cell::new(call.credit.clone()),
                 waiting: RefCell::new(VecDeque::new()),
-                finished: RefCell::new(None),
                 inbox: Rc::downgrade(&self.inbox),
                 maximum: self.maximum_clients,
             })
@@ -778,12 +777,14 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 .and_then(server::Results::failure)
                 .unwrap_or(error);
             if let Some(pipeline) = &self.pipeline {
-                pipeline.finish(
-                    self.local_results
-                        .as_ref()
-                        .and_then(server::Results::early_pipeline)
-                        .unwrap_or_else(|| Box::new(crate::broken::Pipeline::new(error.clone()))),
-                );
+                match self
+                    .local_results
+                    .as_ref()
+                    .and_then(server::Results::early_pipeline)
+                {
+                    Some(early) => pipeline.finish(early),
+                    None => pipeline.resolve(PipelineVariant::Broken(error.clone())),
+                }
             }
             call.complete_boxed(Err(error));
         }
@@ -1304,6 +1305,21 @@ impl CompletedPipeline {
                 .unwrap_or_else(crate::broken::new_cap),
         }
     }
+    fn get_pipelined_cap_move(&self, path: Vec<PipelineOp>) -> Box<dyn ClientHook> {
+        match self {
+            Self::Hook(hook) => hook.get_pipelined_cap_move(path),
+            Self::Payload(_) => self.get_pipelined_cap(&path),
+        }
+    }
+}
+
+// Match legacy rpc::PipelineVariant: exactly one waiting, redirected,
+// completed or failed state owns the pipeline at a time.
+enum PipelineVariant {
+    Waiting,
+    Adopted(Box<dyn PipelineHook>),
+    Resolved(CompletedPipeline),
+    Broken(Error),
 }
 
 pub(crate) struct PipelineState {
@@ -1311,11 +1327,10 @@ pub(crate) struct PipelineState {
     owner_wake: RefCell<Option<Waker>>,
     operation: Cell<Option<usize>>,
     materialize: Cell<bool>,
-    adopted: RefCell<Option<Box<dyn PipelineHook>>>,
+    variant: RefCell<PipelineVariant>,
     cached: RefCell<ProjectionCache>,
     _credit: Cell<Option<Rc<admission::Credit>>>,
     waiting: RefCell<VecDeque<Projection>>,
-    finished: RefCell<Option<CompletedPipeline>>,
     inbox: Weak<Inbox>,
     maximum: usize,
 }
@@ -1366,13 +1381,12 @@ impl PipelineState {
             owner_wake: RefCell::new(None),
             operation: Cell::new(None),
             materialize: Cell::new(false),
-            adopted: RefCell::default(),
+            variant: RefCell::new(PipelineVariant::Waiting),
             cached: RefCell::default(),
             // Admission owns the credit until the wire call takes this state.
             // Rejected requests must release it even if their pipeline lives.
             _credit: Cell::new(None),
             waiting: RefCell::default(),
-            finished: RefCell::default(),
             inbox: inbox.map_or_else(Weak::new, Rc::downgrade),
             maximum: inbox.map_or(0, |inbox| inbox.maximum_clients),
         })
@@ -1387,7 +1401,7 @@ impl PipelineState {
         )))
     }
     pub(crate) fn unresolved(&self) -> bool {
-        self.adopted.borrow().is_none() && self.finished.borrow().is_none()
+        matches!(*self.variant.borrow(), PipelineVariant::Waiting)
     }
     // Local forwarding may publish a pipeline before its operation completes.
     // That publication remains valid even if the later operation fails.
@@ -1399,7 +1413,7 @@ impl PipelineState {
         if !self.unresolved() {
             return;
         }
-        let old = self.adopted.replace(Some(published));
+        let old = self.variant.replace(PipelineVariant::Adopted(published));
         drop(old);
         let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
         for projection in waiting {
@@ -1422,17 +1436,31 @@ impl PipelineState {
     pub(super) fn finish_payload(&self, payload: Rc<Payload>) {
         self.finish_completed(CompletedPipeline::Payload(payload));
     }
+    pub(super) fn break_pending(&self, error: Error) {
+        if self.unresolved() {
+            self.resolve(PipelineVariant::Broken(error));
+        }
+    }
     fn finish_completed(&self, pipeline: CompletedPipeline) {
-        let pipeline_ref = pipeline.add_ref();
-        let old = self.finished.replace(Some(pipeline));
+        self.resolve(PipelineVariant::Resolved(pipeline));
+    }
+    fn resolve(&self, resolved: PipelineVariant) {
+        let pipeline_ref = match &resolved {
+            PipelineVariant::Resolved(pipeline) => Ok(pipeline.add_ref()),
+            PipelineVariant::Broken(error) => Err(error.clone()),
+            _ => unreachable!("terminal pipeline state"),
+        };
+        let old = self.variant.replace(resolved);
         drop(old);
         let cached = std::mem::take(&mut *self.cached.borrow_mut());
-        let adopted = self.adopted.borrow_mut().take();
-        drop((cached, adopted));
+        drop(cached);
         let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
         for projection in waiting {
             if let Some(client) = projection.client.upgrade() {
-                client.resolve(Ok(pipeline_ref.get_pipelined_cap(&projection.path)));
+                client.resolve(match &pipeline_ref {
+                    Ok(pipeline) => Ok(pipeline.get_pipelined_cap(&projection.path)),
+                    Err(error) => Ok(crate::broken::new_cap(error.clone())),
+                });
             }
         }
     }
@@ -1464,7 +1492,9 @@ impl Drop for PipelineRef {
                     // its payload still notifies through the final endpoints.
                     // A reentrant hook may hold the cell: retain the ordinary
                     // notification in that case rather than borrowing again.
-                    && !pipeline.finished.try_borrow().is_ok_and(|done| done.is_some())
+                    && !pipeline.variant.try_borrow().is_ok_and(|state| {
+                        matches!(*state, PipelineVariant::Resolved(_) | PipelineVariant::Broken(_))
+                    })
             })
             .and_then(|pipeline| pipeline.inbox.upgrade());
         let wake = inbox
@@ -1490,26 +1520,40 @@ impl PipelineHook for WirePipeline {
         Box::new(Self(self.0.clone()))
     }
     fn get_pipelined_cap(&self, path: &[PipelineOp]) -> Box<dyn ClientHook> {
-        let cached = self.0.cached.borrow().get(path).map(|hook| hook.add_ref());
+        self.get_pipelined_cap_move(path.into())
+    }
+    fn get_pipelined_cap_move(&self, mut path: Vec<PipelineOp>) -> Box<dyn ClientHook> {
+        let cached = self.0.cached.borrow().get(&path).map(|hook| hook.add_ref());
         if let Some(inner) = cached {
             return Box::new(Projected {
                 inner,
                 pipeline: self.0.clone(),
             });
         }
-        let adopted = self.0.adopted.borrow().as_ref().map(|p| p.add_ref());
-        if let Some(pipeline) = adopted {
-            return pipeline.get_pipelined_cap(path);
-        }
-        self.0.used.set(true);
-        let finished = self.0.finished.borrow().as_ref().map(|p| p.add_ref());
-        if let Some(pipeline) = finished {
-            return pipeline.get_pipelined_cap(path);
+        let variant = match &*self.0.variant.borrow() {
+            PipelineVariant::Waiting => PipelineVariant::Waiting,
+            PipelineVariant::Adopted(pipeline) => PipelineVariant::Adopted(pipeline.add_ref()),
+            PipelineVariant::Resolved(pipeline) => PipelineVariant::Resolved(pipeline.add_ref()),
+            PipelineVariant::Broken(error) => PipelineVariant::Broken(error.clone()),
+        };
+        // As in legacy, select one variant before entering any client hook.
+        // Actual projection callbacks run after the state borrow has ended.
+        match variant {
+            PipelineVariant::Adopted(pipeline) => return pipeline.get_pipelined_cap_move(path),
+            PipelineVariant::Resolved(pipeline) => {
+                self.0.used.set(true);
+                return pipeline.get_pipelined_cap_move(path);
+            }
+            PipelineVariant::Broken(error) => {
+                self.0.used.set(true);
+                return crate::broken::new_cap(error);
+            }
+            PipelineVariant::Waiting => self.0.used.set(true),
         }
         let mut waiting = self.0.waiting.borrow_mut();
         waiting.retain(|entry| entry.client.strong_count() != 0);
         if let Some(endpoint) = waiting.iter().find_map(|entry| {
-            if !pipeline_fields(&entry.path).eq(pipeline_fields(path)) {
+            if !pipeline_fields(&entry.path).eq(pipeline_fields(&path)) {
                 return None;
             }
             match &entry.client {
@@ -1530,10 +1574,11 @@ impl PipelineHook for WirePipeline {
             ));
         }
         let endpoint = Endpoint::projection(self.0.inbox.clone());
+        // Consume the caller's transform buffer instead of allocating a second
+        // path. Noop is semantically empty and can be removed in place.
+        path.retain(|op| !matches!(op, PipelineOp::Noop));
         waiting.push_back(Projection {
-            path: pipeline_fields(path)
-                .map(PipelineOp::GetPointerField)
-                .collect(),
+            path,
             client: ProjectionClient::Direct(Rc::downgrade(&endpoint)),
             retain_pipeline: false,
         });

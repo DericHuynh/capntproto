@@ -15,7 +15,7 @@ fn completed_pipeline_shares_its_payload_without_adapter_allocation() {
     assert_eq!(count.count_total, 0);
     assert_eq!(count.bytes_total, 0);
     assert!(
-        matches!(&*pipeline.finished.borrow(), Some(CompletedPipeline::Payload(owner)) if Rc::ptr_eq(owner, &payload))
+        matches!(&*pipeline.variant.borrow(), PipelineVariant::Resolved(CompletedPipeline::Payload(owner)) if Rc::ptr_eq(owner, &payload))
     );
     let late = WirePipeline(PipelineRef(Some(pipeline), None)).get_pipelined_cap(&[]);
     assert_eq!(late.get_failure().unwrap().extra, "retained capability");
@@ -1114,11 +1114,10 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
         owner_wake: RefCell::new(None),
         operation: Cell::new(None),
         materialize: Cell::new(false),
-        adopted: RefCell::default(),
+        variant: RefCell::new(PipelineVariant::Waiting),
         cached: RefCell::default(),
         _credit: Cell::new(None),
         waiting: RefCell::new(VecDeque::new()),
-        finished: RefCell::new(None),
         inbox: Rc::downgrade(&hooks.inbox),
         maximum: 1,
     });
@@ -1144,7 +1143,7 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     assert_eq!(observe.0.load(Ordering::SeqCst), usize::MAX);
     // Custom hooks can release a pipeline during publication. A borrowed
     // completion cell must preserve the conservative wake without panicking.
-    let borrowed = pipeline.finished.borrow_mut();
+    let borrowed = pipeline.variant.borrow_mut();
     drop(WirePipeline(PipelineRef(Some(pipeline.clone()), None)));
     assert_eq!(observe.0.load(Ordering::SeqCst), 1);
     drop(borrowed);
@@ -1728,4 +1727,78 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
             futures::executor::block_on(work).unwrap();
         }
     }
+}
+
+#[test]
+fn legacy_pipeline_consumes_owned_transforms_without_copying() {
+    let hooks = ClientHooks::new(8, 8);
+    let state = PipelineState::prepared(Some(&hooks.inbox));
+    let mut path = Vec::with_capacity(8);
+    path.extend([
+        PipelineOp::Noop,
+        PipelineOp::GetPointerField(3),
+        PipelineOp::Noop,
+    ]);
+    let allocation = path.as_ptr();
+    let client = WirePipeline(PipelineRef(Some(state.clone()), None)).get_pipelined_cap_move(path);
+    let waiting = state.waiting.borrow();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(
+        waiting[0].path.as_ptr(),
+        allocation,
+        "move the caller's transform allocation into the pending projection"
+    );
+    assert!(matches!(
+        &waiting[0].path[..],
+        [PipelineOp::GetPointerField(3)]
+    ));
+    drop(waiting);
+    drop(client);
+}
+
+#[test]
+fn legacy_pipeline_forwards_owned_transforms_to_adopted_and_resolved_hooks() {
+    #[derive(Clone)]
+    struct Forward(Rc<Cell<usize>>);
+    impl PipelineHook for Forward {
+        fn add_ref(&self) -> Box<dyn PipelineHook> {
+            Box::new(self.clone())
+        }
+        fn get_pipelined_cap(&self, _: &[PipelineOp]) -> Box<dyn ClientHook> {
+            panic!("owned transform was discarded")
+        }
+        fn get_pipelined_cap_move(&self, ops: Vec<PipelineOp>) -> Box<dyn ClientHook> {
+            self.0.set(ops.as_ptr() as usize);
+            crate::broken::new_cap(Error::failed("forwarded".into()))
+        }
+    }
+    for adopted in [false, true] {
+        let observed = Rc::new(Cell::new(0));
+        let state = PipelineState::prepared(None);
+        if adopted {
+            state.publish(Box::new(Forward(observed.clone())));
+        } else {
+            state.finish(Box::new(Forward(observed.clone())));
+        }
+        let path = vec![PipelineOp::GetPointerField(4)];
+        let allocation = path.as_ptr() as usize;
+        let result = WirePipeline(PipelineRef(Some(state), None)).get_pipelined_cap_move(path);
+        assert_eq!(observed.get(), allocation);
+        assert_eq!(result.get_failure().unwrap().extra, "forwarded");
+    }
+}
+
+#[test]
+fn legacy_pipeline_early_adoption_survives_later_completion_failure() {
+    let state = PipelineState::prepared(None);
+    state.publish(Box::new(crate::broken::Pipeline::new(Error::failed(
+        "early".into(),
+    ))));
+    state.break_pending(Error::failed("later".into()));
+    assert!(matches!(
+        *state.variant.borrow(),
+        PipelineVariant::Adopted(_)
+    ));
+    let client = WirePipeline(PipelineRef(Some(state), None)).get_pipelined_cap(&[]);
+    assert_eq!(client.get_failure().unwrap().extra, "early");
 }

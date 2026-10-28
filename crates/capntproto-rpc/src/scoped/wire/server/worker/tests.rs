@@ -1245,10 +1245,31 @@ fn pending_dispatch_waits_for_a_wake_before_polling_again() {
                     }
                 }
                 assert!(queue.is_empty());
+                // Like legacy's receive-stack probe, a lone operation that
+                // suspends is polled once more to install its real task waker.
+                let mut expected = vec![1; width];
+                if width == 1 && budget > 1 {
+                    expected[0] = 2;
+                }
                 assert_eq!(
                     polls.iter().map(Cell::get).collect::<Vec<_>>(),
-                    vec![1; width],
+                    expected,
                     "width {width}, budget {budget}"
+                );
+                for _ in 0..8 {
+                    let _ = poll(
+                        &mut worker,
+                        &mut hooks,
+                        &mut driver,
+                        messages,
+                        &mut queue,
+                        budget,
+                    );
+                }
+                assert_eq!(
+                    polls.iter().map(Cell::get).collect::<Vec<_>>(),
+                    expected,
+                    "parked operations must not be speculatively polled"
                 );
                 ready[0].set(true);
                 wakes.borrow_mut()[0].take().unwrap().wake();
@@ -1267,8 +1288,7 @@ fn pending_dispatch_waits_for_a_wake_before_polling_again() {
                         break;
                     }
                 }
-                let mut expected = vec![1; width];
-                expected[0] = 2;
+                expected[0] += 1;
                 assert_eq!(polls.iter().map(Cell::get).collect::<Vec<_>>(), expected);
                 check(&drain(&mut queue, messages), |reply| {
                     assert_eq!(reply.get_answer_id(), 0);
@@ -1360,6 +1380,79 @@ fn finish_selects_one_parked_worker_without_protocol_invalidation() {
                 rpc_capnp::return_::Canceled(())
             ));
         });
+        close(worker, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn legacy_first_poll_completes_sync_calls_without_a_scheduled_worker() {
+    with_peer(|mut driver, messages| {
+        let id = expose(
+            &mut driver,
+            server(|_, mut results| {
+                results
+                    .get()
+                    .set_as::<capnp::text::Owned>("direct")
+                    .unwrap();
+                capability::DispatchCallResult::new(Promise::ok(()), false)
+            }),
+        );
+        let mut worker = Worker::new(1, None);
+        let mut hooks = ClientHooks::new(64, 16);
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        for question in 0..3 {
+            incoming(
+                &mut driver,
+                messages,
+                question,
+                0,
+                calls::Target::Imported(id),
+            );
+            assert!(worker.accept(&mut driver).unwrap());
+            assert!(worker.starting.is_some());
+            assert!(worker.entries.is_empty());
+            assert!(matches!(
+                worker.poll(
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [0; 16],
+                    &mut Context::from_waker(Waker::noop()),
+                    NonZeroUsize::new(64).unwrap(),
+                    import
+                ),
+                Poll::Ready(Ok(Progress::Replied))
+            ));
+            assert!(worker.is_empty());
+            assert!(worker.starting.is_none());
+            assert!(
+                worker.entries.is_empty(),
+                "synchronous calls must not allocate a task slot"
+            );
+            check(&drain(&mut queue, messages), |reply| {
+                assert_eq!(reply.get_answer_id(), question)
+            });
+        }
+        close(worker, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn legacy_first_poll_termination_releases_an_unpolled_request() {
+    with_peer(|mut driver, messages| {
+        let id = expose(
+            &mut driver,
+            server(|_, _| panic!("terminated before dispatch")),
+        );
+        incoming(&mut driver, messages, 0, 0, calls::Target::Imported(id));
+        let mut worker = Worker::new(1, None);
+        assert!(worker.accept(&mut driver).unwrap());
+        assert!(worker.starting.is_some());
+        let hooks = ClientHooks::new(64, 16);
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
         close(worker, hooks, driver, messages, &mut queue);
     });
 }

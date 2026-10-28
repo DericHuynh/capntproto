@@ -236,11 +236,10 @@ impl<
                         owner_wake: RefCell::new(Some(cx.waker().clone())),
                         operation: Cell::new(None),
                         materialize: Cell::new(false),
-                        adopted: RefCell::default(),
+                        variant: RefCell::new(PipelineVariant::Waiting),
                         cached: RefCell::default(),
                         _credit: Cell::new(None),
                         waiting: RefCell::default(),
-                        finished: RefCell::default(),
                         inbox: Rc::downgrade(&coordinator.hooks.inbox),
                         maximum: self.maximum,
                     });

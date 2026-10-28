@@ -38,7 +38,7 @@ pub(super) fn notify_closed(state: &Rc<State>) {
             .as_ref()
             .and_then(Shutdown::reason)
             .unwrap_or_else(|| Error::disconnected("scoped connection closed".into()));
-        pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new(error)));
+        pipeline.break_pending(error);
     }
     let wake = state.receive.take();
     if let Some(wake) = wake {
@@ -193,9 +193,7 @@ impl State {
                 let error = status.as_ref().err().map(|error| (**error).clone());
                 self.status.set(Some(status));
                 match error {
-                    Some(error) => {
-                        pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new(error)))
-                    }
+                    Some(error) => pipeline.break_pending(error),
                     None => {
                         let response = match self.results.take().expect("ready operation results") {
                             ResultOwner::Done(results) => {
@@ -758,7 +756,7 @@ pub(super) fn request_pipelined_prepared(
     let promise = match call.enqueue_owned(inbox) {
         Ok(inbox) => state.promise(inbox),
         Err(error) => {
-            pipeline.finish_pending(|| Box::new(crate::broken::Pipeline::new((*error).clone())));
+            pipeline.break_pending((*error).clone());
             capability::ResponsePromise::new(Promise::err(*error))
         }
     };

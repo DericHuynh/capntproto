@@ -2,7 +2,7 @@
 use super::RpcSystem;
 use capnp::{capability::Promise, Error};
 use capntproto_rpc_engine::completion::shared;
-use futures::task::AtomicWaker;
+use futures::task::{waker_ref, ArcWake, AtomicWaker};
 use std::{
     cell::RefCell,
     future::Future,
@@ -62,13 +62,18 @@ struct Lane {
     parent: Arc<Activity>,
     source: u8,
 }
+impl ArcWake for Lane {
+    fn wake_by_ref(this: &Arc<Self>) {
+        this.ready.store(true, Ordering::Release);
+        this.parent.notify(this.source);
+    }
+}
 impl Wake for Lane {
     fn wake(self: Arc<Self>) {
-        self.wake_by_ref();
+        ArcWake::wake_by_ref(&self);
     }
     fn wake_by_ref(self: &Arc<Self>) {
-        self.ready.store(true, Ordering::Release);
-        self.parent.notify(self.source);
+        ArcWake::wake_by_ref(self);
     }
 }
 fn lane(parent: &Arc<Activity>, source: u8) -> (Arc<Lane>, Waker) {
@@ -105,13 +110,12 @@ pub struct Runtime {
     systems: Vec<Running>,
     activity: Arc<Activity>,
     application: Arc<Lane>,
-    application_waker: Waker,
 }
 impl Runtime {
     /// Bound the number of systems, including systems queued by a handle.
     pub fn new(maximum: NonZeroUsize) -> Self {
         let activity = Arc::new(Activity::default());
-        let (application, application_waker) = lane(&activity, PROGRESS);
+        let (application, _) = lane(&activity, PROGRESS);
         Self {
             pending: Rc::new(RefCell::new(Pending {
                 queued: Vec::new(),
@@ -122,7 +126,6 @@ impl Runtime {
             systems: Vec::new(),
             activity,
             application,
-            application_waker,
         }
     }
     pub fn handle(&self) -> RuntimeHandle {
@@ -151,7 +154,10 @@ impl Runtime {
         self.activity.parent.register(cx.waker());
         self.activity.state.fetch_or(POLLING, Ordering::AcqRel);
         let _turn = Turn(&self.activity);
-        let application_waker = self.application_waker.clone();
+        // Match legacy TaskSet::poll: borrow the concrete wake owner rather
+        // than invoking a type-erased Waker clone/drop on every runtime poll.
+        let application_wake_owner = self.application.clone();
+        let application_waker = waker_ref(&application_wake_owner);
         let mut application_cx = Context::from_waker(&application_waker);
         let mut rounds = 0;
         loop {

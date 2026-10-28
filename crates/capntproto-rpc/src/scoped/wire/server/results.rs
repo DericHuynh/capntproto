@@ -273,6 +273,17 @@ impl Results {
             "producer already has an execution owner"
         );
     }
+    pub(super) fn remove_noop_waiter(&self) {
+        let mut wake = self.0.wake.borrow_mut();
+        if wake
+            .first
+            .as_ref()
+            .is_some_and(|old| old.will_wake(Waker::noop()))
+        {
+            wake.first = None;
+        }
+        wake.overflow.retain(|old| !old.will_wake(Waker::noop()));
+    }
     pub(super) fn unbind_protocol_waker(&self) {
         drop(self.0.protocol_wake.borrow_mut().take());
     }

@@ -348,7 +348,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         // A used path retains its original ordering route through its fence.
         if let Some(state) = &entry.wire.pipeline {
             if !state.used.get() {
-                let previous = state.adopted.replace(Some(pipeline));
+                let previous = state.variant.replace(PipelineVariant::Adopted(pipeline));
                 drop(previous);
             } else {
                 // Like legacy's unredirected PipelineClient, a used projection
@@ -1206,16 +1206,15 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             // Import through the ordinary authority/membrane path, then retain
             // that branded owner until transactional publication has finished.
             let retained = match (&params, call.params.single_capability_table()) {
-                (connection::ImmediateParams::Content(content), Some([Some(hook)]))
-                    if content.target_size()?.cap_count != 0 =>
+                // Like legacy Request::send_internal/write_descriptors, use
+                // the builder's capability table. Rewalking the entire payload
+                // just to rediscover this live entry duplicates publication work.
+                (connection::ImmediateParams::Content(_), Some([Some(hook)])) => Some(match hooks
+                    .try_retain(&mut driver.capabilities(), &**hook)?
                 {
-                    Some(
-                        match hooks.try_retain(&mut driver.capabilities(), &**hook)? {
-                            Some(client) => client,
-                            None => import(&mut driver.capabilities(), &**hook)?,
-                        },
-                    )
-                }
+                    Some(client) => client,
+                    None => import(&mut driver.capabilities(), &**hook)?,
+                }),
                 _ => None,
             };
             let progress = Progress::Published {

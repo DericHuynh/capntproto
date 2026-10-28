@@ -63,6 +63,9 @@ pub enum Progress {
 #[must_use = "poll accepted work and terminate it before releasing the driver"]
 pub struct Worker<'p, 'id, I, const C: usize, const H: usize> {
     entries: Vec<Option<Entry<'p, 'id, I, C, H>>>,
+    // Legacy handle_message polls an ordinary Call before allocating a task
+    // node. Keep that first owning execution inline until it actually suspends.
+    starting: Option<(usize, Entry<'p, 'id, I, C, H>)>,
     live: usize,
     first_free: usize,
     maximum: usize,
@@ -79,6 +82,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     pub fn new(maximum: usize, executor: Option<Rc<dyn capability::CallExecutor>>) -> Self {
         Self {
             entries: Vec::new(),
+            starting: None,
             live: 0,
             first_free: 0,
             maximum,
@@ -161,6 +165,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if !driver.has_pending_call() && driver.runtime().queued() == 0 {
             return Ok(false);
         }
+        if self.live == self.maximum {
+            return Ok(false);
+        }
+        // More than one admitted operation uses the ordinary FIFO. A parked
+        // first operation must keep its place ahead of newly accepted work.
+        if let Some((index, entry)) = self.starting.take() {
+            self.schedule_entry(index, entry);
+        }
         let index = self.first_free;
         if index == self.entries.len() {
             if index == self.maximum {
@@ -227,14 +239,12 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         execute: bool,
         results: Results,
     ) {
-        let waker = self.ready.insert(index, true);
-        results.bind_protocol_waker(waker.clone());
         let entry = Entry {
             #[cfg(test)]
             polls: 0,
             result_revision: 0,
             redirect_work: capntproto_rpc_engine::work_queue::Link::EMPTY,
-            waker,
+            waker: Waker::noop().clone(),
             running,
             results,
             stage: if execute {
@@ -246,13 +256,25 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if !execute {
             entry.results.cancel();
         }
+        self.live += 1;
+        self.preparing += usize::from(execute);
+        if self.live == 1 {
+            self.starting = Some((index, entry));
+        } else {
+            self.schedule_entry(index, entry);
+        }
+    }
+
+    #[inline(always)]
+    fn schedule_entry(&mut self, index: usize, mut entry: Entry<'p, 'id, I, C, H>) {
+        let waker = self.ready.insert(index, true);
+        entry.results.bind_protocol_waker(waker.clone());
+        entry.waker = waker;
         if index == self.entries.len() {
             self.entries.push(Some(entry));
         } else {
             self.entries[index] = Some(entry);
         }
-        self.live += 1;
-        self.preparing += usize::from(execute);
         self.first_free = self.entries[index + 1..]
             .iter()
             .position(Option::is_none)
@@ -429,7 +451,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             *remaining_budget = remaining_budget.saturating_sub(1);
             return Poll::Ready(Ok(Progress::Idle));
         }
-        self.ready.register(cx.waker());
+        let mut registered = false;
         let mut advanced = false;
         while *remaining_budget != 0 {
             if (self.protocol_turn || self.ready.is_empty())
@@ -450,19 +472,36 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 }
             }
             self.protocol_turn = true;
-            let Some(ready) = self.ready.pop() else {
-                *remaining_budget -= 1;
-                return if advanced {
-                    Poll::Ready(Ok(Progress::Advanced))
-                } else {
-                    Poll::Pending
-                };
+            let mut starting = self.starting.take();
+            let ready = if starting.is_none() {
+                if !registered {
+                    self.ready.register(cx.waker());
+                    registered = true;
+                }
+                self.ready.pop()
+            } else {
+                None
             };
-            let index = ready.index();
-            let Some(entry) = self.entries[index].as_mut() else {
-                // A stale notification cannot refer to a new generation.
-                *remaining_budget -= 1;
-                continue;
+            let index = match (&starting, &ready) {
+                (Some((index, _)), _) => *index,
+                (_, Some(ready)) => ready.index(),
+                _ => {
+                    *remaining_budget -= 1;
+                    return if advanced {
+                        Poll::Ready(Ok(Progress::Advanced))
+                    } else {
+                        Poll::Pending
+                    };
+                }
+            };
+            let entry = if let Some((_, entry)) = &mut starting {
+                entry
+            } else {
+                let Some(entry) = self.entries[index].as_mut() else {
+                    *remaining_budget -= 1;
+                    continue;
+                };
+                entry
             };
             if entry.result_revision != entry.results.revision() {
                 entry.result_revision = entry.results.revision();
@@ -527,6 +566,38 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                     .results
                     .redirect()
                     .is_some_and(|redirect| !redirect.sent.get());
+            if let Some((index, entry)) = starting.take() {
+                if matches!(outcome, Poll::Ready(Ok(Progress::Replied))) {
+                    self.live -= 1;
+                    self.preparing -= usize::from(matches!(entry.stage, Stage::Prepare));
+                    self.results_cache.recycle(release(
+                        entry,
+                        driver,
+                        messages,
+                        self.completed_plain,
+                    ));
+                    return outcome;
+                }
+                // Like legacy's now_or_never handoff, a suspended first poll
+                // must run again with its operation's real waker. Discard only
+                // the inert probe subscription; independent observers remain.
+                entry.results.remove_noop_waiter();
+                if !registered {
+                    self.ready.register(cx.waker());
+                    registered = true;
+                }
+                self.schedule_entry(index, entry);
+                if redirect_ready {
+                    self.redirects.push(&mut self.entries, index, |slot| {
+                        &mut slot.as_mut().unwrap().redirect_work
+                    });
+                }
+                if matches!(outcome, Poll::Ready(Err(_))) {
+                    return outcome;
+                }
+                advanced = true;
+                continue;
+            }
             if redirect_ready {
                 self.redirects.push(&mut self.entries, index, |slot| {
                     &mut slot.as_mut().unwrap().redirect_work
@@ -564,7 +635,10 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
         if advanced {
             Poll::Ready(Ok(Progress::Advanced))
-        } else if self.ready.is_empty() && !driver.ledgers().answers.has_changed_producers() {
+        } else if self.starting.is_none()
+            && self.ready.is_empty()
+            && !driver.ledgers().answers.has_changed_producers()
+        {
             Poll::Pending
         } else {
             Poll::Ready(Ok(Progress::Yield))
@@ -832,6 +906,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         messages: &mut messages::Messages<'p, '_, '_>,
     ) {
         self.ready.close();
+        if let Some((_, entry)) = self.starting {
+            drop(release(entry, driver, messages, false));
+        }
         for entry in self.entries.into_iter().flatten() {
             drop(release(entry, driver, messages, false));
         }
