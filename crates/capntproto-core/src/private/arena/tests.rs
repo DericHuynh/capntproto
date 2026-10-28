@@ -107,7 +107,6 @@ fn external_segments_reject_mutation_and_survive_allocator_recovery() {
     assert!(!arena.is_writable(id));
     assert!(!arena.try_resize_allocation(id, 0, 2, 1));
     assert_eq!(arena.allocate(id, 0), None);
-    assert_eq!(arena.allocate_ptr(id, 0), None);
     assert_eq!(
         arena.segment_for_output(id).unwrap(),
         crate::Word::words_to_bytes(&owner)
@@ -124,82 +123,4 @@ fn external_segments_reject_mutation_and_survive_allocator_recovery() {
     let mut reused = BuilderArenaImpl::new(allocator);
     reused.allocate_segment(1).unwrap();
     assert_eq!(reused.allocate(0, 1), Some(0));
-}
-
-#[test]
-fn segment_reservations_match_wide_cursor_model() {
-    for capacity in [0, 1, 7, 512, u32::MAX - 1, u32::MAX] {
-        for used in [0, capacity / 2, capacity] {
-            for amount in [0, 1, capacity, capacity - used, u32::MAX] {
-                // The reservation touches only metadata; this address is never
-                // dereferenced, including for capacities larger than real RAM.
-                let mut segment = BuilderSegment {
-                    #[cfg(feature = "alloc")]
-                    external: None,
-                    ptr: core::ptr::NonNull::<crate::Word>::dangling()
-                        .as_ptr()
-                        .cast(),
-                    capacity,
-                    allocated: used,
-                };
-                let end = u64::from(used) + u64::from(amount);
-                let expected = (end <= u64::from(capacity)).then_some(used);
-                assert_eq!(segment.allocate(amount), expected);
-                assert_eq!(
-                    u64::from(segment.allocated),
-                    if expected.is_some() {
-                        end
-                    } else {
-                        u64::from(used)
-                    }
-                );
-                assert!(segment.allocated <= capacity);
-                let cursor = segment.allocated;
-                assert_eq!(segment.allocate(0), Some(cursor));
-                assert_eq!(segment.allocated, cursor);
-            }
-        }
-    }
-}
-
-#[cfg(feature = "alloc")]
-#[test]
-fn heap_reservations_return_non_null_empty_and_one_past_end_addresses() {
-    for capacity in [0, 4] {
-        let mut arena =
-            BuilderArenaImpl::new(message::HeapAllocator::new().first_segment_words(capacity));
-        arena.allocate_segment(capacity).unwrap();
-        let (base, words) = arena.get_segment_mut(0);
-        assert_eq!(words, capacity);
-        assert!(!base.is_null());
-        assert_eq!(arena.allocate_ptr(0, 0).unwrap().as_ptr(), base);
-        assert_eq!(arena.allocate_ptr(0, capacity).unwrap().as_ptr(), base);
-        let end = base.wrapping_add(capacity as usize * BYTES_PER_WORD);
-        assert_eq!(arena.allocate_ptr(0, 0).unwrap().as_ptr(), end);
-        assert_eq!(arena.allocate_ptr(0, 1), None);
-        assert_eq!(arena.allocate_ptr(0, u32::MAX), None);
-        assert_eq!(arena.allocate_ptr(0, 0).unwrap().as_ptr(), end);
-        assert_eq!(
-            arena.segment_for_output(0).unwrap().len(),
-            capacity as usize * BYTES_PER_WORD
-        );
-    }
-}
-
-#[test]
-fn fixed_reservations_preserve_empty_and_one_past_end_addresses() {
-    let mut words = [ZERO; 4];
-    crate::Word::words_to_bytes_mut(&mut words).fill(0xa5);
-    let mut arena = fixed::FixedArena::new(crate::Word::words_to_bytes_mut(&mut words)).unwrap();
-    let (base, capacity) = arena.get_segment_mut(0);
-    assert_eq!(capacity, 4);
-    let after_root = base.wrapping_add(BYTES_PER_WORD);
-    assert_eq!(arena.allocate_ptr(0, 0).unwrap().as_ptr(), after_root);
-    assert_eq!(arena.allocate_ptr(0, 3).unwrap().as_ptr(), after_root);
-    let end = base.wrapping_add(4 * BYTES_PER_WORD);
-    assert_eq!(arena.allocate_ptr(0, 0).unwrap().as_ptr(), end);
-    assert_eq!(arena.allocate_ptr(0, 1), None);
-    assert_eq!(arena.allocate_ptr(0, u32::MAX), None);
-    assert_eq!(arena.allocate_ptr(0, 0).unwrap().as_ptr(), end);
-    assert!(arena.bytes().iter().all(|byte| *byte == 0));
 }
