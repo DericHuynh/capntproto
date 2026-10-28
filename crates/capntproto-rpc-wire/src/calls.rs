@@ -16,6 +16,15 @@ use capnp::{
 };
 use capntproto_rpc_engine::ids::{AnswerId, ImportId, QuestionId, WireId};
 
+/// Result destination of an outgoing invocation. Third-party metadata must
+/// come from the authenticated network, independently of wire question IDs.
+#[derive(Clone, Copy)]
+pub enum CallDestination<'a> {
+    Caller,
+    Yourself,
+    ThirdParty(capnp::any_pointer::Reader<'a>),
+}
+
 /// A borrowed incoming Call, validated against a generated method before its
 /// parameters are exposed. The original message remains borrowed throughout.
 pub struct Incoming<'a> {

@@ -165,6 +165,31 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         if let Some(frame) = pending {
             frame.release(messages);
         }
+        if let Err(Cause::Protocol(error)) = &outcome {
+            if error.kind != capnp::ErrorKind::Disconnected
+                && self.driver.disconnected().is_none()
+                && self
+                    .driver
+                    .send_abort(
+                        messages,
+                        queue,
+                        self.options.reader,
+                        error.kind,
+                        &error.extra,
+                    )
+                    .is_ok()
+            {
+                // Flush what the transport can accept immediately. Terminal
+                // notification must not wait forever on a broken/blocked peer.
+                std::future::poll_fn(|cx| {
+                    let _ = self
+                        .output
+                        .poll(writer, queue, messages, cx, self.options.budget);
+                    Poll::Ready(())
+                })
+                .await;
+            }
+        }
         // Stop owned commands before a potentially blocked drain. In-flight
         // protocol owners remain alive until all transport polling has ended.
         if let Some(registration) = &self.registration {
@@ -222,6 +247,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         client_reason.kind = capnp::ErrorKind::Disconnected;
         self.hooks.disconnect(client_reason.clone());
         self.driver.disconnect(reason.kind);
+        for pending in self.native_tails.drain(..) {
+            self.driver.release_question(pending.retained);
+        }
         controls.shutdown(&mut ControlContext::new(&mut self), messages);
         self.calls
             .terminate_with_error(&mut self.driver, messages, client_reason);

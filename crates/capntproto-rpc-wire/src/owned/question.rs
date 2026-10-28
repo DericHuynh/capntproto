@@ -11,6 +11,8 @@ pub struct Question<'pool, 'q> {
     key: questions::Key<'q>,
 }
 enum Original<'pool> {
+    Join(Frame<'pool>),
+    RejectedJoin,
     // No parameter grants and no response consumer. Ordered output owns the
     // only request frame; Finish releases any unexpected result grants.
     PipelineOnly,
@@ -25,12 +27,39 @@ enum Original<'pool> {
 }
 impl<'pool> Original<'pool> {
     fn release(self, messages: &mut messages::Messages<'pool, '_, '_>) {
-        if let Self::Frame(frame) = self {
+        if let Self::Frame(frame) | Self::Join(frame) = self {
             frame.release(messages);
         }
     }
 }
 impl<'pool, 'q> Question<'pool, 'q> {
+    pub(super) fn matches_unimplemented_join(
+        &self,
+        join: rpc_capnp::join::Reader<'_>,
+        messages: &messages::Messages<'pool, '_, '_>,
+    ) -> Result<bool, super::Error> {
+        let Original::Join(frame) = &self.original else {
+            return Ok(false);
+        };
+        frame
+            .with(messages, |root| -> capnp::Result<bool> {
+                let rpc_capnp::message::Join(original) = root.which()? else {
+                    return Ok(false);
+                };
+                Ok(capnp::any_struct::Reader::from_reader(original?)
+                    .equals(capnp::any_struct::Reader::from_reader(join))?
+                    == capnp::Equality::Equal)
+            })?
+            .map_err(super::Error::from)
+    }
+    pub(super) fn reject_optional_join(
+        &mut self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) {
+        let previous = core::mem::replace(&mut self.original, Original::RejectedJoin);
+        debug_assert!(matches!(previous, Original::Join(_)));
+        previous.release(messages);
+    }
     #[cfg(feature = "alloc")]
     pub(super) fn publish_parts(
         reservation: questions::Reservation<'_, 'q, '_>,
@@ -110,14 +139,26 @@ impl<'pool, 'q> Question<'pool, 'q> {
             }
         };
         let accepted =
-            crate::admission::question(reservation, messages, frame.lease, frame.options)
-                .map(|prepared| prepared.accept(queue));
-        let local = match accepted {
-            Ok(local) => local,
+            crate::admission::question(reservation, messages, frame.lease, frame.options).map(
+                |prepared| {
+                    let is_join = prepared.is_join();
+                    (prepared.accept(queue), is_join)
+                },
+            );
+        let (local, is_join) = match accepted {
+            Ok(accepted) => accepted,
             Err(error) => {
                 original.release(messages);
                 return Err(error);
             }
+        };
+        let original = if is_join {
+            let Original::Frame(frame) = original else {
+                unreachable!("Join retains its immutable request")
+            };
+            Original::Join(frame)
+        } else {
+            original
         };
         Ok(Self {
             original,
@@ -147,6 +188,31 @@ impl<'pool, 'q> Question<'pool, 'q> {
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
         check_payload: bool,
     ) -> Result<Self, crate::admission::Error> {
+        Self::send_granting_reflected_using(
+            reservation,
+            batch,
+            messages,
+            frame,
+            scratch,
+            queue,
+            check_payload,
+            |_, _| Ok(false),
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn send_granting_reflected_using<E>(
+        reservation: questions::Reservation<'_, 'q, '_>,
+        batch: exports::Batch<'_, '_, '_, E>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        frame: Frame<'pool>,
+        scratch: &mut [u32],
+        queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+        check_payload: bool,
+        reflected: impl FnMut(
+            rpc_capnp::cap_descriptor::Reader<'_>,
+            usize,
+        ) -> Result<bool, crate::publication::Error>,
+    ) -> Result<Self, crate::admission::Error> {
         let original = if reservation.id().is_pipeline_only() {
             Original::PipelineOnly
         } else {
@@ -158,7 +224,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
                 }
             }
         };
-        let accepted = crate::admission::granting_question_using(
+        let accepted = crate::admission::granting_question_reflected_using(
             reservation,
             batch,
             messages,
@@ -166,6 +232,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
             scratch,
             frame.options,
             check_payload,
+            reflected,
         )
         .map(|prepared| prepared.accept(queue));
         let local = match accepted {
@@ -195,8 +262,12 @@ impl<'pool, 'q> Question<'pool, 'q> {
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
         metadata: inbound::full::OriginalMetadata,
         check_payload: bool,
+        reflected: impl FnMut(
+            rpc_capnp::cap_descriptor::Reader<'_>,
+            usize,
+        ) -> Result<bool, crate::publication::Error>,
     ) -> Result<Self, crate::admission::Error> {
-        let local = crate::admission::granting_question_using(
+        let local = crate::admission::granting_question_reflected_using(
             reservation,
             batch,
             messages,
@@ -204,6 +275,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
             scratch,
             frame.options,
             check_payload,
+            reflected,
         )?
         .accept(queue);
         Ok(Self {
@@ -366,6 +438,9 @@ impl<'pool, 'q> Question<'pool, 'q> {
         )>,
         Error,
     > {
+        if matches!(self.original, Original::Join(_) | Original::RejectedJoin) {
+            return Ok(None);
+        }
         if result.get_answer_id() != self.key.id().to_wire() {
             return Err(Error::WrongMessage);
         }
@@ -508,17 +583,20 @@ impl<'pool, 'q> Question<'pool, 'q> {
         };
         let kind = match &self.original {
             Original::PipelineOnly => return Err(Error::WrongMessage),
+            Original::RejectedJoin => admit(inbound::full::Original::optional_control())?,
             Original::DataOnly {
                 method,
                 allows_handoff,
             } => admit(inbound::full::Original::data_only(*method, *allows_handoff))?,
             Original::Metadata(metadata) => admit(metadata.original())?,
-            Original::Frame(frame) => frame.with(messages, |original| {
-                let original =
-                    inbound::full::Original::read_published(result.get_answer_id(), original)
-                        .map_err(Error::Admission)?;
-                admit(original)
-            })??,
+            Original::Frame(frame) | Original::Join(frame) => {
+                frame.with(messages, |original| {
+                    let original =
+                        inbound::full::Original::read_published(result.get_answer_id(), original)
+                            .map_err(Error::Admission)?;
+                    admit(original)
+                })??
+            }
         };
         if let Some(descriptors) = descriptors {
             receipts.deliver(imports, receiver, descriptors);

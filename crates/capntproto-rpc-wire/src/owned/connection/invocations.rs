@@ -182,7 +182,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             messages,
             minimum,
             options,
-            None,
+            calls::CallDestination::Caller,
             fill,
         )
     }
@@ -199,7 +199,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
-        destination: Option<capnp::any_pointer::Reader<'_>>,
+        destination: calls::CallDestination<'_>,
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,

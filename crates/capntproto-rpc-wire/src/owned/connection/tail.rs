@@ -3,6 +3,30 @@ use super::*;
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
+    /// Retain the exact question generation across a deferred protocol action.
+    /// Release this affine reference through `release_question` after publishing
+    /// or canceling that action. It confers no authority on other connections.
+    pub fn retain_question(
+        &mut self,
+        key: questions::Key<'id>,
+    ) -> Result<questions::Local<'id>, Error> {
+        self.check_live()?;
+        let index = ExchangeSlot::index(&self.exchanges, &self.ledgers.questions, key)
+            .ok_or(Error::UnknownQuestion)?;
+        let source = match self.exchanges[index].exchange.as_ref().unwrap() {
+            Exchange::Pending(question) => question.local(),
+            Exchange::Returned(response) => response.local_ref(),
+        }
+        .ok_or(Error::PendingResponse)?;
+        self.ledgers
+            .questions
+            .retain(source)
+            .map_err(Error::Question)
+    }
+    pub fn release_question(&mut self, question: questions::Local<'id>) {
+        self.ledgers.questions.release(question);
+    }
+
     /// Publish takeFromOtherQuestion after the redirected Call. Rejected output
     /// retains both tasks and leaves the child available for exactly one retry.
     pub fn tail_answer(

@@ -186,9 +186,29 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             graph.release(snapshot);
             return Err(Error::Capacity);
         };
-        let promise = match graph.promise(&mut None) {
+        // Like legacy's exported promise, retain its currently callable route.
+        // Only resolution of this independent observer freezes the final export;
+        // forwarding through its initial route does not authorize that resolution.
+        let mut route = match graph.inspect(&snapshot) {
+            Ok(clients::Destination::Endpoint { key, .. }) => match graph.retain_key(key) {
+                Ok(route) => Some(route),
+                Err(error) => {
+                    graph.release(snapshot);
+                    return Err(Error::Graph(error));
+                }
+            },
+            Ok(clients::Destination::Waiting(_)) => None,
+            Err(error) => {
+                graph.release(snapshot);
+                return Err(Error::Graph(error));
+            }
+        };
+        let promise = match graph.promise(&mut route) {
             Ok(client) => client,
             Err(error) => {
+                if let Some(route) = route {
+                    graph.release(route);
+                }
                 graph.release(snapshot);
                 return Err(Error::Graph(error));
             }
@@ -270,6 +290,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             Default::default(),
             |_, _| u8::MAX,
             &Default::default(),
+            |_| Ok(None),
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -286,6 +307,12 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         resources: R,
         attach: impl FnMut(&G::Owner, &mut R) -> u8,
         descriptors: &crate::publication::descriptors::Descriptors<G::Owner>,
+        reflect: impl for<'a> Fn(
+            &'a G::Owner,
+        ) -> Result<
+            Option<crate::calls::Target<'a>>,
+            capntproto_rpc_engine::questions::Error,
+        >,
     ) -> Result<Progress, Error>
     where
         G: clients::Capabilities<'g, Peer = P>,
@@ -308,6 +335,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             resources,
             attach,
             descriptors,
+            reflect,
         );
         if let Err(error) = &result {
             if self
@@ -355,6 +383,12 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         mut resources: R,
         mut attach: impl FnMut(&G::Owner, &mut R) -> u8,
         descriptors: &crate::publication::descriptors::Descriptors<G::Owner>,
+        reflect: impl for<'a> Fn(
+            &'a G::Owner,
+        ) -> Result<
+            Option<crate::calls::Target<'a>>,
+            capntproto_rpc_engine::questions::Error,
+        >,
     ) -> Result<Progress, Error>
     where
         G: clients::Capabilities<'g, Peer = P>,
@@ -441,8 +475,18 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             clients::Destination::Endpoint { owner, .. } => owner.exception(),
             clients::Destination::Waiting(_) => unreachable!("frozen settled route"),
         };
+        let reflectable = match graph.inspect(frozen).map_err(Error::Graph)? {
+            clients::Destination::Endpoint { owner, .. } if exception.is_none() => reflect(owner)
+                .map_err(|e| {
+                    Error::Output(owned::Error::Output(
+                        crate::publication::Error::Question(e).into(),
+                    ))
+                })?
+                .is_some(),
+            _ => false,
+        };
         let attached = match graph.inspect(frozen).map_err(Error::Graph)? {
-            clients::Destination::Endpoint { owner, .. } if exception.is_none() => {
+            clients::Destination::Endpoint { owner, .. } if exception.is_none() && !reflectable => {
                 attach(owner, &mut resources)
             }
             _ => u8::MAX,
@@ -450,7 +494,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         let output = queue.reserve_with(resources).map_err(Error::Storage)?;
         let mut batch = exports.batch();
         batch.resolve_promise(entry.export).map_err(Error::Export)?;
-        let grant = if exception.is_none() {
+        let grant = if exception.is_none() && !reflectable {
             let candidate = graph.retain_key(frozen.key()).map_err(Error::Graph)?;
             Some(batch.export(candidate).map_err(|rejected| {
                 graph.release(rejected.value);
@@ -463,15 +507,41 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             clients::Destination::Endpoint { owner, .. } => Some(owner),
             _ => None,
         };
+        let reflected = if reflectable {
+            reflect(owner.expect("reflected endpoint")).map_err(|e| {
+                Error::Output(owned::Error::Output(
+                    crate::publication::Error::Question(e).into(),
+                ))
+            })?
+        } else {
+            None
+        };
         let extra = descriptors
             .bytes(owner, false)
             .map_err(|e| Error::Output(e.into()))?;
-        let minimum = minimum.checked_add(extra).ok_or(Error::Capacity)?;
+        let reflection_bytes = match reflected {
+            Some(crate::calls::Target::Promised { path, .. }) => path
+                .fields()
+                .len()
+                .checked_mul(8)
+                .and_then(|n| n.checked_add(32))
+                .ok_or(Error::Capacity)?,
+            _ => 0,
+        };
+        let minimum = minimum
+            .checked_add(extra)
+            .and_then(|n| n.checked_add(reflection_bytes))
+            .ok_or(Error::Capacity)?;
         let frame = Frame::build(messages, minimum, options, |builder| {
             let mut root = builder.try_init_root::<Message>()?;
             let mut resolve = root.field(Message::RESOLVE).init()?;
             resolve.scalar(Resolve::PROMISE_ID).set(entry.id.to_wire());
-            if let Some(grant) = &grant {
+            if let Some(target) = reflected {
+                crate::owned::connection::reflection::write(
+                    target,
+                    resolve.field(Resolve::CAP).init()?,
+                )?;
+            } else if let Some(grant) = &grant {
                 let mut descriptor = resolve.field(Resolve::CAP).init()?;
                 descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
                 descriptors.describe(owner, grant.id(), false, descriptor)?;
@@ -491,7 +561,11 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
             Ok(())
         });
         let outcome = match frame {
-            Ok(frame) => owned::publish_granting(frame, batch, messages, scratch, output),
+            Ok(frame) => {
+                owned::publish_granting(frame, batch, messages, scratch, output, |descriptor, _| {
+                    crate::owned::connection::reflection::check(reflected, descriptor)
+                })
+            }
             Err(error) => {
                 drop(batch);
                 Err(error)

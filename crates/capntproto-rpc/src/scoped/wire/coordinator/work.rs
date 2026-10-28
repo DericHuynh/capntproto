@@ -345,7 +345,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // invocation; otherwise it takes an extra scheduler rotation
                 // just to publish its already-ready frame.
                 Lane::Calls => self.hooks.inbox.queue.borrow().is_empty() && self.calls.is_empty(),
-                Lane::Worker => self.worker.is_empty(),
+                Lane::Worker => self.worker.is_empty() && self.native_tails.is_empty(),
                 // Maintenance owns its bounded readiness selection and charges
                 // one step when idle. Probing here builds the same sixteen-class
                 // readiness mask again immediately before polling the lane.
@@ -671,6 +671,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     ) -> capnp::Result<bool> {
         let hooks = &mut self.hooks;
         let foreign = &mut self.foreign;
+        let calls = &self.calls;
         self.worker.accept_using(&mut self.driver, |driver| {
             driver
                 .dispatch_immediate_call_with(true, messages, |answer, path, runtime| {
@@ -683,7 +684,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     }
                     hooks
                         .server_pipeline(&answer.producer, path, runtime, |runtime, hook| {
-                            foreign.import(runtime, hook)
+                            // Native projections already own the exact branded
+                            // route. Avoid a foreign promise whose resolver would
+                            // keep the parent's response alive until this child.
+                            match calls.retain_direct(runtime, hook)? {
+                                Some(client) => Ok(client),
+                                None => foreign.import(runtime, hook),
+                            }
                         })
                         .map(|client| client.map(Ok))
                         .map_err(|error| pipelines::Error::Input(owned::Error::Wire(error.kind)))
@@ -721,7 +728,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if let Some(credit) = credit {
                     output.retain_call(&mut bundle, credit)?;
                 }
-                let direct = match publication {
+                let (direct, native) = match publication {
                     super::calls::Publication::Immediate {
                         target,
                         method,
@@ -763,10 +770,19 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             .map(|key| key.map(super::calls::SendOutcome::Immediate))
                             .or_else(super::calls::publication_error);
                     }
-                    super::calls::Publication::Queued { direct } => direct,
+                    super::calls::Publication::Queued { direct, native } => (direct, native),
                 };
+                let native = native
+                    .map(|context| {
+                        self.native_tails.try_reserve(1).map_err(wire_error)?;
+                        let parent = self.worker.native_parent(context).ok_or_else(|| {
+                            Error::disconnected("native tail answer retired".into())
+                        })?;
+                        Ok::<_, Error>((parent, context.clone()))
+                    })
+                    .transpose()?;
                 if direct {
-                    return driver
+                    let result = driver
                         .send_invocation_using(
                             messages,
                             queue,
@@ -777,7 +793,22 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             |owner, imports, bundle| output.attach(owner, imports, bundle),
                         )
                         .map(|sent| sent.map(super::calls::SendOutcome::Queued))
-                        .or_else(super::calls::publication_error);
+                        .or_else(super::calls::publication_error)?;
+                    if let (
+                        Some((parent, context)),
+                        Some(super::calls::SendOutcome::Queued(sent)),
+                    ) = (native, &result)
+                    {
+                        let retained = driver.retain_question(sent.question).map_err(wire_error)?;
+                        context.published(false);
+                        self.native_tails.push_back(PendingTail {
+                            parent,
+                            child: sent.question,
+                            retained,
+                            context,
+                        });
+                    }
+                    return Ok(result);
                 }
                 invocations
                     .send_one_with_resources(
@@ -811,6 +842,31 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         quantum: &mut usize,
     ) -> Poll<capnp::Result<server::Progress>> {
         let options = self.options;
+        if let Some(pending) = self.native_tails.front() {
+            match self.driver.tail_answer(
+                pending.parent,
+                pending.child,
+                messages,
+                queue,
+                options.output_bytes.get(),
+                options.reader,
+            ) {
+                Ok(retired) => drop(retired),
+                Err(error) if super::calls::output_capacity_error(&error) && !queue.is_empty() => {
+                    self.output_blocked = true;
+                    return Poll::Pending;
+                }
+                Err(error) => return Poll::Ready(Err(wire_error(error))),
+            }
+            let pending = self
+                .native_tails
+                .pop_front()
+                .expect("published native tail");
+            self.driver.release_question(pending.retained);
+            pending.context.published(true);
+            *quantum = quantum.saturating_sub(1);
+            return Poll::Ready(Ok(server::Progress::Advanced));
+        }
         let queue = RefCell::new(queue);
         let mut worker_cx = Context::from_waker(&self.worker_waker);
         self.worker.poll_using(

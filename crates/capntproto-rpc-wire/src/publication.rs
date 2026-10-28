@@ -105,26 +105,7 @@ pub fn prepare<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
     )
 }
 
-/// Native local output still validates every descriptor and exact grant count.
-pub(crate) fn prepare_native<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
-    batch: exports::Batch<'a, 'exports, 'table, T>,
-    messages: &'a mut messages::Messages<'pool, 'storage, 'bytes>,
-    lease: messages::Lease<'pool>,
-    scratch: &mut [u32],
-    options: capnp::message::ReaderOptions,
-) -> Result<Prepared<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>, Error> {
-    prepare_with(
-        batch,
-        messages,
-        lease,
-        scratch,
-        options,
-        |_, _| Ok(false),
-        false,
-    )
-}
-
-fn prepare_with<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
+pub(crate) fn prepare_with<'a, 'exports, 'table, 'pool, 'storage, 'bytes, T>(
     batch: exports::Batch<'a, 'exports, 'table, T>,
     messages: &'a mut messages::Messages<'pool, 'storage, 'bytes>,
     lease: messages::Lease<'pool>,

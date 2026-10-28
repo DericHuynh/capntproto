@@ -9,6 +9,58 @@ pub struct JoinRejected<'pool, 'id, const PATH: usize> {
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
+    /// Freeze a bilateral JoinResult, including its joined capability. The
+    /// admitted Join token authorizes this exact answer generation. Publication
+    /// uses the ordinary result-grant transaction through `send_join_results`.
+    #[allow(clippy::result_large_err)]
+    pub fn complete_join_results(
+        &mut self,
+        join: &super::super::join::Join<'pool, 'id, 'id, PATH>,
+        result: LocalResult<'pool, 'id, CAPS>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<(), AnswerHandoffRejected<'pool, 'id, CAPS>> {
+        if let Err(error) = self.check_answer_completion(join.key()) {
+            return Err(AnswerHandoffRejected {
+                error,
+                result: Ok(result),
+            });
+        }
+        self.complete_local_answer(join.key(), Ok(result), messages)
+    }
+
+    /// Publish a prepared bilateral result. Failed output returns the Join
+    /// token for retry; no capability grants or Finish obligations are lost.
+    #[allow(clippy::too_many_arguments, clippy::result_large_err)]
+    pub fn send_join_results(
+        &mut self,
+        join: super::super::join::Join<'pool, 'id, 'id, PATH>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, impl Default>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
+    ) -> Result<Option<A>, JoinRejected<'pool, 'id, PATH>> {
+        match self.send_answer(
+            join.key(),
+            messages,
+            queue,
+            minimum,
+            options,
+            scratch,
+            |_, _| Ok(()),
+        ) {
+            Ok(retired) => {
+                join.release(
+                    messages,
+                    &mut self.ledgers.exports,
+                    &mut self.ledgers.answers,
+                );
+                Ok(retired)
+            }
+            Err(error) => Err(JoinRejected { error, join }),
+        }
+    }
+
     /// Return an authenticated network's Join result. The network's registration
     /// guard belongs in the answer's producer; Finish returns that guard only
     /// after the reply and any accepted pipeline references are done. The

@@ -24,18 +24,26 @@ pub(super) fn connect<V: 'static>(
     // Capture peer callbacks only after reserving the trusted connection ID.
     let connection = vat::Connection::with_identity(connection, id);
     let idle = connection.idle_notifier();
+    let bilateral = {
+        let connection = connection.network_connection();
+        let connection = connection.borrow();
+        connection.supports_two_party_join() && !connection.supports_multiparty_join()
+    };
     let network_commands = match connection.network_connection().borrow().control_mode() {
-        crate::ControlMode::TwoParty => None,
-        crate::ControlMode::Network => {
+        crate::ControlMode::TwoParty if !bilateral => None,
+        mode => {
             let commands = coordinator::multiparty::Commands::new(
                 context.options.concurrency.get(),
                 context.options.message_bytes.get(),
             );
-            *commands.network.borrow_mut() = Some(Rc::new(super::introduction::Network {
-                connection: connection.network_connection(),
-                connections: Rc::downgrade(connections),
-                context: Rc::downgrade(context),
-            }));
+            commands.bilateral.set(bilateral);
+            if mode == crate::ControlMode::Network {
+                *commands.network.borrow_mut() = Some(Rc::new(super::introduction::Network {
+                    connection: connection.network_connection(),
+                    connections: Rc::downgrade(connections),
+                    context: Rc::downgrade(context),
+                }));
+            }
             Some(commands)
         }
     };
@@ -62,6 +70,7 @@ pub(super) fn connect<V: 'static>(
     let policy = state.policy.clone();
     let idle = state.idle.clone();
     let joins = context.join_network.clone();
+    let joiner = super::join::Joiner::new(Rc::downgrade(connections), Rc::downgrade(context));
     context
         .tasks
         .try_add_connection(async move {
@@ -77,6 +86,7 @@ pub(super) fn connect<V: 'static>(
                 idle,
                 network_commands,
                 joins,
+                joiner,
             )
             .await;
             retained.close_clients(outcome.as_ref().err().cloned().unwrap_or_else(closing));
@@ -105,6 +115,7 @@ async fn run<V: 'static>(
     idle: Rc<dyn Fn(bool)>,
     network_commands: Option<Rc<coordinator::multiparty::Commands>>,
     joins: Option<Rc<dyn crate::multiparty::JoinNetwork<V>>>,
+    joiner: super::join::Joiner<V>,
 ) -> capnp::Result<()> {
     let mut buffers = messages::GrowingBuffers::new(
         options.message_buffers.get(),
@@ -184,12 +195,17 @@ async fn run<V: 'static>(
                 driver.set_descriptors(coordinator::multiparty::introduction::descriptors());
                 driver.use_owned_output_queues(true);
                 driver.use_native_writer();
+                driver.allow_join({
+                    let connection = network_connection.borrow();
+                    connection.supports_two_party_join() || connection.supports_multiparty_join()
+                });
                 let mut hooks = ClientHooks::new(options.hooks.get(), options.concurrency.get())
                     .with_message_pool(capnp::message::SegmentPool::new(
                         options.cached_message_words,
                         options.cached_message_segments,
                     ))
                     .with_admission(policy.admission.clone());
+                hooks.set_native_tail(network_connection.borrow().supports_tail_call_transfer());
                 if let Some(commands) = &network_commands {
                     hooks = hooks.with_joins(commands.handle());
                 }
@@ -240,6 +256,7 @@ async fn run<V: 'static>(
                         joins,
                         network_commands,
                         options.concurrency.get(),
+                        joiner,
                     );
                     coordinator
                         .run_connection(

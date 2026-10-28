@@ -303,6 +303,17 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let mut batch = self.ledgers.exports.batch();
         let mut minimum = minimum;
         let mut prepared = false;
+        let mut staged = self
+            .message_capabilities
+            .buffer::<_, CAPS>(
+                if cancelled || redirected {
+                    0
+                } else {
+                    result.as_ref().map_or(0, |result| result.count)
+                },
+                || reflection::Descriptor::None,
+            )
+            .ok_or(Error::Input(super::super::Error::Capacity))?;
         let frame = if cancelled || redirected || result.is_err() {
             Frame::build(messages, minimum, options, |builder| {
                 if cancelled {
@@ -365,12 +376,28 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     options,
                 )
             } else {
-                let mut grants = self
-                    .message_capabilities
-                    .buffer::<_, CAPS>(result.count, || None)
-                    .ok_or(Error::Input(super::super::Error::Capacity))?;
                 for (index, client) in result.clients[..result.count].iter().enumerate() {
                     let Some(client) = client else { continue };
+                    if let Ok(clients::Destination::Endpoint { owner, .. }) =
+                        self.runtime.inspect(client)
+                    {
+                        if let Some(target) =
+                            reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
+                                .map_err(Error::Question)?
+                        {
+                            if let calls::Target::Promised { path, .. } = target {
+                                minimum = minimum
+                                    .checked_add(32)
+                                    .and_then(|n| {
+                                        n.checked_add(path.fields().len().checked_mul(8)?)
+                                    })
+                                    .ok_or(Error::Input(super::super::Error::Wire(
+                                        capnp::ErrorKind::MessageSizeOverflow,
+                                    )))?;
+                            }
+                            continue;
+                        }
+                    }
                     let grant = self
                         .exported
                         .stage(&mut self.runtime, &mut batch, client)
@@ -381,7 +408,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         }
                         _ => u8::MAX,
                     };
-                    grants[index] = Some((grant.id(), grant.is_promise(), attached));
+                    staged[index] =
+                        reflection::Descriptor::Grant(grant.id(), grant.is_promise(), attached);
                     let owner = batch.pending_owner(grant.id()).and_then(|client| {
                         match self.runtime.inspect(client) {
                             Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
@@ -397,6 +425,23 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         .ok_or(Error::Input(super::super::Error::Wire(
                             capnp::ErrorKind::MessageSizeOverflow,
                         )))?;
+                }
+                for (index, client) in result.clients[..result.count].iter().enumerate() {
+                    if let Some(client) = client {
+                        if let Ok(clients::Destination::Endpoint { owner, .. }) =
+                            self.runtime.inspect(client)
+                        {
+                            if let Some(target) = reflection::target(
+                                owner,
+                                self.imports.peer(),
+                                &self.ledgers.questions,
+                            )
+                            .map_err(Error::Question)?
+                            {
+                                staged[index] = reflection::Descriptor::Reflected(target);
+                            }
+                        }
+                    }
                 }
                 result
                     .frame
@@ -419,9 +464,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         let mut destination = returned.into_field(Return::RESULTS).init()?;
                         let mut descriptors =
                             destination.field(Payload::CAP_TABLE).init(result.count)?;
-                        for (index, grant) in grants[..result.count].iter().enumerate() {
+                        for (index, grant) in staged[..result.count].iter().enumerate() {
                             let mut descriptor = descriptors.get_mut(index).unwrap();
-                            let Some((id, promise, attached)) = *grant else {
+                            if let Some(target) = grant.reflected() {
+                                reflection::write(target, descriptor)?;
+                                continue;
+                            }
+                            let reflection::Descriptor::Grant(id, promise, attached) = *grant
+                            else {
                                 descriptor.void(CapDescriptor::NONE).set();
                                 continue;
                             };
@@ -462,7 +512,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             drop(batch);
             answer::send(key, &mut self.ledgers.answers, messages, frame, output)
         } else {
-            answer::send_granting_using(
+            answer::send_granting_reflected_using(
                 key,
                 &mut self.ledgers.answers,
                 batch,
@@ -471,6 +521,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 scratch,
                 output,
                 self.writer_policy == WriterPolicy::Checked,
+                |descriptor, index| {
+                    reflection::check(
+                        staged
+                            .get(index)
+                            .and_then(reflection::Descriptor::reflected),
+                        descriptor,
+                    )
+                },
             )
         }
         .map_err(Error::Input)?;

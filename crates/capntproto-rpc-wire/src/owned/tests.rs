@@ -377,7 +377,7 @@ fn owned_request_retains_frame_receipts_and_target_while_other_io_progresses() {
                     .unwrap_or_else(|e| panic!("{}", e.error));
                     assert_eq!(made, 1);
                     assert_eq!(request.answer().id().to_wire(), 5);
-                    let TargetRef::Promised { path, .. } = request.target() else {
+                    let Some(TargetRef::Promised { path, .. }) = request.target() else {
                         panic!("promised target")
                     };
                     assert_eq!(path.fields(), &[1, 2]);
@@ -500,7 +500,7 @@ fn plain_promised_call_retains_parent_through_finish_without_allocating() {
                         |_| panic!("no descriptors"),
                     )
                     .unwrap_or_else(|e| panic!("{}", e.error));
-                    let TargetRef::Promised { path, .. } = call.target() else {
+                    let Some(TargetRef::Promised { path, .. }) = call.target() else {
                         panic!("promised target");
                     };
                     assert_eq!(path.fields(), &[1, 2]);
@@ -681,7 +681,7 @@ fn growing_plain_call_keeps_target_alive_without_allocating_receipt_storage() {
                             Capacity::Inline,
                         )
                         .unwrap_or_else(|e| panic!("{}", e.error));
-                        match call.target() {
+                        match call.target().unwrap() {
                             TargetRef::Hosted(_) => assert!(!promised),
                             TargetRef::Promised { path, .. } => {
                                 assert!(promised);

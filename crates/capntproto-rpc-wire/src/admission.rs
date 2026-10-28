@@ -86,6 +86,7 @@ impl Drop for Frame<'_, '_, '_, '_> {
 
 #[must_use]
 pub struct Question<'a, 'id, 'questions, 'pool, 'storage, 'bytes> {
+    is_join: bool,
     reservation: questions::Reservation<'a, 'id, 'questions>,
     frame: Frame<'a, 'pool, 'storage, 'bytes>,
 }
@@ -215,11 +216,22 @@ pub fn question<'a, 'id, 'questions, 'pool, 'storage, 'bytes>(
     options: capnp::message::ReaderOptions,
 ) -> Result<Question<'a, 'id, 'questions, 'pool, 'storage, 'bytes>, Error> {
     let mut frame = Frame::new(messages, lease);
+    let mut is_join = false;
     frame.validate(options, |root| {
+        is_join = matches!(root.which(), Ok(rpc_capnp::message::Join(_)));
         check_question(reservation.id(), root, false, reservation.destination())
     })?;
     frame.offer()?;
-    Ok(Question { reservation, frame })
+    Ok(Question {
+        reservation,
+        frame,
+        is_join,
+    })
+}
+impl Question<'_, '_, '_, '_, '_, '_> {
+    pub(crate) fn is_join(&self) -> bool {
+        self.is_join
+    }
 }
 
 #[must_use]
@@ -265,11 +277,54 @@ pub(crate) fn granting_question_using<
     GrantingQuestion<'a, 'id, 'questions, 'exports, 'table, 'pool, 'storage, 'bytes, T>,
     Error,
 > {
-    let publication = if check_payload {
-        crate::publication::prepare(batch, messages, lease, scratch, options)?
-    } else {
-        crate::publication::prepare_native(batch, messages, lease, scratch, options)?
-    };
+    granting_question_reflected_using(
+        reservation,
+        batch,
+        messages,
+        lease,
+        scratch,
+        options,
+        check_payload,
+        |_, _| Ok(false),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn granting_question_reflected_using<
+    'a,
+    'id,
+    'questions,
+    'exports,
+    'table,
+    'pool,
+    'storage,
+    'bytes,
+    T,
+>(
+    reservation: questions::Reservation<'a, 'id, 'questions>,
+    batch: exports::Batch<'a, 'exports, 'table, T>,
+    messages: &'a mut messages::Messages<'pool, 'storage, 'bytes>,
+    lease: messages::Lease<'pool>,
+    scratch: &mut [u32],
+    options: capnp::message::ReaderOptions,
+    check_payload: bool,
+    reflected: impl FnMut(
+        rpc_capnp::cap_descriptor::Reader<'_>,
+        usize,
+    ) -> Result<bool, crate::publication::Error>,
+) -> Result<
+    GrantingQuestion<'a, 'id, 'questions, 'exports, 'table, 'pool, 'storage, 'bytes, T>,
+    Error,
+> {
+    let publication = crate::publication::prepare_with(
+        batch,
+        messages,
+        lease,
+        scratch,
+        options,
+        reflected,
+        check_payload,
+    )?;
     let view = publication.bytes();
     let mut bytes = &*view;
     let message = capnp::serialize::read_message_from_flat_slice_no_alloc(&mut bytes, options)?;

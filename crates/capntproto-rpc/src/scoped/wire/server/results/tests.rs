@@ -1669,3 +1669,43 @@ fn ready_execution_notifies_observers_without_waking_its_active_owner() {
         results.unbind_protocol_waker();
     }
 }
+
+#[test]
+fn native_tail_context_accepts_only_its_live_inbox_and_does_not_retain_owners() {
+    let a = ClientHooks::new(1, 1);
+    let b = ClientHooks::new(1, 1);
+    let results = Results::new();
+    let tail = NativeTail {
+        origin: Rc::downgrade(&a.inbox),
+        owner: Rc::downgrade(&results.0),
+        phase: Cell::new(TailPhase::Prepared),
+    };
+    assert!(tail.accepts(&Rc::downgrade(&a.inbox)));
+    assert!(!tail.accepts(&Rc::downgrade(&b.inbox)));
+    let forwarded = NativeTail {
+        origin: Rc::downgrade(&a.inbox),
+        owner: Rc::downgrade(&results.0),
+        phase: Cell::new(TailPhase::Prepared),
+    };
+    assert!(forwarded.pending());
+    forwarded.forwarded();
+    assert!(!forwarded.pending());
+    assert!(!forwarded.remote());
+    assert!(!tail.remote());
+    tail.published(false);
+    assert!(tail.remote());
+    tail.forwarded();
+    assert!(
+        tail.pending(),
+        "completion cannot downgrade an accepted remote transfer"
+    );
+
+    assert!(!tail.sent());
+    drop(results);
+    assert!(tail.owner.upgrade().is_none());
+    tail.published(true);
+    assert!(tail.sent());
+    drop(a);
+    assert!(!tail.accepts(&tail.origin));
+    assert!(!tail.accepts(&Rc::downgrade(&b.inbox)));
+}

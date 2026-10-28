@@ -9,7 +9,7 @@
 //!
 //! Pending graph promises retain their route until the caller observes graph
 //! progress with [`ClientHooks::collect`]. Network promise resolution, native tail
-//! transfer and Join still belong to the hosted runtime. Caller-supplied endpoint
+//! transfer and Join integrate through the bounded wire driver. Caller-supplied endpoint
 //! metadata preserves attached resources and hosted diagnostics;
 //! this bridge does not replace `RpcSystem` yet.
 #![forbid(unsafe_code)]
@@ -63,6 +63,7 @@ struct Inbox {
     message_pool: Option<capnp::message::SegmentPool>,
     admission: Option<Rc<crate::admission::Admission>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
+    native_tail: bool,
     queue: RefCell<VecDeque<Box<Call>>>,
     owners: Ownership,
 
@@ -234,19 +235,24 @@ impl Endpoint {
     fn forward_projection(&self, result: capnp::Result<Box<dyn ClientHook>>) {
         match result {
             Ok(hook) => {
-                *self.introduced.borrow_mut() = Some(Rc::from(hook));
+                let previous = self.introduced.replace(Some(Rc::from(hook)));
+                drop(previous);
                 let resolution = self.resolution.borrow_mut().take();
                 if let Some(resolution) = resolution {
                     let _ = resolution.sender.send(Ok(()));
                 }
             }
             Err(error) => {
-                *self.failure.borrow_mut() = Some(error.clone());
+                let previous = self.failure.replace(Some(error.clone()));
+                drop(previous);
                 let resolution = self.resolution.borrow_mut().take();
                 if let Some(resolution) = resolution {
                     let _ = resolution.sender.send(Err(error));
                 }
             }
+        }
+        if let Some(changes) = self.metadata_changes.get() {
+            changes.notify();
         }
         self.notify_binding();
         if let Some(inbox) = self.inbox.upgrade() {
@@ -301,6 +307,11 @@ pub struct ClientHooks<'id> {
     maximum_clients: usize,
 }
 impl<'id> ClientHooks<'id> {
+    pub(crate) fn set_native_tail(&mut self, enabled: bool) {
+        Rc::get_mut(&mut self.inbox)
+            .expect("unpublished hooks")
+            .native_tail = enabled;
+    }
     pub(crate) fn with_joins(mut self, joins: wire::coordinator::multiparty::Handle) -> Self {
         Rc::get_mut(&mut self.inbox)
             .expect("unpublished hooks")
@@ -315,6 +326,7 @@ impl<'id> ClientHooks<'id> {
                 message_pool: None,
                 admission: None,
                 joins: None,
+                native_tail: false,
                 queue: RefCell::new(VecDeque::new()),
                 owners: Ownership::default(),
                 wake: RefCell::new(None),
@@ -368,30 +380,28 @@ impl<'id> ClientHooks<'id> {
         self.export_retained(graph, client, pending, true)
     }
 
-    // Authentication may make a pipeline's existing route final without
-    // changing where its already-ordered calls go. Keep local barriers pending.
-    fn freeze_projection(
+    fn fence_projection(
         &mut self,
         graph: &mut impl Capabilities<'id>,
         endpoint: Rc<Endpoint>,
+        adopted: Box<dyn ClientHook>,
+        fence: &mut impl FnMut(Box<dyn ClientHook>, Box<dyn ClientHook>) -> Option<Box<dyn ClientHook>>,
     ) -> capnp::Result<()> {
-        let client = self.lookup(&endpoint)?;
-        if graph
-            .is_settled(client)
-            .map_err(|e| Error::failed(e.to_string()))?
-        {
-            self.collect(graph);
-            return Ok(());
-        }
         let (client, pending) = graph
-            .snapshot_for_export(client)
+            .snapshot_for_export(self.lookup(&endpoint)?)
             .map_err(|e| Error::failed(e.to_string()))?;
         if pending {
             graph.release(client);
             return Ok(());
         }
-        let frozen = self.export_retained(graph, client, false, true)?;
-        endpoint.forward_projection(Ok(frozen.hook));
+        // Freeze into a distinct endpoint: replacing the public projection must
+        // never redirect the old Join share back through its own fence.
+        let frozen = Endpoint::projection(Rc::downgrade(&self.inbox));
+        let old = self
+            .bind_retained(graph, client, false, true, Some(frozen))?
+            .hook;
+        let next = fence(old.add_ref(), adopted).unwrap_or(old);
+        endpoint.forward_projection(Ok(next));
         Ok(())
     }
 
@@ -963,6 +973,7 @@ impl<'id> ClientHooks<'id> {
                 _ => Ok(()),
             };
             *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
+
             endpoint.settled.set(true);
             entry.pending = false;
             *unsettled -= 1;
@@ -1085,7 +1096,7 @@ impl<'id> ClientHooks<'id> {
     /// checked as well as the slot: another bridge or a recycled slot cannot
     /// retarget a call. No branded capability is stored in the owned hook.
     pub fn target(&self, call: &Call) -> capnp::Result<&Client<'id>> {
-        self.lookup(&call.endpoint)
+        self.lookup(call.endpoint())
     }
     fn lookup(&self, endpoint: &Rc<Endpoint>) -> capnp::Result<&Client<'id>> {
         if endpoint.inbox.as_ptr() != Rc::as_ptr(&self.inbox) {
@@ -1177,7 +1188,7 @@ impl<'id> ClientHooks<'id> {
             Poll::Ready(Some(call)) => call,
         };
         let target = self
-            .lookup(&call.endpoint)
+            .lookup(call.endpoint())
             .expect("queued call has its retained route");
         let mut call = Some(call);
         let outcome = runtime
@@ -1236,8 +1247,9 @@ impl Drop for ClientHooks<'_> {
 #[must_use = "complete the call, or drop it to report cancellation"]
 pub struct Call {
     third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
+    native_tail: Option<Rc<wire::server::NativeTail>>,
     credit: Option<Rc<admission::Credit>>,
-    endpoint: Rc<Endpoint>,
+    endpoint: Option<Rc<Endpoint>>,
     interface: u64,
     method: u16,
     hints: CallHints,
@@ -1341,17 +1353,47 @@ impl std::ops::Deref for CallParams {
     }
 }
 impl capnp::private::capability::RequestHook for Call {
+    fn prepare_tail_call(&mut self, context: Rc<dyn std::any::Any>) -> bool {
+        let Ok(context) = context.downcast::<wire::server::NativeTail>() else {
+            return false;
+        };
+        if self.third_party.is_some()
+            || self.native_tail.is_some()
+            || !context.accepts(&self.endpoint().inbox)
+            || !self.endpoint().remote.get()
+            || self.endpoint().introduced.borrow().is_some()
+            || self.endpoint().introduction.borrow().is_some()
+            || self.endpoint().failure.borrow().is_some()
+        {
+            return false;
+        }
+        self.native_tail = Some(context);
+        true
+    }
     fn get(&mut self) -> any_pointer::Builder<'_> {
         self.params.request_mut().builder()
     }
     fn get_brand(&self) -> usize {
-        0
+        if self.third_party.is_none()
+            && self.endpoint().remote.get()
+            && self.endpoint().introduced.borrow().is_none()
+            && self.endpoint().introduction.borrow().is_none()
+            && self
+                .endpoint()
+                .inbox
+                .upgrade()
+                .is_some_and(|inbox| inbox.native_tail)
+        {
+            self.endpoint().inbox.as_ptr() as usize
+        } else {
+            0
+        }
     }
     fn set_hints(&mut self, hints: CallHints) {
         self.hints = hints;
     }
     fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
-        tail_target(&Hook(self.endpoint.clone(), self.credit.clone()))
+        tail_target(&Hook(self.endpoint().clone(), self.credit.clone()))
     }
     fn set_third_party_tail_target(
         &mut self,
@@ -1405,13 +1447,26 @@ impl capnp::private::capability::RequestHook for Call {
     }
 }
 impl Call {
+    fn endpoint(&self) -> &Rc<Endpoint> {
+        self.endpoint
+            .as_ref()
+            .expect("target consumed after publication")
+    }
+    fn publication_committed(&mut self) {
+        // The frozen wire question now owns the request. Like legacy's
+        // RpcRequest, release the destination independently of its reply.
+        self.endpoint.take();
+        if let CallParams::OwnedRequest(request) = &mut self.params {
+            request.publication_committed();
+        }
+    }
     #[inline(always)]
     fn can_send_directly(&self) -> bool {
         self.third_party.is_none() && {
-            let unintroduced = self.endpoint.introduced.borrow().is_none()
-                && self.endpoint.introduction.borrow().is_none();
+            let unintroduced = self.endpoint().introduced.borrow().is_none()
+                && self.endpoint().introduction.borrow().is_none();
             unintroduced
-                || Hook(self.endpoint.clone(), self.credit.clone()).direct_response_available()
+                || Hook(self.endpoint().clone(), self.credit.clone()).direct_response_available()
         }
     }
 
@@ -1420,7 +1475,7 @@ impl Call {
         mut self: Box<Self>,
         inbox: Option<Rc<Inbox>>,
     ) -> Result<Rc<Inbox>, Box<Error>> {
-        if let Some(error) = self.endpoint.failure.borrow().clone() {
+        if let Some(error) = self.endpoint().failure.borrow().clone() {
             return Err(Box::new(error));
         }
         let Some(inbox) = inbox.filter(|inbox| !inbox.closed.get()) else {
@@ -1437,7 +1492,7 @@ impl Call {
             .credit
             .take()
             .or_else(|| inbox.admission.clone().map(admission::Credit::new));
-        if self.endpoint.remote.get() {
+        if self.endpoint().remote.get() {
             if let Some(credit) = &credit {
                 credit.ensure()?;
             }
@@ -1486,7 +1541,7 @@ impl Call {
             self.interface,
             self.method,
             self.hints,
-            Hook(self.endpoint, self.credit),
+            Hook(self.endpoint.unwrap(), self.credit),
             context,
             self.third_party,
         ))
@@ -1550,12 +1605,18 @@ impl Call {
         self.completion.poll_observed(cx)
     }
     pub fn complete(mut self, result: capnp::Result<()>) {
+        if let Some(tail) = &self.native_tail {
+            tail.forwarded();
+        }
         self.completion.complete(result);
     }
     /// Hosted queues already own a box. Complete and drop its fields in place,
     /// preserving field destruction order without moving the full call to stack.
     #[allow(clippy::boxed_local)] // Preserve the existing allocation through field destruction.
     fn complete_boxed(mut self: Box<Self>, result: capnp::Result<()>) {
+        if let Some(tail) = &self.native_tail {
+            tail.forwarded();
+        }
         self.completion.complete(result);
     }
 
@@ -1563,9 +1624,13 @@ impl Call {
     /// Params/results (including early pipeline and cancellation policy hooks)
     /// move intact; the adapter does not rebuild the application's context.
     pub fn forward(self, target: &dyn ClientHook) -> Promise<(), Error> {
+        if let Some(tail) = &self.native_tail {
+            tail.forwarded();
+        }
         let Self {
             credit,
             third_party: _,
+            native_tail: _,
             endpoint,
             interface,
             method,
@@ -1657,7 +1722,8 @@ impl Hook {
         let call = Box::new(Call {
             credit: self.1.clone(),
             third_party,
-            endpoint: self.0.clone(),
+            native_tail: None,
+            endpoint: Some(self.0.clone()),
             interface,
             method,
             hints,
@@ -1742,7 +1808,32 @@ impl Hook {
     }
 }
 impl ClientHook for Hook {
+    fn join_capabilities(
+        &self,
+        caps: Vec<Box<dyn ClientHook>>,
+    ) -> Promise<capnp::private::capability::JoinedCapability, Error> {
+        if let Some(client) = self.introduced() {
+            return client.join_capabilities(caps);
+        }
+        let Some(inbox) = self.0.inbox.upgrade() else {
+            return Promise::err(Error::disconnected("Join connection ended".into()));
+        };
+        let brand = Rc::as_ptr(&inbox) as usize;
+        if !caps.iter().all(|cap| cap.get_brand() == brand) {
+            return Promise::err(Error::unimplemented(
+                "Join capabilities use different routes".into(),
+            ));
+        }
+        match &inbox.joins {
+            Some(joins) => joins.join_capabilities(caps),
+            None => Promise::err(Error::unimplemented("bilateral Join unavailable".into())),
+        }
+    }
     fn metadata_changes(&self) -> Option<Rc<MetadataChanges>> {
+        let introduced = self.0.introduced.borrow().clone();
+        if let Some(client) = introduced {
+            return client.metadata_changes();
+        }
         Some(
             self.0
                 .metadata_changes
@@ -1783,6 +1874,10 @@ impl ClientHook for Hook {
     }
     #[cfg(unix)]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
+        let introduced = self.0.introduced.borrow().clone();
+        if let Some(client) = introduced {
+            return client.get_fd();
+        }
         self.0.fd.borrow().clone()
     }
     fn as_any(&self) -> Option<&dyn std::any::Any> {
@@ -1846,8 +1941,9 @@ impl ClientHook for Hook {
             call,
             Call {
                 third_party: None,
+                native_tail: None,
                 credit,
-                endpoint: self.0.clone(),
+                endpoint: Some(self.0.clone()),
                 interface,
                 method,
                 hints,
@@ -1879,6 +1975,26 @@ impl ClientHook for Hook {
         results: Box<dyn ResultsHook>,
         hints: CallHints,
     ) -> Promise<(), Error> {
+        if self.0.remote.get()
+            && self
+                .0
+                .inbox
+                .upgrade()
+                .is_some_and(|inbox| inbox.native_tail)
+        {
+            // Match legacy Client::call_with_hints: the original ResultsHook
+            // chooses native transfer, third-party transfer, or forwarding.
+            let request = params.get().and_then(|params| {
+                let mut request =
+                    self.new_call_with_hints(interface, method, Some(params.target_size()?), hints);
+                request.get().set_as(params)?;
+                Ok(request)
+            });
+            return match request {
+                Ok(request) => results.tail_call(request.hook),
+                Err(error) => Promise::err(error),
+            };
+        }
         self.call_to(interface, method, params, results, hints, None)
     }
     // Opaque local brand: the legacy network must not treat this as one of its

@@ -4,7 +4,7 @@
 use super::*;
 mod results;
 pub use results::{Execution, PlainPayload, Producer, Results};
-pub(crate) use results::{Transfer, Work};
+pub(crate) use results::{NativeTail, Transfer, Work};
 mod worker;
 pub use worker::{Progress, Worker};
 
@@ -155,6 +155,24 @@ impl<'id> ClientHooks<'id> {
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         messages: &messages::Messages<'pool, '_, '_>,
     ) -> capnp::Result<Prepared> {
+        self.prepare_received_server_using(call, driver, messages, |_| None)
+    }
+
+    pub(crate) fn prepare_received_server_using<
+        'pool,
+        I,
+        A,
+        P: Copy + Eq,
+        S,
+        const CAPS: usize,
+        const PATH: usize,
+    >(
+        &mut self,
+        call: &connection::Request<'pool, 'id, I, CAPS, PATH>,
+        driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
+        messages: &messages::Messages<'pool, '_, '_>,
+        mut local_hook: impl FnMut(&S) -> Option<Box<dyn ClientHook>>,
+    ) -> capnp::Result<Prepared> {
         if let Some(message) = call.share_plain_params(messages).map_err(wire_error)? {
             return Ok(Prepared {
                 method: call.method(),
@@ -172,8 +190,7 @@ impl<'id> ClientHooks<'id> {
                             .bind_capability(cap)
                             .map_err(wire_error)?
                             .into_client();
-                        let hook = self.import_after_collect(&mut driver.capabilities(), client);
-                        Some(hook?.hook)
+                        Some(self.import_wire_capability(driver, client, &mut local_hook)?)
                     }
                 };
                 caps.push(hook);

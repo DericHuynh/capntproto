@@ -336,17 +336,25 @@ impl<'id> ClientHooks<'id> {
                     .and_then(|words| words.checked_mul(8))
                     .and_then(|bytes| usize::try_from(bytes).ok())
                     .ok_or_else(|| Error::from_kind(capnp::ErrorKind::MessageSizeOverflow))?;
-                let destination = call
+                let third_party = call
                     .third_party
                     .as_ref()
                     .map(|body| body.get_root_as_reader::<any_pointer::Reader>())
                     .transpose()?;
-                let extra = destination
+                let extra = third_party
                     // Metadata copy uses a transactional staging pointer in
                     // addition to the reachable destination words.
                     .map(|reader| reader.target_size().map(|size| size.word_count + 1))
                     .transpose()?
                     .unwrap_or(0);
+                let destination = if call.native_tail.is_some() {
+                    capntproto_rpc_wire::calls::CallDestination::Yourself
+                } else {
+                    third_party.map_or(
+                        capntproto_rpc_wire::calls::CallDestination::Caller,
+                        capntproto_rpc_wire::calls::CallDestination::ThirdParty,
+                    )
+                };
                 let minimum = minimum
                     .checked_add(
                         usize::try_from(extra)
@@ -742,12 +750,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         let Some(call) = self.call.as_mut() else {
             return Poll::Ready(());
         };
-        if call
-            .endpoint
-            .inbox
-            .upgrade()
-            .is_none_or(|inbox| inbox.closed.get())
-        {
+        if call.shutdown.is_closed() {
             return Poll::Ready(());
         }
         let canceled = call.poll_canceled(cx);
@@ -854,9 +857,14 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 Err(error) => return Poll::Ready(Err(wire_error(error))),
             };
             self.route = CallRoute::Finished;
-            return Poll::Ready(
-                self.complete(result, hooks, driver, messages, refresh, local_hook),
-            );
+            let result = self.complete(result, hooks, driver, messages, refresh, local_hook);
+            if result.is_ok() && matches!(self.route, CallRoute::Tail(_)) {
+                // An acknowledgement retains the native question until its
+                // last pipeline interest drops, just like tracked transfers.
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            return Poll::Ready(result);
         }
         if matches!(self.route, CallRoute::Queued(_)) {
             return Poll::Pending;
@@ -924,7 +932,10 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         self.task().is_none()
             && self.pipeline.is_none()
             && self.call.as_ref().is_some_and(|call| {
-                call.third_party.is_none() && self.question() == Some(key) && !call.is_canceled()
+                call.third_party.is_none()
+                    && call.native_tail.is_none()
+                    && self.question() == Some(key)
+                    && !call.is_canceled()
             })
     }
     pub(super) fn deliver_plain(&mut self, message: Box<capntproto_rpc_wire::owned::PlainResults>) {
@@ -953,6 +964,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         };
         if self.pipeline.is_some()
             || call.third_party.is_some()
+            || call.native_tail.is_some()
             || self.question() != Some(key)
             || call.is_canceled()
         {
@@ -1043,7 +1055,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         if self
             .call
             .as_ref()
-            .is_some_and(|call| call.third_party.is_some())
+            .is_some_and(|call| call.third_party.is_some() || call.native_tail.is_some())
         {
             if let CallOutput::Remote(response) = &output {
                 if response
@@ -1056,7 +1068,11 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                         unreachable!()
                     };
                     self.route = CallRoute::Tail(Box::new(response));
-                    self.call.take().expect("active tail call").complete(Ok(()));
+                    let call = self.call.take().expect("active tail call");
+                    if let CallCompletion::Response(completion) = &call.completion {
+                        completion.tail_acknowledged();
+                    }
+                    call.complete(Ok(()));
                     return Ok(());
                 }
             }
@@ -1109,7 +1125,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                 None => None,
                                 Some(cap) => {
                                     let cap = driver.bind_capability(cap).map_err(wire_error)?.into_client();
-                                    Some(hooks.import_after_collect(&mut driver.capabilities(), cap)?.hook)
+                                    Some(hooks.import_wire_capability(driver, cap, &mut local_hook)?)
                                 }
                             });
                         }
@@ -1629,6 +1645,53 @@ impl Projected {
         )
     }
 }
+impl<'id> ClientHooks<'id> {
+    fn import_wire_capability<I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>(
+        &mut self,
+        driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
+        client: Client<'id>,
+        local_hook: &mut impl FnMut(&S) -> Option<Box<dyn ClientHook>>,
+    ) -> capnp::Result<Box<dyn ClientHook>> {
+        // A reflected route returns the original local authority, including an
+        // opaque promise or membrane. Ordering barriers remain Waiting and keep
+        // their ordinary adapter until the graph allows the route to settle.
+        let local = match driver.runtime().inspect(&client) {
+            Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
+                owner:
+                    capntproto_rpc_wire::clients::Route::Capability(
+                        capntproto_rpc_wire::clients::Endpoint::Local(owner)
+                        | capntproto_rpc_wire::clients::Endpoint::Failed { owner, .. },
+                    )
+                    | capntproto_rpc_wire::clients::Route::Vine(owner),
+                ..
+            }) => local_hook(owner),
+            _ => None,
+        };
+        match local {
+            Some(hook) => {
+                driver.capabilities().release(client);
+                Ok(hook)
+            }
+            None => self
+                .import_after_collect(&mut driver.capabilities(), client)
+                .map(|client| client.hook),
+        }
+    }
+}
+
+pub(crate) fn native_join_target(client: &dyn ClientHook) -> Option<Box<dyn ClientHook>> {
+    let hook = direct_response_hook(client).or_else(|| client.as_any()?.downcast_ref::<Hook>())?;
+    let inbox = hook.0.inbox.upgrade()?;
+    if inbox.closed.get()
+        || inbox.joins.is_none()
+        || hook.0.introduction.borrow().is_some()
+        || (!hook.0.remote.get() && hook.0.direct.get().is_none())
+    {
+        return None;
+    }
+    Some(hook.add_ref())
+}
+
 pub(super) fn direct_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
     client
         .as_any()?
@@ -1717,6 +1780,16 @@ impl ClientHook for Projected {
         results: Box<dyn ResultsHook>,
         hints: CallHints,
     ) -> Promise<(), Error> {
+        if direct_response_hook(self).is_some_and(|hook| {
+            hook.0.remote.get() && (hook.0.index.get().is_some() || hook.0.direct.get().is_some())
+        }) {
+            // A bound native destination already retains its wire question.
+            // Publication transfers that receipt; the parent response need not
+            // stay alive until this child's unrelated acknowledgement.
+            return self
+                .inner
+                .call_with_hints(interface, method, params, results, hints);
+        }
         self.drive(
             self.inner
                 .call_with_hints(interface, method, params, results, hints),

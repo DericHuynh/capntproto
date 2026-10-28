@@ -365,3 +365,28 @@ fn protocol_readiness_notifies_only_watched_generation_without_callbacks_or_allo
     });
     assert_eq!(measured.count_total, 0);
 }
+
+#[test]
+fn optional_control_answers_keep_finish_even_without_result_capabilities() {
+    let measured = allocation_counter::measure(|| {
+        let mut slots = [Slot::EMPTY, Slot::EMPTY];
+        with_answers(&mut slots, |answers| {
+            let id = AnswerId::from_wire(17);
+            let mut receipts = [];
+            let (key, _) = answers
+                .prepare_admission_with_pipelines(id, &mut receipts)
+                .unwrap()
+                .require_finish()
+                .accept(41);
+            let mut ticket = answers.prepare_return(key).unwrap();
+            assert!(!ticket.can_omit_finish());
+            assert_eq!(ticket.omit_finish(), Err(Error::FinishRequired));
+            assert_eq!(ticket.accept(), None);
+            assert_eq!(answers.get(key), Ok(&41));
+            assert_eq!(answers.finish(id, true).retired, Some(41));
+            assert!(answers.is_empty());
+        })
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
+}

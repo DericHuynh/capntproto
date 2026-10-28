@@ -177,7 +177,17 @@ pub fn try_send_granting<'pool, 'a, 'batch, 'e, 'table, A, E>(
     scratch: &mut [u32],
     queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
 ) -> Result<Option<State<'pool, A>>, Rejected<'pool, exports::Batch<'batch, 'e, 'table, E>>> {
-    try_send_granting_using(key, answers, batch, messages, frame, scratch, queue, true)
+    try_send_granting_using(
+        key,
+        answers,
+        batch,
+        messages,
+        frame,
+        scratch,
+        queue,
+        true,
+        |_, _| Ok(false),
+    )
 }
 #[allow(clippy::too_many_arguments)]
 fn try_send_granting_using<'pool, 'a, 'batch, 'e, 'table, A, E>(
@@ -189,6 +199,10 @@ fn try_send_granting_using<'pool, 'a, 'batch, 'e, 'table, A, E>(
     scratch: &mut [u32],
     queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
     check_payload: bool,
+    mut reflected: impl FnMut(
+        rpc_capnp::cap_descriptor::Reader<'_>,
+        usize,
+    ) -> Result<bool, crate::publication::Error>,
 ) -> Result<Option<State<'pool, A>>, Rejected<'pool, exports::Batch<'batch, 'e, 'table, E>>> {
     let mut pending = match answers.prepare_return(key) {
         Ok(pending) => pending,
@@ -204,9 +218,9 @@ fn try_send_granting_using<'pool, 'a, 'batch, 'e, 'table, A, E>(
         let result_exports = frame.with_borrowed_root(messages, |root| {
             crate::admission::check_return(&mut pending, root, true).map_err(Error::Output)?;
             (if check_payload {
-                crate::publication::validate_root(&batch, root, scratch, |_, _| Ok(false))
+                crate::publication::validate_root(&batch, root, scratch, &mut reflected)
             } else {
-                crate::publication::validate_native_root(&batch, root, scratch, |_, _| Ok(false))
+                crate::publication::validate_native_root(&batch, root, scratch, &mut reflected)
             })
             .map_err(|error| Error::Output(error.into()))
         })??;
@@ -252,6 +266,34 @@ pub(super) fn send_granting_using<'pool, 'a, A, E>(
     queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
     check_payload: bool,
 ) -> Result<Option<State<'pool, A>>, Error> {
+    send_granting_reflected_using(
+        key,
+        answers,
+        batch,
+        messages,
+        frame,
+        scratch,
+        queue,
+        check_payload,
+        |_, _| Ok(false),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn send_granting_reflected_using<'pool, 'a, A, E>(
+    key: answers::Key<'a>,
+    answers: &mut answers::Answers<'a, '_, State<'pool, A>>,
+    batch: exports::Batch<'_, '_, '_, E>,
+    messages: &mut messages::Messages<'pool, '_, '_>,
+    frame: Frame<'pool>,
+    scratch: &mut [u32],
+    queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+    check_payload: bool,
+    reflected: impl FnMut(
+        rpc_capnp::cap_descriptor::Reader<'_>,
+        usize,
+    ) -> Result<bool, crate::publication::Error>,
+) -> Result<Option<State<'pool, A>>, Error> {
     try_send_granting_using(
         key,
         answers,
@@ -261,6 +303,7 @@ pub(super) fn send_granting_using<'pool, 'a, A, E>(
         scratch,
         queue,
         check_payload,
+        reflected,
     )
     .map_err(|rejected| {
         rejected.frame.release(messages);

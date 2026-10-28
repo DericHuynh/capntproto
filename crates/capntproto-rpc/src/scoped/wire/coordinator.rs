@@ -104,6 +104,13 @@ pub struct Coordinator<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: us
     idle: bool,
     control_idle: bool,
     direct_publication: bool,
+    native_tails: VecDeque<PendingTail<'id>>,
+}
+struct PendingTail<'id> {
+    parent: capntproto_rpc_engine::answers::Key<'id>,
+    child: capntproto_rpc_engine::questions::Key<'id>,
+    retained: capntproto_rpc_engine::questions::Local<'id>,
+    context: Rc<server::NativeTail>,
 }
 impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     Coordinator<'p, 'id, 's, I, P, C, H>
@@ -148,6 +155,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         Ok(Self {
             driver,
             hooks,
+            native_tails: VecDeque::new(),
             foreign: foreign::ForeignPromises::new(maximum.get()),
             calls: Calls::new(maximum.get(), executor.clone())?,
             worker: server::Worker::new(maximum.get(), executor),

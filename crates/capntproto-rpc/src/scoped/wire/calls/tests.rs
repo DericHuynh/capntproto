@@ -2400,34 +2400,14 @@ fn direct_projection_is_memoized_before_binding_and_imports_its_question_route()
         let params = second_call.unwrap().get_params().unwrap();
         let caps = params.get_cap_table().unwrap();
         assert_eq!(caps.len(), 1);
-        // Publication currently stages export descriptors. Verify its
-        // owner is the original question route, never an opaque local adapter.
-        let id = match caps.get(0).which().unwrap() {
-            rpc_capnp::cap_descriptor::SenderPromise(id)
-            | rpc_capnp::cap_descriptor::SenderHosted(id) => id,
-            _ => panic!("projected export"),
+        // Reflection retains the original question authority without creating
+        // another exported proxy or resolution observer.
+        let rpc_capnp::cap_descriptor::ReceiverAnswer(answer) = caps.get(0).which().unwrap() else {
+            panic!("original promised-answer route")
         };
-        let export = driver
-            .ledgers()
-            .exports
-            .lookup(capntproto_rpc_engine::ids::ExportId::from_wire(id))
-            .unwrap();
-        let owner = driver.ledgers().exports.resolve(export).unwrap();
-        let Destination::Endpoint {
-            owner: Route::Question(route),
-            ..
-        } = driver.runtime().inspect(owner).unwrap()
-        else {
-            panic!("original question authority")
-        };
-        assert_eq!(
-            route
-                .target(&driver.ledgers().questions)
-                .unwrap()
-                .0
-                .to_wire(),
-            question
-        );
+        let answer = answer.unwrap();
+        assert_eq!(answer.get_question_id(), question);
+        assert!(answer.get_transform().unwrap().is_empty());
         assert!(source.is_empty());
         drop((first, same, parameter, parent, client));
         teardown(calls, hooks, driver, messages, &mut queue);

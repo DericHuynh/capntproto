@@ -13,6 +13,7 @@ use capntproto_rpc_engine::{
 
 mod exchange_work;
 mod operations;
+pub(crate) mod reflection;
 mod resource_wait;
 use capntproto_rpc_engine::work_queue;
 pub use operations::{InvocationKey, OperationSlot};
@@ -223,6 +224,7 @@ impl WriterPolicy {
 /// service retained operations or terminate the connection on exhaustion.
 pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize> {
     allow_answer_handoff: bool,
+    allow_join: bool,
     defer_calls: bool,
     owned_output: bool,
     writer_policy: WriterPolicy,
@@ -413,6 +415,8 @@ enum IncomingKind {
     ProvisionBarrier,
     Abort(capnp::ErrorKind),
     Unimplemented(Option<ExportId>),
+    UnimplementedJoin(u32),
+    Unsupported,
 }
 
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
@@ -572,6 +576,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         Ok(Self {
             allow_answer_handoff: false,
+            allow_join: true,
             defer_calls: false,
             owned_output: false,
             writer_policy: WriterPolicy::Checked,
@@ -1089,7 +1094,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn has_promised_pending_call(&self) -> bool {
         self.call
             .as_ref()
-            .is_some_and(|call| matches!(&call.target, Target::Promised(_)))
+            .is_some_and(|call| matches!(&call.target, Some(Target::Promised(_))))
     }
     /// Whether the deferred request has no parameter capabilities, pipeline
     /// target or third-party answer. Such admission only retains its hosted
@@ -1097,7 +1102,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn has_plain_pending_call(&self) -> bool {
         self.call.as_ref().is_some_and(|call| {
             call.capability_count() == 0
-                && matches!(call.target(), TargetRef::Hosted(_))
+                && matches!(call.target(), Some(TargetRef::Hosted(_)))
                 && self.ledgers.answers.is_third_party(call.answer()) == Ok(false)
         })
     }
@@ -1120,7 +1125,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let Some(call) = &self.call else {
             return Ok(None);
         };
-        let TargetRef::Hosted(lease) = call.target() else {
+        let Some(TargetRef::Hosted(lease)) = call.target() else {
             return Ok(None);
         };
         let key = call.answer();
@@ -1185,7 +1190,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let Some(call) = &self.call else {
             return self.dispatch_immediate_call(cancellation);
         };
-        let TargetRef::Promised { answer, path } = call.target() else {
+        let Some(TargetRef::Promised { answer, path }) = call.target() else {
             return self.dispatch_immediate_call(cancellation);
         };
         self.check_live()?;
@@ -1591,59 +1596,69 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     MessageUnionTag::Provide => return Ok(Kind::Provide),
                     MessageUnionTag::Accept => return Ok(Kind::Accept),
                     MessageUnionTag::ThirdPartyAnswer => return Ok(Kind::ThirdPartyAnswer),
-                    MessageUnionTag::Join => return Ok(Kind::Join),
+                    MessageUnionTag::Join => {
+                        return Ok(if self.allow_join {
+                            Kind::Join
+                        } else {
+                            Kind::Unsupported
+                        })
+                    }
                     MessageUnionTag::Resolve => return Ok(Kind::Resolve),
                     MessageUnionTag::Release => return Ok(Kind::Release),
                     _ => (),
                 }
-                Ok(
-                    match root.which().map_err(|_| super::Error::WrongMessage)? {
-                        rpc_capnp::message::Call(_) => Kind::Call(words),
-                        rpc_capnp::message::Bootstrap(_) => Kind::Bootstrap,
-                        rpc_capnp::message::Provide(_) => Kind::Provide,
-                        rpc_capnp::message::Accept(_) => Kind::Accept,
-                        rpc_capnp::message::ThirdPartyAnswer(_) => Kind::ThirdPartyAnswer,
-                        rpc_capnp::message::Join(_) => Kind::Join,
-                        rpc_capnp::message::Resolve(_) => Kind::Resolve,
-                        rpc_capnp::message::Finish(finish) => {
-                            let finish = finish?;
-                            Kind::Finish(
-                                AnswerId::from_wire(finish.get_question_id()),
-                                finish.get_release_result_caps(),
-                            )
+                Ok(match root.which() {
+                    Err(_) => Kind::Unsupported,
+                    Ok(rpc_capnp::message::Call(_)) => Kind::Call(words),
+                    Ok(rpc_capnp::message::Bootstrap(_)) => Kind::Bootstrap,
+                    Ok(rpc_capnp::message::Provide(_)) => Kind::Provide,
+                    Ok(rpc_capnp::message::Accept(_)) => Kind::Accept,
+                    Ok(rpc_capnp::message::ThirdPartyAnswer(_)) => Kind::ThirdPartyAnswer,
+                    Ok(rpc_capnp::message::Join(_)) => {
+                        if self.allow_join {
+                            Kind::Join
+                        } else {
+                            Kind::Unsupported
                         }
-                        rpc_capnp::message::Release(_) => Kind::Release,
-                        rpc_capnp::message::Abort(exception) => {
-                            Kind::Abort(controls::abort_reason(exception?)?)
-                        }
-                        rpc_capnp::message::Unimplemented(message) => {
-                            match controls::unimplemented(message?)? {
-                                controls::Unimplemented::Resolve(export) => {
-                                    Kind::Unimplemented(export)
-                                }
-                                controls::Unimplemented::Required => {
-                                    Kind::Abort(capnp::ErrorKind::Unimplemented)
-                                }
+                    }
+                    Ok(rpc_capnp::message::Resolve(_)) => Kind::Resolve,
+                    Ok(rpc_capnp::message::Finish(finish)) => {
+                        let finish = finish?;
+                        Kind::Finish(
+                            AnswerId::from_wire(finish.get_question_id()),
+                            finish.get_release_result_caps(),
+                        )
+                    }
+                    Ok(rpc_capnp::message::Release(_)) => Kind::Release,
+                    Ok(rpc_capnp::message::Abort(exception)) => {
+                        Kind::Abort(controls::abort_reason(exception?)?)
+                    }
+                    Ok(rpc_capnp::message::Unimplemented(message)) => {
+                        match controls::unimplemented(message?)? {
+                            controls::Unimplemented::Resolve(export) => Kind::Unimplemented(export),
+                            controls::Unimplemented::Join(id) => Kind::UnimplementedJoin(id),
+                            controls::Unimplemented::Required => {
+                                Kind::Abort(capnp::ErrorKind::Unimplemented)
                             }
                         }
-                        rpc_capnp::message::Disembargo(disembargo) => {
-                            match disembargo?
-                                .get_context()
-                                .which()
-                                .map_err(|_| super::Error::WrongMessage)?
-                            {
-                                rpc_capnp::disembargo::context::SenderLoopback(_) => {
-                                    Kind::SenderLoopback
-                                }
-                                rpc_capnp::disembargo::context::ReceiverLoopback(id) => {
-                                    Kind::ReceiverLoopback(id)
-                                }
-                                rpc_capnp::disembargo::context::Accept(_) => Kind::ProvisionBarrier,
+                    }
+                    Ok(rpc_capnp::message::Disembargo(disembargo)) => {
+                        match disembargo?
+                            .get_context()
+                            .which()
+                            .map_err(|_| super::Error::WrongMessage)?
+                        {
+                            rpc_capnp::disembargo::context::SenderLoopback(_) => {
+                                Kind::SenderLoopback
                             }
+                            rpc_capnp::disembargo::context::ReceiverLoopback(id) => {
+                                Kind::ReceiverLoopback(id)
+                            }
+                            rpc_capnp::disembargo::context::Accept(_) => Kind::ProvisionBarrier,
                         }
-                        _ => return Err(super::Error::WrongMessage),
-                    },
-                )
+                    }
+                    _ => Kind::Unsupported,
+                })
             })
             .and_then(core::convert::identity);
         let kind = match kind {
@@ -1667,7 +1682,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         // import still has no graph observer, losing the resolution's meaning.
         // Cleanup remains admissible when propagation needs resource capacity;
         // local tail adoption must not block replies needed by its producer.
-        if matches!(kind, Kind::Return(..) | Kind::Resolve) && propagation_blocked {
+        if matches!(
+            kind,
+            Kind::Return(..) | Kind::UnimplementedJoin(_) | Kind::Resolve
+        ) && propagation_blocked
+        {
             return Err(Rejected {
                 error: Error::Busy,
                 frame,
@@ -1687,6 +1706,81 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
         }
         match kind {
+            Kind::UnimplementedJoin(id) => {
+                let matched = (|| -> Result<bool, super::Error> {
+                    let index =
+                        ExchangeSlot::pending_index(&self.exchanges, &self.ledgers.questions, id)
+                            .ok_or(super::Error::WrongMessage)?;
+                    let Some(Exchange::Pending(question)) = self.exchanges[index].exchange.as_ref()
+                    else {
+                        unreachable!()
+                    };
+                    frame.with(messages, |root| {
+                        let rpc_capnp::message::Unimplemented(echo) =
+                            root.which().map_err(|_| super::Error::WrongMessage)?
+                        else {
+                            unreachable!()
+                        };
+                        let rpc_capnp::message::Join(join) =
+                            echo?.which().map_err(|_| super::Error::WrongMessage)?
+                        else {
+                            unreachable!()
+                        };
+                        question.matches_unimplemented_join(join?, messages)
+                    })?
+                })();
+                if !matches!(matched, Ok(true)) {
+                    return Err(Rejected {
+                        error: Error::Input(matched.err().unwrap_or(super::Error::WrongMessage)),
+                        frame,
+                        producer: None,
+                    });
+                }
+                // A rejected optional Join has no peer answer or Finish debt.
+                // Feed a private exception through normal Return admission so
+                // all observers and cancellation use the same transaction.
+                let synthetic = Frame::build(messages, 128, Default::default(), |builder| {
+                    calls::exception(
+                        builder,
+                        AnswerId::from_wire(id),
+                        capnp::ErrorKind::Unimplemented,
+                        "Join unsupported",
+                    )?;
+                    builder
+                        .try_get_root::<rpc_capnp::api::Message>()?
+                        .field(rpc_capnp::api::Message::RETURN)
+                        .edit()?
+                        .scalar(rpc_capnp::api::Return::NO_FINISH_NEEDED)
+                        .set(true);
+                    Ok(())
+                });
+                let synthetic = match synthetic {
+                    Ok(synthetic) => synthetic,
+                    Err(error) => {
+                        return Err(Rejected {
+                            error: Error::Input(error),
+                            frame,
+                            producer: None,
+                        })
+                    }
+                };
+                let index =
+                    ExchangeSlot::pending_index(&self.exchanges, &self.ledgers.questions, id)
+                        .expect("matched Join generation");
+                let Some(Exchange::Pending(question)) = self.exchanges[index].exchange.as_mut()
+                else {
+                    unreachable!()
+                };
+                question.reject_optional_join(messages);
+                frame.release(messages);
+                self.receive_general(
+                    synthetic,
+                    messages,
+                    scratch,
+                    receiver,
+                    make_producer.take().unwrap(),
+                )
+            }
             Kind::PipelineReturn => {
                 self.pipeline_only_enabled = false;
                 frame.release(messages);
@@ -1806,6 +1900,17 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
         use IncomingKind as Kind;
         match kind {
+            Kind::Unsupported => {
+                if self.network.is_some() {
+                    return Err(Rejected {
+                        error: Error::Busy,
+                        frame,
+                        producer: None,
+                    });
+                }
+                self.network = Some(NetworkRequest::Unsupported(frame));
+                Ok(Received::Network)
+            }
             Kind::ProvisionBarrier => {
                 self.receive_provision_barrier(frame, messages)?;
                 Ok(Received::QueuedNetwork)
@@ -2022,7 +2127,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     }),
                 }
             }
-            Kind::Return(..) | Kind::PipelineReturn => {
+            Kind::Return(..) | Kind::PipelineReturn | Kind::UnimplementedJoin(_) => {
                 unreachable!("reply dispatched before controls")
             }
             Kind::Resolve => {
@@ -2184,6 +2289,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             &mut self.ledgers.exports,
             &mut self.ledgers.answers,
         );
+    }
+    /// Release the admitted target after application dispatch has captured it.
+    /// Parameters and the answer remain owned by this request until completion.
+    pub fn release_call_target(&mut self, call: &mut Request<'pool, 'id, I, CAPS, PATH>) {
+        call.release_target(&mut self.ledgers.exports, &mut self.ledgers.answers);
     }
     #[inline(always)]
     pub fn release_call(

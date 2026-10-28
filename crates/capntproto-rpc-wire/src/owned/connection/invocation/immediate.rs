@@ -64,6 +64,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if self.capability_capacity() == 0 {
             return Err(Error::Input(super::super::super::Error::Capacity));
         }
+        let reflected_import = if let clients::Destination::Endpoint { owner, .. } =
+            self.runtime.inspect(capability).map_err(Error::Graph)?
+        {
+            match reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
+                .map_err(Error::Question)?
+            {
+                Some(calls::Target::Imported(id)) => Some(id),
+                // Longer transforms keep the general bounded encoder.
+                Some(calls::Target::Promised { .. }) => return Ok(None),
+                None => None,
+            }
+        } else {
+            None
+        };
         let options = self.writer_policy.options(options);
         if self.writer_policy == WriterPolicy::Checked {
             params
@@ -89,20 +103,25 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(|error| Error::Input(super::super::super::Error::Storage(error)))?;
         let reservation = self.ledgers.questions.reserve().map_err(Error::Question)?;
         let mut batch = self.ledgers.exports.batch();
-        let grant = self
-            .exported
-            .stage(&mut self.runtime, &mut batch, capability)
-            .map_err(Error::Exported)?;
+        let grant = if reflected_import.is_none() {
+            Some(
+                self.exported
+                    .stage(&mut self.runtime, &mut batch, capability)
+                    .map_err(Error::Exported)?,
+            )
+        } else {
+            None
+        };
         let attached = match self.runtime.inspect(capability) {
-            Ok(clients::Destination::Endpoint { owner, .. }) => {
+            Ok(clients::Destination::Endpoint { owner, .. }) if grant.is_some() => {
                 attach(owner, &self.ledgers.imports, output.resources_mut())
             }
             _ => u8::MAX,
         };
-        let id = grant.id();
-        let promise = grant.is_promise();
-        let owner = batch
-            .pending_owner(id)
+        let id = grant.as_ref().map(|grant| grant.id());
+        let promise = grant.as_ref().is_some_and(|grant| grant.is_promise());
+        let owner = id
+            .and_then(|id| batch.pending_owner(id))
             .and_then(|client| match self.runtime.inspect(client) {
                 Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
                 _ => None,
@@ -130,7 +149,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(1)?;
                     let mut descriptor = descriptors.get_mut(0).unwrap();
                     descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
-                    self.descriptors.describe(owner, id, promise, descriptor)
+                    match reflected_import {
+                        Some(id) => reflection::write(calls::Target::Imported(id), descriptor),
+                        None => self.descriptors.describe(
+                            owner,
+                            id.expect("staged export"),
+                            promise,
+                            descriptor,
+                        ),
+                    }
                 },
             )
         })
@@ -163,12 +190,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             frame,
             scratch,
             output,
-            crate::inbound::full::OriginalMetadata::single_export(
+            crate::inbound::full::OriginalMetadata::single_capability(
                 (method.interface, method.method),
                 self.allow_answer_handoff,
                 id,
             ),
             self.writer_policy == WriterPolicy::Checked,
+            |descriptor, _| {
+                reflection::check(reflected_import.map(calls::Target::Imported), descriptor)
+            },
         )
         .map_err(|error| Error::Input(super::super::super::Error::Output(error)))?;
         let key = question.key();

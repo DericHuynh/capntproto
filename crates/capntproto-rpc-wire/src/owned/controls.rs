@@ -19,6 +19,7 @@ pub(crate) fn abort_reason(
 }
 pub(crate) enum Unimplemented {
     Resolve(Option<ExportId>),
+    Join(u32),
     Required,
 }
 /// A peer may ignore Resolve, releasing only the grant in that echoed Resolve.
@@ -26,9 +27,14 @@ pub(crate) enum Unimplemented {
 pub(crate) fn unimplemented(
     message: rpc_capnp::message::Reader<'_>,
 ) -> Result<Unimplemented, Error> {
-    let rpc_capnp::message::Resolve(resolve) = message.which().map_err(|_| Error::WrongMessage)?
-    else {
-        return Ok(Unimplemented::Required);
+    let resolve = match message.which().map_err(|_| Error::WrongMessage)? {
+        rpc_capnp::message::Resolve(resolve) => resolve,
+        rpc_capnp::message::Join(join) => {
+            let join = join?;
+            join.get_key_part().validate_capability_indices(0)?;
+            return Ok(Unimplemented::Join(join.get_question_id()));
+        }
+        _ => return Ok(Unimplemented::Required),
     };
     let id = match resolve?.which().map_err(|_| Error::WrongMessage)? {
         rpc_capnp::resolve::Exception(exception) => {

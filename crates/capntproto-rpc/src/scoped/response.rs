@@ -451,6 +451,12 @@ struct Response {
 }
 
 impl Completion {
+    pub(super) fn tail_acknowledged(&self) {
+        // ResultsSentElsewhere completes execution, not the promised results.
+        // The wire owner retains that pipeline through the original Finish.
+        self.0.pipeline.take();
+    }
+
     pub(super) fn is_observed(&self) -> bool {
         self.0.observed.get()
     }
@@ -717,7 +723,7 @@ pub(crate) fn request_scoped(
 pub(super) fn request_prepared(
     mut call: Box<Call>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
-    let inbox = call.endpoint.inbox.upgrade();
+    let inbox = call.endpoint().inbox.upgrade();
     let state = inbox
         .as_ref()
         .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
@@ -741,7 +747,7 @@ pub(super) fn request_prepared(
 pub(super) fn request_pipelined_prepared(
     mut call: Box<Call>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
-    let inbox = call.endpoint.inbox.upgrade();
+    let inbox = call.endpoint().inbox.upgrade();
     let state = inbox
         .as_ref()
         .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());

@@ -2,11 +2,11 @@ mod support;
 use capnp::traits::{HasTypeId, ImbueMut};
 use capnp_rpc::{
     rpc_capnp::{call, cap_descriptor, message, message_target, promised_answer, return_},
-    Connection, RpcSystem,
+    Connection,
 };
 use capntproto_test_support::runtime_test_capnp::harness;
 use futures::FutureExt;
-use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 use support::{Endpoint, Hub};
 struct Tail;
 impl harness::Server for Tail {
@@ -35,11 +35,20 @@ fn finish(peer: &mut Endpoint, id: u32) {
 }
 
 fn send_tail_call(peer: &mut Endpoint, export: u32, only_pipeline: bool) {
+    send_tail_call_for(peer, export, harness::Client::TYPE_ID, 4, only_pipeline);
+}
+fn send_tail_call_for(
+    peer: &mut Endpoint,
+    export: u32,
+    interface: u64,
+    method: u16,
+    only_pipeline: bool,
+) {
     peer.send(|m| {
         let mut c = m.init_call();
         c.set_question_id(1);
-        c.set_interface_id(harness::Client::TYPE_ID);
-        c.set_method_id(4);
+        c.set_interface_id(interface);
+        c.set_method_id(method);
         c.set_only_promise_pipeline(only_pipeline);
         c.reborrow().init_target().set_imported_cap(export);
         let mut payload = c.init_params();
@@ -65,12 +74,20 @@ async fn tail_peer(
     u32,
     tokio::task::JoinHandle<capnp::Result<()>>,
 ) {
+    tail_peer_with_bootstrap(portable, service.client).await
+}
+async fn tail_peer_with_bootstrap(
+    portable: bool,
+    service: capnp::capability::Client,
+) -> (
+    Rc<RefCell<Hub>>,
+    Endpoint,
+    u32,
+    tokio::task::JoinHandle<capnp::Result<()>>,
+) {
     let hub = Rc::new(RefCell::new(Hub::default()));
-    let system = support::driver::System::new(
-        portable,
-        Box::new(Hub::network(&hub, 1)),
-        Some(service.client),
-    );
+    let system =
+        support::driver::System::new(portable, Box::new(Hub::network(&hub, 1)), Some(service));
     let task = tokio::task::spawn_local(system.run());
     let mut peer = hub.borrow_mut().connect(2, 1);
     peer.send(|m| m.init_bootstrap().set_question_id(0));
@@ -109,27 +126,22 @@ struct Fixture {
     child_returns: u32,
     child_ack: u32,
     task: tokio::task::JoinHandle<capnp::Result<()>>,
-    system: Rc<RefCell<RpcSystem<u8>>>,
+    disconnect: Option<capnp::capability::Promise<(), capnp::Error>>,
     disconnected: bool,
 }
 impl Fixture {
-    async fn new() -> Self {
-        Self::with_hint(false).await
-    }
-    async fn with_hint(only_pipeline: bool) -> Self {
+    async fn with_driver(portable: bool, only_pipeline: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 1);
         let service: harness::Client = capnp_rpc::new_client(Tail);
-        let mut system = RpcSystem::new(Box::new(network), Some(service.client));
+        let mut system =
+            support::driver::System::new(portable, Box::new(network), Some(service.client));
         system.set_outgoing_call_limit(2);
         if !only_pipeline {
             system.set_flow_limit(1);
         }
-        let system = Rc::new(RefCell::new(system));
-        let driver = system.clone();
-        let task = tokio::task::spawn_local(futures::future::poll_fn(move |cx| {
-            Pin::new(&mut *driver.borrow_mut()).poll(cx)
-        }));
+        let disconnect = Some(system.disconnect());
+        let task = tokio::task::spawn_local(system.run());
         let mut peer = hub.borrow_mut().connect(2, 1);
         assert_eq!(hub.borrow().provision_count(), 0);
         peer.send(|m| m.init_bootstrap().set_question_id(0));
@@ -220,7 +232,7 @@ impl Fixture {
                 child_returns: 0,
                 child_ack: 0,
                 task,
-                system,
+                disconnect,
                 disconnected: false,
             };
         }
@@ -284,7 +296,6 @@ impl Fixture {
                 _ => panic!("unexpected message before acknowledgement"),
             }
         }
-        system.borrow_mut().set_flow_limit(usize::MAX);
         Self {
             peer,
             tail: tail.unwrap(),
@@ -293,7 +304,7 @@ impl Fixture {
             child_returns: 0,
             child_ack: 0,
             task,
-            system,
+            disconnect,
             disconnected: false,
         }
     }
@@ -398,7 +409,12 @@ struct Step {
     state: [u32; 8],
 }
 async fn replay(steps: &[Step]) {
-    let mut f = Fixture::new().await;
+    for portable in [false, true] {
+        replay_driver(steps, portable).await;
+    }
+}
+async fn replay_driver(steps: &[Step], portable: bool) {
+    let mut f = Fixture::with_driver(portable, false).await;
     for s in steps {
         match s.action.as_str() {
             "ack" => f.ack(),
@@ -407,8 +423,7 @@ async fn replay(steps: &[Step]) {
             "reply" => f.reply_child(),
             "disconnect" => {
                 f.disconnected = true;
-                let d = f.system.borrow().get_disconnector();
-                d.await.unwrap();
+                f.disconnect.take().unwrap().await.unwrap();
             }
             "reuse" => {
                 f.peer.send(|m| m.init_bootstrap().set_question_id(1));
@@ -543,12 +558,36 @@ impl harness::Server for DelayedTail {
         })
     }
 }
+impl capntproto_test_support::cancellation_policy_capnp::policy::Server for DelayedTail {
+    fn pending(
+        self: Rc<Self>,
+        context: capntproto_test_support::cancellation_policy_capnp::policy::PendingContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        let (params, results) = context.into_owned();
+        capnp::capability::Promise::from_future(async move {
+            let request = params
+                .hook
+                .get()?
+                .get_as::<harness::tail_cap_params::Reader>()?
+                .get_cap()?
+                .pending_request();
+            self.prepared.borrow_mut().take().unwrap().send(()).unwrap();
+            self.gate.borrow_mut().take().unwrap().await.unwrap();
+            results.hook.tail_call(request.hook).await
+        })
+    }
+}
 #[derive(serde::Deserialize, Debug)]
 struct RoutingStep {
     action: String,
     state: [u32; 4],
 }
 async fn routing_trace(steps: &[RoutingStep]) {
+    for portable in [false, true] {
+        routing_trace_driver(steps, portable).await;
+    }
+}
+async fn routing_trace_driver(steps: &[RoutingStep], portable: bool) {
     let hub = Rc::new(RefCell::new(Hub::default()));
     let network = Hub::network(&hub, 1);
     let (prepared, ready) = futures::channel::oneshot::channel();
@@ -557,7 +596,9 @@ async fn routing_trace(steps: &[RoutingStep]) {
         prepared: RefCell::new(Some(prepared)),
         gate: RefCell::new(Some(waiting)),
     });
-    let task = tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(service.client)));
+    let task = tokio::task::spawn_local(
+        support::driver::System::new(portable, Box::new(network), Some(service.client)).run(),
+    );
     let mut peer = hub.borrow_mut().connect(2, 1);
     peer.send(|m| m.init_bootstrap().set_question_id(0));
     let msg = peer.recv().await;
@@ -747,7 +788,9 @@ async fn pipeline_only_hint_skips_tail_transfer() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
-                Fixture::with_hint(true).await.cleanup().await;
+                for portable in [false, true] {
+                    Fixture::with_driver(portable, true).await.cleanup().await;
+                }
             })
             .await
             .unwrap();
@@ -1224,6 +1267,104 @@ async fn initialized_tail_results_are_rejected_by_both_drivers() {
             })
             .await
             .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn protected_tail_after_parent_finish_keeps_the_connection_usable() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for (portable, finish_before_resume) in [false, true].into_iter().flat_map(|portable| [true, false].map(|early| (portable, early))) {
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    let (prepared, ready) = futures::channel::oneshot::channel();
+                    let (gate, waiting) = futures::channel::oneshot::channel();
+                    let service: capntproto_test_support::cancellation_policy_capnp::policy::Client = capnp_rpc::new_client(DelayedTail {
+                        prepared: RefCell::new(Some(prepared)),
+                        gate: RefCell::new(Some(waiting)),
+                    });
+                    let (_hub, mut peer, export, task) = tail_peer_with_bootstrap(portable, service.client).await;
+                    send_tail_call_for(&mut peer, export, capntproto_test_support::cancellation_policy_capnp::policy::Client::TYPE_ID, 0, false);
+                    ready.await.unwrap();
+                    if finish_before_resume {
+                        finish(&mut peer, 1);
+                        settle().await;
+                        gate.send(()).unwrap();
+                    } else {
+                        gate.send(()).unwrap();
+                        finish(&mut peer, 1);
+                    }
+                    let (mut child, mut parent) = (false, false);
+                    while !child || !parent {
+                        let input = peer.recv().await;
+                        match input
+                            .get_body()
+                            .unwrap()
+                            .get_as::<message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        {
+                            message::Call(call) => {
+                                let call = call.unwrap();
+                                let redirected = matches!(call.get_send_results_to().which().unwrap(), call::send_results_to::Yourself(()));
+                                let id = call.get_question_id();
+                                assert!(!child);
+                                child = true;
+                                peer.send(|m| {
+                                    let mut reply = m.init_return();
+                                    reply.set_answer_id(id);
+                                    reply.set_release_param_caps(false);
+                                    if redirected { reply.set_results_sent_elsewhere(()); }
+                                    else {
+                                        let mut error = reply.init_exception();
+                                        error.set_type(capnp_rpc::rpc_capnp::exception::Type::Failed);
+                                        error.set_reason("completed protected child");
+                                    }
+                                });
+                            }
+                            message::Return(reply) => {
+                                assert_eq!(reply.unwrap().get_answer_id(), 1);
+                                parent = true;
+                            }
+                            message::Finish(_) | message::Release(_) => (),
+                            message::Abort(_) => {
+                                panic!("portable={portable}: late tail aborted the connection")
+                            }
+                            _ => panic!("unexpected tail message"),
+                        }
+                    }
+                    peer.send(|m| m.init_bootstrap().set_question_id(2));
+                    loop {
+                        let input = peer.recv().await;
+                        match input
+                            .get_body()
+                            .unwrap()
+                            .get_as::<message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        {
+                            message::Return(reply) => {
+                                let reply = reply.unwrap();
+                                assert_eq!(reply.get_answer_id(), 2);
+                                let return_::Results(payload) = reply.which().unwrap() else {
+                                    panic!("healthy service response")
+                                };
+                                assert_eq!(payload.unwrap().get_cap_table().unwrap().len(), 1);
+                                break;
+                            }
+                            message::Finish(_) | message::Release(_) => (),
+                            _ => panic!(
+                                "portable={portable}: connection failed after protected tail"
+                            ),
+                        }
+                    }
+                    task.abort();
+                })
+                .await
+                .unwrap_or_else(|_| panic!("portable={portable}: protected tail stalled"));
+            }
         })
         .await;
 }

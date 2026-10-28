@@ -76,6 +76,7 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
             key,
             redirect: Redirect::None,
             allow_handoff: false,
+            require_finish: false,
         })
     }
 }
@@ -141,8 +142,14 @@ pub struct PipelineAdmission<'a, 'receipts, 'id, 'storage, T> {
     key: Key<'id>,
     redirect: Redirect,
     allow_handoff: bool,
+    require_finish: bool,
 }
 impl<'receipts, 'id, T> PipelineAdmission<'_, 'receipts, 'id, '_, T> {
+    /// Keep this answer until explicit Finish, including capability-free replies.
+    pub fn require_finish(mut self) -> Self {
+        self.require_finish = true;
+        self
+    }
     /// Permit a network handoff only when the immutable incoming Call opted in.
     pub fn allow_handoff(mut self, allowed: bool) -> Self {
         self.allow_handoff = allowed;
@@ -188,6 +195,7 @@ impl<'receipts, 'id, T> PipelineAdmission<'_, 'receipts, 'id, '_, T> {
             pipelines: 0,
             redirect: self.redirect,
             allow_handoff: self.allow_handoff,
+            require_finish: self.require_finish,
             provision,
             value,
         });
@@ -226,6 +234,7 @@ mod proofs {
                     pipelines: count,
                     redirect: Redirect::None,
                     allow_handoff: false,
+                    require_finish: false,
                     provision: false,
                     value: 41u8,
                 }),

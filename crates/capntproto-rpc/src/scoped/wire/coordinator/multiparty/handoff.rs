@@ -149,6 +149,26 @@ impl<
                                     &mut coordinator.driver,
                                     token.key(),
                                     answer.pipeline.add_ref(),
+                                    |old, adopted| {
+                                        if self.joins.is_some()
+                                            && self
+                                                .connection
+                                                .borrow()
+                                                .supports_pipeline_join_fence()
+                                        {
+                                            Some(
+                                                self.joiner.fence(
+                                                    old,
+                                                    adopted,
+                                                    self.connection
+                                                        .borrow()
+                                                        .third_party_answer_timeout(),
+                                                ),
+                                            )
+                                        } else {
+                                            None
+                                        }
+                                    },
                                 )?;
                                 Promise::from_future(async move {
                                     let result = answer.response.await;

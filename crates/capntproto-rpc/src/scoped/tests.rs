@@ -2328,3 +2328,41 @@ fn imported_client_transfers_ownership_and_releases_on_rejection() {
     )
     .unwrap();
 }
+
+#[test]
+fn redirected_projection_follows_adopted_metadata_and_notifies_existing_watchers() {
+    let hooks = ClientHooks::new(2, 2);
+    let old = Endpoint::projection(Rc::downgrade(&hooks.inbox));
+    let adopted = Endpoint::projection(Rc::downgrade(&hooks.inbox));
+    let hook = Hook(old.clone(), None);
+    let adopted_hook = Hook(adopted.clone(), None);
+    let source = hook.metadata_changes().unwrap();
+    let mut changed = source.subscribe();
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(changed.poll_changed(&mut cx).is_pending());
+    old.forward_projection(Ok(adopted_hook.add_ref()));
+    assert!(changed.poll_changed(&mut cx).is_ready());
+    let source = hook.metadata_changes().unwrap();
+    assert!(Rc::ptr_eq(
+        &source,
+        &adopted_hook.metadata_changes().unwrap()
+    ));
+    let mut changed = source.subscribe();
+    assert!(changed.poll_changed(&mut cx).is_pending());
+    adopted.apply_metadata(EndpointMetadata {
+        failure: Some(Error::overloaded("adopted metadata".into())),
+        ..Default::default()
+    });
+    assert!(changed.poll_changed(&mut cx).is_ready());
+    assert_eq!(hook.get_failure().unwrap().extra, "adopted metadata");
+    #[cfg(all(unix, not(miri)))]
+    {
+        let (resource, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        let fd = Rc::new(std::os::fd::OwnedFd::from(resource));
+        adopted.apply_metadata(EndpointMetadata {
+            fd: Some(fd.clone()),
+            ..Default::default()
+        });
+        assert!(Rc::ptr_eq(&fd, &hook.get_fd().unwrap()));
+    }
+}

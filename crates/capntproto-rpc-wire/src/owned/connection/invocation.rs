@@ -397,13 +397,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             messages,
             minimum,
             options,
-            None,
+            calls::CallDestination::Caller,
             fill,
         )
     }
 
-    /// Queue a dynamic invocation with a caller-authenticated third-party result
-    /// destination. Metadata is copied into the immutable template before any
+    /// Queue a dynamic invocation with an explicit result destination.
+    /// Third-party metadata is copied into the immutable template before any
     /// capability or question ownership changes, and survives output retries.
     #[allow(clippy::too_many_arguments)]
     pub fn enqueue_dynamic_to(
@@ -414,12 +414,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
-        destination: Option<capnp::any_pointer::Reader<'_>>,
+        destination: calls::CallDestination<'_>,
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
     ) -> Result<InvocationKey<'id>, Error> {
-        if let Some(destination) = destination {
+        if let calls::CallDestination::ThirdParty(destination) = destination {
             destination
                 .validate_capability_indices(0)
                 .map_err(|error| Error::Input(error.into()))?;
@@ -438,10 +438,24 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     method,
                     fill,
                 )?;
-                if let Some(destination) = destination {
-                    crate::network::send_results_to_third_party(builder, |field| {
-                        field.copy_from(destination)
-                    })?;
+                match destination {
+                    calls::CallDestination::Caller => (),
+                    calls::CallDestination::Yourself => {
+                        use crate::rpc_capnp::api::{call::SendResultsTo, Call};
+                        builder
+                            .try_get_root::<crate::rpc_capnp::api::Message>()?
+                            .field(crate::rpc_capnp::api::Message::CALL)
+                            .edit()?
+                            .group(Call::SEND_RESULTS_TO)
+                            .select()
+                            .void(SendResultsTo::YOURSELF)
+                            .set();
+                    }
+                    calls::CallDestination::ThirdParty(destination) => {
+                        crate::network::send_results_to_third_party(builder, |field| {
+                            field.copy_from(destination)
+                        })?;
+                    }
                 }
                 Ok(())
             },
@@ -705,19 +719,26 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 question: key,
             }));
         }
-        let third_party = invocation
+        let destination = invocation
             .frame
             .with(messages, |source| {
                 let rpc_capnp::message::Call(source) = source.which()? else {
                     unreachable!()
                 };
-                Ok::<_, capnp::Error>(matches!(
-                    source?.get_send_results_to().which()?,
-                    rpc_capnp::call::send_results_to::ThirdParty(_)
-                ))
+                Ok::<_, capnp::Error>(match source?.get_send_results_to().which()? {
+                    rpc_capnp::call::send_results_to::Caller(()) => questions::ResultsTo::Caller,
+                    rpc_capnp::call::send_results_to::Yourself(()) => {
+                        questions::ResultsTo::Yourself
+                    }
+                    rpc_capnp::call::send_results_to::ThirdParty(_) => {
+                        questions::ResultsTo::ThirdParty
+                    }
+                })
             })
             .map_err(Error::Input)?
             .map_err(|error| Error::Input(error.into()))?;
+        let third_party = destination == questions::ResultsTo::ThirdParty;
+        let redirected = destination != questions::ResultsTo::Caller;
         // A queued template has no descriptor table or promised-answer path.
         // Size its final contiguous frame before reserving output. This works
         // for fixed providers too: insufficient buffers reject without consuming
@@ -753,7 +774,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         for (key, client) in keys.iter_mut().zip(invocation.capabilities.iter()) {
             *key = client.as_ref().map(clients::Client::key);
         }
-        let pipeline_only = !third_party
+        let pipeline_only = !redirected
             && count == 0
             && self.pipeline_only_enabled
             && invocation
@@ -773,33 +794,55 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let mut output = queue
             .reserve_with(resources)
             .map_err(|error| Error::Input(super::super::Error::Storage(error)))?;
-        let reservation = if third_party {
-            self.ledgers.questions.reserve_third_party()
-        } else if pipeline_only {
-            self.ledgers.questions.reserve_for_pipeline()
-        } else {
-            self.ledgers.questions.reserve()
-        }
-        .map_err(Error::Question)?;
-        let pipeline_only = reservation.id().is_pipeline_only();
         let mut batch = self.ledgers.exports.batch();
-        let mut grants = self
+        let mut staged = self
             .message_capabilities
-            .buffer::<_, CAPS>(count, || None)
+            .buffer::<_, CAPS>(count, || reflection::Descriptor::None)
             .ok_or(Error::Input(super::super::Error::Capacity))?;
         for index in 0..count {
             let Some(key) = keys[index] else { continue };
             let client = self.runtime.retain_key(key).map_err(Error::Graph)?;
-            let staged = self.exported.stage(&mut self.runtime, &mut batch, &client);
+            let reflect = match self.runtime.inspect(&client) {
+                Ok(clients::Destination::Endpoint { owner, .. }) => {
+                    reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
+                }
+                _ => Ok(None),
+            };
+            match reflect {
+                Ok(Some(target)) => {
+                    let extra = match target {
+                        calls::Target::Imported(_) => Some(0),
+                        calls::Target::Promised { path, .. } => path
+                            .fields()
+                            .len()
+                            .checked_mul(8)
+                            .and_then(|n| n.checked_add(32)),
+                    };
+                    self.runtime.release(client);
+                    minimum =
+                        extra
+                            .and_then(|extra| minimum.checked_add(extra))
+                            .ok_or(Error::Input(super::super::Error::Wire(
+                                capnp::ErrorKind::MessageSizeOverflow,
+                            )))?;
+                    continue;
+                }
+                Err(error) => {
+                    self.runtime.release(client);
+                    return Err(Error::Question(error));
+                }
+                Ok(None) => (),
+            }
+            let grant = self.exported.stage(&mut self.runtime, &mut batch, &client);
             let attached = match self.runtime.inspect(&client) {
-                Ok(clients::Destination::Endpoint { owner, .. }) if staged.is_ok() => {
+                Ok(clients::Destination::Endpoint { owner, .. }) if grant.is_ok() => {
                     attach(owner, &self.ledgers.imports, output.resources_mut())
                 }
                 _ => u8::MAX,
             };
             self.runtime.release(client);
-            let grant = staged.map_err(Error::Exported)?;
-            grants[index] = Some((grant.id(), grant.is_promise(), attached));
+            let grant = grant.map_err(Error::Exported)?;
+            staged[index] = reflection::Descriptor::Grant(grant.id(), grant.is_promise(), attached);
             let owner = batch.pending_owner(grant.id()).and_then(|client| {
                 match self.runtime.inspect(client) {
                     Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
@@ -816,6 +859,34 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     capnp::ErrorKind::MessageSizeOverflow,
                 )))?;
         }
+        let Task::Invoke(invocation) = self.runtime.queued_owner(dispatch).unwrap() else {
+            unreachable!()
+        };
+        for (index, client) in invocation.capabilities[..count].iter().enumerate() {
+            if let Some(client) = client {
+                if let clients::Destination::Endpoint { owner, .. } =
+                    self.runtime.inspect(client).map_err(Error::Graph)?
+                {
+                    if let Some(target) =
+                        reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
+                            .map_err(Error::Question)?
+                    {
+                        staged[index] = reflection::Descriptor::Reflected(target);
+                    }
+                }
+            }
+        }
+        let reservation = if third_party {
+            self.ledgers.questions.reserve_third_party()
+        } else if redirected {
+            self.ledgers.questions.reserve_redirected()
+        } else if pipeline_only {
+            self.ledgers.questions.reserve_for_pipeline()
+        } else {
+            self.ledgers.questions.reserve()
+        }
+        .map_err(Error::Question)?;
+        let pipeline_only = reservation.id().is_pipeline_only();
         let owner = self.runtime.queued_owner(dispatch).unwrap();
         let Task::Invoke(invocation) = owner else {
             unreachable!()
@@ -846,22 +917,33 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 call.scalar(WireCall::ONLY_PROMISE_PIPELINE)
                     .set(pipeline_only);
                 call.scalar(WireCall::ALLOW_THIRD_PARTY_TAIL_CALL)
-                    .set(self.allow_answer_handoff && !third_party && !pipeline_only);
-                if let rpc_capnp::call::send_results_to::ThirdParty(destination) =
-                    source.get_send_results_to().which()?
-                {
-                    use crate::rpc_capnp::api::call::SendResultsTo;
-                    call.group(WireCall::SEND_RESULTS_TO)
-                        .select()
-                        .field(SendResultsTo::THIRD_PARTY)
-                        .copy_from(destination)?;
+                    .set(self.allow_answer_handoff && !redirected && !pipeline_only);
+                use crate::rpc_capnp::api::call::SendResultsTo;
+                match source.get_send_results_to().which()? {
+                    rpc_capnp::call::send_results_to::Caller(()) => (),
+                    rpc_capnp::call::send_results_to::Yourself(()) => {
+                        call.group(WireCall::SEND_RESULTS_TO)
+                            .select()
+                            .void(SendResultsTo::YOURSELF)
+                            .set();
+                    }
+                    rpc_capnp::call::send_results_to::ThirdParty(destination) => {
+                        call.group(WireCall::SEND_RESULTS_TO)
+                            .select()
+                            .field(SendResultsTo::THIRD_PARTY)
+                            .copy_from(destination)?;
+                    }
                 }
                 calls::write_target(call.field(WireCall::TARGET).init()?, target)?;
                 let mut payload = call.field(WireCall::PARAMS).init()?;
                 let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(count)?;
-                for (index, grant) in grants[..count].iter().enumerate() {
+                for (index, grant) in staged[..count].iter().enumerate() {
                     let mut descriptor = descriptors.get_mut(index).unwrap();
-                    let Some((id, promise, attached)) = *grant else {
+                    if let Some(target) = grant.reflected() {
+                        reflection::write(target, descriptor)?;
+                        continue;
+                    }
+                    let reflection::Descriptor::Grant(id, promise, attached) = *grant else {
                         descriptor.void(CapDescriptor::NONE).set();
                         continue;
                     };
@@ -880,7 +962,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .copy_with_capabilities(source.get_params()?.get_content(), mapping)
             })
             .map_err(Error::Input)?;
-        let question = Question::send_granting_using(
+        let question = Question::send_granting_reflected_using(
             reservation,
             batch,
             messages,
@@ -888,6 +970,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             scratch,
             output,
             self.writer_policy == WriterPolicy::Checked,
+            |descriptor, index| {
+                reflection::check(
+                    staged
+                        .get(index)
+                        .and_then(reflection::Descriptor::reflected),
+                    descriptor,
+                )
+            },
         )
         .map_err(|error| Error::Input(super::super::Error::Output(error)))?;
         let key = question.key();

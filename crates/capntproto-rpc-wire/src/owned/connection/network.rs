@@ -4,6 +4,9 @@ use capntproto_rpc_engine::clients::Capabilities;
 
 #[must_use = "process the network job or release it through its originating driver"]
 pub enum NetworkRequest<'pool, 'id, const PATH: usize> {
+    /// Optional or unknown message awaiting an Unimplemented echo. No answer,
+    /// target lease, parameter grants, or application producer is admitted.
+    Unsupported(Frame<'pool>),
     Provide(super::super::provision::Provide<'pool, 'id, 'id, PATH>),
     Accept(super::super::provision::Accept<'pool, 'id>),
     Adopt(super::super::question::IncomingAdoption<'pool, 'id>),
@@ -15,6 +18,7 @@ pub enum NetworkRequest<'pool, 'id, const PATH: usize> {
 impl<'pool, 'id, const PATH: usize> NetworkRequest<'pool, 'id, PATH> {
     pub fn answer_key(&self) -> Option<answers::Key<'id>> {
         match self {
+            Self::Unsupported(_) => None,
             Self::Provide(p) => Some(p.key()),
             Self::Accept(a) => Some(a.key()),
             Self::Adopt(_) | Self::Await(_) | Self::ForwardEmbargo(_) => None,
@@ -35,6 +39,7 @@ impl<'pool, 'id, const PATH: usize> NetworkRequest<'pool, 'id, PATH> {
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) {
         match self {
+            Self::Unsupported(frame) => frame.release(messages),
             Self::Provide(provide) => provide.release(
                 messages,
                 &mut driver.ledgers.exports,
@@ -310,9 +315,85 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn release_provision(&mut self, provision: questions::Provision<'id>) {
         self.ledgers.questions.release_provision(provision);
     }
+    /// Best-effort terminal notification. The hosting pump owns flushing and
+    /// must stop ordinary admission before calling this method.
+    pub fn send_abort(
+        &mut self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, impl Default>,
+        options: capnp::message::ReaderOptions,
+        kind: capnp::ErrorKind,
+        reason: &str,
+    ) -> Result<(), Error> {
+        let output = queue
+            .reserve()
+            .map_err(|e| Error::Input(super::super::Error::Storage(e)))?;
+        let minimum =
+            reason
+                .len()
+                .checked_add(128)
+                .ok_or(Error::Input(super::super::Error::Wire(
+                    capnp::ErrorKind::MessageSizeOverflow,
+                )))?;
+        let frame = Frame::build(messages, minimum, options, |builder| {
+            calls::abort(builder, kind, reason)
+        })
+        .map_err(Error::Input)?;
+        let offer = frame.offer(messages).map_err(Error::Input)?;
+        output.accept(messages, offer);
+        Ok(())
+    }
+
+    /// Select whether this endpoint implements optional Join. Disabled Join is
+    /// echoed as Unimplemented without admitting a peer answer or target lease.
+    pub fn allow_join(&mut self, enabled: bool) {
+        self.allow_join = enabled;
+    }
+
+    /// Publish a pending unknown/optional message's Unimplemented echo. Queue
+    /// or buffer exhaustion leaves the original message owned for retry.
+    pub fn send_unimplemented(
+        &mut self,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, impl Default>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<(), Error> {
+        self.check_live()?;
+        let Some(NetworkRequest::Unsupported(source)) = self.network.as_ref() else {
+            return Err(Error::InvalidNetworkTarget);
+        };
+        let output = queue
+            .reserve()
+            .map_err(|e| Error::Input(super::super::Error::Storage(e)))?;
+        let minimum = source
+            .size_in_words(messages)
+            .map_err(Error::Input)?
+            .checked_add(8)
+            .and_then(|words| words.checked_mul(8))
+            .ok_or(Error::Input(super::super::Error::Wire(
+                capnp::ErrorKind::MessageSizeOverflow,
+            )))?;
+        let frame = source
+            .build_from(messages, minimum, options, |source, builder| {
+                calls::unimplemented(builder, source)
+            })
+            .map_err(Error::Input)?;
+        let offer = frame.offer(messages).map_err(Error::Input)?;
+        output.accept(messages, offer);
+        self.network
+            .take()
+            .expect("unsupported source held during publication")
+            .release(self, messages);
+        Ok(())
+    }
+
     /// Whether a network operation is waiting for the caller's policy handler.
     pub fn has_network(&self) -> bool {
         self.network.is_some()
+    }
+    /// Inspect the admitted operation before selecting its policy handler.
+    pub fn peek_network(&self) -> Option<&NetworkRequest<'pool, 'id, PATH>> {
+        self.network.as_ref()
     }
     pub fn take_network(&mut self) -> Option<NetworkRequest<'pool, 'id, PATH>> {
         self.network.take()

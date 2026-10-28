@@ -11,6 +11,7 @@ pub struct Admission<'a, 'id, 'storage, T> {
     parent: Option<Key<'id>>,
     redirect: Redirect,
     allow_handoff: bool,
+    require_finish: bool,
 }
 impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     pub fn prepare_admission(
@@ -50,12 +51,18 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
             parent,
             redirect: Redirect::None,
             allow_handoff: false,
+            require_finish: false,
         })
     }
 }
 impl<'id, T> Admission<'_, 'id, '_, T> {
-    /// The caller asks this vat to retain results for one later adoption.
+    /// Keep this answer until explicit Finish, including capability-free replies.
+    pub fn require_finish(mut self) -> Self {
+        self.require_finish = true;
+        self
+    }
     /// Permit a network handoff only when the immutable incoming Call opted in.
+    /// The caller asks this vat to retain results for one later adoption.
     pub fn allow_handoff(mut self, allowed: bool) -> Self {
         self.allow_handoff = allowed;
         self
@@ -112,6 +119,7 @@ impl<'id, T> Admission<'_, 'id, '_, T> {
             pipelines: 0,
             redirect: self.redirect,
             allow_handoff: self.allow_handoff,
+            require_finish: self.require_finish,
             provision,
             value,
         });

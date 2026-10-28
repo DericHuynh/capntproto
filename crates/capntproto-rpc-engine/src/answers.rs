@@ -75,6 +75,7 @@ pub struct Record<T> {
     redirect: Redirect,
     allow_handoff: bool,
     provision: bool,
+    require_finish: bool,
     value: T,
 }
 impl<T> Record<T> {
@@ -798,6 +799,7 @@ impl<T> Return<'_, '_, '_, T> {
         !record.finished
             && record.redirect == Redirect::None
             && !record.provision
+            && !record.require_finish
             && self.key.id.to_wire() < (1 << 30)
     }
     /// A data-only Return can retire immediately when no admitted pipeline

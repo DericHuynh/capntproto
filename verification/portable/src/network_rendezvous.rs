@@ -120,7 +120,7 @@ pub fn owning_network_rendezvous(direct_first: bool) {
             let task = bob_carol.enqueue_dynamic_to(&target, calls::DynamicCall {
                 interface: echo::Owned::ECHO.interface_id(), method: echo::Owned::ECHO.ordinal(),
                 no_promise_pipelining: false, only_promise_pipeline: false,
-            }, &[], messages, 776, Default::default(), Some(contact.get_root_as_reader().unwrap()), |_| Ok(())).unwrap();
+            }, &[], messages, 776, Default::default(), calls::CallDestination::ThirdParty(contact.get_root_as_reader().unwrap()), |_| Ok(())).unwrap();
             bob_carol.capabilities().release(target);
             assert!(bob_carol.send_invocation(messages, &mut queue, 776, Default::default(), &mut [0;4]).is_err(), "full output retains redirected invocation");
             assert_eq!(bob_carol.capabilities().next_ready().unwrap().unwrap().owner().invocation_key().unwrap(), task);

@@ -75,7 +75,7 @@ impl<'pool, 'e, 'a, const PATH: usize> Join<'pool, 'e, 'a, PATH> {
                     .map_err(|e| {
                         Error::Admission(inbound::Error::Reception(reception::Error::Answers(e)))
                     })?;
-                let (key, promised) = admission.accept(owner.take().unwrap());
+                let (key, promised) = admission.require_finish().accept(owner.take().unwrap());
                 let local = leases.accept();
                 let target = if let Some(lease) = local[0].take() {
                     Target::Hosted(lease)

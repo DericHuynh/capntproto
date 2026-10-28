@@ -39,6 +39,7 @@ struct Entry<'p, 'id, I, const C: usize, const H: usize> {
 pub(super) enum Publication<'a, 'id> {
     Queued {
         direct: bool,
+        native: Option<&'a Rc<server::NativeTail>>,
     },
     Immediate {
         target: &'a Client<'id>,
@@ -322,6 +323,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
         key: capntproto_rpc_engine::questions::Key<'id>,
         pipeline: Box<dyn PipelineHook>,
+        mut fence: impl FnMut(Box<dyn ClientHook>, Box<dyn ClientHook>) -> Option<Box<dyn ClientHook>>,
     ) -> capnp::Result<()> {
         let Some(index) = driver.completion_owner(key) else {
             return Ok(());
@@ -345,31 +347,30 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             .wire
             .projections
             .materialize(hooks, &mut driver.capabilities())?;
-        // A used path retains its original ordering route through its fence.
         if let Some(state) = &entry.wire.pipeline {
-            if !state.used.get() {
-                let previous = state.variant.replace(PipelineVariant::Adopted(pipeline));
-                drop(previous);
-            } else {
-                // Like legacy's unredirected PipelineClient, a used projection
-                // keeps its original wire target but no longer promises a new
-                // route. Cross-connection forwarding must not wait for Return.
-                let (first, rest) = {
-                    let cached = state.cached.borrow();
-                    let endpoint = |(_, hook): &CachedProjection| {
-                        hook.as_any()
-                            .and_then(|hook| hook.downcast_ref::<Hook>())
-                            .map(|hook| hook.0.clone())
-                    };
-                    (
-                        cached.first.as_ref().and_then(endpoint),
-                        cached.rest.iter().filter_map(endpoint).collect::<Vec<_>>(),
-                    )
-                };
-                for endpoint in first.into_iter().chain(rest) {
-                    hooks.freeze_projection(&mut driver.capabilities(), endpoint)?;
-                }
+            let cached = {
+                let cache = state.cached.borrow();
+                cache
+                    .first
+                    .iter()
+                    .chain(cache.rest.iter())
+                    .filter_map(|(path, hook)| {
+                        let hook = hook.as_any()?.downcast_ref::<Hook>()?;
+                        Some((path.clone(), hook.0.clone()))
+                    })
+                    .collect::<Vec<_>>()
+            };
+            for (path, endpoint) in cached {
+                hooks.fence_projection(
+                    &mut driver.capabilities(),
+                    endpoint,
+                    pipeline.get_pipelined_cap(&path),
+                    &mut fence,
+                )?;
             }
+            // Cached used paths keep their individual fence or original route.
+            // Future, previously unused paths can take the authenticated route.
+            drop(state.variant.replace(PipelineVariant::Adopted(pipeline)));
         }
         Ok(())
     }
@@ -454,7 +455,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                             .map(|key| key.map(SendOutcome::Immediate))
                             .or_else(publication_error);
                     }
-                    Publication::Queued { direct } => direct,
+                    Publication::Queued { direct, .. } => direct,
                 };
                 if direct {
                     return driver
@@ -540,7 +541,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                             .map(|key| key.map(SendOutcome::Immediate))
                             .or_else(publication_error);
                     }
-                    Publication::Queued { direct } => direct,
+                    Publication::Queued { direct, .. } => direct,
                 };
                 if direct {
                     return driver
@@ -941,7 +942,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             driver,
             messages,
             credit.clone(),
-            Publication::Queued { direct },
+            Publication::Queued {
+                direct,
+                native: call.native_tail.as_ref(),
+            },
         )?
         else {
             return Ok(None);
@@ -969,6 +973,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 .retain_call_credit(sent.question, credit)
                 .map_err(wire_error)?;
         }
+        entry
+            .wire
+            .call
+            .as_mut()
+            .expect("published call")
+            .publication_committed();
         Ok(Some(Progress::Advanced))
     }
     fn accept_local<A, P: Copy + Eq>(
@@ -1020,6 +1030,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         let Some(call) = self.invocations.accept_local(driver).map_err(wire_error)? else {
             return Ok(None);
         };
+        if let Some(tail) = entry
+            .wire
+            .call
+            .as_ref()
+            .and_then(|call| call.native_tail.as_ref())
+        {
+            tail.forwarded();
+        }
         self.ready.push(index);
         entry.wire.local_results = Some(server::Results::new());
         entry.local = Some(Box::new(Execution {
@@ -1027,6 +1045,19 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             stage: Stage::Prepare,
         }));
         Ok(Some(Progress::Advanced))
+    }
+    pub(super) fn retain_direct(
+        &self,
+        graph: &mut impl Capabilities<'id>,
+        hook: &dyn ClientHook,
+    ) -> capnp::Result<Option<Client<'id>>> {
+        let Some(hook) = direct_response_hook(hook) else {
+            return Ok(None);
+        };
+        let Some(target) = Self::direct_target(&self.entries, &hook.0) else {
+            return Ok(None);
+        };
+        graph.retain_key(target.key()).map(Some).map_err(wire_error)
     }
     fn direct_target<'a>(
         entries: &'a [Option<Entry<'p, 'id, I, C, H>>],
@@ -1110,12 +1141,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             self.entries.try_reserve(1).map_err(wire_error)?;
         }
         let call = self.pending.as_ref().expect("pending call");
-        let failure = call.endpoint.failure.borrow().clone();
+        let failure = call.endpoint().failure.borrow().clone();
         if let Some(error) = failure {
             self.pending.take().unwrap().complete_boxed(Err(error));
             return Ok(Some(Progress::Advanced));
         }
-        if (call.endpoint.needs_binding() && call.endpoint.direct.get().is_none())
+        if (call.endpoint().needs_binding() && call.endpoint().direct.get().is_none())
             || call.params.capability_table().is_some_and(|caps| {
                 caps.iter()
                     .flatten()
@@ -1129,7 +1160,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             let mut pending_cx = Context::from_waker(&wake);
             let call = self.pending.as_mut().expect("pending projection admission");
             let canceled = call.poll_canceled(&mut pending_cx).is_ready();
-            let endpoint = call.endpoint.binding_pending(&mut pending_cx);
+            let endpoint = call.endpoint().binding_pending(&mut pending_cx);
             let caps = call.params.capability_table().is_some_and(|caps| {
                 caps.iter()
                     .flatten()
@@ -1141,10 +1172,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.admission_parked = false;
         self.admission_wait = None;
         let call = self.pending.as_ref().expect("ready admission");
-        let direct_target = Self::direct_target(&self.entries, &call.endpoint);
-        if call.endpoint.index.get().is_none() && direct_target.is_none() {
+        let direct_target = Self::direct_target(&self.entries, call.endpoint());
+        if call.endpoint().index.get().is_none() && direct_target.is_none() {
             let forwarded = call
-                .endpoint
+                .endpoint()
                 .introduced
                 .borrow()
                 .clone()
@@ -1153,7 +1184,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 Some(cap) => cap,
                 None => import(&mut driver.capabilities(), &*forwarded)?,
             };
-            hooks.bind_projection(&mut driver.capabilities(), cap, call.endpoint.clone())?;
+            hooks.bind_projection(&mut driver.capabilities(), cap, call.endpoint().clone())?;
         }
         let target = match direct_target {
             Some(target) => target,
@@ -1161,7 +1192,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         };
         if !call.hints.only_promise_pipeline
             && call.third_party.is_none()
-            && call.endpoint.remote.get()
+            && call.native_tail.is_none()
+            && call.endpoint().remote.get()
         {
             let call = self.pending.as_ref().expect("pending call");
             // This is only a refreshed routing hint. The driver's exclusive
@@ -1266,6 +1298,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         return Ok(Some(progress));
                     }
                 };
+                call.publication_committed();
                 let entry = Entry {
                     wire: WireCall {
                         call: Some(call),
@@ -1318,7 +1351,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         let parent = self
             .pending
             .as_ref()
-            .and_then(|call| call.endpoint.direct_parent.borrow().upgrade());
+            .and_then(|call| call.endpoint().direct_parent.borrow().upgrade());
         if let Some(parent) = parent {
             if let Some(operation) = parent.operation.get() {
                 if let Some(entry) = self

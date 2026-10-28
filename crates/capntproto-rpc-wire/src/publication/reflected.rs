@@ -196,7 +196,10 @@ pub(crate) fn release_references<'i, 'q, I>(
 mod question;
 pub use question::{question, Call, CallReferences};
 
-fn check_path(answer: rpc_capnp::promised_answer::Reader<'_>, path: Path<'_>) -> Result<(), Error> {
+pub(crate) fn check_path(
+    answer: rpc_capnp::promised_answer::Reader<'_>,
+    path: Path<'_>,
+) -> Result<(), Error> {
     let mut fields = path.fields().iter();
     for operation in answer.get_transform()? {
         match operation

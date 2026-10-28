@@ -373,12 +373,24 @@ pub(crate) fn publish_granting<'pool, E>(
     messages: &mut messages::Messages<'pool, '_, '_>,
     scratch: &mut [u32],
     queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
+    reflected: impl FnMut(
+        rpc_capnp::cap_descriptor::Reader<'_>,
+        usize,
+    ) -> Result<bool, crate::publication::Error>,
 ) -> Result<(), Error> {
-    crate::publication::prepare(batch, messages, frame.lease, scratch, frame.options)
-        .map(|prepared| {
-            prepared.accept_into(queue);
-        })
-        .map_err(|error| Error::Output(error.into()))
+    crate::publication::prepare_with(
+        batch,
+        messages,
+        frame.lease,
+        scratch,
+        frame.options,
+        reflected,
+        true,
+    )
+    .map(|prepared| {
+        prepared.accept_into(queue);
+    })
+    .map_err(|error| Error::Output(error.into()))
 }
 
 #[must_use = "retry admission or release the rejected frame"]
@@ -598,7 +610,7 @@ pub struct Call<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> {
     plain_params: core::cell::Cell<Option<PlainParams>>,
     receipts: Receipts<'i, 'e, 'a, I, N>,
     answer: answers::Key<'a>,
-    target: Target<'e, 'a>,
+    target: Option<Target<'e, 'a>>,
     path: Buffer<u16, P>,
     path_len: usize,
     method: calls::DynamicCall,
@@ -625,7 +637,7 @@ impl<'i, 'e, 'a, I, const N: usize, const P: usize> AdmittedCall<'i, 'e, 'a, I, 
             plain_params: self.plain_params,
             receipts: self.receipts,
             answer: self.answer,
-            target: self.target,
+            target: Some(self.target),
             path: self.path,
             path_len: self.path_len,
             method: self.method,
@@ -693,16 +705,22 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         G: capntproto_rpc_engine::clients::dispatch::GraphStorage<'g, 'nodes, T, Peer>,
     {
         let (bound, observer) = match self.target() {
-            TargetRef::Hosted(lease) => (
+            Some(TargetRef::Hosted(lease)) => (
                 crate::clients::reflected(runtime, exports, lease).map_err(EnqueueError::Graph),
                 false,
             ),
-            TargetRef::Promised { answer, path } => (
+            Some(TargetRef::Promised { answer, path }) => (
                 bindings
                     .bind(runtime, answers, answer, path)
                     .map_err(EnqueueError::Pipeline),
                 true,
             ),
+            None => {
+                return Err(EnqueueRejected {
+                    error: EnqueueError::Graph(capntproto_rpc_engine::clients::Error::Stale),
+                    call: self,
+                })
+            }
         };
         let client = match bound {
             Ok(client) => client,
@@ -1019,13 +1037,25 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
     pub fn allows_third_party_tail_call(&self) -> bool {
         self.allows_handoff
     }
-    pub fn target(&self) -> TargetRef<'_, 'e, 'a> {
-        match &self.target {
+    /// Present until dispatch transfers the destination to its application.
+    pub fn target(&self) -> Option<TargetRef<'_, 'e, 'a>> {
+        Some(match self.target.as_ref()? {
             Target::Hosted(lease) => TargetRef::Hosted(lease),
             Target::Promised(answer) => TargetRef::Promised {
                 answer,
                 path: pipeline::Path::new(&self.path[..self.path_len]),
             },
+        })
+    }
+    pub(super) fn release_target<E, A>(
+        &mut self,
+        exports: &mut exports::Exports<'e, '_, E>,
+        answers: &mut answers::Answers<'a, '_, A>,
+    ) {
+        match self.target.take() {
+            Some(Target::Hosted(lease)) => exports.release_local_deferred(lease),
+            Some(Target::Promised(pipeline)) => answers.release_pipeline_deferred(pipeline),
+            None => (),
         }
     }
     pub fn with<R>(
@@ -1115,17 +1145,14 @@ impl<'pool, 'i, 'e, 'a, I, const N: usize, const P: usize> Call<'pool, 'i, 'e, '
         }
     }
     pub fn release<E, A>(
-        self,
+        mut self,
         messages: &mut messages::Messages<'pool, '_, '_>,
         imports: &mut imports::Imports<'i, '_, I>,
         exports: &mut exports::Exports<'e, '_, E>,
         answers: &mut answers::Answers<'a, '_, A>,
     ) {
+        self.release_target(exports, answers);
         self.receipts.release(imports, exports, answers);
-        match self.target {
-            Target::Hosted(lease) => exports.release_local_deferred(lease),
-            Target::Promised(pipeline) => answers.release_pipeline_deferred(pipeline),
-        }
         self.frame.release(messages);
     }
 }

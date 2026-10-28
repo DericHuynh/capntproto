@@ -6,6 +6,309 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn mixed_reflected_descriptors_preserve_routes_and_retry_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        for native in [false, true] {
+            for reply in [false, true] {
+                with_driver(|mut driver, messages| {
+                    if native {
+                        driver.use_native_writer();
+                    }
+                    let (call, local) = request(&mut driver, messages, false);
+                    let imported = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
+                    let remote = driver.bind_import(&imported).unwrap();
+                    driver.release_import(imported);
+                    let mut slots = [None];
+                    let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+                    let parent = driver
+                        .send(
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            calls::bootstrap,
+                        )
+                        .unwrap();
+                    drain(&mut queue, messages, |_| ());
+                    let projected = driver
+                        .pipeline(parent, pipeline::Path::new(&[0, 2]))
+                        .unwrap();
+                    let caps = [Some(&local), Some(&remote), Some(&projected), None];
+                    let mut blocked = messages::Queue::<()>::new(&mut []).unwrap();
+                    if reply {
+                        let result = driver
+                            .local_answer_dynamic(
+                                call.answer(),
+                                7,
+                                9,
+                                caps.into_iter(),
+                                messages,
+                                512,
+                                Default::default(),
+                                |content| content.set_capability_index(0),
+                            )
+                            .unwrap();
+                        driver
+                            .complete_answer(&call, Ok(result), messages)
+                            .unwrap_or_else(|_| panic!("completion"));
+                        assert!(driver
+                            .send_answer(
+                                call.answer(),
+                                messages,
+                                &mut blocked,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                                |_, _| Ok(())
+                            )
+                            .is_err());
+                        driver
+                            .send_answer(
+                                call.answer(),
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                                |_, _| Ok(()),
+                            )
+                            .unwrap();
+                    } else {
+                        driver
+                            .enqueue_dynamic(
+                                &remote,
+                                calls::DynamicCall::default(),
+                                &caps,
+                                messages,
+                                512,
+                                Default::default(),
+                                |content| content.set_capability_index(0),
+                            )
+                            .unwrap();
+                        assert!(driver
+                            .send_invocation(
+                                messages,
+                                &mut blocked,
+                                512,
+                                Default::default(),
+                                &mut [0; 8]
+                            )
+                            .is_err());
+                        assert!(driver
+                            .send_invocation(
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [0; 8]
+                            )
+                            .unwrap()
+                            .is_some());
+                    }
+                    drain(&mut queue, messages, |root| {
+                        let payload = match root.which().unwrap() {
+                            rpc_capnp::message::Call(call) if !reply => {
+                                call.unwrap().get_params().unwrap()
+                            }
+                            rpc_capnp::message::Return(returned) if reply => {
+                                let returned = returned.unwrap();
+                                assert!(!returned.get_no_finish_needed());
+                                let rpc_capnp::return_::Results(payload) =
+                                    returned.which().unwrap()
+                                else {
+                                    panic!("Results")
+                                };
+                                payload.unwrap()
+                            }
+                            _ => panic!("publication"),
+                        };
+                        let caps = payload.get_cap_table().unwrap();
+                        assert_eq!(caps.len(), 4);
+                        assert!(matches!(
+                            caps.get(0).which().unwrap(),
+                            rpc_capnp::cap_descriptor::SenderHosted(_)
+                        ));
+                        assert!(matches!(
+                            caps.get(1).which().unwrap(),
+                            rpc_capnp::cap_descriptor::ReceiverHosted(42)
+                        ));
+                        let rpc_capnp::cap_descriptor::ReceiverAnswer(answer) =
+                            caps.get(2).which().unwrap()
+                        else {
+                            panic!("ReceiverAnswer")
+                        };
+                        let answer = answer.unwrap();
+                        assert_eq!(answer.get_question_id(), parent.id().to_wire());
+                        let mut fields = [0; 2];
+                        assert_eq!(
+                            pipeline::Path::decode(answer, &mut fields)
+                                .unwrap()
+                                .fields(),
+                            &[0, 2]
+                        );
+                        assert!(matches!(
+                            caps.get(3).which().unwrap(),
+                            rpc_capnp::cap_descriptor::None(())
+                        ));
+                    });
+                    driver.release_call(call, messages);
+                    driver.runtime.release(local);
+                    driver.runtime.release(remote);
+                    driver.runtime.release(projected);
+                    close(driver, messages, &mut queue);
+                });
+            }
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn exported_promise_resolves_to_original_peer_routes_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        for native in [false, true] {
+            for promised in [false, true] {
+                with_driver(|mut driver, messages| {
+                    if native {
+                        driver.use_native_writer();
+                    }
+                    let (call, local) = request(&mut driver, messages, false);
+                    let mut slots = [None];
+                    let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+                    let parent = driver
+                        .send(
+                            messages,
+                            &mut queue,
+                            128,
+                            Default::default(),
+                            calls::bootstrap,
+                        )
+                        .unwrap();
+                    drain(&mut queue, messages, |_| ());
+                    let route = if promised {
+                        driver.pipeline(parent, pipeline::Path::new(&[2])).unwrap()
+                    } else {
+                        let imported = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
+                        let remote = driver.bind_import(&imported).unwrap();
+                        driver.release_import(imported);
+                        remote
+                    };
+                    let source = driver.runtime.promise(&mut None).unwrap();
+                    let result = driver
+                        .local_answer_dynamic(
+                            call.answer(),
+                            7,
+                            9,
+                            [Some(&source)].into_iter(),
+                            messages,
+                            512,
+                            Default::default(),
+                            |content| content.set_capability_index(0),
+                        )
+                        .unwrap();
+                    driver
+                        .complete_answer(&call, Ok(result), messages)
+                        .unwrap_or_else(|_| panic!("completion"));
+                    driver
+                        .send_answer(
+                            call.answer(),
+                            messages,
+                            &mut queue,
+                            512,
+                            Default::default(),
+                            &mut [0; 8],
+                            |_, _| Ok(()),
+                        )
+                        .unwrap();
+                    let mut export_id = 0;
+                    drain(&mut queue, messages, |root| {
+                        let rpc_capnp::message::Return(returned) = root.which().unwrap() else {
+                            panic!("Return")
+                        };
+                        let rpc_capnp::return_::Results(payload) =
+                            returned.unwrap().which().unwrap()
+                        else {
+                            panic!("Results")
+                        };
+                        let rpc_capnp::cap_descriptor::SenderPromise(id) = payload
+                            .unwrap()
+                            .get_cap_table()
+                            .unwrap()
+                            .get(0)
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("SenderPromise")
+                        };
+                        export_id = id;
+                    });
+                    assert!(driver
+                        .runtime
+                        .resolve(source.key(), &mut Some(route), clients::Source::Direct)
+                        .unwrap()
+                        .is_none());
+                    let mut resolved = false;
+                    for _ in 0..256 {
+                        let _ = driver
+                            .poll_maintenance_with(
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                                NonZeroUsize::new(1).unwrap(),
+                                &mut || {},
+                                &mut |_, _, _| panic!("reflection must not duplicate resources"),
+                                &mut |_, _, _| Ok(None),
+                            )
+                            .unwrap();
+                        if !queue.is_empty() {
+                            drain(&mut queue, messages, |root| {
+                                let rpc_capnp::message::Resolve(resolve) = root.which().unwrap()
+                                else {
+                                    return;
+                                };
+                                let resolve = resolve.unwrap();
+                                assert_eq!(resolve.get_promise_id(), export_id);
+                                let rpc_capnp::resolve::Cap(cap) = resolve.which().unwrap() else {
+                                    panic!("Cap")
+                                };
+                                match cap.unwrap().which().unwrap() {
+                                    rpc_capnp::cap_descriptor::ReceiverHosted(42) if !promised => {}
+                                    rpc_capnp::cap_descriptor::ReceiverAnswer(answer)
+                                        if promised =>
+                                    {
+                                        let answer = answer.unwrap();
+                                        assert_eq!(answer.get_question_id(), parent.id().to_wire());
+                                        assert_eq!(
+                                            pipeline::Path::decode(answer, &mut [0])
+                                                .unwrap()
+                                                .fields(),
+                                            &[2]
+                                        );
+                                    }
+                                    _ => panic!("original reflected route"),
+                                }
+                                resolved = true;
+                            });
+                        }
+                        if resolved {
+                            break;
+                        }
+                    }
+                    assert!(resolved);
+                    driver.release_call(call, messages);
+                    driver.runtime.release(local);
+                    driver.runtime.release(source);
+                    close(driver, messages, &mut queue);
+                });
+            }
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn local_result_iterators_preserve_null_slots_and_capacity_without_allocating() {
     let measured = allocation_counter::measure(|| {
         for native in [false, true] {
@@ -2288,4 +2591,253 @@ fn empty_work_classes_do_not_delay_the_next_owned_operation() {
             close(driver, messages, &mut queue);
         });
     }
+}
+
+#[test]
+fn unsupported_frames_echo_without_admitting_answers_or_losing_retry_ownership() {
+    let measured = allocation_counter::measure(|| {
+        for tag in [u16::MAX, 7, 9, 12] {
+            with_driver(|mut driver, messages| {
+                driver.allow_join(false);
+                let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                    let mut root = builder.try_init_root::<Message>()?;
+                    // Unknown, obsolete Save/Delete, and disabled Join. The
+                    // opaque pointer must survive even without a target lease.
+                    root.field(Message::OBSOLETE_SAVE)
+                        .cast::<capnp::field_api::Text>()
+                        .copy_from("opaque body")?;
+                    root.scalar(capnp::field_api::ScalarDescriptor::new(0, 0u16, None))
+                        .set(tag);
+                    Ok(())
+                })
+                .unwrap();
+                assert!(matches!(
+                    driver
+                        .receive_with_policy(frame, messages, &mut [], &mut |_| (), |_| {
+                            panic!("unsupported messages have no application producer")
+                        })
+                        .unwrap_or_else(|r| panic!("{:?}", r.error)),
+                    Received::Network
+                ));
+                assert!(driver.ledgers.answers.is_empty());
+                let mut empty = [];
+                let mut blocked = messages::Queue::new(&mut empty).unwrap();
+                assert!(driver
+                    .send_unimplemented(messages, &mut blocked, Default::default())
+                    .is_err());
+                assert!(matches!(
+                    driver.peek_network(),
+                    Some(NetworkRequest::Unsupported(_))
+                ));
+                let mut slots = [None];
+                let mut queue = messages::Queue::new(&mut slots).unwrap();
+                driver
+                    .send_unimplemented(messages, &mut queue, Default::default())
+                    .unwrap();
+                assert!(!driver.has_network());
+                let window = queue.window(messages).unwrap().unwrap();
+                let length = window.bytes().len();
+                {
+                    let mut bytes = window.bytes();
+                    let reader = capnp::serialize::read_message_from_flat_slice_no_alloc(
+                        &mut bytes,
+                        Default::default(),
+                    )
+                    .unwrap();
+                    let root = reader.get_root::<rpc_capnp::message::Reader>().unwrap();
+                    let rpc_capnp::message::Unimplemented(original) = root.which().unwrap() else {
+                        panic!("echo")
+                    };
+                    use capnp::traits::IntoInternalStructReader;
+                    assert_eq!(
+                        original
+                            .unwrap()
+                            .into_internal_struct_reader()
+                            .get_data_field::<u16>(0),
+                        tag
+                    );
+                }
+                window.advance(length).unwrap();
+                assert!(driver.ledgers.answers.is_empty());
+                close(driver, messages, &mut queue);
+            });
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn dispatch_releases_target_once_while_retaining_parameters_and_answer_authority() {
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let (mut call, target) = request(&mut driver, messages, false);
+            assert!(call.target().is_some());
+            driver.release_call_target(&mut call);
+            driver.release_call_target(&mut call);
+            assert!(call.target().is_none());
+            call.with(messages, |params| {
+                assert_eq!(params.incoming().hints().interface, 7)
+            })
+            .unwrap();
+            let result = driver
+                .local_result_dynamic(
+                    7,
+                    9,
+                    core::iter::empty(),
+                    messages,
+                    128,
+                    Default::default(),
+                    |_| Ok(()),
+                )
+                .unwrap();
+            driver
+                .complete_answer(&call, Ok(result), messages)
+                .unwrap_or_else(|_| panic!("live answer"));
+            let mut slots = [None];
+            let mut queue = messages::Queue::new(&mut slots).unwrap();
+            let _ = driver
+                .send_answer(
+                    call.answer(),
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [0; 8],
+                    |_, _| Ok(()),
+                )
+                .unwrap();
+            driver.release_call(call, messages);
+            drain(&mut queue, messages, |root| {
+                assert!(matches!(
+                    root.which().unwrap(),
+                    rpc_capnp::message::Return(_)
+                ))
+            });
+            driver.capabilities().release(target);
+            close(driver, messages, &mut queue);
+        });
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn bilateral_join_results_retry_output_and_keep_explicit_finish_with_or_without_capabilities() {
+    let measured = allocation_counter::measure(|| {
+        for capability in [false, true] {
+            with_driver(|mut driver, messages| {
+                let target = driver
+                    .capabilities()
+                    .endpoint(binding::Route::local(91), clients::Location::Local)
+                    .unwrap();
+                let id = {
+                    let (mut graph, mut batch) = driver.export_batch();
+                    let grant = binding::stage(&mut graph, &mut batch, &target).unwrap();
+                    batch.commit();
+                    grant.id()
+                };
+                let request = Frame::build(messages, 256, Default::default(), |builder| {
+                    crate::network::join(
+                        builder,
+                        QuestionId::from_wire(7),
+                        calls::Target::Imported(ImportId::from_wire(id.to_wire())),
+                        |_| Ok(()),
+                    )
+                })
+                .unwrap();
+                driver
+                    .receive(request, messages, &mut [0; 8], |_| (), || 73)
+                    .unwrap_or_else(|r| panic!("{:?}", r.error));
+                let NetworkRequest::Join(join) = driver.take_network().unwrap() else {
+                    panic!("Join")
+                };
+                let key = join.key();
+                let result = driver
+                    .local_result_dynamic(
+                        0,
+                        0,
+                        core::iter::repeat_n(Some(&target), usize::from(capability)),
+                        messages,
+                        256,
+                        Default::default(),
+                        |field| {
+                            if capability {
+                                field.set_capability_index(0)
+                            } else {
+                                field.cast::<capnp::field_api::Data>().copy_from(b"joined")
+                            }
+                        },
+                    )
+                    .unwrap();
+                driver
+                    .complete_join_results(&join, result, messages)
+                    .unwrap_or_else(|_| panic!("completion"));
+                let mut empty = [];
+                let mut blocked = messages::Queue::new(&mut empty).unwrap();
+                let rejected = driver
+                    .send_join_results(
+                        join,
+                        messages,
+                        &mut blocked,
+                        256,
+                        Default::default(),
+                        &mut [0; 8],
+                    )
+                    .err()
+                    .unwrap();
+                assert_eq!(rejected.join.key(), key);
+                let mut slots = [None];
+                let mut queue = messages::Queue::new(&mut slots).unwrap();
+                assert!(driver
+                    .send_join_results(
+                        rejected.join,
+                        messages,
+                        &mut queue,
+                        256,
+                        Default::default(),
+                        &mut [0; 8]
+                    )
+                    .unwrap_or_else(|r| panic!("{:?}", r.error))
+                    .is_none());
+                drain(&mut queue, messages, |root| {
+                    let rpc_capnp::message::Return(reply) = root.which().unwrap() else {
+                        panic!("Return")
+                    };
+                    let reply = reply.unwrap();
+                    assert!(!reply.get_no_finish_needed());
+                    let rpc_capnp::return_::Results(payload) = reply.which().unwrap() else {
+                        panic!("results")
+                    };
+                    assert_eq!(
+                        payload.unwrap().get_cap_table().unwrap().len(),
+                        u32::from(capability)
+                    );
+                });
+                let finish = Frame::build(messages, 128, Default::default(), |builder| {
+                    use crate::rpc_capnp::api::Finish;
+                    let root = builder.try_init_root::<Message>()?;
+                    let mut finish = root.into_field(Message::FINISH).init()?;
+                    finish.scalar(Finish::QUESTION_ID).set(7);
+                    finish.scalar(Finish::RELEASE_RESULT_CAPS).set(true);
+                    Ok(())
+                })
+                .unwrap();
+                assert!(matches!(
+                    driver
+                        .receive(
+                            finish,
+                            messages,
+                            &mut [0; 8],
+                            |_| (),
+                            || panic!("Finish has no producer")
+                        )
+                        .unwrap_or_else(|r| panic!("{:?}", r.error)),
+                    Received::Finished(Some(73))
+                ));
+                let _ = driver.release_export(id, 1).unwrap();
+                driver.capabilities().release(target);
+                close(driver, messages, &mut queue);
+            });
+        }
+    });
+    assert_eq!(measured.count_total, 0);
 }

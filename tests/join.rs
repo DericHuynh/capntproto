@@ -4,7 +4,6 @@ use capnp::traits::HasTypeId;
 use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
     rpc_twoparty_capnp::{join_key_part, join_result},
-    RpcSystem,
 };
 use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{channel::oneshot, FutureExt, TryFutureExt};
@@ -14,6 +13,9 @@ use std::{
     time::Duration,
 };
 use support::{Endpoint, Hub};
+#[path = "join/driver.rs"]
+mod driver;
+use driver::System as RpcSystem;
 struct Echo(u32, Rc<Cell<usize>>);
 impl Drop for Echo {
     fn drop(&mut self) {
@@ -21,6 +23,16 @@ impl Drop for Echo {
     }
 }
 impl harness::Server for Echo {
+    fn bounce(
+        self: Rc<Self>,
+        context: harness::BounceContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            results.set_cap(params.get_cap()?);
+            Ok(())
+        })
+    }
+
     fn echo(
         self: Rc<Self>,
         context: harness::EchoContext<'_>,
@@ -70,19 +82,19 @@ fn finish(peer: &mut Endpoint, q: u32, release: bool) {
         f.set_require_early_cancellation_workaround(false);
     });
 }
-struct Fixture {
+struct Fixture<const PORTABLE: bool> {
     hub: Rc<RefCell<Hub>>,
     peer: Endpoint,
     exports: [u32; 2],
     gate: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<capnp::Result<()>>,
 }
-impl Drop for Fixture {
+impl<const PORTABLE: bool> Drop for Fixture<PORTABLE> {
     fn drop(&mut self) {
         self.task.abort();
     }
 }
-impl Fixture {
+impl<const PORTABLE: bool> Fixture<PORTABLE> {
     async fn new(equal: bool, gated: bool) -> Self {
         let a = client(73);
         let b = if equal { a.clone() } else { client(91) };
@@ -107,7 +119,7 @@ impl Fixture {
         };
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 1);
-        let task = tokio::task::spawn_local(RpcSystem::new_with_bootstrap_factory(
+        let task = tokio::task::spawn_local(RpcSystem::<_, PORTABLE>::new_with_bootstrap_factory(
             Box::new(network),
             1,
             Rc::new(Factory(RefCell::new(caps))),
@@ -212,11 +224,17 @@ impl Fixture {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn incoming_join_collects_parts_resolves_promises_and_returns_one_capability() {
+    incoming_join_collects_parts_resolves_promises_and_returns_one_capability_case::<false>().await;
+    incoming_join_collects_parts_resolves_promises_and_returns_one_capability_case::<true>().await;
+}
+async fn incoming_join_collects_parts_resolves_promises_and_returns_one_capability_case<
+    const PORTABLE: bool,
+>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for equal in [false, true] {
                 for order in [[0, 1], [1, 0]] {
-                    let mut f = Fixture::new(equal, true).await;
+                    let mut f = Fixture::<PORTABLE>::new(equal, true).await;
                     join_part(
                         &mut f.peer,
                         10 + order[0],
@@ -238,7 +256,10 @@ async fn incoming_join_collects_parts_resolves_promises_and_returns_one_capabili
                     f.gate.take().unwrap().send(()).unwrap();
                     let results = f.returns().await;
                     assert_eq!(results.len(), 2);
-                    assert!(results.iter().all(|r| r.1 == "results" && r.2 == equal));
+                    assert!(
+                        results.iter().all(|r| r.1 == "results" && r.2 == equal),
+                        "portable={PORTABLE} equal={equal} order={order:?} results={results:?}"
+                    );
                     assert_eq!(
                         results.iter().filter(|r| r.3.is_some()).count(),
                         usize::from(equal)
@@ -293,8 +314,12 @@ async fn incoming_join_collects_parts_resolves_promises_and_returns_one_capabili
 }
 #[tokio::test(flavor = "current_thread")]
 async fn local_join_preserves_identity_and_propagates_failure() {
+    local_join_preserves_identity_and_propagates_failure_case::<false>().await;
+    local_join_preserves_identity_and_propagates_failure_case::<true>().await;
+}
+async fn local_join_preserves_identity_and_propagates_failure_case<const PORTABLE: bool>() {
     let hub = Rc::new(RefCell::new(Hub::default()));
-    let system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
+    let system = RpcSystem::<_, PORTABLE>::new(Box::new(Hub::network(&hub, 1)), None);
     let joiner = system.get_joiner();
     let a = client(73);
     let b = client(91);
@@ -328,10 +353,14 @@ async fn local_join_preserves_identity_and_propagates_failure() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_join_handle_does_not_retain_the_system_bootstrap() {
+    a_join_handle_does_not_retain_the_system_bootstrap_case::<false>().await;
+    a_join_handle_does_not_retain_the_system_bootstrap_case::<true>().await;
+}
+async fn a_join_handle_does_not_retain_the_system_bootstrap_case<const PORTABLE: bool>() {
     let hub = Rc::new(RefCell::new(Hub::default()));
     let dropped = Rc::new(Cell::new(0));
     let cap: harness::Client = capnp_rpc::new_client(Echo(73, dropped.clone()));
-    let system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), Some(cap.client));
+    let system = RpcSystem::<_, PORTABLE>::new(Box::new(Hub::network(&hub, 1)), Some(cap.client));
     let joiner = system.get_joiner();
     drop(system);
     assert_eq!(dropped.get(), 1);
@@ -339,17 +368,24 @@ async fn a_join_handle_does_not_retain_the_system_bootstrap() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn outgoing_join_uses_standard_results_and_keeps_connection_after_unequal() {
+    outgoing_join_uses_standard_results_and_keeps_connection_after_unequal_case::<false>().await;
+    outgoing_join_uses_standard_results_and_keeps_connection_after_unequal_case::<true>().await;
+}
+async fn outgoing_join_uses_standard_results_and_keeps_connection_after_unequal_case<
+    const PORTABLE: bool,
+>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             let hub = Rc::new(RefCell::new(Hub::default()));
             let a = Hub::network(&hub, 1);
             let b = Hub::network(&hub, 2);
-            let server = tokio::task::spawn_local(RpcSystem::new_with_bootstrap_factory(
-                Box::new(b),
-                2,
-                Rc::new(Factory(RefCell::new(vec![client(73), client(91)]))),
-            ));
-            let mut system = RpcSystem::new(Box::new(a), None);
+            let server =
+                tokio::task::spawn_local(RpcSystem::<_, PORTABLE>::new_with_bootstrap_factory(
+                    Box::new(b),
+                    2,
+                    Rc::new(Factory(RefCell::new(vec![client(73), client(91)]))),
+                ));
+            let mut system = RpcSystem::<_, PORTABLE>::new(Box::new(a), None);
             let first: harness::Client = system.bootstrap(2);
             let second: harness::Client = system.bootstrap(2);
             let joiner = system.get_joiner();
@@ -401,10 +437,14 @@ async fn outgoing_join_uses_standard_results_and_keeps_connection_after_unequal(
 
 #[tokio::test(flavor = "current_thread")]
 async fn cancel_join_releases_waiters_and_allows_id_reuse() {
+    cancel_join_releases_waiters_and_allows_id_reuse_case::<false>().await;
+    cancel_join_releases_waiters_and_allows_id_reuse_case::<true>().await;
+}
+async fn cancel_join_releases_waiters_and_allows_id_reuse_case<const PORTABLE: bool>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for complete in [false, true] {
-                let mut f = Fixture::new(true, true).await;
+                let mut f = Fixture::<PORTABLE>::new(true, true).await;
                 join_part(&mut f.peer, 10, 17, 2, 0, f.exports[0]);
                 if complete {
                     join_part(&mut f.peer, 11, 17, 2, 1, f.exports[1]);
@@ -430,10 +470,16 @@ async fn cancel_join_releases_waiters_and_allows_id_reuse() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn malformed_join_parts_abort_without_publishing_partial_success() {
+    malformed_join_parts_abort_without_publishing_partial_success_case::<false>().await;
+    malformed_join_parts_abort_without_publishing_partial_success_case::<true>().await;
+}
+async fn malformed_join_parts_abort_without_publishing_partial_success_case<
+    const PORTABLE: bool,
+>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for bad in 0..5 {
-                let mut f = Fixture::new(true, true).await;
+                let mut f = Fixture::<PORTABLE>::new(true, true).await;
                 join_part(&mut f.peer, 10, 17, 2, 0, f.exports[0]);
                 assert!(f.returns().await.is_empty());
                 let (q, count, part) = match bad {
@@ -463,17 +509,24 @@ async fn malformed_join_parts_abort_without_publishing_partial_success() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn legacy_peer_rejects_join_without_breaking_existing_capabilities() {
+    legacy_peer_rejects_join_without_breaking_existing_capabilities_case::<false>().await;
+    legacy_peer_rejects_join_without_breaking_existing_capabilities_case::<true>().await;
+}
+async fn legacy_peer_rejects_join_without_breaking_existing_capabilities_case<
+    const PORTABLE: bool,
+>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             let hub = Rc::new(RefCell::new(Hub::default()));
             let a = Hub::network(&hub, 1);
             let b = Hub::network(&hub, 2);
-            let server = tokio::task::spawn_local(RpcSystem::new_with_bootstrap_factory(
-                Box::new(b),
-                2,
-                Rc::new(Factory(RefCell::new(vec![client(73), client(91)]))),
-            ));
-            let mut system = RpcSystem::new(Box::new(a), None);
+            let server =
+                tokio::task::spawn_local(RpcSystem::<_, PORTABLE>::new_with_bootstrap_factory(
+                    Box::new(b),
+                    2,
+                    Rc::new(Factory(RefCell::new(vec![client(73), client(91)]))),
+                ));
+            let mut system = RpcSystem::<_, PORTABLE>::new(Box::new(a), None);
             let first: harness::Client = system.bootstrap(2);
             let second: harness::Client = system.bootstrap(2);
             let joiner = system.get_joiner();
@@ -558,19 +611,22 @@ fn join_result(peer: &mut Endpoint, q: u32, id: u32, success: bool, export: Opti
         }
     });
 }
-struct Relay {
-    f: Fixture,
+struct Relay<const PORTABLE: bool> {
+    f: Fixture<PORTABLE>,
     host: Endpoint,
     _network: support::Network,
 }
-impl Relay {
+impl<const PORTABLE: bool> Relay<PORTABLE> {
     async fn new() -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 1);
         let remote = Hub::network(&hub, 3);
         let factory = Rc::new(Factory(RefCell::new(vec![])));
-        let mut system =
-            RpcSystem::new_with_bootstrap_factory(Box::new(network), 1, factory.clone());
+        let mut system = RpcSystem::<_, PORTABLE>::new_with_bootstrap_factory(
+            Box::new(network),
+            1,
+            factory.clone(),
+        );
         let a: harness::Client = system.bootstrap(3);
         let b: harness::Client = system.bootstrap(3);
         *factory.0.borrow_mut() = vec![a, b];
@@ -606,7 +662,22 @@ impl Relay {
         let mut exports = [0; 2];
         for (i, export) in exports.iter_mut().enumerate() {
             peer.send(|m| m.init_bootstrap().set_question_id(i as u32));
-            let reply = receive(&mut peer).await;
+            let reply = loop {
+                let reply = receive(&mut peer).await;
+                if matches!(
+                    reply
+                        .get_body()
+                        .unwrap()
+                        .get_as::<message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap(),
+                    message::Resolve(_)
+                ) {
+                    continue;
+                }
+                break reply;
+            };
             let message::Return(r) = reply
                 .get_body()
                 .unwrap()
@@ -621,8 +692,9 @@ impl Relay {
                 panic!()
             };
             *export = match p.unwrap().get_cap_table().unwrap().get(0).which().unwrap() {
-                cap_descriptor::SenderHosted(id) => id,
-                _ => panic!(),
+                // Both drivers may advertise a still-resolving bootstrap.
+                cap_descriptor::SenderHosted(id) | cap_descriptor::SenderPromise(id) => id,
+                _ => panic!("unexpected bootstrap descriptor"),
             };
             finish(&mut peer, i as u32, false);
         }
@@ -681,10 +753,16 @@ impl Relay {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn forwarded_join_retains_downstream_results_until_upstream_finish() {
+    forwarded_join_retains_downstream_results_until_upstream_finish_case::<false>().await;
+    forwarded_join_retains_downstream_results_until_upstream_finish_case::<true>().await;
+}
+async fn forwarded_join_retains_downstream_results_until_upstream_finish_case<
+    const PORTABLE: bool,
+>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for success in [false, true] {
-                let mut r = Relay::new().await;
+                let mut r = Relay::<PORTABLE>::new().await;
                 join_part(&mut r.f.peer, 10, 17, 2, 0, r.f.exports[0]);
                 assert!(r.events().await.is_empty());
                 join_part(&mut r.f.peer, 11, 17, 2, 1, r.f.exports[1]);
@@ -717,9 +795,15 @@ async fn forwarded_join_retains_downstream_results_until_upstream_finish() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn forwarded_join_cancellation_finishes_every_downstream_question() {
+    forwarded_join_cancellation_finishes_every_downstream_question_case::<false>().await;
+    forwarded_join_cancellation_finishes_every_downstream_question_case::<true>().await;
+}
+async fn forwarded_join_cancellation_finishes_every_downstream_question_case<
+    const PORTABLE: bool,
+>() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let mut r = Relay::new().await;
+            let mut r = Relay::<PORTABLE>::new().await;
             for i in 0..2 {
                 join_part(
                     &mut r.f.peer,
@@ -755,10 +839,16 @@ async fn forwarded_join_cancellation_finishes_every_downstream_question() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn malformed_join_results_fail_and_release_every_downstream_question() {
+    malformed_join_results_fail_and_release_every_downstream_question_case::<false>().await;
+    malformed_join_results_fail_and_release_every_downstream_question_case::<true>().await;
+}
+async fn malformed_join_results_fail_and_release_every_downstream_question_case<
+    const PORTABLE: bool,
+>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for bad in 0..5 {
-                let mut r = Relay::new().await;
+                let mut r = Relay::<PORTABLE>::new().await;
                 for i in 0..2 {
                     join_part(
                         &mut r.f.peer,
@@ -825,6 +915,12 @@ async fn malformed_join_results_fail_and_release_every_downstream_question() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn join_over_fragmented_twoparty_stream_preserves_capability_calls() {
+    join_over_fragmented_twoparty_stream_preserves_capability_calls_case::<false>().await;
+    join_over_fragmented_twoparty_stream_preserves_capability_calls_case::<true>().await;
+}
+async fn join_over_fragmented_twoparty_stream_preserves_capability_calls_case<
+    const PORTABLE: bool,
+>() {
     use capnp_rpc::rpc_twoparty_capnp::Side;
     use futures::AsyncReadExt;
     use tokio_util::compat::TokioAsyncReadCompatExt;
@@ -833,7 +929,7 @@ async fn join_over_fragmented_twoparty_stream_preserves_capability_calls() {
             tokio::time::timeout(Duration::from_secs(3), async {
                 let (a, b) = tokio::io::duplex(17);
                 let (read, write) = a.compat().split();
-                let server = RpcSystem::new_with_bootstrap_factory(
+                let server = RpcSystem::<_, PORTABLE>::new_with_bootstrap_factory(
                     Box::new(capnp_rpc::twoparty::VatNetwork::new(
                         read,
                         write,
@@ -844,7 +940,7 @@ async fn join_over_fragmented_twoparty_stream_preserves_capability_calls() {
                     Rc::new(Factory(RefCell::new(vec![client(73), client(91)]))),
                 );
                 let (read, write) = b.compat().split();
-                let mut system = RpcSystem::new(
+                let mut system = RpcSystem::<_, PORTABLE>::new(
                     Box::new(capnp_rpc::twoparty::VatNetwork::new(
                         read,
                         write,
@@ -900,9 +996,13 @@ async fn join_over_fragmented_twoparty_stream_preserves_capability_calls() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn join_rejects_no_finish_needed_before_publishing_results() {
+    join_rejects_no_finish_needed_before_publishing_results_case::<false>().await;
+    join_rejects_no_finish_needed_before_publishing_results_case::<true>().await;
+}
+async fn join_rejects_no_finish_needed_before_publishing_results_case<const PORTABLE: bool>() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let mut r = Relay::new().await;
+            let mut r = Relay::<PORTABLE>::new().await;
             for i in 0..2 {
                 join_part(
                     &mut r.f.peer,
@@ -946,6 +1046,10 @@ async fn join_rejects_no_finish_needed_before_publishing_results() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn join_crosses_independent_twoparty_systems() {
+    join_crosses_independent_twoparty_systems_case::<false>().await;
+    join_crosses_independent_twoparty_systems_case::<true>().await;
+}
+async fn join_crosses_independent_twoparty_systems_case<const PORTABLE: bool>() {
     use capnp_rpc::rpc_twoparty_capnp::Side;
     use futures::AsyncReadExt;
     use tokio_util::compat::TokioAsyncReadCompatExt;
@@ -962,21 +1066,21 @@ async fn join_crosses_independent_twoparty_systems() {
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(3), async {
                 let (a, b) = tokio::io::duplex(17);
-                let host = RpcSystem::new_with_bootstrap_factory(
+                let host = RpcSystem::<_, PORTABLE>::new_with_bootstrap_factory(
                     network(a, Side::Server),
                     Side::Server,
                     Rc::new(Factory(RefCell::new(vec![client(73), client(91)]))),
                 );
-                let mut outbound = RpcSystem::new(network(b, Side::Client), None);
+                let mut outbound = RpcSystem::<_, PORTABLE>::new(network(b, Side::Client), None);
                 let first: harness::Client = outbound.bootstrap(Side::Server);
                 let second: harness::Client = outbound.bootstrap(Side::Server);
                 let (a, b) = tokio::io::duplex(17);
-                let inbound = RpcSystem::new_with_bootstrap_factory(
+                let inbound = RpcSystem::<_, PORTABLE>::new_with_bootstrap_factory(
                     network(a, Side::Server),
                     Side::Server,
                     Rc::new(Factory(RefCell::new(vec![first, second]))),
                 );
-                let mut caller = RpcSystem::new(network(b, Side::Client), None);
+                let mut caller = RpcSystem::<_, PORTABLE>::new(network(b, Side::Client), None);
                 let a: harness::Client = caller.bootstrap(Side::Server);
                 let b: harness::Client = caller.bootstrap(Side::Server);
                 let joiner = caller.get_joiner();
@@ -1013,6 +1117,10 @@ async fn join_crosses_independent_twoparty_systems() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn join_preserves_opaque_membrane_authority() {
+    join_preserves_opaque_membrane_authority_case::<false>().await;
+    join_preserves_opaque_membrane_authority_case::<true>().await;
+}
+async fn join_preserves_opaque_membrane_authority_case<const PORTABLE: bool>() {
     use capnp_rpc::membrane::{Direction, Membrane, Policy};
     struct Deny;
     impl Policy for Deny {
@@ -1027,7 +1135,7 @@ async fn join_preserves_opaque_membrane_authority() {
         }
     }
     let hub = Rc::new(RefCell::new(Hub::default()));
-    let system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
+    let system = RpcSystem::<_, PORTABLE>::new(Box::new(Hub::network(&hub, 1)), None);
     let joiner = system.get_joiner();
     let membrane = Membrane::new(Rc::new(Deny));
     let a: harness::Client = membrane.export(client(73));
@@ -1054,10 +1162,14 @@ async fn join_preserves_opaque_membrane_authority() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn join_accepts_one_and_three_parts() {
+    join_accepts_one_and_three_parts_case::<false>().await;
+    join_accepts_one_and_three_parts_case::<true>().await;
+}
+async fn join_accepts_one_and_three_parts_case<const PORTABLE: bool>() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for count in [1, 3] {
-                let mut f = Fixture::new(true, false).await;
+                let mut f = Fixture::<PORTABLE>::new(true, false).await;
                 for part in (0..count).rev() {
                     join_part(
                         &mut f.peer,
@@ -1085,6 +1197,10 @@ async fn join_accepts_one_and_three_parts() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_two_party_join_traces() {
+    replay_tlc_two_party_join_traces_case::<false>().await;
+    replay_tlc_two_party_join_traces_case::<true>().await;
+}
+async fn replay_tlc_two_party_join_traces_case<const PORTABLE: bool>() {
     let path = capntproto_test_support::verification::input("CAPNTPROTO_TWO_PARTY_JOIN_TRACES")
         .expect("prepare verified trace corpus");
     let cases: Vec<serde_json::Value> =
@@ -1095,14 +1211,14 @@ async fn replay_tlc_two_party_join_traces() {
                 let remote = case["remote"].as_bool().unwrap();
                 let equal = case["equal"].as_bool().unwrap();
                 let mut relay = if remote {
-                    Some(Relay::new().await)
+                    Some(Relay::<PORTABLE>::new().await)
                 } else {
                     None
                 };
                 let mut local = if remote {
                     None
                 } else {
-                    Some(Fixture::new(equal, true).await)
+                    Some(Fixture::<PORTABLE>::new(equal, true).await)
                 };
                 let mut observed: [Option<(String, bool, Option<u32>)>; 2] = [None, None];
                 let mut requests: Vec<(String, u32, u32, u16)> = vec![];
@@ -1211,6 +1327,170 @@ async fn replay_tlc_two_party_join_traces() {
                         );
                     }
                 }
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn unknown_and_obsolete_messages_are_echoed_without_breaking_the_connection() {
+    unknown_and_obsolete_case::<false>().await;
+    unknown_and_obsolete_case::<true>().await;
+}
+async fn unknown_and_obsolete_case<const PORTABLE: bool>() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for tag in [u16::MAX, 7, 9] {
+                let mut f = Fixture::<PORTABLE>::new(true, false).await;
+                let export = f.exports[0];
+                let peer = &mut f.peer;
+                peer.send(|mut m| {
+                    m.reborrow()
+                        .init_obsolete_save()
+                        .set_as::<capnp::text::Owned>("retained opaque content")
+                        .unwrap();
+                    capnp::any_struct::Builder::from_builder(m)
+                        .unwrap()
+                        .get_data_section()[..2]
+                        .copy_from_slice(&tag.to_le_bytes());
+                });
+                let reply = receive(peer).await;
+                let message::Unimplemented(original) = reply
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("Unimplemented")
+                };
+                let original = capnp::any_struct::Reader::from_reader(original.unwrap());
+                assert_eq!(
+                    u16::from_le_bytes(original.get_data_section()[..2].try_into().unwrap()),
+                    tag
+                );
+                assert_eq!(
+                    original
+                        .get_pointer_section()
+                        .get(0)
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "retained opaque content"
+                );
+                peer.send(|m| {
+                    let mut call = m.init_call();
+                    call.set_question_id(20);
+                    call.set_interface_id(harness::Client::TYPE_ID);
+                    call.set_method_id(0);
+                    call.reborrow().init_target().set_imported_cap(export);
+                    call.init_params()
+                        .get_content()
+                        .init_as::<harness::echo_params::Builder>();
+                });
+                let reply = receive(peer).await;
+                let message::Return(reply) = reply
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("healthy connection Return")
+                };
+                let return_::Results(payload) = reply.unwrap().which().unwrap() else {
+                    panic!("healthy capability reply")
+                };
+                assert_eq!(
+                    payload
+                        .unwrap()
+                        .get_content()
+                        .get_as::<harness::value::Reader>()
+                        .unwrap()
+                        .get_value(),
+                    73
+                );
+                finish(peer, 20, true);
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn reflected_local_join_preserves_identity_without_network_join() {
+    reflected_local_join_case::<false>().await;
+    reflected_local_join_case::<true>().await;
+}
+async fn reflected_local_join_case<const PORTABLE: bool>() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let hub = Rc::new(RefCell::new(Hub::default()));
+            let server = RpcSystem::<_, PORTABLE>::new(
+                Box::new(Hub::network(&hub, 2)),
+                Some(client(99).client),
+            );
+            let mut caller = RpcSystem::<_, PORTABLE>::new(Box::new(Hub::network(&hub, 1)), None);
+            let service: harness::Client = caller.bootstrap(2);
+            let joiner = caller.get_joiner();
+            let tasks = [
+                tokio::task::spawn_local(server),
+                tokio::task::spawn_local(caller),
+            ];
+            for promised in [false, true] {
+                let a = client(73);
+                let b = client(91);
+                let mut gates = Vec::new();
+                let mut returned = Vec::new();
+                for cap in [a.clone(), a.clone(), b] {
+                    let cap = if promised {
+                        let (sender, receiver) = oneshot::channel();
+                        gates.push(sender);
+                        capnp_rpc::new_future_client(async move {
+                            receiver
+                                .await
+                                .map_err(|_| capnp::Error::failed("gate".into()))?;
+                            Ok(cap)
+                        })
+                    } else {
+                        cap
+                    };
+                    let mut request = service.bounce_request();
+                    request.get().set_cap(cap);
+                    returned.push(
+                        request
+                            .send()
+                            .promise
+                            .await
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .get_cap()
+                            .unwrap(),
+                    );
+                }
+                for gate in gates {
+                    gate.send(()).unwrap();
+                }
+                let equal = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    joiner.join(vec![returned[0].clone(), returned[1].clone()]),
+                )
+                .await
+                .unwrap()
+                .unwrap_or_else(|error| panic!("portable={PORTABLE} promised={promised}: {error}"));
+                assert!(equal.is_some(), "portable={PORTABLE} promised={promised}");
+                assert!(tokio::time::timeout(
+                    Duration::from_secs(2),
+                    joiner.join(vec![returned[0].clone(), returned[2].clone()])
+                )
+                .await
+                .unwrap()
+                .unwrap()
+                .is_none());
+            }
+            for task in tasks {
+                task.abort();
             }
         })
         .await;

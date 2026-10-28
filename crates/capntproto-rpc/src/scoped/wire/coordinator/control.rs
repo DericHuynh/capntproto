@@ -37,6 +37,10 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     /// Reject unsupported request/response operations through the ordinary
     /// output queue. The driver owns the pending request across backpressure;
     /// ordinary two-party turns only test that one owner, not network registries.
+    pub(super) fn allow_join(&mut self, enabled: bool) {
+        self.coordinator.driver.allow_join(enabled);
+    }
+
     pub(super) fn reject_network<O: Output<I>>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
@@ -55,6 +59,19 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         self.effects = Effects::Network;
         let coordinator = &mut self.coordinator;
         let driver = &mut coordinator.driver;
+        if matches!(
+            driver.peek_network(),
+            Some(connection::NetworkRequest::Unsupported(_))
+        ) {
+            return match driver.send_unimplemented(messages, queue, coordinator.options.reader) {
+                Err(error)
+                    if super::super::calls::output_capacity_error(&error) && !queue.is_empty() =>
+                {
+                    Poll::Pending
+                }
+                result => Poll::Ready(result.map(|()| true).map_err(wire_error)),
+            };
+        }
         let request = driver.take_network().expect("pending network request");
         use connection::NetworkRequest as N;
         let result = match request {

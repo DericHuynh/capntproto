@@ -2467,7 +2467,9 @@ fn invocation_and_resolve_publish_resources_with_exact_descriptors_and_retry_bac
             )))
         ));
         let window = queue.window(messages).unwrap().unwrap();
-        assert!(window.resources().unwrap().iter().copied().eq([73, 91]));
+        // Returning the peer's own import uses receiverHosted, including its
+        // original metadata, so no duplicate descriptor crosses the transport.
+        assert!(window.resources().unwrap().iter().copied().eq([73]));
         let length = window.bytes().len();
         let exported_promise = {
             let mut bytes = window.bytes();
@@ -2484,7 +2486,11 @@ fn invocation_and_resolve_publish_resources_with_exact_descriptors_and_retry_bac
             assert_eq!(descriptors.get(0).get_attached_fd(), 0);
             assert_eq!(descriptors.get(1).get_attached_fd(), 255);
             assert_eq!(descriptors.get(2).get_attached_fd(), 255);
-            assert_eq!(descriptors.get(3).get_attached_fd(), 1);
+            assert_eq!(descriptors.get(3).get_attached_fd(), 255);
+            assert!(matches!(
+                descriptors.get(3).which().unwrap(),
+                rpc_capnp::cap_descriptor::ReceiverHosted(_)
+            ));
             let rpc_capnp::cap_descriptor::SenderPromise(id) = descriptors.get(2).which().unwrap()
             else {
                 panic!("promise")

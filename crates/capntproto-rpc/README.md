@@ -86,7 +86,7 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   preserves error reasons and structured details in Return publication.
   Dropping execution interest respects generated cancellation policy through the
   supplied executor. Generic tail forwarding preserves child pipelines; native
-  same-connection tail transfer still needs hosted integration.
+  same-connection tail transfer uses the same bounded question/answer ledgers.
   `server::Worker` now coordinates incoming Call admission, owned service
   futures, cancellation, result collection, Return retries and explicit teardown.
   It bounds active work independently of protocol tables and polls pending
@@ -199,7 +199,8 @@ unclaimed input resources, drain accepted output, flush, then close the write
 half. Supply a separate abort future for an immediate stop or shutdown deadline;
 it stays active during blocked output and close. Protocol storage is reclaimed
 on success and failure. On an error or abort, the caller drops the IO; the
-coordinator performs no additional writes or close attempts. Closure confirms
+coordinator makes only one best-effort Abort attempt for a protocol error on a
+live connection; it does not wait for a blocked peer or attempt close. Closure confirms
 local transport completion, not peer receipt or execution of outstanding calls.
 For a task-owned network lifecycle, use the opt-in `portable::RpcSystem` described
 below; the default `RpcSystem` still uses the legacy protocol driver.
@@ -352,14 +353,36 @@ execution share round-robin scheduling with other RPC controls. Calls denied the
 unresolved targets, opaque request wrappers, and unsupported networks keep
 ordinary forwarding.
 
-The portable system remains opt-in. Bilateral Join and native tail transfer
-remain integration work before switching the default driver.
-Previously used pipelines retain their relay route; migrating
-them through an authenticated distributed Join fence remains outstanding.
-Unsupported controls fail explicitly. The message bridge still
-copies frames, but reserves received storage using validated frame lengths rather
-than the configured maximum. The 1.15× matched TCP performance gate still applies;
-benchmark the portable path explicitly as described in the quality wiki.
+The portable system remains opt-in. It supports bilateral Join, native
+same-connection tail transfer, and authenticated Join fences for previously
+used pipelines. Unsupported or unsuccessful fences retain the ordered original
+route. Unknown and obsolete messages receive `Unimplemented`; rejecting optional
+Join fails that operation without disconnecting the connection. Protocol errors
+attempt an Abort before teardown without waiting on a blocked peer.
+
+The legacy-path regression matrix now covers both drivers:
+
+| Protocol path | Shared regression scenarios |
+| --- | --- |
+| Bootstrap and obsolete named exports | `bootstrap_factory` |
+| Call/Return, scalar and capability payloads | `scoped_vat`, `composed_wire_boundary` |
+| Exception details, cancellation, protected execution | `cancellation`, `static_cancellation`, `exception_metadata` |
+| Finish, Release, ID reuse and high-ID no-Return hints | `call_hints`, `tail_transfer` |
+| Native tail transfer, dependent calls, local resolution | `tail_transfer` (both drivers replay the same traces) |
+| Flow credit, concurrency and streaming | `flow_control`, `streaming`, `allocations` |
+| Resolve, promise ordering and direct Call/Return/Resolve reflection | `join`, `scoped_vat`, `multiparty_join`, bounded wire tests |
+| Provide, Accept, embargoes and third-party answers | `multiparty_join`, `answer_adoption` |
+| Bilateral Join, malformed parts/results, relay lifetimes | `join` (both drivers replay the same traces) |
+| Authenticated pipeline migration before Return | `answer_adoption` (all eight driver combinations) |
+| Opaque membranes and Join delegation | `membrane_join`, `join` |
+| Unknown/obsolete messages and optional rejection | `join`, bounded wire tests |
+| TLS, QUIC, Unix resources and disconnect cleanup | `secure_rpc`, `scoped_unix`, `unix_facade` |
+
+The bounded driver keeps caller-owned storage and explicit capacity errors;
+these are intentional differences from the allocating legacy driver. The hosted
+message bridge still copies frames. Functional trace parity does not establish
+instruction, allocation, or throughput parity; benchmark the portable path
+explicitly before changing the default driver.
 
 Use `send_invocation_with_attachments`,
 `Invocations::send_one_with_attachments` and

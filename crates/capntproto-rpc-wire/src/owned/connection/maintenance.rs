@@ -360,6 +360,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     resources(),
                     |owner, bundle| attach(owner, &self.ledgers.imports, bundle),
                     &self.descriptors,
+                    |owner| reflection::target(owner, self.imports.peer(), &self.ledgers.questions),
                 ) {
                     Err(_) if self.exported.resource_waiting(index) => None,
                     Err(error) => return Err(Error::Exported(error)),

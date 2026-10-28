@@ -6,6 +6,30 @@ pub enum System<V: 'static = u8> {
     Portable(capnp_rpc::portable::RpcSystem<V>),
 }
 impl<V: 'static> System<V> {
+    pub fn get_joiner(&self) -> Joiner<V> {
+        match self {
+            Self::Hosted(system) => Joiner::Hosted(system.get_joiner()),
+            Self::Portable(system) => Joiner::Portable(system.get_joiner()),
+        }
+    }
+    pub fn set_flow_limit(&mut self, words: usize) {
+        match self {
+            Self::Hosted(system) => system.set_flow_limit(words),
+            Self::Portable(system) => system.control().set_flow_limit(words),
+        }
+    }
+    pub fn set_outgoing_call_limit(&mut self, calls: usize) {
+        match self {
+            Self::Hosted(system) => system.set_outgoing_call_limit(calls),
+            Self::Portable(system) => system.control().set_outgoing_call_limit(calls),
+        }
+    }
+    pub fn disconnect(&self) -> Promise<(), Error> {
+        match self {
+            Self::Hosted(system) => Promise::from_future(system.get_disconnector()),
+            Self::Portable(system) => Promise::from_future(system.get_disconnector()),
+        }
+    }
     pub fn new(
         portable: bool,
         network: Box<dyn VatNetwork<V>>,
@@ -65,6 +89,22 @@ impl<V: 'static> System<V> {
         match self {
             Self::Hosted(s) => s.await,
             Self::Portable(s) => s.run().await,
+        }
+    }
+}
+
+pub enum Joiner<V: 'static> {
+    Hosted(capnp_rpc::Joiner<V>),
+    Portable(capnp_rpc::portable::Joiner<V>),
+}
+impl<V: 'static> Joiner<V> {
+    pub fn join<T: capnp::capability::FromClientHook + 'static>(
+        &self,
+        caps: Vec<T>,
+    ) -> Promise<Option<T>, Error> {
+        match self {
+            Self::Hosted(joiner) => joiner.join(caps),
+            Self::Portable(joiner) => joiner.join(caps),
         }
     }
 }

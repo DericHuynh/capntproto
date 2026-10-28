@@ -2,6 +2,7 @@
 //! opaque tokens are authenticated by VatNetwork, never by protocol question IDs.
 use super::transport::vat;
 use super::*;
+mod bilateral;
 mod handoff;
 pub(crate) mod introduction;
 pub(crate) mod tail;
@@ -31,6 +32,8 @@ struct Request {
     permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
 }
 pub(crate) struct Commands {
+    pub(crate) bilateral: Cell<bool>,
+    join_ids: RefCell<bilateral::Ids>,
     pub(crate) network: RefCell<Option<Rc<dyn introduction::Network>>>,
     provisions: RefCell<VecDeque<Rc<introduction::Provision>>>,
     forwarding: RefCell<VecDeque<Rc<introduction::Provision>>>,
@@ -45,6 +48,8 @@ pub(crate) struct Commands {
 impl Commands {
     pub(crate) fn new(maximum: usize, bytes: usize) -> Rc<Self> {
         Rc::new(Self {
+            bilateral: Cell::new(false),
+            join_ids: RefCell::default(),
             network: RefCell::default(),
             provisions: RefCell::default(),
             forwarding: RefCell::default(),
@@ -196,6 +201,7 @@ impl Handle {
 enum Completion {
     Capability(Box<dyn ClientHook>),
     Join(Box<dyn ResponseHook>),
+    Bilateral(Box<dyn ResponseHook>),
 }
 struct Incoming<'p, 'id, const H: usize> {
     request: connection::NetworkRequest<'p, 'id, H>,
@@ -224,7 +230,9 @@ impl ResponseHook for LocalReply {
         self.inner.get()
     }
 }
-pub(crate) struct NetworkControl<'p, 'id, V, F, const C: usize, const H: usize> {
+pub(crate) struct NetworkControl<'p, 'id, V: 'static, F, const C: usize, const H: usize> {
+    joiner: crate::portable::Joiner<V>,
+    bilateral: bilateral::Groups,
     bootstrap: TwoParty<'id, F>,
     connection: vat::Shared<V>,
     joins: Option<Rc<dyn JoinNetwork<V>>>,
@@ -255,8 +263,11 @@ impl<
         joins: Option<Rc<dyn JoinNetwork<V>>>,
         commands: Rc<Commands>,
         maximum: usize,
+        joiner: crate::portable::Joiner<V>,
     ) -> Self {
         Self {
+            joiner,
+            bilateral: bilateral::Groups::default(),
             bootstrap,
             connection,
             joins,
@@ -277,6 +288,21 @@ impl<
         coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
         target: TargetRef<'_, 'id, 'id>,
     ) -> capnp::Result<Box<dyn ClientHook>> {
+        if let TargetRef::Promised { answer, path } = &target {
+            // The hosted early pipeline is authoritative for this admitted
+            // answer generation, even while the final Return is still pending.
+            let producer = coordinator
+                .driver
+                .ledgers()
+                .answers
+                .pipelined(answer)
+                .owner
+                .producer
+                .clone();
+            if let Some(hook) = producer.pipeline(*path) {
+                return Ok(hook);
+            }
+        }
         let driver = &mut coordinator.driver;
         let client = match target {
             TargetRef::Hosted(lease) => driver.reflected(lease).map_err(wire_error)?,
@@ -287,9 +313,10 @@ impl<
         let result = match driver.runtime().inspect(&client) {
             Ok(Destination::Endpoint {
                 owner:
-                    Route::Capability(Endpoint::Local(hook) | Endpoint::Failed { owner: hook, .. }),
+                    Route::Capability(Endpoint::Local(hook) | Endpoint::Failed { owner: hook, .. })
+                    | Route::Vine(hook),
                 ..
-            }) if driver.runtime().is_settled(&client).unwrap_or(false) => Ok(hook.add_ref()),
+            }) => Ok(hook.add_ref()),
             _ => coordinator
                 .hooks
                 .export_client(&mut driver.capabilities(), &client)
@@ -318,6 +345,14 @@ impl<
             ));
         }
         match request {
+            N::Unsupported(frame) => {
+                coordinator
+                    .driver
+                    .release_network(N::Unsupported(frame), messages);
+                return Err(Error::failed(
+                    "unsupported message bypassed echo policy".into(),
+                ));
+            }
             N::Provide(provide) => {
                 let target = match Self::target(coordinator, provide.target()) {
                     Ok(target) => target,
@@ -400,6 +435,41 @@ impl<
                 }
             }
             N::Join(join) => {
+                if self.commands.bilateral.get() {
+                    let joiner = self.joiner.clone();
+                    let origin = Rc::as_ptr(&coordinator.hooks.inbox) as usize;
+                    let prepared = Self::target(coordinator, join.target()).and_then(|target| {
+                        join.with_key_part(messages, |part| {
+                            self.bilateral
+                                .receive(part, target, self.maximum, move |caps| {
+                                    joiner.resolve_from(caps, origin)
+                                })
+                        })
+                        .map_err(wire_error)?
+                    });
+                    let (guard, future) = match prepared {
+                        Ok(prepared) => prepared,
+                        Err(error) => {
+                            coordinator.driver.release_network(N::Join(join), messages);
+                            return Err(error);
+                        }
+                    };
+                    coordinator
+                        .driver
+                        .ledgers()
+                        .answers
+                        .get(join.key())
+                        .expect("admitted Join generation")
+                        .owner
+                        .producer
+                        .retain_network(None, guard);
+                    self.pending.push_back(Incoming {
+                        request: N::Join(join),
+                        future: Some(future),
+                        completed: None,
+                    });
+                    return Ok(());
+                }
                 let prepared = (|| {
                     let network = self
                         .joins
@@ -415,7 +485,13 @@ impl<
                         .map_err(wire_error)??;
                     let target = Self::target(coordinator, join.target())?;
                     Ok(Promise::from_future(async move {
-                        let target = crate::rpc::join::settle(target).await?;
+                        // A private native promised-answer route can carry a
+                        // Join share before Return. Waiting for its response
+                        // would deadlock an ordering fence around that answer.
+                        let target = match crate::scoped::wire::native_join_target(&*target) {
+                            Some(native) => native,
+                            None => crate::rpc::join::settle(target).await?,
+                        };
                         crate::rpc::multiparty_join::part_at(
                             network,
                             target,
@@ -763,7 +839,9 @@ impl<
                         )))
                     }
                     Ok(target) => {
-                        if !self.connection.borrow().supports_multiparty_join() {
+                        if !self.commands.bilateral.get()
+                            && !self.connection.borrow().supports_multiparty_join()
+                        {
                             return Err(Error::unimplemented(
                                 "Join unavailable on this route".into(),
                             ));
@@ -909,6 +987,88 @@ impl<
         match job.request {
             connection::NetworkRequest::Join(join) => {
                 let outcome = match result {
+                    Ok(Completion::Bilateral(response)) => {
+                        let prepared = (|| {
+                            let payload = Payload::copy(response.get()?)?;
+                            let mut retained = Vec::new();
+                            retained
+                                .try_reserve_exact(payload.caps.len())
+                                .map_err(wire_error)?;
+                            let prepared = (|| {
+                                for cap in &payload.caps {
+                                    let client = cap
+                                        .as_ref()
+                                        .map(|hook| {
+                                            match coordinator
+                                                .hooks
+                                                .try_retain(&mut driver.capabilities(), &**hook)?
+                                            {
+                                                Some(client) => Ok(client),
+                                                None => coordinator
+                                                    .foreign
+                                                    .import(&mut driver.capabilities(), &**hook),
+                                            }
+                                        })
+                                        .transpose()?;
+                                    retained.push(client);
+                                }
+                                let content = payload.reader()?;
+                                let size = minimum(content)?;
+                                driver
+                                    .local_result_dynamic(
+                                        0,
+                                        0,
+                                        retained.iter().map(Option::as_ref),
+                                        messages,
+                                        size,
+                                        coordinator.options.reader,
+                                        |field| {
+                                            field.copy_with_capabilities(
+                                                content,
+                                                capnp::wire_capability::IndexMap::identity(
+                                                    payload.caps.len() as u32,
+                                                ),
+                                            )
+                                        },
+                                    )
+                                    .map_err(wire_error)
+                            })();
+                            for client in retained.into_iter().flatten() {
+                                driver.capabilities().release(client);
+                            }
+                            prepared
+                        })();
+                        let prepared = match prepared {
+                            Ok(result) => result,
+                            Err(error) => {
+                                driver.release_network(
+                                    connection::NetworkRequest::Join(join),
+                                    messages,
+                                );
+                                return Err(error);
+                            }
+                        };
+                        if let Err(rejected) =
+                            driver.complete_join_results(&join, prepared, messages)
+                        {
+                            if let Ok(result) = rejected.result {
+                                result.release(messages, &mut driver.capabilities());
+                            }
+                            driver
+                                .release_network(connection::NetworkRequest::Join(join), messages);
+                            return Err(wire_error(rejected.error));
+                        }
+                        // The original PartGuard remains in the producer until
+                        // Finish and retains the complete batch outcome.
+                        driver.send_join_results(
+                            join,
+                            messages,
+                            queue,
+                            coordinator.options.output_bytes.get(),
+                            coordinator.options.reader,
+                            scratch,
+                        )
+                    }
                     Ok(Completion::Join(response)) => {
                         let size = match response.get().and_then(minimum) {
                             Ok(size) => size,
@@ -1036,6 +1196,20 @@ impl<
         output: &vat::Resources,
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<bool>> {
+        let unsupported = coordinator.driver.peek_network().is_some_and(|request| {
+            let connection = self.connection.borrow();
+            match request {
+                connection::NetworkRequest::Unsupported(_) => true,
+                connection::NetworkRequest::Join(_) => {
+                    !connection.supports_two_party_join() && !connection.supports_multiparty_join()
+                }
+                _ => connection.control_mode() == crate::ControlMode::TwoParty,
+            }
+        });
+        if unsupported {
+            return ControlContext::new(coordinator)
+                .reject_network(messages, queue, scratch, output);
+        }
         coordinator
             .driver
             .allow_answer_handoff(self.connection.borrow().supports_third_party_answers());
@@ -1109,6 +1283,15 @@ impl<
         output: &vat::Resources,
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<bool>> {
+        let bilateral = {
+            let connection = self.connection.borrow();
+            connection.supports_two_party_join() && !connection.supports_multiparty_join()
+        };
+        self.commands.bilateral.set(bilateral);
+        context.allow_join({
+            let connection = self.connection.borrow();
+            connection.supports_two_party_join() || connection.supports_multiparty_join()
+        });
         // The restricted path certifies absence of authenticated network work.
         // Active authenticated handoffs affect several protocol owners; their
         // private operation records those effects even when a future suspends.

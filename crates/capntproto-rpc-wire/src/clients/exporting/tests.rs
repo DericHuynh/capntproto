@@ -286,6 +286,19 @@ fn callable_local_promise_publishes_sender_promise_then_failed_owner_exception()
                             "routable local hook still owes resolution"
                         );
                         batch.commit();
+                        let lease = exports.lease(grant.id()).unwrap();
+                        let advertised = exports.get(&lease);
+                        assert_eq!(
+                            owner(graph, advertised),
+                            7,
+                            "accepted calls can use the exported proxy before resolution"
+                        );
+                        assert!(
+                            !graph.is_settled(advertised).unwrap(),
+                            "a callable route does not certify final resolution"
+                        );
+                        assert!(exports.release_local(lease).is_none());
+
                         let mut queue_slots = [None];
                         let mut queue = messages::Queue::new(&mut queue_slots).unwrap();
                         assert_eq!(

@@ -42,6 +42,11 @@ pub trait ResponseHook {
 }
 
 pub trait RequestHook {
+    /// Prepare a runtime-authorized same-connection tail transfer. Opaque
+    /// wrappers keep ordinary forwarding unless they explicitly preserve it.
+    fn prepare_tail_call(&mut self, _context: alloc::rc::Rc<dyn core::any::Any>) -> bool {
+        false
+    }
     /// Private runtime connection context for third-party tail calls. Wrappers
     /// default to ordinary forwarding to preserve their interception policy.
     fn third_party_tail_target(&self) -> Option<alloc::boxed::Box<dyn core::any::Any>> {

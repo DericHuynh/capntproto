@@ -11,8 +11,10 @@ struct State {
     protocol_wake: RefCell<Option<Waker>>,
     message_pool: Option<capnp::message::SegmentPool>,
     tail_origin: RefCell<Option<Handle>>,
+    native_origin: RefCell<Weak<Inbox>>,
     network: RefCell<Option<Box<NetworkState>>>,
     transferred: Cell<bool>,
+    wire_returned: Cell<bool>,
     context: RefCell<Option<Rc<dyn std::any::Any>>>,
     method: Cell<Option<DynamicCall>>,
     payload: std::cell::OnceCell<CompletedPayload>,
@@ -131,12 +133,65 @@ impl CompletedPayload {
 // state separate without changing the lifetime of any transfer or guard.
 #[derive(Default)]
 struct NetworkState {
+    native: Option<Rc<NativeTail>>,
     redirect: Option<Rc<tail::Redirect>>,
     destination: Option<tail::Destination>,
     guard: Option<(
         Option<Rc<crate::third_party::ThirdPartyExchange>>,
         Box<dyn std::any::Any>,
     )>,
+}
+
+/// A private runtime identity, never a wire ID or a forged graph handle.
+pub(crate) struct NativeTail {
+    origin: Weak<Inbox>,
+    owner: Weak<State>,
+    phase: Cell<TailPhase>,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TailPhase {
+    Prepared,
+    Local,
+    Remote,
+    Published,
+}
+impl NativeTail {
+    pub(in crate::scoped) fn accepts(&self, inbox: &Weak<Inbox>) -> bool {
+        self.origin.strong_count() != 0 && self.origin.ptr_eq(inbox)
+    }
+    pub(crate) fn remote(&self) -> bool {
+        matches!(self.phase.get(), TailPhase::Remote | TailPhase::Published)
+    }
+    pub(crate) fn sent(&self) -> bool {
+        self.phase.get() == TailPhase::Published
+    }
+    pub(crate) fn pending(&self) -> bool {
+        matches!(self.phase.get(), TailPhase::Prepared | TailPhase::Remote)
+    }
+    pub(crate) fn forwarded(&self) {
+        if self.phase.get() == TailPhase::Prepared {
+            self.phase.set(TailPhase::Local);
+            if let Some(owner) = self.owner.upgrade() {
+                owner.notify(None);
+            }
+        }
+    }
+    pub(crate) fn published(&self, sent: bool) {
+        self.phase.set(if sent {
+            TailPhase::Published
+        } else {
+            TailPhase::Remote
+        });
+        if let Some(owner) = self.owner.upgrade() {
+            if sent {
+                owner.wire_returned.set(true);
+                // Transfer publication returns incoming flow credit before the
+                // callee acknowledges, just like legacy answer_has_sent_return.
+                drop(owner.charge.borrow_mut().take());
+            }
+            owner.notify(None);
+        }
+    }
 }
 impl State {
     fn notify(&self, current: Option<&Waker>) {
@@ -250,6 +305,7 @@ impl Cache {
         // Only this private owner remains. Destructors may reenter admission;
         // neither the cache nor another public result retains this state.
         drop(state.tail_origin.get_mut().take());
+        *state.native_origin.get_mut() = Weak::new();
         drop(state.network.get_mut().take());
         drop(state.context.get_mut().take());
         drop(state.payload.take());
@@ -260,6 +316,7 @@ impl Cache {
         drop(state.charge.get_mut().take());
         drop(state.trace.get_mut().take());
         state.transferred.set(false);
+        state.wire_returned.set(false);
         state.method.set(None);
         state.trace_prepared.set(false);
         state.revision.set(0);
@@ -382,6 +439,20 @@ impl Results {
     pub(crate) fn tail_origin(&self, origin: Option<Handle>) {
         *self.0.tail_origin.borrow_mut() = origin;
     }
+    pub(super) fn native_origin(&self, origin: Weak<Inbox>) {
+        *self.0.native_origin.borrow_mut() = origin;
+    }
+    pub(crate) fn native_tail(&self) -> Option<Rc<NativeTail>> {
+        self.0.network.borrow().as_ref()?.native.clone()
+    }
+    pub(crate) fn owns_native_tail(&self, tail: &Rc<NativeTail>) -> bool {
+        self.0
+            .network
+            .borrow()
+            .as_ref()
+            .and_then(|network| network.native.as_ref())
+            .is_some_and(|current| Rc::ptr_eq(current, tail))
+    }
     pub(crate) fn redirect(&self) -> Option<Rc<tail::Redirect>> {
         self.0
             .network
@@ -462,7 +533,9 @@ impl Results {
             message_pool,
             charge: RefCell::new(charge),
             tail_origin: RefCell::new(None),
+            native_origin: RefCell::new(Weak::new()),
             transferred: Cell::new(false),
+            wire_returned: Cell::new(false),
             network: RefCell::new(None),
             context: RefCell::new(None),
             method: Cell::new(None),
@@ -475,6 +548,7 @@ impl Results {
         }))
     }
     pub(in crate::scoped::wire) fn returned(&self) {
+        self.0.wire_returned.set(true);
         let charge = self.0.charge.borrow_mut().take();
         drop(charge);
     }
@@ -888,8 +962,40 @@ impl ResultsHook for Hook {
             });
             return (completion, pipeline.hook);
         }
+        if !self.results.0.wire_returned.get()
+            && self.results.0.pipeline.borrow().is_none()
+            && self.results.0.native_origin.borrow().strong_count() != 0
+            && request.get_brand() == self.results.0.native_origin.borrow().as_ptr() as usize
+        {
+            let native = Rc::new(NativeTail {
+                origin: self.results.0.native_origin.borrow().clone(),
+                owner: Rc::downgrade(&self.results.0),
+                phase: Cell::new(TailPhase::Prepared),
+            });
+            if request.prepare_tail_call(native.clone()) {
+                self.results
+                    .0
+                    .network
+                    .borrow_mut()
+                    .get_or_insert_with(Default::default)
+                    .native = Some(native.clone());
+                let capability::RemotePromise { promise, pipeline } = request.send();
+                self.set_pipeline_from(pipeline.hook.add_ref())
+                    .expect("unpublished native tail pipeline");
+                let completion = Promise::from_future(async move {
+                    let response = promise.await?;
+                    if !native.remote() {
+                        // Resolution to a local target before publication keeps
+                        // ordinary forwarding and its exact result ownership.
+                        self.get()?.set_as(response.get()?)?;
+                    }
+                    Ok(())
+                });
+                return (completion, pipeline.hook);
+            }
+        }
         let origin = self.results.0.tail_origin.borrow().clone();
-        if self.results.0.pipeline.borrow().is_none() {
+        if !self.results.0.wire_returned.get() && self.results.0.pipeline.borrow().is_none() {
             if let Some(origin) = origin {
                 match origin.redirect(&mut *request) {
                     Ok(Some(redirect)) => {

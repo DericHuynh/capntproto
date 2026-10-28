@@ -61,7 +61,7 @@ impl<'m> PreparedReturn<'m> {
     }
 }
 
-/// The private one-capability encoder's exact outgoing grant and Return policy.
+/// The private one-capability encoder's optional export and Return policy.
 #[derive(Clone, Copy)]
 pub(crate) struct OriginalMetadata {
     method: (u64, u16),
@@ -71,22 +71,23 @@ pub(crate) struct OriginalMetadata {
 }
 impl OriginalMetadata {
     // Only the private single-capability encoder constructs this metadata. Its
-    // immutable Call contains this exact method, handoff policy and export;
+    // immutable Call contains this exact method, handoff policy and optional export;
     // ordinary publication still validates the complete frame and grant batch.
-    pub(crate) fn single_export(
+    pub(crate) fn single_capability(
         method: (u64, u16),
         allows_handoff: bool,
-        export: ExportId,
+        export: Option<ExportId>,
     ) -> Self {
         Self {
             method,
             redirected: false,
             allows_handoff,
-            export: Some(export),
+            export,
         }
     }
     pub(crate) fn original(&self) -> Original<'_> {
         Original {
+            join: false,
             params: Parameters::Export(self.export),
             redirected: self.redirected,
             allows_handoff: self.allows_handoff,
@@ -100,6 +101,7 @@ enum Parameters<'m> {
     Export(Option<ExportId>),
 }
 pub(crate) struct Original<'m> {
+    join: bool,
     params: Parameters<'m>,
     redirected: bool,
     allows_handoff: bool,
@@ -109,13 +111,24 @@ impl<'m> Original<'m> {
     // Only validated template publication may prove the descriptor table empty.
     pub(crate) fn data_only(method: (u64, u16), allows_handoff: bool) -> Self {
         Self {
+            join: false,
             params: Parameters::Export(None),
             redirected: false,
             allows_handoff,
             method: Some(method),
         }
     }
+    pub(crate) fn optional_control() -> Self {
+        Self {
+            join: false,
+            params: Parameters::Export(None),
+            redirected: false,
+            allows_handoff: false,
+            method: None,
+        }
+    }
     pub(crate) fn read(id: u32, root: rpc_capnp::message::Reader<'m>) -> Result<Self, Error> {
+        let join = matches!(root.which(), Ok(rpc_capnp::message::Join(_)));
         let (question, params, redirected, allows_handoff, method) = match root
             .which()
             .map_err(|_| Error::Unsupported)?
@@ -158,6 +171,7 @@ impl<'m> Original<'m> {
             return Err(Error::Mismatch);
         }
         Ok(Self {
+            join,
             params: Parameters::Unchecked(params),
             redirected,
             allows_handoff,
@@ -219,6 +233,9 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
     scratch: &'s mut [u32],
 ) -> Result<Returned<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, 'as_, I, E, A>, Error> {
     let result = prepared.result;
+    if original.join && result.get_no_finish_needed() {
+        return Err(Error::Unsupported);
+    }
     let id = result.get_answer_id();
     let redirected = questions
         .is_redirected(QuestionId::from_wire(id))

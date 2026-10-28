@@ -1545,12 +1545,10 @@ async fn third_party_tail_returns_over_authenticated_native() {
                             .get_value(),
                         73
                     );
-                    // Previously used portable pipelines deliberately retain their
-                    // ordered relay route until a distributed Join fence is added.
-                    if portable == [false; 3] {
-                        bh.disconnect(ids[0].public_key());
-                        bh.disconnect(ids[2].public_key());
-                    }
+                    // The authenticated Join fence must release every used
+                    // pipeline from the relay before its parent Return.
+                    bh.disconnect(ids[0].public_key());
+                    bh.disconnect(ids[2].public_key());
                     assert_eq!(
                         early
                             .echo_request()
@@ -1575,10 +1573,6 @@ async fn third_party_tail_returns_over_authenticated_native() {
                         .get_cap()
                         .unwrap();
                     assert!(ah.stats().published > 0, "no answer rendezvous registered");
-                    if portable != [false; 3] {
-                        bh.disconnect(ids[0].public_key());
-                        bh.disconnect(ids[2].public_key());
-                    }
                     stage.set("direct child reply");
                     assert_eq!(
                         cap.echo_request()

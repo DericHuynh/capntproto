@@ -19,8 +19,46 @@ enum Stage {
     Collect,
     Publish,
 }
+enum Owner<'p, 'id, I, const C: usize, const H: usize> {
+    Ready(Running<'p, 'id, I, C, H>),
+    Dispatched(connection::Request<'p, 'id, I, C, H>),
+    Moving,
+}
+impl<'p, 'id, I, const C: usize, const H: usize> Owner<'p, 'id, I, C, H> {
+    fn owner(&self) -> &connection::Request<'p, 'id, I, C, H> {
+        match self {
+            Self::Ready(running) => running.owner(),
+            Self::Dispatched(call) => call,
+            Self::Moving => unreachable!("exclusive owner transfer"),
+        }
+    }
+    fn target(&self) -> &Client<'id> {
+        let Self::Ready(running) = self else {
+            unreachable!("dispatch target already transferred")
+        };
+        running.target()
+    }
+    fn dispatch<P: Copy + Eq>(&mut self, driver: &mut Peer<'p, 'id, '_, I, P, C, H>) {
+        let Self::Ready(running) = core::mem::replace(self, Self::Moving) else {
+            unreachable!("dispatch once")
+        };
+        let mut call = driver.capabilities().complete(running);
+        driver.release_call_target(&mut call);
+        *self = Self::Dispatched(call);
+    }
+    fn complete<P: Copy + Eq>(
+        self,
+        driver: &mut Peer<'p, 'id, '_, I, P, C, H>,
+    ) -> connection::Request<'p, 'id, I, C, H> {
+        match self {
+            Self::Ready(running) => driver.capabilities().complete(running),
+            Self::Dispatched(call) => call,
+            Self::Moving => unreachable!("exclusive owner transfer"),
+        }
+    }
+}
 struct Entry<'p, 'id, I, const C: usize, const H: usize> {
-    running: Running<'p, 'id, I, C, H>,
+    running: Owner<'p, 'id, I, C, H>,
     results: Results,
     stage: Stage,
     waker: Waker,
@@ -98,6 +136,16 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
     }
     pub fn is_empty(&self) -> bool {
         self.live == 0
+    }
+    pub(in crate::scoped::wire) fn native_parent(
+        &self,
+        tail: &Rc<NativeTail>,
+    ) -> Option<answers::Key<'id>> {
+        self.entries
+            .iter()
+            .flatten()
+            .find(|entry| entry.results.owns_native_tail(tail))
+            .map(|entry| entry.request().answer())
     }
     pub(in crate::scoped::wire) fn results(
         &self,
@@ -254,7 +302,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
             result_revision: 0,
             redirect_work: capntproto_rpc_engine::work_queue::Link::EMPTY,
             waker: Waker::noop().clone(),
-            running,
+            running: Owner::Ready(running),
             results,
             stage: if execute {
                 Stage::Prepare
@@ -710,12 +758,18 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         // AwaitFromThirdParty may retire on Finish before the child completes.
         // The generation's absence means the relay no longer owns interest;
         // dropping our execution lets the destination retain its own interest.
-        if entry
-            .results
-            .redirect()
-            .is_some_and(|redirect| redirect.sent.get())
-            && driver.ledgers().answers.get(key).is_err()
+        let transferred = entry.results.native_tail().is_some_and(|tail| tail.sent())
+            || entry
+                .results
+                .redirect()
+                .is_some_and(|redirect| redirect.sent.get());
+        if transferred && driver.ledgers().answers.get(key).is_err() {
+            return Poll::Ready(Ok(Progress::Replied));
+        }
+        if entry.results.native_tail().is_some_and(|tail| tail.sent())
+            && matches!(entry.stage, Stage::Collect | Stage::Publish)
         {
+            entry.results.returned();
             return Poll::Ready(Ok(Progress::Replied));
         }
         if matches!(
@@ -734,6 +788,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         }
         match &mut entry.stage {
             Stage::Prepare => {
+                if hooks.inbox.native_tail
+                    && !driver
+                        .prepare_answer_return(key)
+                        .map_err(wire_error)?
+                        .is_redirected()
+                {
+                    entry.results.native_origin(Rc::downgrade(&hooks.inbox));
+                }
                 let handoff = entry.request().allows_third_party_tail_call();
                 entry.results.tail_origin(if handoff {
                     hooks.inbox.joins.clone()
@@ -768,13 +830,22 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                         .hook
                         .into(),
                 };
-                let prepared = hooks.prepare_received_server(entry.request(), driver, messages)?;
+                let prepared = hooks.prepare_received_server_using(
+                    entry.request(),
+                    driver,
+                    messages,
+                    |owner| Some(owner.add_ref()),
+                )?;
                 refresh(hooks, driver);
                 let mut execution = if *remaining_budget != 0 {
                     prepared.execute_during_dispatch(&*target, &entry.results, executor.clone())?
                 } else {
                     prepared.execute(&*target, &entry.results, executor.clone())?
                 };
+                // The application/request has captured the target. Retaining
+                // dispatcher and incoming pipeline leases until its reply
+                // would delay the upstream Finish compared with legacy.
+                entry.running.dispatch(driver);
                 entry.stage = if entry.results.transfer_ready() {
                     Stage::Transfer(entry.results.start_transfer(execution)?)
                 } else if *remaining_budget != 0 {
@@ -824,6 +895,16 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 entry.stage = Stage::Collect;
             }
             Stage::Collect => {
+                // A prepared native transfer owns this answer until its Call
+                // and TakeFromOtherQuestion are accepted, even after Finish.
+                // Local forwarding/cancellation releases that reservation.
+                if entry
+                    .results
+                    .native_tail()
+                    .is_some_and(|tail| tail.pending())
+                {
+                    return Poll::Pending;
+                }
                 let canceled_transfer = entry.results.transfer_ready()
                     && driver
                         .ledgers()
@@ -891,6 +972,13 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 entry.stage = Stage::Publish;
             }
             Stage::Publish => {
+                if let Some(tail) = entry.results.native_tail().filter(|tail| tail.remote()) {
+                    if !tail.sent() {
+                        return Poll::Pending;
+                    }
+                    entry.results.returned();
+                    return Poll::Ready(Ok(Progress::Replied));
+                }
                 if entry
                     .results
                     .redirect()
@@ -960,7 +1048,7 @@ fn release<'p, 'id, I, P: Copy + Eq, const C: usize, const H: usize>(
         let _ = driver.answers().unwatch_execution(entry.request().answer());
     }
     drop(entry.stage);
-    let call = driver.capabilities().complete(entry.running);
+    let call = entry.running.complete(driver);
     driver.release_call(call, messages);
     entry.results
 }
