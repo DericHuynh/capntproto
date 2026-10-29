@@ -196,6 +196,81 @@ fn request(
 ) -> capability::Request<any_pointer::Owned, any_pointer::Owned> {
     client.new_call(7, method, None)
 }
+
+#[test]
+fn published_parameters_reuse_segments_after_flush_without_recycling_live_frames() {
+    with_peer(|mut driver, messages| {
+        driver.use_native_writer();
+        driver.use_owned_output_queues(true);
+        let bytes = if cfg!(miri) { 4097 } else { 65536 };
+        let pool = capnp::message::SegmentPool::new(32768, 8);
+        let mut hooks = ClientHooks::new(24, 24).with_message_pool(pool);
+        let client = remote(&mut driver, &mut hooks);
+        let make = |value| {
+            let mut request = client.new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+                7,
+                1,
+                None,
+                capability::CallHints {
+                    no_promise_pipelining: true,
+                    only_promise_pipeline: false,
+                },
+            );
+            request
+                .get()
+                .initn_as::<capnp::data::Builder>(bytes)
+                .fill(value);
+            request
+        };
+        let first = make(0x17).send();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+        assert_eq!(queue.len(), 1);
+        let window = queue.window(messages).unwrap().unwrap();
+        let mut encoded = vec![window.bytes()[0]];
+        window.advance(1).unwrap();
+        let second = make(0x23).send();
+        drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+        encoded.extend(drain(&mut queue, messages));
+        let mut input = encoded.as_slice();
+        for value in [0x17, 0x23] {
+            let reader = capnp::serialize::read_message(&mut input, Default::default()).unwrap();
+            let rpc_capnp::message::Call(call) = reader
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("Call")
+            };
+            let data = call
+                .unwrap()
+                .get_params()
+                .unwrap()
+                .get_content()
+                .get_as::<capnp::data::Reader>()
+                .unwrap();
+            assert_eq!(data.len(), bytes as usize);
+            assert!(
+                data.iter().all(|byte| *byte == value),
+                "queued frame borrowed a recycled parameter segment"
+            );
+        }
+        assert!(input.is_empty());
+        // Both replies are still pending. Their already-transmitted builders
+        // must nevertheless be available to a new request through this pool.
+        let mut next = None;
+        let counts = allocation_counter::measure(|| next = Some(make(0x35)));
+        assert!(
+            counts.bytes_total < u64::from(bytes),
+            "published builders retained a full payload allocation through Return: {counts:?}"
+        );
+        drop((next, first, second, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
 fn ok() -> capability::DispatchCallResult {
     capability::DispatchCallResult {
         promise: Promise::ok(()),

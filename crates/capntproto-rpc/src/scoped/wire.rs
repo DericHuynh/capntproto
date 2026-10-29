@@ -1684,6 +1684,7 @@ pub(crate) fn native_join_target(client: &dyn ClientHook) -> Option<Box<dyn Clie
     let inbox = hook.0.inbox.upgrade()?;
     if inbox.closed.get()
         || inbox.joins.is_none()
+        || hook.0.local_deferred.get()
         || hook.0.introduction.borrow().is_some()
         || (!hook.0.remote.get() && hook.0.direct.get().is_none())
     {

@@ -630,11 +630,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         driver: &mut Peer<'_, 'domain, '_, I, P, C, H>,
         output: &O,
     ) {
-        hooks.collect_wire(
+        hooks.collect_wire_with_local(
             driver,
             |owner| output.metadata_source(owner),
             foreign::local_metadata,
             |hook| hook.metadata_changes(),
+            |hook| Some(hook.clone()),
         );
     }
 

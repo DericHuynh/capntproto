@@ -9,6 +9,167 @@ use std::sync::{
 type Remote = capability::RemotePromise<any_pointer::Owned>;
 
 #[test]
+fn settled_local_authority_waits_for_loopback_and_survives_a_prior_generic_collect() {
+    #[derive(Clone)]
+    struct Local(Rc<RefCell<Vec<u16>>>);
+    impl capability::Server for Local {
+        fn as_ptr(&self) -> usize {
+            self as *const Self as usize
+        }
+        fn dispatch_call(
+            self,
+            _: u64,
+            method: u16,
+            _: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            self.0.borrow_mut().push(method);
+            capability::DispatchCallResult {
+                promise: Promise::from_future(futures::future::pending()),
+                is_streaming: false,
+                allow_cancellation: true,
+            }
+        }
+    }
+    fn refresh<'id>(
+        hooks: &mut ClientHooks<'id>,
+        graph: &mut impl Capabilities<'id, Owner = Rc<dyn ClientHook>>,
+    ) {
+        hooks.synchronize(
+            graph,
+            |_| None,
+            |_| None,
+            |_| None,
+            |owner| Some(owner.clone()),
+            true,
+            true,
+        );
+    }
+    for (collect_first, cancel_older) in
+        [(false, false), (true, false), (false, true), (true, true)]
+    {
+        clients::with_growing_graph::<Rc<dyn ClientHook>, u8, _>(
+            0,
+            5,
+            clients::NotificationGrowth::bounded(8, 32),
+            |graph| {
+                let seen = Rc::new(RefCell::new(Vec::new()));
+                let original: Rc<dyn ClientHook> =
+                    Rc::new(crate::local::Client::new(Local(seen.clone())));
+                let expected = original.get_ptr();
+                let remote = graph
+                    .endpoint(
+                        Rc::new(crate::local::Client::new(Local(seen.clone())))
+                            as Rc<dyn ClientHook>,
+                        Location::Remote(1),
+                    )
+                    .unwrap_or_else(|_| panic!("remote"));
+                let local = graph
+                    .endpoint(original.clone(), Location::Local)
+                    .unwrap_or_else(|_| panic!("local"));
+                let mut initial = Some(graph.retain(&remote).unwrap());
+                let promised = graph.promise(&mut initial).unwrap();
+                let mut hooks = ClientHooks::new(3, 2);
+                let live = hooks.export_client(graph, &promised).unwrap();
+                let frozen = hooks.export_snapshot(graph, &promised).unwrap();
+                let source = live.hook.metadata_changes().unwrap();
+                let mut resolved = live.hook.when_more_resolved().unwrap();
+                let mut changed = source.subscribe();
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(changed.poll_changed(&mut cx).is_pending());
+                assert!(Pin::new(&mut resolved).poll(&mut cx).is_pending());
+                let older = [request(&live, 1), request(&live, 2)];
+                let called = graph.prepare_call(&promised).unwrap().accept();
+                graph.release(called);
+                let mut replacement = Some(graph.retain(&local).unwrap());
+                let barrier = graph
+                    .resolve(promised.key(), &mut replacement, clients::Source::Reflected)
+                    .unwrap()
+                    .unwrap();
+                refresh(&mut hooks, graph);
+                assert!(
+                    live.hook.get_resolved().is_none(),
+                    "local authority must wait for the reflected-route barrier"
+                );
+                assert!(changed.poll_changed(&mut cx).is_pending());
+                graph.open(barrier);
+                if collect_first {
+                    hooks.collect(graph);
+                }
+                let counts = allocation_counter::measure(|| refresh(&mut hooks, graph));
+                assert_eq!(
+                    counts.count_total, 0,
+                    "retaining a deferred local owner needs no new adapter: {counts:?}"
+                );
+                assert!(
+                    live.hook.get_resolved().is_none(),
+                    "queued calls must begin forwarding before local authority is exposed"
+                );
+                assert!(Pin::new(&mut resolved).poll(&mut cx).is_pending());
+                assert!(changed.poll_changed(&mut cx).is_pending());
+                let call = next(&mut hooks);
+                let second_call = next(&mut hooks);
+                let mut forwarding = None;
+                if cancel_older {
+                    // Closing the old connection cancels queued work without
+                    // invalidating an already authenticated local resolution.
+                    hooks.disconnect(Error::disconnected("old route closed".into()));
+                    assert!(Pin::new(&mut resolved).poll(&mut cx).is_pending());
+                    drop(call);
+                    assert!(live.hook.get_resolved().is_none());
+                    drop(second_call);
+                } else {
+                    let mut operation = call.forward(&*original);
+                    assert!(
+                        live.hook.get_resolved().is_none(),
+                        "a lazy forward has not dispatched the older call yet"
+                    );
+                    assert!(Pin::new(&mut operation).poll(&mut cx).is_pending());
+                    assert_eq!(*seen.borrow(), [1]);
+                    assert!(
+                        live.hook.get_resolved().is_none(),
+                        "every older call must begin forwarding"
+                    );
+                    let mut second_operation = second_call.forward(&*original);
+                    assert!(Pin::new(&mut second_operation).poll(&mut cx).is_pending());
+                    assert_eq!(*seen.borrow(), [1, 2]);
+                    forwarding = Some((operation, second_operation));
+                }
+                assert_eq!(live.hook.get_resolved().unwrap().get_ptr(), expected);
+                assert_eq!(
+                    ready(&mut resolved).unwrap().get_ptr(),
+                    expected,
+                    "resolution waiters receive the original local hook directly"
+                );
+                assert!(changed.poll_changed(&mut cx).is_ready());
+                if !cancel_older {
+                    let mut newer = request(&live, 3);
+                    assert!(Pin::new(&mut newer.promise).poll(&mut cx).is_pending());
+                    assert_eq!(
+                        *seen.borrow(),
+                        [1, 2, 3],
+                        "local handoff must preserve call order without awaiting the older reply"
+                    );
+                }
+                assert!(
+                    frozen.hook.get_resolved().is_none(),
+                    "the advertised original route stays frozen"
+                );
+                drop((forwarding, older));
+                hooks.close(graph, Error::disconnected("done".into()));
+                assert!(
+                    live.hook.get_failure().is_none(),
+                    "settled local authority outlives its former connection"
+                );
+                graph.release(promised);
+                graph.release(local);
+                graph.release(remote);
+            },
+        )
+        .unwrap();
+    }
+}
+
+#[test]
 fn projection_bound_to_a_terminal_route_notifies_preexisting_resolution_waiters() {
     for broken in [false, true] {
         clients::with_growing_graph::<Error, u8, _>(

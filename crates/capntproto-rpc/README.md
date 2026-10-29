@@ -384,6 +384,19 @@ message bridge still copies frames. Functional trace parity does not establish
 instruction, allocation, or throughput parity; benchmark the portable path
 explicitly before changing the default driver.
 
+Hosted requests release their original parameter builders and capability hooks
+after FIFO publication; pending questions retain their separate protocol
+obligations. Ordinary calls with zero or one parameter export retain only the
+method, return policy and export grant; larger grant lists retain the original
+frame in bounded storage. Standalone `ClientHooks` users can configure
+`with_message_pool` before exporting clients to reuse transmitted request
+segments. Queued frames retain their bytes through partial writes, so live
+segments cannot be recycled.
+Promises resolved back to local objects expose their original policy hooks only
+after graph ordering barriers open and older queued calls begin forwarding.
+Resolution does not wait for those calls' replies. The local capabilities remain
+usable when their former connection closes.
+
 Use `send_invocation_with_attachments`,
 `Invocations::send_one_with_attachments` and
 `poll_maintenance_with_attachments` for automatic Call/Resolve descriptors.

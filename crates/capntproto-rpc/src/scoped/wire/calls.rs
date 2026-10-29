@@ -1601,7 +1601,13 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
         }
         Stage::Execute(execution) => {
             let _ = results.poll_completed(cx);
-            if Pin::new(execution).poll(cx).is_pending() {
+            let pending = Pin::new(execution).poll(cx).is_pending();
+            // Ordinary local hooks dispatch lazily on their first poll. Only
+            // then may reflected resolution bypass older queued calls.
+            if let Some(call) = entry.wire.call.as_mut() {
+                call.dispatch_committed();
+            }
+            if pending {
                 return Ok(None);
             }
             local.stage = Stage::Collect;

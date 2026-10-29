@@ -24,17 +24,195 @@ impl Drop for Dummy {
     }
 }
 impl harness::Server for Dummy {}
+
+#[tokio::test(flavor = "current_thread")]
+async fn published_parameter_cap_lifetimes_match_legacy() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                let mut legacy_retained = [false; 4];
+                for portable in [false, true] {
+                    for wrapper in 0..4 {
+                        let mut f = Fixture::with_driver(wrapper, portable).await;
+                        let alive = Rc::new(Cell::new(true));
+                        let mut request = f.remote.bounce_request();
+                        request
+                            .get()
+                            .set_cap(capnp_rpc::new_client(Dummy(Some(alive.clone()))));
+                        let mut response = request.send();
+                        let message = match futures::future::select(
+                            Box::pin(&mut response.promise),
+                            Box::pin(f.next_call()),
+                        )
+                        .await
+                        {
+                            futures::future::Either::Right((message, _)) => message,
+                            futures::future::Either::Left((result, _)) => {
+                                panic!("reply before Call: {:?}", result.err())
+                            }
+                        };
+                        let message::Call(call) = message
+                            .get_body()
+                            .unwrap()
+                            .get_as::<message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("Call")
+                        };
+                        let call = call.unwrap();
+                        let question = call.get_question_id();
+                        let cap_descriptor::SenderHosted(export) = call
+                            .get_params()
+                            .unwrap()
+                            .get_cap_table()
+                            .unwrap()
+                            .get(0)
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("parameter export")
+                        };
+                        assert!(alive.get());
+                        f.peer.send(|m| {
+                            let mut release = m.init_release();
+                            release.set_id(export);
+                            release.set_reference_count(1);
+                        });
+                        settle().await;
+                        if portable {
+                            assert_eq!(
+                                alive.get(),
+                                legacy_retained[wrapper as usize],
+                                "wrapper={wrapper}: parameter ownership differs after peer Release"
+                            );
+                        } else {
+                            legacy_retained[wrapper as usize] = alive.get();
+                            if wrapper == 0 {
+                                assert!(
+                                    !alive.get(),
+                                    "legacy releases direct request parameters after send"
+                                );
+                            }
+                        }
+                        assert!((&mut response.promise).now_or_never().is_none());
+                        f.peer.send(|m| {
+                            let mut returned = m.init_return();
+                            returned.set_answer_id(question);
+                            returned.set_release_param_caps(false);
+                            returned.init_results();
+                        });
+                        response.promise.await.unwrap();
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
 async fn settle() {
     for _ in 0..32 {
         tokio::task::yield_now().await;
     }
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_remote_promise_resolved_back_to_local_preserves_join_identity() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                for portable in [false, true] {
+                    let mut f = Fixture::with_driver(0, portable).await;
+                    let original: harness::Client = capnp_rpc::new_client(Dummy(None));
+                    let mut request = f.remote.bounce_request();
+                    request.get().set_cap(original.clone());
+                    let response = request.send();
+                    let input = f.next_call().await;
+                    let message::Call(call) = input
+                        .get_body()
+                        .unwrap()
+                        .get_as::<message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    else {
+                        panic!("Call")
+                    };
+                    let call = call.unwrap();
+                    let question = call.get_question_id();
+                    let cap_descriptor::SenderHosted(export) = call
+                        .get_params()
+                        .unwrap()
+                        .get_cap_table()
+                        .unwrap()
+                        .get(0)
+                        .which()
+                        .unwrap()
+                    else {
+                        panic!("parameter export")
+                    };
+                    f.peer.send(|m| {
+                        let mut returned = m.init_return();
+                        returned.set_answer_id(question);
+                        returned.set_release_param_caps(false);
+                        let mut payload = returned.init_results();
+                        let mut caps = vec![];
+                        {
+                            let mut content = payload.reborrow().get_content();
+                            content.imbue_mut(&mut caps);
+                            content
+                                .init_as::<harness::bounce_results::Builder>()
+                                .set_cap(capnp_rpc::new_client(Dummy(None)));
+                        }
+                        payload.init_cap_table(1).get(0).set_sender_promise(81);
+                    });
+                    let reflected = response
+                        .promise
+                        .await
+                        .unwrap()
+                        .get()
+                        .unwrap()
+                        .get_cap()
+                        .unwrap();
+                    let mut ready = Box::pin(reflected.client.when_resolved());
+                    assert!((&mut ready).now_or_never().is_none());
+                    f.peer.send(|m| {
+                        let mut resolve = m.init_resolve();
+                        resolve.set_promise_id(81);
+                        resolve.init_cap().set_receiver_hosted(export);
+                    });
+                    ready.await.unwrap();
+                    assert!(f
+                        .joiner
+                        .join(vec![original, reflected.clone()])
+                        .await
+                        .unwrap_or_else(|error| panic!("portable={portable}: {error}"))
+                        .is_some());
+                    f.task.abort();
+                    settle().await;
+                    let error = match reflected.echo_request().send().promise.await {
+                        Ok(_) => panic!("Dummy has no echo implementation"),
+                        Err(error) => error,
+                    };
+                    assert_eq!(error.kind, capnp::ErrorKind::Unimplemented, "portable={portable}: the local capability must survive its former connection");
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
 struct Fixture {
     _hub: Rc<RefCell<Hub>>,
     _network: support::Network,
     peer: Endpoint,
     task: tokio::task::JoinHandle<capnp::Result<()>>,
     remote: harness::Client,
+    joiner: support::driver::Joiner<u8>,
     pipeline: Option<harness::bounce_results::Pipeline>,
     child: Option<harness::Client>,
     a: u32,
@@ -58,6 +236,7 @@ impl Fixture {
         let mut system =
             support::driver::System::new(portable, Box::new(Hub::network(&hub, 1)), None);
         let remote: harness::Client = system.bootstrap(2);
+        let joiner = system.get_joiner();
         let mut peer = hub.borrow_mut().connect(2, 1);
         let task = tokio::task::spawn_local(system.run());
         let input = peer.recv().await;
@@ -116,6 +295,7 @@ impl Fixture {
             peer,
             task,
             remote,
+            joiner,
             pipeline: None,
             child: None,
             a: 0,

@@ -169,6 +169,8 @@ struct Endpoint {
     direct: Cell<Option<usize>>,
     direct_parent: RefCell<Weak<wire::PipelineState>>,
     settled: Cell<bool>,
+    pending_calls: Cell<usize>,
+    local_deferred: Cell<bool>,
     metadata_generation: Cell<u64>,
     metadata_changes: std::cell::OnceCell<Rc<MetadataChanges>>,
     failure: RefCell<Option<Error>>,
@@ -188,6 +190,8 @@ impl Endpoint {
             direct: Cell::new(None),
             direct_parent: RefCell::default(),
             settled: Cell::new(false),
+            pending_calls: Cell::new(0),
+            local_deferred: Cell::new(false),
             metadata_generation: Cell::new(0),
             metadata_changes: std::cell::OnceCell::new(),
             failure: RefCell::default(),
@@ -257,6 +261,45 @@ impl Endpoint {
         self.notify_binding();
         if let Some(inbox) = self.inbox.upgrade() {
             inbox.notify_ownership();
+        }
+    }
+
+    fn accept_local_resolution(&self, hook: Option<Rc<dyn ClientHook>>) -> bool {
+        if self.introduced.borrow().is_some() {
+            return false;
+        }
+        let Some(hook) = hook else {
+            return false;
+        };
+        if hook
+            .as_any()
+            .and_then(|any| any.downcast_ref::<Hook>())
+            .is_some_and(|hook| core::ptr::eq(&*hook.0, self))
+        {
+            return false;
+        }
+        *self.introduced.borrow_mut() = Some(hook);
+        // Like legacy's queued client, forward older calls before exposing the
+        // original client to resolution observers. Waiting for their replies
+        // would deadlock methods which themselves await this resolution.
+        let deferred = self.pending_calls.get() != 0;
+        self.local_deferred.set(deferred);
+        self.settled.set(!deferred);
+        !deferred
+    }
+
+    fn call_dispatched(&self) {
+        let remaining = self.pending_calls.get() - 1;
+        self.pending_calls.set(remaining);
+        if remaining == 0 && self.local_deferred.replace(false) {
+            self.settled.set(true);
+            let resolution = self.resolution.borrow_mut().take();
+            if let Some(changes) = self.metadata_changes.get() {
+                changes.notify();
+            }
+            if let Some(resolution) = resolution {
+                let _ = resolution.sender.send(Ok(()));
+            }
         }
     }
 }
@@ -359,7 +402,7 @@ impl<'id> ClientHooks<'id> {
     /// and builders keep exclusive ownership until their last owner drops.
     /// Configure this before exporting clients or attaching the coordinator.
     /// Panics if the hook inbox has already been shared.
-    pub(crate) fn with_message_pool(mut self, pool: capnp::message::SegmentPool) -> Self {
+    pub fn with_message_pool(mut self, pool: capnp::message::SegmentPool) -> Self {
         Rc::get_mut(&mut self.inbox)
             .expect("unpublished hook inbox")
             .message_pool = Some(pool);
@@ -613,6 +656,8 @@ impl<'id> ClientHooks<'id> {
                 direct: Cell::new(None),
                 direct_parent: RefCell::default(),
                 settled: Cell::new(!pending),
+                pending_calls: Cell::new(0),
+                local_deferred: Cell::new(false),
                 metadata_generation: Cell::new(0),
                 metadata_changes: std::cell::OnceCell::new(),
                 failure: RefCell::new(
@@ -651,7 +696,7 @@ impl<'id> ClientHooks<'id> {
     /// A retained response/pipeline may still own hooks and deliberately keeps
     /// those entries alive. No fallible release command is enqueued by Drop.
     pub fn collect(&mut self, graph: &mut impl Capabilities<'id>) {
-        self.synchronize(graph, |_| None, |_| None, |_| None, false, false);
+        self.synchronize(graph, |_| None, |_| None, |_| None, |_| None, false, false);
     }
 
     /// Release precisely the graph references whose final hosted owner dropped.
@@ -714,7 +759,7 @@ impl<'id> ClientHooks<'id> {
         graph: &mut G,
         metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
     ) {
-        self.synchronize(graph, metadata, |_| None, |_| None, true, false);
+        self.synchronize(graph, metadata, |_| None, |_| None, |_| None, true, false);
     }
 
     fn unlink_binding(&mut self, key: capntproto_rpc_engine::clients::Key<'id>, index: usize) {
@@ -759,17 +804,20 @@ impl<'id> ClientHooks<'id> {
             |owner| Some(metadata(owner)),
             source,
             changes,
+            |_| None,
             true,
             true,
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn synchronize<G: Capabilities<'id>>(
         &mut self,
         graph: &mut G,
         mut metadata: impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
         mut subscribe: impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
         mut changes: impl FnMut(&G::Owner) -> Option<Rc<MetadataChanges>>,
+        mut local: impl FnMut(&G::Owner) -> Option<Rc<dyn ClientHook>>,
         project_metadata: bool,
         bind_sources: bool,
     ) {
@@ -812,6 +860,7 @@ impl<'id> ClientHooks<'id> {
                     &mut metadata,
                     &mut subscribe,
                     &mut changes,
+                    &mut local,
                     project_metadata,
                     false,
                 );
@@ -841,6 +890,7 @@ impl<'id> ClientHooks<'id> {
                     &mut metadata,
                     &mut subscribe,
                     &mut changes,
+                    &mut local,
                     true,
                     bind_sources,
                 );
@@ -856,6 +906,7 @@ impl<'id> ClientHooks<'id> {
         metadata: &mut impl FnMut(&G::Owner) -> Option<EndpointMetadata>,
         subscribe: &mut impl FnMut(&G::Owner) -> Option<Rc<MetadataSource>>,
         changes: &mut impl FnMut(&G::Owner) -> Option<Rc<MetadataChanges>>,
+        local: &mut impl FnMut(&G::Owner) -> Option<Rc<dyn ClientHook>>,
         project_metadata: bool,
         bind_sources: bool,
     ) {
@@ -921,7 +972,20 @@ impl<'id> ClientHooks<'id> {
             }
         }
         if entry.pending {
-            Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled);
+            Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled, local);
+        } else if project_metadata && bind_sources && !endpoint.remote.get() {
+            // A generic collect can observe settlement before the hosted
+            // ownership refresh. That later refresh must still expose the
+            // original local authority, without revisiting stable imports.
+            if let Ok(capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. }) =
+                graph.inspect(&entry.client)
+            {
+                if endpoint.accept_local_resolution(local(owner)) {
+                    if let Some(changes) = endpoint.metadata_changes.get() {
+                        changes.notify();
+                    }
+                }
+            }
         }
         if let Some(subscription) = &entry.route_subscription {
             match graph
@@ -950,6 +1014,7 @@ impl<'id> ClientHooks<'id> {
         entry: &mut Entry<'id>,
         endpoint: &Endpoint,
         unsettled: &mut usize,
+        local: &mut impl FnMut(&G::Owner) -> Option<Rc<dyn ClientHook>>,
     ) {
         // Export inspection does not accept a call or mark the promise used.
         // A reflected resolution waits for its original-route loopback.
@@ -972,13 +1037,37 @@ impl<'id> ClientHooks<'id> {
                 })),
                 _ => Ok(()),
             };
+            // Only the settled graph route grants authority to expose its
+            // original local hook. Metadata and public hook brands cannot do so.
+            // Install it before waking resolution observers, preserving opaque
+            // membranes and allowing local authority to outlive this connection.
+            let resolved = if result.is_ok() && endpoint.introduced.borrow().is_none() {
+                match graph.inspect(&entry.client) {
+                    Ok(capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. }) => {
+                        local(owner)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let redirected = endpoint.accept_local_resolution(resolved);
             *endpoint.failure.borrow_mut() = result.as_ref().err().cloned();
 
-            endpoint.settled.set(true);
+            endpoint.settled.set(!endpoint.local_deferred.get());
             entry.pending = false;
             *unsettled -= 1;
             // Detach observer state before notification can invoke a waker.
-            let resolution = endpoint.resolution.borrow_mut().take();
+            let resolution = if endpoint.local_deferred.get() {
+                None
+            } else {
+                endpoint.resolution.borrow_mut().take()
+            };
+            if redirected {
+                if let Some(changes) = endpoint.metadata_changes.get() {
+                    changes.notify();
+                }
+            }
             if let Some(resolution) = resolution {
                 let _ = resolution.sender.send(result);
             }
@@ -1249,7 +1338,6 @@ pub struct Call {
     third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
     native_tail: Option<Rc<wire::server::NativeTail>>,
     credit: Option<Rc<admission::Credit>>,
-    endpoint: Option<Rc<Endpoint>>,
     interface: u64,
     method: u16,
     hints: CallHints,
@@ -1264,6 +1352,7 @@ enum CallParams {
     Request(crate::local::Params),
     OwnedRequest(Box<crate::local::Request>),
     Hook(Box<dyn ParamsHook>),
+    Published,
 }
 impl CallParams {
     fn owned_request(mut request: Box<crate::local::Request>) -> Self {
@@ -1289,6 +1378,7 @@ impl CallParams {
                             .map(crate::local::Params::capability_table)
                     })
             }),
+            Self::Published => None,
         }
     }
     fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
@@ -1305,6 +1395,7 @@ impl CallParams {
                             .and_then(crate::local::Params::single_capability_table)
                     })
             }),
+            Self::Published => None,
         }
     }
 
@@ -1326,6 +1417,7 @@ impl CallParams {
                             .and_then(crate::local::Params::prepared_call)
                     })
             }),
+            Self::Published => None,
         }
     }
     fn into_hook(self) -> Box<dyn ParamsHook> {
@@ -1333,6 +1425,7 @@ impl CallParams {
             Self::Request(request) => Box::new(request),
             Self::OwnedRequest(request) => request,
             Self::Hook(hook) => hook,
+            Self::Published => unreachable!("published parameters cannot be forwarded"),
         }
     }
     fn request_mut(&mut self) -> &mut crate::local::Params {
@@ -1342,13 +1435,15 @@ impl CallParams {
         }
     }
 }
-impl std::ops::Deref for CallParams {
-    type Target = dyn ParamsHook;
-    fn deref(&self) -> &Self::Target {
+impl ParamsHook for CallParams {
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         match self {
-            Self::Request(request) => request,
-            Self::OwnedRequest(request) => &**request,
-            Self::Hook(hook) => &**hook,
+            Self::Request(request) => request.get(),
+            Self::OwnedRequest(request) => ParamsHook::get(&**request),
+            Self::Hook(hook) => hook.get(),
+            Self::Published => Err(Error::failed(
+                "parameters released after wire publication".into(),
+            )),
         }
     }
 }
@@ -1448,17 +1543,20 @@ impl capnp::private::capability::RequestHook for Call {
 }
 impl Call {
     fn endpoint(&self) -> &Rc<Endpoint> {
-        self.endpoint
+        self._permit
+            .target
             .as_ref()
             .expect("target consumed after publication")
     }
+    fn dispatch_committed(&mut self) {
+        self._permit.release_target();
+    }
     fn publication_committed(&mut self) {
-        // The frozen wire question now owns the request. Like legacy's
-        // RpcRequest, release the destination independently of its reply.
-        self.endpoint.take();
-        if let CallParams::OwnedRequest(request) = &mut self.params {
-            request.publication_committed();
-        }
+        // The FIFO owns the bytes and the question owns descriptor grants.
+        // Like legacy RpcRequest::send_data, neither the destination nor the
+        // original parameter builder belongs to the pending reply.
+        self.dispatch_committed();
+        drop(core::mem::replace(&mut self.params, CallParams::Published));
     }
     #[inline(always)]
     fn can_send_directly(&self) -> bool {
@@ -1505,7 +1603,10 @@ impl Call {
         // Reserve before invoking a custom results hook, which may reenter or
         // close this connection. The guard rolls back even during unwinding.
         inbox.live_calls.set(inbox.live_calls.get() + 1);
-        let permit = Permit(Rc::downgrade(&inbox));
+        self.endpoint()
+            .pending_calls
+            .set(self.endpoint().pending_calls.get() + 1);
+        self._permit.inbox = Some(Rc::downgrade(&inbox));
         if let Some(credit) = &credit {
             self.results.retain_context(credit.clone());
         }
@@ -1520,7 +1621,6 @@ impl Call {
         if !matches!(self.params, CallParams::Request(_)) {
             self.shutdown = inbox.shutdown.clone();
         }
-        self._permit = permit;
         if let CallParams::Request(params) = &mut self.params {
             params.freeze_large_params();
         }
@@ -1529,7 +1629,7 @@ impl Call {
         Ok(inbox)
     }
 
-    fn into_request(self: Box<Self>) -> Box<crate::local::Request> {
+    fn into_request(mut self: Box<Self>) -> Box<crate::local::Request> {
         let CallParams::Request(request) = self.params else {
             unreachable!("unsent request")
         };
@@ -1541,7 +1641,7 @@ impl Call {
             self.interface,
             self.method,
             self.hints,
-            Hook(self.endpoint.unwrap(), self.credit),
+            Hook(self._permit.target.take().unwrap(), self.credit),
             context,
             self.third_party,
         ))
@@ -1587,6 +1687,8 @@ impl Call {
     pub fn hints(&self) -> CallHints {
         self.hints
     }
+    /// Read parameters before execution or wire publication. A published wire
+    /// call releases the original application storage independently of its reply.
     pub fn params(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         self.params.get()
     }
@@ -1631,7 +1733,6 @@ impl Call {
             credit,
             third_party: _,
             native_tail: _,
-            endpoint,
             interface,
             method,
             hints,
@@ -1639,9 +1740,9 @@ impl Call {
             results,
             mut completion,
             shutdown: _,
-            _permit,
+            mut _permit,
         } = self;
-        let operation = target.call_with_hints(
+        let mut operation = target.call_with_hints(
             interface,
             method,
             params.into_hook(),
@@ -1649,17 +1750,41 @@ impl Call {
             hints,
         );
         Promise::from_future(async move {
-            let result = operation.await;
+            let result = futures::future::poll_fn(|cx| {
+                let result = Pin::new(&mut operation).poll(cx);
+                _permit.release_target();
+                result
+            })
+            .await;
             completion.complete(result.clone());
-            drop((endpoint, _permit, credit));
+            drop((_permit, credit));
             result
         })
     }
 }
-struct Permit(Weak<Inbox>);
+struct Permit {
+    inbox: Option<Weak<Inbox>>,
+    target: Option<Rc<Endpoint>>,
+}
+impl Permit {
+    fn new(target: Rc<Endpoint>) -> Self {
+        Self {
+            inbox: None,
+            target: Some(target),
+        }
+    }
+    fn release_target(&mut self) {
+        if let Some(target) = self.target.take() {
+            if self.inbox.is_some() {
+                target.call_dispatched();
+            }
+        }
+    }
+}
 impl Drop for Permit {
     fn drop(&mut self) {
-        if let Some(inbox) = self.0.upgrade() {
+        self.release_target();
+        if let Some(inbox) = self.inbox.as_ref().and_then(Weak::upgrade) {
             inbox.live_calls.set(inbox.live_calls.get() - 1);
             // Admission refuses an exhausted quota synchronously; it has no
             // pending waiter to resume. The call's result/cancellation and the
@@ -1723,7 +1848,6 @@ impl Hook {
             credit: self.1.clone(),
             third_party,
             native_tail: None,
-            endpoint: Some(self.0.clone()),
             interface,
             method,
             hints,
@@ -1731,7 +1855,7 @@ impl Hook {
             results,
             completion,
             shutdown: Shutdown::new(),
-            _permit: Permit(Weak::new()),
+            _permit: Permit::new(self.0.clone()),
         });
         call.enqueue_owned(self.0.inbox.upgrade())
     }
@@ -1765,9 +1889,18 @@ impl Hook {
                 futures::future::Either::Right((result, _)) => result
                     .map_err(crate::canceled_to_error)
                     .and_then(core::convert::identity),
-                futures::future::Either::Left((reason, _)) => Err(reason.unwrap_or_else(|_| {
-                    Error::disconnected("scoped ClientHook driver dropped".into())
-                })),
+                futures::future::Either::Left((reason, resolved)) => {
+                    if !endpoint.remote.get() && endpoint.introduced.borrow().is_some() {
+                        // Teardown drops older queued calls before revealing a
+                        // known local authority. That authority survives its
+                        // former connection, including deferred resolution.
+                        resolved.await.map_err(crate::canceled_to_error)?
+                    } else {
+                        Err(reason.unwrap_or_else(|_| {
+                            Error::disconnected("scoped ClientHook driver dropped".into())
+                        }))
+                    }
+                }
             };
             result?;
             let forwarded = endpoint.introduced.borrow().clone();
@@ -1785,6 +1918,9 @@ impl Hook {
     }
     #[inline(always)]
     fn introduced(&self) -> Option<Box<dyn ClientHook>> {
+        if self.0.local_deferred.get() {
+            return None;
+        }
         if let Some(client) = self.0.introduced.borrow().as_ref() {
             return Some(client.add_ref());
         }
@@ -1943,7 +2079,6 @@ impl ClientHook for Hook {
                 third_party: None,
                 native_tail: None,
                 credit,
-                endpoint: Some(self.0.clone()),
                 interface,
                 method,
                 hints,
@@ -1953,7 +2088,7 @@ impl ClientHook for Hook {
                 shutdown: inbox
                     .as_ref()
                     .map_or_else(Shutdown::new, |inbox| inbox.shutdown.clone()),
-                _permit: Permit(Weak::new()),
+                _permit: Permit::new(self.0.clone()),
             },
         );
         capability::Request::new(call)
@@ -2031,7 +2166,21 @@ impl ClientHook for Hook {
             let ready = self.wait_for_resolution(false);
             Some(Promise::from_future(async move {
                 ready.await?;
-                Ok(Box::new(Hook(endpoint, None)) as Box<dyn ClientHook>)
+                // A generic collect can publish graph readiness before the
+                // hosted refresh supplies a local hook. That hook must still
+                // wait for older calls before this waiter exposes it directly.
+                if endpoint.local_deferred.get() {
+                    Hook(endpoint.clone(), None)
+                        .wait_for_resolution(false)
+                        .await?;
+                }
+                // A reflected local resolution already owns its next hook.
+                // Return it directly rather than boxing another scoped proxy.
+                let resolved = endpoint.introduced.borrow().clone();
+                Ok(match resolved {
+                    Some(client) => client.add_ref(),
+                    None => Box::new(Hook(endpoint, None)) as Box<dyn ClientHook>,
+                })
             }))
         }
     }

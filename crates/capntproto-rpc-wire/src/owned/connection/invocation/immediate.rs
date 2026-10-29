@@ -190,7 +190,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             frame,
             scratch,
             output,
-            crate::inbound::full::OriginalMetadata::single_capability(
+            crate::inbound::full::OriginalMetadata::call(
                 (method.interface, method.method),
                 self.allow_answer_handoff,
                 id,

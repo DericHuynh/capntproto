@@ -799,6 +799,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .message_capabilities
             .buffer::<_, CAPS>(count, || reflection::Descriptor::None)
             .ok_or(Error::Input(super::super::Error::Capacity))?;
+        // As in legacy Question::param_exports, no parameter frame is needed
+        // when its exact refund obligation fits inline. Multiple grants keep
+        // the retained frame, including repeated grants of the same export.
+        let mut param_export = Some(None);
         for index in 0..count {
             let Some(key) = keys[index] else { continue };
             let client = self.runtime.retain_key(key).map_err(Error::Graph)?;
@@ -842,6 +846,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
             self.runtime.release(client);
             let grant = grant.map_err(Error::Exported)?;
+            param_export = if param_export == Some(None) {
+                Some(Some(grant.id()))
+            } else {
+                None
+            };
             staged[index] = reflection::Descriptor::Grant(grant.id(), grant.is_promise(), attached);
             let owner = batch.pending_owner(grant.id()).and_then(|client| {
                 match self.runtime.inspect(client) {
@@ -898,6 +907,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 path: pipeline::Path::new(&fields[..length]),
             },
         };
+        let mut method = (0, 0);
         let frame = invocation
             .frame
             .build_from(messages, minimum, options, |source, builder| {
@@ -905,13 +915,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     unreachable!()
                 };
                 let source = source?;
+                method = (source.get_interface_id(), source.get_method_id());
                 let root = builder.try_init_root::<Message>()?;
                 let mut call = root.into_field(Message::CALL).init()?;
                 call.scalar(WireCall::QUESTION_ID)
                     .set(reservation.id().to_wire());
-                call.scalar(WireCall::INTERFACE_ID)
-                    .set(source.get_interface_id());
-                call.scalar(WireCall::METHOD_ID).set(source.get_method_id());
+                call.scalar(WireCall::INTERFACE_ID).set(method.0);
+                call.scalar(WireCall::METHOD_ID).set(method.1);
                 call.scalar(WireCall::NO_PROMISE_PIPELINING)
                     .set(source.get_no_promise_pipelining() && !pipeline_only);
                 call.scalar(WireCall::ONLY_PROMISE_PIPELINE)
@@ -962,23 +972,49 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .copy_with_capabilities(source.get_params()?.get_content(), mapping)
             })
             .map_err(Error::Input)?;
-        let question = Question::send_granting_reflected_using(
-            reservation,
-            batch,
-            messages,
-            frame,
-            scratch,
-            output,
-            self.writer_policy == WriterPolicy::Checked,
-            |descriptor, index| {
-                reflection::check(
-                    staged
-                        .get(index)
-                        .and_then(reflection::Descriptor::reflected),
-                    descriptor,
-                )
-            },
-        )
+        let question = if let Some(export) = param_export.filter(|_| !redirected && !pipeline_only)
+        {
+            Question::send_granting_compact(
+                reservation,
+                batch,
+                messages,
+                frame,
+                scratch,
+                output,
+                crate::inbound::full::OriginalMetadata::call(
+                    method,
+                    self.allow_answer_handoff && !pipeline_only,
+                    export,
+                ),
+                self.writer_policy == WriterPolicy::Checked,
+                |descriptor, index| {
+                    reflection::check(
+                        staged
+                            .get(index)
+                            .and_then(reflection::Descriptor::reflected),
+                        descriptor,
+                    )
+                },
+            )
+        } else {
+            Question::send_granting_reflected_using(
+                reservation,
+                batch,
+                messages,
+                frame,
+                scratch,
+                output,
+                self.writer_policy == WriterPolicy::Checked,
+                |descriptor, index| {
+                    reflection::check(
+                        staged
+                            .get(index)
+                            .and_then(reflection::Descriptor::reflected),
+                        descriptor,
+                    )
+                },
+            )
+        }
         .map_err(|error| Error::Input(super::super::Error::Output(error)))?;
         let key = question.key();
         self.ledgers

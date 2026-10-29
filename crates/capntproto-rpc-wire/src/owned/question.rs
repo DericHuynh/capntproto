@@ -248,8 +248,8 @@ impl<'pool, 'q> Question<'pool, 'q> {
             local: Some(local),
         })
     }
-    /// The private one-capability encoder has already captured the exact
-    /// outgoing method and export. Like C++ Question::paramExports, retain that
+    /// The private encoder has already captured the exact outgoing method and
+    /// zero/single export. Like C++ Question::paramExports, retain that
     /// metadata without pinning the serialized request through Return. The FIFO
     /// remains the affine frame owner through partial writes and physical flush.
     #[allow(clippy::too_many_arguments)]

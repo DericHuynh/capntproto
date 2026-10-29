@@ -62,10 +62,28 @@ impl<'id> ClientHooks<'id> {
         local: impl FnMut(&S) -> EndpointMetadata,
         local_changes: impl FnMut(&S) -> Option<Rc<MetadataChanges>>,
     ) {
+        self.collect_wire_with_local(driver, subscribe, local, local_changes, |_| None);
+    }
+
+    pub(crate) fn collect_wire_with_local<
+        I,
+        A,
+        P: Copy + Eq,
+        S,
+        const CAPS: usize,
+        const PATH: usize,
+    >(
+        &mut self,
+        driver: &mut Driver<'_, 'id, '_, I, A, P, S, CAPS, PATH>,
+        subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
+        local: impl FnMut(&S) -> EndpointMetadata,
+        local_changes: impl FnMut(&S) -> Option<Rc<MetadataChanges>>,
+        local_hook: impl FnMut(&S) -> Option<Rc<dyn ClientHook>>,
+    ) {
         if !self.ownership_ready(&driver.capabilities()) {
             return;
         }
-        self.synchronize_wire(driver, subscribe, local, local_changes);
+        self.synchronize_wire(driver, subscribe, local, local_changes, local_hook);
     }
     #[inline(never)]
     fn synchronize_wire<I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>(
@@ -74,6 +92,7 @@ impl<'id> ClientHooks<'id> {
         mut subscribe: impl FnMut(&I) -> Option<Rc<MetadataSource>>,
         mut local: impl FnMut(&S) -> EndpointMetadata,
         mut local_changes: impl FnMut(&S) -> Option<Rc<MetadataChanges>>,
+        mut local_hook: impl FnMut(&S) -> Option<Rc<dyn ClientHook>>,
     ) {
         let (mut graph, ledgers) = driver.split_graph();
         let imports = &ledgers.imports;
@@ -108,6 +127,12 @@ impl<'id> ClientHooks<'id> {
                 | Route::Vine(server)
                 | Route::Capability(Endpoint::Failed { owner: server, .. }) => {
                     local_changes(server)
+                }
+                _ => None,
+            },
+            |route| match route {
+                Route::Capability(Endpoint::Local(server)) | Route::Vine(server) => {
+                    local_hook(server)
                 }
                 _ => None,
             },

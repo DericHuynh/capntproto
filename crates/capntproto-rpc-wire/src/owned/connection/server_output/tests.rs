@@ -6,6 +6,166 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn generic_calls_keep_only_zero_or_single_grant_metadata_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        for native in [false, true] {
+            for grants in 0..=2 {
+                for canceled in [false, true] {
+                    with_driver(|mut driver, messages| {
+                        if native {
+                            driver.use_native_writer();
+                        }
+                        let imported = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
+                        let remote = driver.bind_import(&imported).unwrap();
+                        driver.release_import(imported);
+                        let local = driver
+                            .runtime
+                            .endpoint(binding::Route::local(73), clients::Location::Local)
+                            .unwrap_or_else(|_| panic!("local"));
+                        let caps = [
+                            Some(if grants >= 1 { &local } else { &remote }),
+                            Some(if grants >= 2 { &local } else { &remote }),
+                        ];
+                        let task = driver
+                            .enqueue_dynamic(
+                                &remote,
+                                calls::DynamicCall {
+                                    interface: 7,
+                                    method: 9,
+                                    ..Default::default()
+                                },
+                                &caps,
+                                messages,
+                                512,
+                                Default::default(),
+                                |content| content.set_capability_index(0),
+                            )
+                            .unwrap();
+                        let mut blocked = messages::Queue::<()>::new(&mut []).unwrap();
+                        assert!(driver
+                            .send_invocation(
+                                messages,
+                                &mut blocked,
+                                512,
+                                Default::default(),
+                                &mut [0; 8]
+                            )
+                            .is_err());
+                        let mut slots = [None];
+                        let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+                        let sent = driver
+                            .send_invocation(
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                            )
+                            .unwrap()
+                            .unwrap();
+                        assert_eq!(sent.task, task);
+                        let mut exports = [None; 2];
+                        drain(&mut queue, messages, |root| {
+                            let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                                panic!("Call")
+                            };
+                            let call = call.unwrap();
+                            assert_eq!((call.get_interface_id(), call.get_method_id()), (7, 9));
+                            for (index, descriptor) in call
+                                .get_params()
+                                .unwrap()
+                                .get_cap_table()
+                                .unwrap()
+                                .iter()
+                                .enumerate()
+                            {
+                                if let rpc_capnp::cap_descriptor::SenderHosted(id) =
+                                    descriptor.which().unwrap()
+                                {
+                                    exports[index] = Some(id);
+                                }
+                            }
+                        });
+                        assert_eq!(exports.iter().flatten().count(), grants);
+                        // Six fixed message cells are available. The multi-grant
+                        // fallback retains exactly one encoded parameter frame;
+                        // zero/single grants leave every cell reusable before Return.
+                        let available = if grants == 2 { 5 } else { 6 };
+                        let mut held = [None, None, None, None, None, None];
+                        for slot in &mut held[..available] {
+                            *slot = Some(messages.reserve(1024).unwrap());
+                        }
+                        assert!(messages.reserve(1024).is_err());
+                        for writer in held.into_iter().flatten() {
+                            messages.discard(writer);
+                        }
+                        if canceled {
+                            driver.cancel(sent.question).unwrap();
+                        }
+                        let wrong = Frame::build(messages, 128, Default::default(), |builder| {
+                            calls::acknowledge(
+                                builder,
+                                AnswerId::from_wire(sent.question.id().to_wire() + 1),
+                            )
+                        })
+                        .unwrap();
+                        let rejected = driver
+                            .receive(wrong, messages, &mut [0; 8], |_| (), || 0)
+                            .err()
+                            .expect("unknown Return");
+                        rejected.frame.release(messages);
+                        for id in exports.into_iter().flatten() {
+                            assert!(driver
+                                .ledgers
+                                .exports
+                                .lookup(ExportId::from_wire(id))
+                                .is_some());
+                        }
+                        let reply = Frame::build(messages, 128, Default::default(), |builder| {
+                            let mut returned = builder
+                                .try_init_root::<Message>()?
+                                .into_field(Message::RETURN)
+                                .init()?;
+                            returned
+                                .scalar(Return::ANSWER_ID)
+                                .set(sent.question.id().to_wire());
+                            returned.scalar(Return::RELEASE_PARAM_CAPS).set(true);
+                            returned.scalar(Return::NO_FINISH_NEEDED).set(true);
+                            returned.field(Return::RESULTS).init()?;
+                            Ok(())
+                        })
+                        .unwrap();
+                        driver
+                            .receive(reply, messages, &mut [0; 8], |_| (), || 0)
+                            .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                        if canceled {
+                            assert!(driver.drain_canceled_response(messages));
+                        } else {
+                            let response = driver.take_response(sent.question).unwrap();
+                            driver.release_response(response, messages);
+                        }
+                        for id in exports.into_iter().flatten() {
+                            assert!(
+                                driver
+                                    .ledgers
+                                    .exports
+                                    .lookup(ExportId::from_wire(id))
+                                    .is_none(),
+                                "refund every staged grant exactly once"
+                            );
+                        }
+                        driver.runtime.release(local);
+                        driver.runtime.release(remote);
+                        close(driver, messages, &mut queue);
+                    });
+                }
+            }
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn mixed_reflected_descriptors_preserve_routes_and_retry_without_allocating() {
     let measured = allocation_counter::measure(|| {
         for native in [false, true] {

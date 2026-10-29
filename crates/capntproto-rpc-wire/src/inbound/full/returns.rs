@@ -61,7 +61,7 @@ impl<'m> PreparedReturn<'m> {
     }
 }
 
-/// The private one-capability encoder's optional export and Return policy.
+/// A private Call encoder's zero/single export and Return policy.
 #[derive(Clone, Copy)]
 pub(crate) struct OriginalMetadata {
     method: (u64, u16),
@@ -70,14 +70,10 @@ pub(crate) struct OriginalMetadata {
     export: Option<ExportId>,
 }
 impl OriginalMetadata {
-    // Only the private single-capability encoder constructs this metadata. Its
-    // immutable Call contains this exact method, handoff policy and optional export;
+    // Only private encoders construct this metadata. Their immutable Call
+    // contains this exact method, handoff policy and at most one export grant;
     // ordinary publication still validates the complete frame and grant batch.
-    pub(crate) fn single_capability(
-        method: (u64, u16),
-        allows_handoff: bool,
-        export: Option<ExportId>,
-    ) -> Self {
+    pub(crate) fn call(method: (u64, u16), allows_handoff: bool, export: Option<ExportId>) -> Self {
         Self {
             method,
             redirected: false,
