@@ -81,7 +81,21 @@ impl<'id> ForeignPromises<'id> {
     where
         G: Capabilities<'id, Peer = P, Owner = Route<'p, P, Rc<dyn ClientHook>, H>>,
     {
-        let original: Rc<dyn ClientHook> = Rc::from(hook.add_ref());
+        // Like legacy exports_by_cap, consult existing ownership before creating
+        // another graph endpoint, hook owner or promise-resolution observer.
+        // The original source keeps its dispatcher ordering; an independent
+        // exported promise's forwarding route would bypass that source.
+        if let Some(client) = graph
+            .retain_exported(|| hook_identity(hook))
+            .map_err(graph_error)?
+        {
+            return Ok(client);
+        }
+        let mut original = hook.add_ref();
+        while let Some(resolved) = original.get_resolved() {
+            original = resolved;
+        }
+        let original: Rc<dyn ClientHook> = Rc::from(original);
         let Some(future) = original.when_more_resolved() else {
             let original = self
                 .introductions
@@ -357,27 +371,27 @@ fn graph_error(error: clients::Error) -> Error {
 pub(crate) fn export_identity<P, const H: usize>(
     route: &Route<'_, P, Rc<dyn ClientHook>, H>,
 ) -> Option<capntproto_rpc_engine::exports::Identity> {
-    fn identify(hook: &dyn ClientHook) -> Option<capntproto_rpc_engine::exports::Identity> {
-        let any = hook.as_any()?;
-        let identity = if let Some(local) = any.downcast_ref::<crate::local::Identity>() {
-            (1, local.get())
-        } else {
-            let queued = any.downcast_ref::<crate::queued::Client>()?;
-            (2, queued.get_ptr())
-        };
-        // Match legacy's normalization before exports_by_cap lookup, including
-        // a queued client which has already resolved back to a local server.
-        if let Some(next) = hook.get_resolved() {
-            return identify(&*next);
-        }
-        Some(capntproto_rpc_engine::exports::Identity::for_owner(
-            identity.0, identity.1,
-        ))
-    }
     match route {
-        Route::Capability(Endpoint::Local(hook)) => identify(&**hook),
+        Route::Capability(Endpoint::Local(hook)) => hook_identity(&**hook),
         _ => None,
     }
+}
+fn hook_identity(hook: &dyn ClientHook) -> Option<capntproto_rpc_engine::exports::Identity> {
+    let any = hook.as_any()?;
+    let identity = if let Some(local) = any.downcast_ref::<crate::local::Identity>() {
+        (1, local.get())
+    } else {
+        let queued = any.downcast_ref::<crate::queued::Client>()?;
+        (2, queued.get_ptr())
+    };
+    // Match legacy's normalization before exports_by_cap lookup, including
+    // a queued client which has already resolved back to a local server.
+    if let Some(next) = hook.get_resolved() {
+        return hook_identity(&*next);
+    }
+    Some(capntproto_rpc_engine::exports::Identity::for_owner(
+        identity.0, identity.1,
+    ))
 }
 /// Metadata from the original local hook, including imported failure details.
 /// Descriptor ownership is queried through the policy hook, never its inner cap.

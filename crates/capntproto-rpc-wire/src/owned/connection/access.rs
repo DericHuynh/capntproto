@@ -13,7 +13,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     }
     /// Transitions emit their exact readiness effects inside the dispatcher.
     pub fn capabilities(&mut self) -> Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH> {
-        clients::Access::new(&mut self.runtime)
+        clients::Access::with_export_sources(&mut self.runtime, Some(&self.ledgers.exports))
     }
     /// Inspect authoritative import metadata while editing capability bindings.
     #[allow(clippy::type_complexity)]
@@ -23,7 +23,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         Scope<'_, 'pool, 'id, 's, I, P, S, CAPS, PATH>,
         &connection::Connection<'id, 's, I, clients::Client<'id>, Answer<'pool, 'id, A, CAPS>>,
     ) {
-        (clients::Access::new(&mut self.runtime), &self.ledgers)
+        (
+            clients::Access::with_export_sources(&mut self.runtime, Some(&self.ledgers.exports)),
+            &self.ledgers,
+        )
     }
 }
 
@@ -37,7 +40,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         answers::Execution<'_, 'id, 's, Answer<'pool, 'id, A, CAPS>>,
     ) {
         (
-            clients::Access::new(&mut self.runtime),
+            clients::Access::with_export_sources(&mut self.runtime, Some(&self.ledgers.exports)),
             answers::Execution::new(&mut self.ledgers.answers),
         )
     }
@@ -171,7 +174,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         exports::Batch<'_, 'id, 's, clients::Client<'id>>,
     ) {
         (
-            clients::Access::new(&mut self.runtime),
+            clients::Access::with_export_sources(&mut self.runtime, None),
             self.ledgers.exports.batch(),
         )
     }

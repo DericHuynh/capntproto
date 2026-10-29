@@ -1,18 +1,66 @@
 //! A borrowed capability scope exposes transitions without exposing the
 //! owning dispatcher for replacement or its raw graph for unordered mutation.
 use super::*;
-pub struct Access<'a, G> {
+pub struct Access<'a, G, L = ()> {
     inner: &'a mut G,
+    exports: L,
 }
 impl<'a, G> Access<'a, G> {
     pub fn new(inner: &'a mut G) -> Self {
-        Self { inner }
+        Self { inner, exports: () }
+    }
+    /// Lend the authoritative export registry alongside restricted graph
+    /// mutation. None is used while an exclusive publication batch owns it.
+    pub fn with_export_sources<'exports, 'id, 's>(
+        inner: &'a mut G,
+        exports: Option<&'a crate::exports::Exports<'exports, 's, Client<'id>>>,
+    ) -> Access<'a, G, Option<&'a crate::exports::Exports<'exports, 's, Client<'id>>>> {
+        Access { inner, exports }
     }
 }
-impl<G> super::store::sealed::Sealed for Access<'_, G> {}
-impl<'id, G: Capabilities<'id>> Capabilities<'id> for Access<'_, G> {
+mod source_sealed {
+    pub trait Sealed {}
+}
+/// Sealed, borrowed source inspection. It neither owns graph references nor
+/// publishes grants, and adds no dynamic dispatch to a capability scope.
+pub trait ExportSources<'id>: source_sealed::Sealed {
+    fn source(
+        &self,
+        identify: impl FnOnce() -> Option<crate::exports::Identity>,
+    ) -> Option<Key<'id>>;
+}
+impl source_sealed::Sealed for () {}
+impl<'id> ExportSources<'id> for () {
+    fn source(&self, _: impl FnOnce() -> Option<crate::exports::Identity>) -> Option<Key<'id>> {
+        None
+    }
+}
+impl source_sealed::Sealed for Option<&crate::exports::Exports<'_, '_, Client<'_>>> {}
+impl<'id> ExportSources<'id> for Option<&crate::exports::Exports<'_, '_, Client<'id>>> {
+    fn source(
+        &self,
+        identify: impl FnOnce() -> Option<crate::exports::Identity>,
+    ) -> Option<Key<'id>> {
+        self.and_then(|exports| exports.canonical_source(identify))
+    }
+}
+impl<G, L> super::store::sealed::Sealed for Access<'_, G, L> {}
+impl<'id, G: Capabilities<'id>, L: ExportSources<'id>> Capabilities<'id> for Access<'_, G, L> {
     type Owner = G::Owner;
     type Peer = G::Peer;
+    fn retain_exported(
+        &mut self,
+        identify: impl FnOnce() -> Option<crate::exports::Identity>,
+    ) -> Result<Option<Client<'id>>, Error> {
+        match self.exports.source(identify) {
+            Some(key) => match self.inner.retain_key(key) {
+                Ok(client) => Ok(Some(client)),
+                Err(Error::Stale) => Ok(None),
+                Err(error) => Err(error),
+            },
+            None => Ok(None),
+        }
+    }
     fn resources(&self) -> Resources {
         self.inner.resources()
     }
@@ -112,8 +160,8 @@ impl<'id, G: Capabilities<'id>> Capabilities<'id> for Access<'_, G> {
     }
 }
 
-impl<'id, 's, 'tasks, T: 's, P: Copy + Eq + 's, C, G: dispatch::GraphStorage<'id, 's, T, P>>
-    Access<'_, dispatch::Runtime<'id, 's, 'tasks, T, P, C, G>>
+impl<'id, 's, 'tasks, T: 's, P: Copy + Eq + 's, C, G: dispatch::GraphStorage<'id, 's, T, P>, L>
+    Access<'_, dispatch::Runtime<'id, 's, 'tasks, T, P, C, G>, L>
 {
     pub fn retain(&mut self, client: &Client<'id>) -> Result<Client<'id>, Error> {
         self.inner.retain_key(client.key())

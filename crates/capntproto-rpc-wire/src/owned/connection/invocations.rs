@@ -395,9 +395,14 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             )));
         }
         if matches!(entry.stage, Stage::Running | Stage::Completed(_)) {
-            if let Some(client) =
-                resolve(task, path, &mut clients::Access::new(&mut driver.runtime))?
-            {
+            if let Some(client) = resolve(
+                task,
+                path,
+                &mut clients::Access::with_export_sources(
+                    &mut driver.runtime,
+                    Some(&driver.ledgers.exports),
+                ),
+            )? {
                 return Ok(client);
             }
         }

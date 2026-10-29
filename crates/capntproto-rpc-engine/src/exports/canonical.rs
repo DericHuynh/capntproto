@@ -47,7 +47,7 @@ impl Identity {
         // Fold high bits down: aligned hosted pointers otherwise all collide
         // in a small subset of power-of-two slot arrays.
         let hash = hash ^ (hash >> 32);
-        (hash % capacity as u64) as usize
+        (hash as usize) % capacity
     }
 }
 impl From<crate::clients::Key<'_>> for Identity {
@@ -57,6 +57,7 @@ impl From<crate::clients::Key<'_>> for Identity {
 }
 pub(super) struct Entry {
     identity: Identity,
+    source: crate::clients::Raw,
     previous: Link,
     next: Link,
 }
@@ -68,10 +69,11 @@ fn index(link: NonZeroU32) -> usize {
 }
 
 impl<T> Exports<'_, '_, T> {
-    fn insert_canonical(&mut self, index: usize, identity: Identity) {
+    fn insert_canonical(&mut self, index: usize, identity: Identity, source: crate::clients::Raw) {
         debug_assert!(self.slots[index].canonical.is_none());
         self.slots[index].canonical = Some(Entry {
             identity,
+            source,
             previous: None,
             next: None,
         });
@@ -139,6 +141,30 @@ impl<T> Exports<'_, '_, T> {
     }
 }
 
+impl<'g> Exports<'_, '_, crate::clients::Client<'g>> {
+    /// The original, weak source of an already-published export. In particular,
+    /// this is not an exported promise's independent frozen forwarding route.
+    /// Retain through the graph before use so stale generations cannot alias a
+    /// replacement node. This lookup creates no outgoing grant.
+    pub fn canonical_source(
+        &self,
+        identify: impl FnOnce() -> Option<Identity>,
+    ) -> Option<crate::clients::Key<'g>> {
+        // Avoid even owner normalization/RTTI when no export can be reused.
+        if self.canonical_count == 0 {
+            return None;
+        }
+        let index = self.find_canonical(identify()?)?;
+        let slot = &self.slots[index];
+        if !matches!(slot.entry.as_ref()?.state, State::Live(_)) {
+            return None;
+        }
+        Some(crate::clients::Key::from_raw(
+            slot.canonical.as_ref()?.source,
+        ))
+    }
+}
+
 impl<'e, 'g> Batch<'_, 'e, '_, crate::clients::Client<'g>> {
     /// Reuse a staged or published export of this exact graph identity. The
     /// grant participates in this batch's descriptor counts and rollback, just
@@ -167,22 +193,25 @@ impl<'e, 'g> Batch<'_, 'e, '_, crate::clients::Client<'g>> {
         source: impl Into<Identity>,
         value: crate::clients::Client<'g>,
     ) -> Result<Grant<'e>, Rejected<crate::clients::Client<'g>>> {
+        let original = value.key().raw();
         let grant = self.export(value)?;
         self.exports
-            .insert_canonical(grant.key.index, source.into());
+            .insert_canonical(grant.key.index, source.into(), original);
         Ok(grant)
     }
 
     /// As `export_canonical`, with one explicit Resolve obligation shared by
-    /// every subsequent descriptor for this promise.
+    /// every subsequent descriptor for this promise. `original` is the producer
+    /// source, not the independent exported forwarding promise in `value`.
     pub fn export_canonical_promise(
         &mut self,
         source: impl Into<Identity>,
+        original: crate::clients::Key<'g>,
         value: crate::clients::Client<'g>,
     ) -> Result<Grant<'e>, Rejected<crate::clients::Client<'g>>> {
         let grant = self.export_promise(value)?;
         self.exports
-            .insert_canonical(grant.key.index, source.into());
+            .insert_canonical(grant.key.index, source.into(), original.raw());
         Ok(grant)
     }
 }

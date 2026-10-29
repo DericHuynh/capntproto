@@ -13,14 +13,14 @@ pub use events::{
 mod access;
 pub mod dispatch;
 mod store;
-pub use access::Access;
+pub use access::{Access, ExportSources};
 pub use store::Capabilities;
 
 type Brand<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct Raw {
-    index: usize,
-    generation: u64,
+pub(crate) struct Raw {
+    pub(crate) index: usize,
+    pub(crate) generation: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Key<'id> {
@@ -30,6 +30,15 @@ pub struct Key<'id> {
 impl Key<'_> {
     pub(crate) fn export_identity(self) -> crate::exports::Identity {
         crate::exports::Identity::new(self.raw.index, self.raw.generation)
+    }
+    pub(crate) fn raw(self) -> Raw {
+        self.raw
+    }
+    pub(crate) fn from_raw(raw: Raw) -> Self {
+        Self {
+            raw,
+            brand: PhantomData,
+        }
     }
 }
 #[derive(Debug)]

@@ -1656,6 +1656,33 @@ fn dispatch_backpressure_retries_oldest_call_without_duplicating_it() {
 // It is legal for a membrane to preserve identity diagnostics. It must not
 // accidentally confer access to a bypass around its interception policy.
 pub(super) struct Opaque(pub(super) Box<dyn ClientHook>);
+
+#[test]
+fn resolved_parameter_clients_retain_same_bridge_routes_without_unwrapping_opaque_hooks() {
+    clients::with_growing_graph::<u32, u8, _>(
+        0,
+        2,
+        clients::NotificationGrowth::bounded(2, 8),
+        |graph| {
+            let route = graph.endpoint(7, Location::Remote(1)).unwrap();
+            let mut hooks = ClientHooks::new(2, 2);
+            let client = hooks.export_client(graph, &route).unwrap();
+            let queued = crate::queued::Client::new(None);
+            crate::queued::ClientInner::resolve(&queued.inner, Ok(client.hook.add_ref()));
+            let retained = hooks.try_retain(graph, &queued).unwrap().unwrap();
+            assert_eq!(retained.key(), route.key());
+            graph.release(retained);
+            let opaque = Opaque(queued.add_ref());
+            assert!(hooks.try_retain(graph, &opaque).unwrap().is_none());
+            drop((opaque, queued, client));
+            hooks.close(graph, Error::disconnected("done".into()));
+            graph.release(route);
+            assert_eq!(graph.take_retired(), Some(7));
+            assert!(graph.is_empty());
+        },
+    )
+    .unwrap();
+}
 impl ClientHook for Opaque {
     fn add_ref(&self) -> Box<dyn ClientHook> {
         Box::new(Self(self.0.add_ref()))

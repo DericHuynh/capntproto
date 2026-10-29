@@ -2,6 +2,86 @@ use super::*;
 use crate::clients::{self, Location};
 
 #[test]
+fn empty_and_absent_source_views_skip_owner_identification() {
+    use clients::Capabilities;
+    clients::with_graph(
+        &mut [],
+        clients::NotificationStorage {
+            listeners: &mut [],
+            subscriptions: &mut [],
+        },
+        |graph: &mut clients::Graph<'_, '_, u8, u8>| {
+            let mut bare = clients::Access::new(&mut *graph);
+            assert!(bare
+                .retain_exported(|| panic!("an absent index cannot use an owner identity"))
+                .unwrap()
+                .is_none());
+            with_exports(&mut [Slot::EMPTY], |exports| {
+                let mut access = clients::Access::with_export_sources(graph, Some(&*exports));
+                assert!(access
+                    .retain_exported(|| panic!("an empty index cannot use an owner identity"))
+                    .unwrap()
+                    .is_none());
+            })
+            .unwrap();
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn borrowed_sources_use_original_identity_and_reject_stale_graph_generations() {
+    let counts = allocation_counter::measure(|| {
+        clients::with_graph(
+            &mut [const { clients::Slot::EMPTY }; 2],
+            clients::NotificationStorage {
+                listeners: &mut [],
+                subscriptions: &mut [],
+            },
+            |graph: &mut clients::Graph<'_, '_, u8, u8>| {
+                let source = graph.promise(&mut None).unwrap();
+                let source_key = source.key();
+                let independent = graph.promise(&mut None).unwrap();
+                let independent_key = independent.key();
+                with_exports(&mut [Slot::EMPTY], |exports| {
+                    let identity = Identity::for_owner(1, 17);
+                    let mut batch = exports.batch();
+                    let grant = batch
+                        .export_canonical_promise(identity, source_key, independent)
+                        .unwrap();
+                    batch.commit();
+                    let mut access = clients::Access::with_export_sources(graph, Some(&*exports));
+                    use clients::Capabilities;
+                    let retained = access.retain_exported(|| Some(identity)).unwrap().unwrap();
+                    assert_eq!(retained.key(), source_key);
+                    assert_ne!(
+                        retained.key(),
+                        independent_key,
+                        "the independent export forwarding route must not bypass original ordering"
+                    );
+                    access.release(retained);
+                    graph.release(source);
+                    let replacement = graph.endpoint(9, Location::Local).unwrap();
+                    assert_ne!(replacement.key(), source_key);
+                    let mut access = clients::Access::with_export_sources(graph, Some(&*exports));
+                    assert!(
+                        access.retain_exported(|| Some(identity)).unwrap().is_none(),
+                        "a stale weak source must not retain the replacement generation"
+                    );
+                    graph.release(exports.release(grant.id(), 1).unwrap().unwrap());
+                    graph.release(replacement);
+                    assert_eq!(graph.take_retired(), Some(9));
+                })
+                .unwrap();
+                assert!(graph.is_empty());
+            },
+        )
+        .unwrap();
+    });
+    assert_eq!(counts.count_total, 0);
+}
+
+#[test]
 fn owner_namespaces_and_graph_generations_are_distinct() {
     with_exports(&mut [const { Slot::EMPTY }; 4], |exports| {
         let identities = [
@@ -13,7 +93,14 @@ fn owner_namespaces_and_graph_generations_are_distinct() {
         for (i, identity) in identities.iter().copied().enumerate() {
             let mut batch = exports.batch();
             let grant = batch.export(i).unwrap();
-            batch.exports.insert_canonical(grant.key.index, identity);
+            batch.exports.insert_canonical(
+                grant.key.index,
+                identity,
+                clients::Raw {
+                    index: 0,
+                    generation: 1,
+                },
+            );
             batch.commit();
         }
         for (i, identity) in identities.iter().copied().enumerate() {
@@ -45,7 +132,14 @@ fn collisions_release_rollback_and_slot_reuse_do_not_allocate() {
                 for (i, identity) in identities.iter().copied().enumerate() {
                     let mut batch = exports.batch();
                     let grant = batch.export(i).unwrap();
-                    batch.exports.insert_canonical(grant.key.index, identity);
+                    batch.exports.insert_canonical(
+                        grant.key.index,
+                        identity,
+                        clients::Raw {
+                            index: 0,
+                            generation: 1,
+                        },
+                    );
                     keys[i] = Some(grant.key);
                     batch.commit();
                 }
@@ -71,9 +165,14 @@ fn collisions_release_rollback_and_slot_reuse_do_not_allocate() {
                 for forgotten in [false, true] {
                     let mut batch = exports.batch();
                     let grant = batch.export(7).unwrap();
-                    batch
-                        .exports
-                        .insert_canonical(grant.key.index, identities[0]);
+                    batch.exports.insert_canonical(
+                        grant.key.index,
+                        identities[0],
+                        clients::Raw {
+                            index: 0,
+                            generation: 1,
+                        },
+                    );
                     if forgotten {
                         core::mem::forget(batch);
                     } else {
@@ -164,9 +263,14 @@ fn growing_slots_rehash_and_terminal_cleanup_preserves_every_bucket() {
         for i in 0..keys.len() {
             let mut batch = exports.batch();
             let grant = batch.export(i).unwrap();
-            batch
-                .exports
-                .insert_canonical(grant.key.index, Identity::new(i * 4, 1));
+            batch.exports.insert_canonical(
+                grant.key.index,
+                Identity::new(i * 4, 1),
+                clients::Raw {
+                    index: 0,
+                    generation: 1,
+                },
+            );
             keys[i] = Some(grant.key);
             batch.commit();
             for (j, previous) in keys[..=i].iter().enumerate() {

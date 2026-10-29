@@ -408,6 +408,16 @@ keep separate graph identities even when they forward public brand/pointer
 diagnostics. Custom `Descriptors` policies supply an `identity` callback, or
 return `None` to retain graph identity.
 
+Restricted capability scopes can borrow the export index for hosted imports.
+Recognized hooks reuse the original published source before allocating a proxy
+or subscribing another foreign promise. Lookup retains the exact graph
+generation and creates no wire grant; publication still owns grant accounting.
+Pending exports record their producer's weak source separately from their
+independent forwarding promise so reuse cannot bypass ordering barriers.
+Stale or finally released sources take the ordinary import path. Empty indices
+skip owner identification. `export_canonical_promise` takes the original source
+key explicitly; export slots store that weak key without extending its lifetime.
+
 Use `send_invocation_with_attachments`,
 `Invocations::send_one_with_attachments` and
 `poll_maintenance_with_attachments` for automatic Call/Resolve descriptors.

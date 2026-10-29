@@ -8,6 +8,15 @@ pub(super) mod sealed {
 pub trait Capabilities<'id>: sealed::Sealed {
     type Owner;
     type Peer: Copy + Eq;
+    /// Retain the original source of a live outgoing export, when this scope
+    /// has a read-only export view. Missing or stale weak sources return None.
+    /// Identification is lazy: empty or absent indices do not call it.
+    fn retain_exported(
+        &mut self,
+        _identify: impl FnOnce() -> Option<crate::exports::Identity>,
+    ) -> Result<Option<Client<'id>>, Error> {
+        Ok(None)
+    }
     fn resources(&self) -> Resources;
     fn listen(&mut self) -> Result<Listener<'id>, Error>;
     fn subscribe(

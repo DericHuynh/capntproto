@@ -469,7 +469,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         let candidate = match resolve(
             pipeline::Path::new(&entry.fields[..entry.length]),
-            &mut clients::Access::new(&mut self.runtime),
+            &mut clients::Access::with_export_sources(
+                &mut self.runtime,
+                Some(&self.ledgers.exports),
+            ),
         ) {
             Ok(Some(Ok(client))) => Ok(Some(client)),
             Ok(Some(Err(kind))) => self

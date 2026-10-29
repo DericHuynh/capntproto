@@ -35,7 +35,11 @@ pub type Runtime<'pool, 'id, 's, I, P, S, const CAPS: usize, const PATH: usize> 
 
 /// Restricted capability/dispatch access; the owning runtime cannot be replaced.
 pub type Scope<'borrow, 'pool, 'id, 's, I, P, S, const CAPS: usize, const PATH: usize> =
-    clients::Access<'borrow, Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>>;
+    clients::Access<
+        'borrow,
+        Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
+        Option<&'borrow exports::Exports<'id, 's, clients::Client<'id>>>,
+    >;
 
 pub enum Task<'pool, 'id, I, const CAPS: usize, const PATH: usize> {
     Call(Request<'pool, 'id, I, CAPS, PATH>),
@@ -1038,7 +1042,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     &mut self.ledgers.answers,
                     messages,
                     binding::Route::broken,
-                    |owner, path, runtime| resolve(owner, path, &mut clients::Access::new(runtime)),
+                    |owner, path, runtime| {
+                        resolve(
+                            owner,
+                            path,
+                            &mut clients::Access::with_export_sources(
+                                runtime,
+                                Some(&self.ledgers.exports),
+                            ),
+                        )
+                    },
                 )
                 .map_err(Error::Pipeline)?
         };
@@ -1200,8 +1213,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         if self.call_target.is_none() {
             let parent = &self.ledgers.answers.pipelined(answer).owner;
-            let resolved = match resolve(parent, path, &mut clients::Access::new(&mut self.runtime))
-            {
+            let resolved = match resolve(
+                parent,
+                path,
+                &mut clients::Access::with_export_sources(
+                    &mut self.runtime,
+                    Some(&self.ledgers.exports),
+                ),
+            ) {
                 Ok(Some(Ok(target))) => Some(target),
                 Ok(None) => parent
                     .target(path, messages, &mut self.runtime)

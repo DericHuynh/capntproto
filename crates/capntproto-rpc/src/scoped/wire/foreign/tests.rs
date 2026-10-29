@@ -50,6 +50,91 @@ fn export_identity_recognizes_private_clients_and_keeps_opaque_wrappers_distinct
     assert!(export_identity(&original).is_some());
     assert!(export_identity(&wrapped).is_none());
 }
+
+#[test]
+fn published_sources_skip_graph_binding_and_foreign_observers_without_allocating() {
+    use capntproto_rpc_engine::exports;
+    use capntproto_rpc_wire::clients::exporting;
+    for is_pending in [false, true] {
+        with_graph(8, |graph| {
+            let mut foreign = ForeignPromises::new(usize::from(is_pending));
+            let mut hooks = ClientHooks::new(2, 2);
+            let (_resolve, hook) = if is_pending {
+                pending()
+            } else {
+                let (send, _) = shared::channel();
+                (send, settled())
+            };
+            let original = foreign.import(graph, &*hook.hook).unwrap();
+            let original_key = original.key();
+            exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
+                let mut observer_slots = [exporting::Slot::EMPTY];
+                let mut bindings = exporting::Bindings::new(&mut observer_slots).unwrap();
+                let mut batch = exports.batch();
+                let grant = bindings.stage_using(graph, &mut batch, &original, export_identity).unwrap();
+                batch.commit();
+                let resources = graph.resources();
+                let live = foreign.live;
+                let counts = allocation_counter::measure(|| {
+                    let mut access = clients::Access::with_export_sources(graph, Some(&*exports));
+                    for _ in 0..32 {
+                        let reused = foreign.import(&mut access, &*hook.hook).unwrap();
+                        assert_eq!(reused.key(), original_key);
+                        access.release(reused);
+                    }
+                });
+                assert_eq!(counts.count_total, 0, "reuse must not clone hooks, create Rc owners, or subscribe another promise");
+                assert_eq!(graph.resources(), resources);
+                assert_eq!(foreign.live, live);
+                let opaque = crate::scoped::tests::Opaque(hook.hook.add_ref());
+                if !is_pending {
+                    let mut access = clients::Access::with_export_sources(graph, Some(&*exports));
+                    let wrapped = foreign.import(&mut access, &opaque).unwrap();
+                    assert_ne!(wrapped.key(), original_key, "opaque diagnostics cannot authorize registry reuse");
+                    access.release(wrapped);
+                }
+                let lease = exports.lease(grant.id()).unwrap();
+                assert!(exports.release(grant.id(), 1).unwrap().is_none());
+                let mut access = clients::Access::with_export_sources(graph, Some(&*exports));
+                if is_pending {
+                    let rejected = foreign.import(&mut access, &*hook.hook).unwrap_err();
+                    assert_eq!(rejected.kind, capnp::ErrorKind::Overloaded, "final peer Release must invalidate lookup even while a local export lease remains");
+                } else {
+                    let replacement = foreign.import(&mut access, &*hook.hook).unwrap();
+                    assert_ne!(replacement.key(), original_key);
+                    access.release(replacement);
+                }
+                graph.release(exports.release_local(lease).unwrap());
+                while bindings.drain_one(graph) {}
+            }).unwrap();
+            graph.release(original);
+            for _ in 0..8 {
+                let _ = poll_tied(&mut foreign, &mut hooks, graph);
+            }
+            foreign.terminate(graph);
+            hooks.close(graph, Error::disconnected("done".into()));
+            drain(graph);
+            assert!(graph.is_empty());
+        });
+    }
+}
+
+#[test]
+fn already_resolved_queued_clients_need_no_foreign_observer() {
+    with_graph(2, |graph| {
+        let mut foreign = ForeignPromises::new(0);
+        let (resolve, hook) = pending();
+        resolve.send(Ok(settled())).ok().unwrap();
+        ready(&mut hook.hook.when_resolved()).unwrap();
+        let client = foreign.import(graph, &*hook.hook).unwrap();
+        assert!(foreign.is_empty());
+        assert!(graph.is_settled(&client).unwrap());
+        graph.release(client);
+        foreign.terminate(graph);
+        drain(graph);
+        assert!(graph.is_empty());
+    });
+}
 fn pending() -> (
     shared::Sender<capnp::Result<capability::Client>>,
     capability::Client,

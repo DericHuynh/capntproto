@@ -26,6 +26,33 @@ impl Drop for Dummy {
 impl harness::Server for Dummy {}
 
 #[tokio::test(flavor = "current_thread")]
+async fn resolved_queued_remote_parameters_reflect_directly_like_legacy() {
+    tokio::task::LocalSet::new().run_until(async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            for portable in [false, true] {
+                let mut f = Fixture::with_driver(0, portable).await;
+                let remote = f.remote.clone();
+                let queued: harness::Client = capnp_rpc::new_future_client(async move { Ok(remote) });
+                queued.client.when_resolved().await.unwrap();
+                let mut request = f.remote.bounce_request();
+                request.get().set_cap(queued);
+                let response = request.send();
+                let input = f.next_call().await;
+                let message::Call(call) = input.get_body().unwrap().get_as::<message::Reader>().unwrap().which().unwrap() else { panic!("Call") };
+                let call = call.unwrap();
+                assert!(matches!(call.get_params().unwrap().get_cap_table().unwrap().get(0).which().unwrap(), cap_descriptor::ReceiverHosted(77)), "portable={portable}: a resolved same-connection parameter must not acquire another forwarding export");
+                f.peer.send(|m| {
+                    let mut returned = m.init_return();
+                    returned.set_answer_id(call.get_question_id());
+                    returned.init_results();
+                });
+                response.promise.await.unwrap();
+            }
+        }).await.unwrap();
+    }).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn repeated_local_exports_match_legacy_identity_and_promise_descriptors() {
     tokio::task::LocalSet::new().run_until(async {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {

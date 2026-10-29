@@ -267,7 +267,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
                 return Err(Error::Graph(error));
             }
         };
-        let grant = match batch.export_canonical_promise(identity, promise) {
+        let grant = match batch.export_canonical_promise(identity, snapshot.key(), promise) {
             Ok(grant) => grant,
             Err(rejected) => {
                 graph.unsubscribe(source_subscription);

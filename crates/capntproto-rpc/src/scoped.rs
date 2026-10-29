@@ -1232,7 +1232,8 @@ impl<'id> ClientHooks<'id> {
     }
 
     /// Recognize one of this bridge's parameter/result hooks and retain its
-    /// graph authority. Foreign and opaque hooks return None, so the caller can
+    /// graph authority, following already-available public resolutions first.
+    /// Unresolved foreign and opaque hooks return None, so the caller can
     /// export them through its ordinary policy-preserving local-server path.
     /// Never unwrap a membrane or trust its public pointer/brand values.
     pub fn try_retain(
@@ -1240,10 +1241,22 @@ impl<'id> ClientHooks<'id> {
         graph: &mut impl Capabilities<'id>,
         hook: &dyn ClientHook,
     ) -> capnp::Result<Option<Client<'id>>> {
-        let Some(hook) = wire::direct_response_hook(hook)
-            .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()))
-        else {
-            return Ok(None);
+        let mut resolved = None::<Box<dyn ClientHook>>;
+        let hook = loop {
+            let current = resolved.as_deref().unwrap_or(hook);
+            if let Some(scoped) = wire::direct_response_hook(current).or_else(|| {
+                current
+                    .as_any()
+                    .and_then(|value| value.downcast_ref::<Hook>())
+            }) {
+                break scoped;
+            }
+            // Legacy normalizes public resolutions before recognizing a
+            // same-connection capability. Opaque wrappers keep returning None.
+            let Some(next) = current.get_resolved() else {
+                return Ok(None);
+            };
+            resolved = Some(next);
         };
         if !hook.0.inbox.ptr_eq(&Rc::downgrade(&self.inbox)) {
             return Ok(None);
