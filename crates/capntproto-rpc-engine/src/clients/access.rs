@@ -127,6 +127,12 @@ impl<'id, G: Capabilities<'id>, L: ExportSources<'id>> Capabilities<'id> for Acc
     fn snapshot_for_export(&mut self, client: &Client<'id>) -> Result<(Client<'id>, bool), Error> {
         self.inner.snapshot_for_export(client)
     }
+    fn inspect_for_export(
+        &self,
+        client: &Client<'id>,
+    ) -> Result<ExportView<'id, '_, G::Owner, G::Peer>, Error> {
+        self.inner.inspect_for_export(client)
+    }
     fn release(&mut self, client: Client<'id>) {
         self.inner.release(client)
     }

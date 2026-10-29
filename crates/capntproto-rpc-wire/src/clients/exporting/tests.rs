@@ -14,6 +14,49 @@ fn owner<'g>(graph: &Graph<'g, '_, Endpoint<'_, u8, u32>, u8>, client: &Client<'
 }
 
 #[test]
+fn private_export_identity_reuses_distinct_graph_routes_without_observer_capacity() {
+    let counts = allocation_counter::measure(|| {
+        clients::with_graph(
+            &mut [const { clients::Slot::EMPTY }; 2],
+            clients::NotificationStorage {
+                listeners: &mut [],
+                subscriptions: &mut [],
+            },
+            |graph: &mut Graph<'_, '_, u32, u8>| {
+                let first = graph.endpoint(7, Location::Local).unwrap();
+                let alias = graph.endpoint(7, Location::Local).unwrap();
+                assert_ne!(first.key(), alias.key());
+                exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
+                    let mut bindings = Bindings::new(&mut []).unwrap();
+                    let mut batch = exports.batch();
+                    let identify =
+                        |owner: &u32| Some(exports::Identity::for_owner(1, *owner as usize));
+                    let original = bindings
+                        .stage_using(graph, &mut batch, &first, identify)
+                        .unwrap();
+                    let duplicate = bindings
+                        .stage_using(graph, &mut batch, &alias, identify)
+                        .unwrap();
+                    assert_eq!(original.id(), duplicate.id());
+                    batch.commit();
+                    graph.release(alias);
+                    assert_eq!(graph.take_retired(), Some(7));
+                    assert!(exports.release(original.id(), 1).unwrap().is_none());
+                    graph.release(exports.release(original.id(), 1).unwrap().unwrap());
+                    assert!(exports.is_empty());
+                })
+                .unwrap();
+                graph.release(first);
+                assert_eq!(graph.take_retired(), Some(7));
+                assert!(graph.is_empty());
+            },
+        )
+        .unwrap();
+    });
+    assert_eq!(counts.count_total, 0);
+}
+
+#[test]
 fn direct_and_observed_stage_share_known_route_exports_without_allocating() {
     let counts = allocation_counter::measure(|| {
         clients::with_graph(

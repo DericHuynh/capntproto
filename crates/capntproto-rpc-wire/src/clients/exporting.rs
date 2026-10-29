@@ -183,24 +183,22 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         client: &clients::Client<'g>,
         identify: fn(&G::Owner) -> Option<exports::Identity>,
     ) -> Result<exports::Grant<'e>, Error> {
-        let (snapshot, pending) = graph.snapshot_for_export(client).map_err(Error::Graph)?;
-        let identity = match graph.inspect(&snapshot) {
-            Ok(clients::Destination::Endpoint { owner, .. }) => identify(owner),
-            _ => None,
+        let view = graph.inspect_for_export(client).map_err(Error::Graph)?;
+        let identity = match &view.destination {
+            clients::Destination::Endpoint { owner, .. } => identify(owner),
+            clients::Destination::Waiting(_) => None,
         }
-        .unwrap_or_else(|| snapshot.key().into());
-        let reused = batch.grant_canonical(identity);
-        match reused {
-            Ok(Some(grant)) => {
-                graph.release(snapshot);
-                return Ok(grant);
-            }
-            Err(error) => {
-                graph.release(snapshot);
-                return Err(Error::Export(error));
-            }
-            Ok(None) => (),
+        .unwrap_or_else(|| view.key.into());
+        let key = view.key;
+        let pending = view.pending;
+        let route = match view.destination {
+            clients::Destination::Endpoint { key, .. } => Some(key),
+            clients::Destination::Waiting(_) => None,
+        };
+        if let Some(grant) = batch.grant_canonical(identity).map_err(Error::Export)? {
+            return Ok(grant);
         }
+        let snapshot = graph.retain_key(key).map_err(Error::Graph)?;
         if !pending {
             return batch
                 .export_canonical(identity, snapshot)
@@ -219,19 +217,15 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         // Like legacy's exported promise, retain its currently callable route.
         // Only resolution of this independent observer freezes the final export;
         // forwarding through its initial route does not authorize that resolution.
-        let mut route = match graph.inspect(&snapshot) {
-            Ok(clients::Destination::Endpoint { key, .. }) => match graph.retain_key(key) {
+        let mut route = match route {
+            Some(key) => match graph.retain_key(key) {
                 Ok(route) => Some(route),
                 Err(error) => {
                     graph.release(snapshot);
                     return Err(Error::Graph(error));
                 }
             },
-            Ok(clients::Destination::Waiting(_)) => None,
-            Err(error) => {
-                graph.release(snapshot);
-                return Err(Error::Graph(error));
-            }
+            None => None,
         };
         let promise = match graph.promise(&mut route) {
             Ok(client) => client,

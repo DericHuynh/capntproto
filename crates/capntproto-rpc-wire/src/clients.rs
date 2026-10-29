@@ -35,25 +35,18 @@ pub fn stage<'g, 'e, G: clients::Capabilities<'g>>(
     batch: &mut capntproto_rpc_engine::exports::Batch<'_, 'e, '_, clients::Client<'g>>,
     client: &clients::Client<'g>,
 ) -> Result<capntproto_rpc_engine::exports::Grant<'e>, ExportError> {
-    let (frozen, promise) = graph
-        .snapshot_for_export(client)
+    let view = graph
+        .inspect_for_export(client)
         .map_err(ExportError::Graph)?;
-    if promise {
-        graph.release(frozen);
+    if view.pending {
         return Err(ExportError::PendingSource);
     }
-    match batch.grant_canonical(frozen.key()) {
-        Ok(Some(grant)) => {
-            graph.release(frozen);
-            return Ok(grant);
-        }
-        Err(error) => {
-            graph.release(frozen);
-            return Err(ExportError::Export(error));
-        }
-        Ok(None) => (),
+    let key = view.key;
+    if let Some(grant) = batch.grant_canonical(key).map_err(ExportError::Export)? {
+        return Ok(grant);
     }
-    let result = batch.export_canonical(frozen.key(), frozen);
+    let frozen = graph.retain_key(key).map_err(ExportError::Graph)?;
+    let result = batch.export_canonical(key, frozen);
     result.map_err(|rejected| {
         graph.release(rejected.value);
         ExportError::Export(rejected.error)

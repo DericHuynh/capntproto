@@ -206,6 +206,13 @@ fn reflected_same_peer_still_waits_for_original_route_echo() {
             |g| {
                 let initial = endpoint(g, 10, Location::Remote(1));
                 let p = promise(g, initial);
+                let view = g.inspect_for_export(&p).unwrap();
+                assert!(!view.pending);
+                assert_ne!(view.key, p.key());
+                assert!(matches!(
+                    view.destination,
+                    Destination::Endpoint { owner: &10, .. }
+                ));
                 assert_eq!(call_value(g, &p), 10);
                 let replacement = endpoint(g, 20, Location::Remote(1));
                 let barrier = g
@@ -223,6 +230,12 @@ fn reflected_same_peer_still_waits_for_original_route_echo() {
                 assert_eq!(barrier.is_some(), reflected);
                 if let Some(barrier) = barrier {
                     assert_eq!(*g.barrier_route(&barrier), 10);
+                    let view = g.inspect_for_export(&p).unwrap();
+                    assert!(view.pending);
+                    assert_eq!(view.key, p.key());
+                    assert!(
+                        matches!(view.destination, Destination::Waiting(key) if key == p.key())
+                    );
                     assert!(matches!(
                         g.prepare_call(&p).unwrap().destination(),
                         Destination::Waiting(_)
@@ -231,6 +244,12 @@ fn reflected_same_peer_still_waits_for_original_route_echo() {
                     g.open(barrier);
                 }
                 assert_eq!(call_value(g, &p), 20);
+                let view = g.inspect_for_export(&p).unwrap();
+                assert!(!view.pending);
+                assert!(matches!(
+                    view.destination,
+                    Destination::Endpoint { owner: &20, .. }
+                ));
                 g.release(p);
                 assert_eq!(g.take_retired(), Some(10));
                 assert_eq!(g.take_retired(), Some(20));
@@ -462,6 +481,10 @@ fn callable_local_promise_exports_resolution_obligation_until_settled() {
             let route = graph.endpoint(7, Location::Local).unwrap();
             let key = route.key();
             let promise = graph.promise(&mut Some(route)).unwrap();
+            let view = graph.inspect_for_export(&promise).unwrap();
+            assert!(view.pending);
+            assert_eq!(view.key, promise.key());
+            assert!(matches!(view.destination, Destination::Endpoint { key: end, owner: &7, .. } if end == key));
             let (snapshot, pending) = graph.snapshot_for_export(&promise).unwrap();
             assert!(pending);
             assert_eq!(snapshot.key(), promise.key());
@@ -485,4 +508,53 @@ fn callable_local_promise_exports_resolution_obligation_until_settled() {
         },
     )
     .unwrap();
+}
+
+#[test]
+fn export_views_preserve_reference_limits_and_do_not_retain_reused_slots() {
+    let measured = allocation_counter::measure(|| {
+        with_graph::<u32, u8, _>(
+            &mut [Slot::EMPTY],
+            crate::clients::NotificationStorage::empty(),
+            |graph| {
+                let client = graph.endpoint(7, Location::Local).unwrap();
+                graph.slots[client.key.raw.index]
+                    .entry
+                    .as_mut()
+                    .unwrap()
+                    .refs = u32::MAX;
+                let view = graph.inspect_for_export(&client).unwrap();
+                assert_eq!(view.key, client.key());
+                assert!(!view.pending);
+                assert!(matches!(
+                    view.destination,
+                    Destination::Endpoint { owner: &7, .. }
+                ));
+                assert_eq!(
+                    graph.snapshot_for_export(&client).unwrap_err(),
+                    Error::ReferencesExhausted
+                );
+                assert_eq!(
+                    graph.slots[client.key.raw.index]
+                        .entry
+                        .as_ref()
+                        .unwrap()
+                        .refs,
+                    u32::MAX
+                );
+                let key = client.key();
+                graph.slots[key.raw.index].entry.as_mut().unwrap().refs = 1;
+                graph.release(client);
+                assert_eq!(graph.take_retired(), Some(7));
+                let replacement = graph.endpoint(9, Location::Local).unwrap();
+                assert_ne!(replacement.key(), key);
+                assert_eq!(graph.retain_key(key).unwrap_err(), Error::Stale);
+                graph.release(replacement);
+                assert_eq!(graph.take_retired(), Some(9));
+                assert!(graph.is_empty());
+            },
+        )
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
 }

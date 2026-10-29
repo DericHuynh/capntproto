@@ -53,6 +53,10 @@ pub trait Capabilities<'id>: sealed::Sealed {
     ) -> Result<Client<'id>, Error>;
     fn snapshot(&mut self, client: &Client<'id>) -> Result<Client<'id>, Error>;
     fn snapshot_for_export(&mut self, client: &Client<'id>) -> Result<(Client<'id>, bool), Error>;
+    fn inspect_for_export(
+        &self,
+        client: &Client<'id>,
+    ) -> Result<ExportView<'id, '_, Self::Owner, Self::Peer>, Error>;
     fn release(&mut self, client: Client<'id>);
     fn promise(&mut self, initial: &mut Option<Client<'id>>) -> Result<Client<'id>, Error>;
     fn resolve(
@@ -139,6 +143,9 @@ impl<'id, T, P: Copy + Eq> Capabilities<'id> for Graph<'id, '_, T, P> {
     }
     fn snapshot_for_export(&mut self, client: &Client<'id>) -> Result<(Client<'id>, bool), Error> {
         self.snapshot_for_export(client)
+    }
+    fn inspect_for_export(&self, client: &Client<'id>) -> Result<ExportView<'id, '_, T, P>, Error> {
+        self.inspect_for_export(client)
     }
     fn release(&mut self, client: Client<'id>) {
         self.release(client)

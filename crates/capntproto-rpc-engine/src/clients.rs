@@ -227,6 +227,15 @@ pub enum Destination<'id, 'a, T, P> {
     },
     Waiting(Key<'id>),
 }
+
+/// Read-only export selection. The source key preserves the advertised route
+/// and its resolution obligation; the destination describes where it can call
+/// now. They differ for an unresolved local proxy. This view owns no reference.
+pub struct ExportView<'id, 'a, T, P> {
+    pub key: Key<'id>,
+    pub pending: bool,
+    pub destination: Destination<'id, 'a, T, P>,
+}
 /// An accepted call, including one queued behind a promise, marks every promise
 /// on its path used. Build/queue the caller-owned call before accepting this
 /// ticket; dropping it does not impose a spurious loopback requirement.
@@ -565,12 +574,39 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
         &mut self,
         client: &Client<'id>,
     ) -> Result<(Client<'id>, bool), Error> {
+        let view = self.inspect_for_export(client)?;
+        let (key, pending) = (view.key, view.pending);
+        self.retain_key(key).map(|client| (client, pending))
+    }
+    /// Select an export identity before retaining a new owner. Reusing an
+    /// existing export needs only a wire grant, not another graph reference.
+    /// Retain `key` before storing a newly selected route beyond this borrow.
+    #[inline]
+    pub fn inspect_for_export(
+        &self,
+        client: &Client<'id>,
+    ) -> Result<ExportView<'id, '_, T, P>, Error> {
         let mut raw = client.key.raw;
-        let pending = loop {
+        loop {
+            let key = self.key(raw);
             match &self.live(raw)?.kind {
-                Kind::Endpoint { .. } => break false,
+                Kind::Endpoint { owner, location } => {
+                    return Ok(ExportView {
+                        key,
+                        pending: false,
+                        destination: Destination::Endpoint {
+                            key,
+                            owner,
+                            location: *location,
+                        },
+                    });
+                }
                 Kind::Promise { prior: Some(_), .. } | Kind::Promise { target: None, .. } => {
-                    break true
+                    return Ok(ExportView {
+                        key,
+                        pending: true,
+                        destination: Destination::Waiting(key),
+                    });
                 }
                 Kind::Promise {
                     target: Some(next),
@@ -581,23 +617,27 @@ impl<'id, 's, T, P: Copy + Eq> Graph<'id, 's, T, P> {
                     // promise settles. Export its resolution obligation, not
                     // merely the currently callable proxy. Remote endpoints
                     // still freeze the original route for reflected ordering.
-                    if !resolved
-                        && matches!(
-                            self.live(*next)?.kind,
-                            Kind::Endpoint {
-                                location: Location::Local,
-                                ..
-                            }
-                        )
-                    {
-                        break true;
+                    if !resolved {
+                        if let Kind::Endpoint {
+                            owner,
+                            location: Location::Local,
+                        } = &self.live(*next)?.kind
+                        {
+                            return Ok(ExportView {
+                                key,
+                                pending: true,
+                                destination: Destination::Endpoint {
+                                    key: self.key(*next),
+                                    owner,
+                                    location: Location::Local,
+                                },
+                            });
+                        }
                     }
                     raw = *next;
                 }
             }
-        };
-        self.retain_key(self.key(raw))
-            .map(|client| (client, pending))
+        }
     }
     fn walk(&self, mut raw: Raw) -> Result<(Raw, bool, &Entry<T, P>), Error> {
         loop {

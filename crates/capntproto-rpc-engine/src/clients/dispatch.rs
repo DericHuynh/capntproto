@@ -905,6 +905,9 @@ impl<'id, 's, T: 's, P: Copy + Eq + 's, C, G: GraphStorage<'id, 's, T, P>> Capab
     fn snapshot_for_export(&mut self, client: &Client<'id>) -> Result<(Client<'id>, bool), Error> {
         self.graph.graph_mut().snapshot_for_export(client)
     }
+    fn inspect_for_export(&self, client: &Client<'id>) -> Result<ExportView<'id, '_, T, P>, Error> {
+        self.graph.graph().inspect_for_export(client)
+    }
     fn release(&mut self, client: Client<'id>) {
         self.release(client)
     }

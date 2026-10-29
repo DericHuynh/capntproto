@@ -429,8 +429,12 @@ Resolution does not wait for those calls' replies. The local capabilities remain
 usable when their former connection closes.
 
 Repeated capability descriptors reuse one export ID and retain one grant per
-descriptor, as in legacy. Export slots contain their own identity index; fixed
-storage allocates no hash map. Pending aliases share one resolution observer:
+descriptor, as in legacy. Export staging checks that identity before retaining
+a graph owner; aliases change only the wire grant count. The graph's read-only
+`inspect_for_export` view distinguishes the advertised source and its resolution
+obligation from its currently callable destination, preserving local promise
+observers and reflected-route barriers. Export slots contain their own identity
+index; fixed storage allocates no hash map. Pending aliases share one resolution observer:
 the first descriptor introduces `senderPromise`, and later aliases use
 `senderHosted`. Output rejection rolls back only unpublished grants. Final peer
 Release removes the identity before any retained local call lease completes.
