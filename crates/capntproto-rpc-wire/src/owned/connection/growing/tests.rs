@@ -855,6 +855,183 @@ fn immediate_tables_reflect_live_pipeline_paths_without_forwarding_exports() {
 }
 
 #[test]
+fn typed_admission_uses_no_more_allocations_than_dynamic_admission() {
+    struct Probe;
+    impl capnp::introspect::Introspect for Probe {
+        fn introspect() -> capnp::introspect::Type {
+            <capnp::any_pointer::Owned as capnp::introspect::Introspect>::introspect()
+        }
+    }
+    impl capnp::wire_capability::Interface for Probe {
+        const TYPE_ID: u64 = 7;
+    }
+    fn fill(mut params: capnp::field_api::FixedStruct<'_, Payload>) -> capnp::Result<()> {
+        params.field(Payload::CONTENT).set_capability_index(0)
+    }
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let clients = [&target; 4];
+        let nullable = [Some(&target); 4];
+        let method = capnp::wire_capability::Method::<Probe, Payload, Payload>::new(1, true, true);
+        let streaming = capnp::wire_capability::StreamingMethod::<Probe, Payload>::new(1, true);
+        let dynamic = DynamicCall {
+            interface: 7,
+            method: 1,
+            no_promise_pipelining: true,
+            only_promise_pipeline: false,
+        };
+        let mut counts = [allocation_counter::AllocationInfo::default(); 3];
+        // Warm storage for each form, then compare the same retained table and
+        // payload. Typed/schema selection must not allocate a mapping buffer.
+        for warm in [true, false] {
+            for (mode, count) in counts.iter_mut().enumerate() {
+                let mut task = None;
+                let measured = allocation_counter::measure(|| {
+                    task = Some(
+                        match mode {
+                            0 => driver.enqueue_dynamic(
+                                &target,
+                                dynamic,
+                                &nullable,
+                                messages,
+                                512,
+                                Default::default(),
+                                |field| {
+                                    fill(field.cast::<capnp::field_api::Struct<Payload>>().init()?)
+                                },
+                            ),
+                            1 => driver.enqueue_call(
+                                &target,
+                                method,
+                                &clients,
+                                messages,
+                                512,
+                                Default::default(),
+                                fill,
+                            ),
+                            _ => driver.enqueue_streaming(
+                                &target,
+                                streaming,
+                                &clients,
+                                messages,
+                                512,
+                                Default::default(),
+                                fill,
+                            ),
+                        }
+                        .unwrap(),
+                    );
+                });
+                if !warm {
+                    *count = measured;
+                }
+                assert!(driver.cancel_invocation(task.unwrap(), messages));
+            }
+        }
+        assert!(
+            counts[1].count_total <= counts[0].count_total,
+            "typed: {counts:?}"
+        );
+        assert!(
+            counts[2].count_total <= counts[0].count_total,
+            "streaming: {counts:?}"
+        );
+        driver.runtime.release(target);
+        close(
+            driver,
+            messages,
+            &mut messages::Queue::<()>::new_growing(0, 2).unwrap(),
+        );
+    });
+}
+
+#[test]
+fn capability_iterators_preserve_null_slots_and_roll_back_incorrect_lengths() {
+    struct Sized<I> {
+        iter: I,
+        advertised: usize,
+    }
+    impl<I: Iterator> Iterator for Sized<I> {
+        type Item = I::Item;
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iter.next()
+        }
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (self.advertised, Some(self.advertised))
+        }
+    }
+    impl<I: Iterator> ExactSizeIterator for Sized<I> {}
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let clients = [Some(&target), None, Some(&target)];
+        let resources = driver.runtime.resources();
+        for advertised in [0, 1, 2, 4, 7] {
+            let rejected = driver.enqueue_dynamic_to(
+                &target,
+                DynamicCall::default(),
+                Sized {
+                    iter: clients.into_iter(),
+                    advertised,
+                },
+                messages,
+                256,
+                Default::default(),
+                calls::CallDestination::Caller,
+                |_| Ok(()),
+            );
+            assert!(matches!(
+                rejected,
+                Err(Error::Input(super::super::super::Error::Capacity))
+            ));
+            assert_eq!(
+                driver.runtime.resources(),
+                resources,
+                "mismatch must release the retained prefix"
+            );
+            assert_eq!(driver.runtime.queued(), 0);
+            assert!(driver.ledgers.questions.is_empty());
+        }
+        let task = driver
+            .enqueue_dynamic_to(
+                &target,
+                DynamicCall::default(),
+                clients.into_iter(),
+                messages,
+                256,
+                Default::default(),
+                calls::CallDestination::Caller,
+                |field| field.set_capability_index(2),
+            )
+            .unwrap();
+        let ready = driver.runtime.ready().unwrap().unwrap();
+        let Task::Invoke(invocation) = ready.owner() else {
+            panic!("Invoke")
+        };
+        invocation
+            .with(messages, |params| {
+                let caps = params.capabilities();
+                assert_eq!(caps.len(), 3);
+                assert!(caps[1].is_none());
+                assert_eq!(
+                    caps[0].as_ref().unwrap().key(),
+                    caps[2].as_ref().unwrap().key()
+                );
+                assert_eq!(params.content().unwrap().capability_index().unwrap(), 2);
+            })
+            .unwrap();
+        drop(ready);
+        assert!(driver.cancel_invocation(task, messages));
+        assert_eq!(driver.runtime.resources(), resources);
+        driver.runtime.release(target);
+        close(
+            driver,
+            messages,
+            &mut messages::Queue::<()>::new_growing(0, 2).unwrap(),
+        );
+    });
+}
+
+#[test]
 fn immediate_capability_publication_preserves_retries_and_descriptor_authority() {
     for failure in ["queue", "storage", "reader", "index", "scratch", "older"] {
         with_driver(|mut driver, messages| {

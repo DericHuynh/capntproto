@@ -403,6 +403,14 @@ storage or bounded growth without retaining the original request frame. Standalo
 `ClientHooks` users can configure `with_message_pool` before exporting clients to reuse transmitted request
 segments. Queued frames retain their bytes through partial writes, so live
 segments cannot be recycled.
+
+Queued admission consumes capability bindings directly into its retained table.
+Typed calls do not allocate an intermediate mapping table. The bounded
+`enqueue_dynamic_to` APIs accept an `ExactSizeIterator` in capability-index order,
+including null entries; use `table.iter().map(Option::as_ref)` for owned bindings
+or `table.iter().copied()` for borrowed bindings. Incorrect iterator lengths
+reject the invocation and release its retained prefix before dispatch.
+
 Promises resolved back to local objects expose their original policy hooks only
 after graph ordering barriers open and older queued calls begin forwarding.
 Resolution does not wait for those calls' replies. The local capabilities remain

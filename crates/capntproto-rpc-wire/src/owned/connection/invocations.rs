@@ -178,7 +178,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             sender,
             target,
             method,
-            capabilities,
+            capabilities.iter().copied(),
             messages,
             minimum,
             options,
@@ -189,13 +189,13 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
     /// Track a dynamic call whose result is delivered through an authenticated
     /// third-party rendezvous. Completion still owns the original wire question.
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-    pub fn enqueue_dynamic_to<A, P: Copy + Eq, S, const PATH: usize>(
+    pub fn enqueue_dynamic_to<'c, A, P: Copy + Eq, S, const PATH: usize>(
         &mut self,
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
         sender: Sender<'wait, CallResult<'pool, 'id, I, CAPS>>,
         target: &clients::Client<'id>,
         method: calls::DynamicCall,
-        capabilities: &[Option<&clients::Client<'id>>],
+        capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
@@ -203,7 +203,10 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>>
+    where
+        'id: 'c,
+    {
         self.enqueue_with(driver, sender, !method.no_promise_pipelining, |driver| {
             driver.enqueue_dynamic_to(
                 target,

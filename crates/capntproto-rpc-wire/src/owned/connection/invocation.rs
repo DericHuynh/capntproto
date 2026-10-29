@@ -16,19 +16,6 @@ use template::PlainTemplate;
 #[cfg(feature = "alloc")]
 pub use template::{PreparedCall, PreparedCallTemplate};
 
-pub(super) fn map_capabilities<'a, 'id, const CAPS: usize>(
-    capabilities: &[&'a clients::Client<'id>],
-    capacity: Capacity,
-) -> Result<Buffer<Option<&'a clients::Client<'id>>, CAPS>, Error> {
-    let mut mapped = capacity
-        .buffer(capabilities.len(), || None)
-        .ok_or(Error::Input(super::super::Error::Capacity))?;
-    for (slot, client) in mapped.iter_mut().zip(capabilities) {
-        *slot = Some(*client);
-    }
-    Ok(mapped)
-}
-
 #[must_use = "complete or release the invocation through its originating graph and pool"]
 pub struct Invocation<'pool, 'id, const CAPS: usize> {
     pub(super) key: InvocationKey<'id>,
@@ -236,10 +223,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(FixedStruct<'_, Params>) -> capnp::Result<()>,
     ) -> Result<InvocationKey<'id>, Error> {
-        let mapped = map_capabilities::<CAPS>(capabilities, self.message_capabilities)?;
         self.enqueue_encoded(
             target,
-            &mapped[..capabilities.len()],
+            capabilities.iter().copied().map(Some),
             messages,
             minimum,
             options,
@@ -267,10 +253,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         fill: impl FnOnce(FixedStruct<'_, Params>) -> capnp::Result<()>,
     ) -> Result<InvocationKey<'id>, Error> {
-        let mapped = map_capabilities::<CAPS>(capabilities, self.message_capabilities)?;
         self.enqueue_encoded(
             target,
-            &mapped[..capabilities.len()],
+            capabilities.iter().copied().map(Some),
             messages,
             minimum,
             options,
@@ -285,15 +270,18 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             },
         )
     }
-    fn enqueue_encoded(
+    fn enqueue_encoded<'c>(
         &mut self,
         target: &clients::Client<'id>,
-        capabilities: &[Option<&clients::Client<'id>>],
+        mut capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
         encode: impl FnOnce(&mut capnp::message::FixedBuilder<'_>) -> capnp::Result<()>,
-    ) -> Result<InvocationKey<'id>, Error> {
+    ) -> Result<InvocationKey<'id>, Error>
+    where
+        'id: 'c,
+    {
         let options = self.writer_policy.options(options);
         self.check_live()?;
         // Deferred input was already admitted before this application call.
@@ -304,12 +292,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         if !self.normal_dispatch_available() {
             return Err(Error::Dispatch(dispatch::DispatchError::Full));
         }
+        let count = capabilities.len();
         let retained = self
             .message_capabilities
-            .buffer::<_, CAPS>(capabilities.len(), || None)
+            .buffer::<_, CAPS>(count, || None)
             .ok_or(Error::Input(super::super::Error::Capacity))?;
-        let count = u32::try_from(capabilities.len())
-            .map_err(|_| Error::Input(super::super::Error::Capacity))?;
+        let wire_count =
+            u32::try_from(count).map_err(|_| Error::Input(super::super::Error::Capacity))?;
         let operation = self.operations.reserve()?;
         let frame = Frame::build(messages, minimum, options, encode).map_err(Error::Input)?;
         let validation = frame
@@ -321,7 +310,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 if self.writer_policy == WriterPolicy::Checked {
                     call.get_params()?
                         .get_content()
-                        .validate_capability_indices(count)?;
+                        .validate_capability_indices(wire_count)?;
                 }
                 Ok(if count == 0 {
                     PlainTemplate::new(call, &messages.read(&frame.lease))
@@ -342,9 +331,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             frame,
             template,
             capabilities: retained,
-            count: capabilities.len(),
+            count,
         };
-        for (index, client) in capabilities.iter().enumerate() {
+        for index in 0..invocation.count {
+            let Some(client) = capabilities.next() else {
+                invocation.release(messages, &mut self.runtime);
+                return Err(Error::Input(super::super::Error::Capacity));
+            };
             let Some(client) = client else { continue };
             match self.runtime.retain(client) {
                 Ok(client) => invocation.capabilities[index] = Some(client),
@@ -353,6 +346,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     return Err(Error::Graph(error));
                 }
             }
+        }
+        if capabilities.next().is_some() {
+            invocation.release(messages, &mut self.runtime);
+            return Err(Error::Input(super::super::Error::Capacity));
         }
         let mut owner = Some(Task::Invoke(invocation));
         match self
@@ -393,7 +390,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         self.enqueue_dynamic_to(
             target,
             method,
-            capabilities,
+            capabilities.iter().copied(),
             messages,
             minimum,
             options,
@@ -405,12 +402,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Queue a dynamic invocation with an explicit result destination.
     /// Third-party metadata is copied into the immutable template before any
     /// capability or question ownership changes, and survives output retries.
+    /// Capabilities are consumed once in index order, including null slots. An
+    /// iterator whose length disagrees with its contents is rejected atomically.
     #[allow(clippy::too_many_arguments)]
-    pub fn enqueue_dynamic_to(
+    pub fn enqueue_dynamic_to<'c>(
         &mut self,
         target: &clients::Client<'id>,
         method: calls::DynamicCall,
-        capabilities: &[Option<&clients::Client<'id>>],
+        capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
@@ -418,7 +417,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         fill: impl FnOnce(
             capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
         ) -> capnp::Result<()>,
-    ) -> Result<InvocationKey<'id>, Error> {
+    ) -> Result<InvocationKey<'id>, Error>
+    where
+        'id: 'c,
+    {
         if let calls::CallDestination::ThirdParty(destination) = destination {
             destination
                 .validate_capability_indices(0)

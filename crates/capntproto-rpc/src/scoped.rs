@@ -1138,8 +1138,7 @@ impl<'id> ClientHooks<'id> {
     }
 
     fn has_pending_projection(&self, hook: &dyn ClientHook) -> bool {
-        let hook = wire::direct_response_hook(hook)
-            .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()));
+        let hook = wire::native_hook(hook);
         hook.is_some_and(|hook| {
             if hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.needs_binding() {
                 hook.0.request_materialization();
@@ -1150,8 +1149,7 @@ impl<'id> ClientHooks<'id> {
         })
     }
     fn projection_pending(&self, hook: &dyn ClientHook, cx: &mut Context<'_>) -> bool {
-        let hook = wire::direct_response_hook(hook)
-            .or_else(|| hook.as_any().and_then(|value| value.downcast_ref::<Hook>()));
+        let hook = wire::native_hook(hook);
         hook.is_some_and(|hook| {
             if hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) {
                 hook.0.request_materialization();
@@ -1198,11 +1196,7 @@ impl<'id> ClientHooks<'id> {
             let mut seen = vec![Rc::as_ptr(endpoint)];
             let mut next = endpoint.introduced.borrow().clone();
             while let Some(forwarded) = next {
-                let hook = wire::direct_response_hook(&*forwarded).or_else(|| {
-                    forwarded
-                        .as_any()
-                        .and_then(|value| value.downcast_ref::<Hook>())
-                });
+                let hook = wire::native_hook(&*forwarded);
                 let Some(hook) = hook else {
                     break;
                 };
@@ -1244,11 +1238,7 @@ impl<'id> ClientHooks<'id> {
         let mut resolved = None::<Box<dyn ClientHook>>;
         let hook = loop {
             let current = resolved.as_deref().unwrap_or(hook);
-            if let Some(scoped) = wire::direct_response_hook(current).or_else(|| {
-                current
-                    .as_any()
-                    .and_then(|value| value.downcast_ref::<Hook>())
-            }) {
+            if let Some(scoped) = wire::native_hook(current) {
                 break scoped;
             }
             // Legacy normalizes public resolutions before recognizing a
@@ -1258,7 +1248,7 @@ impl<'id> ClientHooks<'id> {
             };
             resolved = Some(next);
         };
-        if !hook.0.inbox.ptr_eq(&Rc::downgrade(&self.inbox)) {
+        if hook.0.inbox.as_ptr() != Rc::as_ptr(&self.inbox) {
             return Ok(None);
         }
         // An unbound foreign/local early projection uses the ordinary adapter.

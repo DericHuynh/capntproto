@@ -310,10 +310,7 @@ impl<'id> ClientHooks<'id> {
             let mut retained: Vec<Option<Client<'id>>> = Vec::new();
             retained.try_reserve_exact(caps.len()).map_err(wire_error)?;
             retained.resize_with(caps.len(), || None);
-            let mut refs = Vec::new();
-            refs.try_reserve_exact(caps.len()).map_err(wire_error)?;
             let result = (|| {
-                let mut refs = refs;
                 for (slot, cap) in retained.iter_mut().zip(caps) {
                     if let Some(cap) = cap {
                         *slot =
@@ -324,7 +321,6 @@ impl<'id> ClientHooks<'id> {
                     }
                 }
                 let count = caps.len();
-                refs.extend(retained.iter().map(Option::as_ref));
                 let mapping = capnp::wire_capability::IndexMap::identity(
                     u32::try_from(count).map_err(wire_error)?,
                 );
@@ -378,7 +374,7 @@ impl<'id> ClientHooks<'id> {
                         .enqueue_dynamic_to(
                             target,
                             method,
-                            &refs[..count],
+                            retained.iter().map(Option::as_ref),
                             messages,
                             minimum,
                             options,
@@ -400,7 +396,7 @@ impl<'id> ClientHooks<'id> {
                         sender.into(),
                         target,
                         method,
-                        &refs[..count],
+                        retained.iter().map(Option::as_ref),
                         messages,
                         minimum,
                         options,
@@ -1682,7 +1678,7 @@ impl<'id> ClientHooks<'id> {
 }
 
 pub(crate) fn native_join_target(client: &dyn ClientHook) -> Option<Box<dyn ClientHook>> {
-    let hook = direct_response_hook(client).or_else(|| client.as_any()?.downcast_ref::<Hook>())?;
+    let hook = native_hook(client)?;
     let inbox = hook.0.inbox.upgrade()?;
     if inbox.closed.get()
         || inbox.joins.is_none()
@@ -1693,6 +1689,17 @@ pub(crate) fn native_join_target(client: &dyn ClientHook) -> Option<Box<dyn Clie
         return None;
     }
     Some(hook.add_ref())
+}
+
+// Recognize the same private types in the same order, using one outer RTTI
+// query. Ordinary scoped hooks must not call the virtual as_any() method twice.
+pub(super) fn native_hook(client: &dyn ClientHook) -> Option<&Hook> {
+    let any = client.as_any()?;
+    if let Some(projected) = any.downcast_ref::<Projected>() {
+        projected.inner.as_any()?.downcast_ref::<Hook>()
+    } else {
+        any.downcast_ref::<Hook>()
+    }
 }
 
 pub(super) fn direct_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
