@@ -291,9 +291,13 @@ fn returned_resources_commit_with_live_results_and_remain_with_canceled_input() 
                         .unwrap();
                         let mut queue_slots = [None];
                         let mut queue = messages::Queue::new(&mut queue_slots).unwrap();
-                        let mut question =
-                            Question::send(reservation, messages, frame, queue.reserve().unwrap())
-                                .unwrap();
+                        let mut question = Question::<0>::send(
+                            reservation,
+                            messages,
+                            frame,
+                            queue.reserve().unwrap(),
+                        )
+                        .unwrap();
                         while let Some(window) = queue.window(messages).unwrap() {
                             let n = window.bytes().len();
                             window.advance(n).unwrap();

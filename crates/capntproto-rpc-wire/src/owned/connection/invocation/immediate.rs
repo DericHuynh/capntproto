@@ -197,8 +197,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             output,
             crate::inbound::full::OriginalMetadata::call(
                 (method.interface, method.method),
+                false,
                 self.allow_answer_handoff,
-                id,
+                crate::inbound::full::ParameterExports::single(id),
             ),
             self.writer_policy == WriterPolicy::Checked,
             |descriptor, _| {

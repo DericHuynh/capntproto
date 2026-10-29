@@ -53,7 +53,7 @@ pub fn bounded_provision_exchange(release_first: bool) {
                             if release_first {embargoes.release(b"").unwrap();}
                             let pending = recipient.questions.reserve().unwrap();
                             let frame = Frame::build(messages, 776, Default::default(), |builder| network::accept(builder, pending.id(), Some(b""), |completion| completion.cast::<capnp::field_api::Data>().copy_from(b"authorized-peer"))).unwrap();
-                            let question = owned::Question::send(pending, messages, frame, queue.reserve().unwrap()).unwrap();
+                            let question = owned::Question::<0>::send(pending, messages, frame, queue.reserve().unwrap()).unwrap();
                             let incoming = exchange(messages, &mut queue, 1);
                             let accept = Accept::admit(incoming, messages, &mut accepting.answers, answer::State::new(53)).unwrap_or_else(|e|panic!("{}", e.error));
                             let claim = accept.with(messages, |request| {

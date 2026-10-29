@@ -50,7 +50,7 @@ fn retained_plain_results_pin_the_pool_and_survive_connection_teardown() {
                     )
                     .unwrap();
                 });
-                let question = Question::publish_template(
+                let question = Question::<0>::publish_template(
                     reservation,
                     messages,
                     frame,
@@ -160,7 +160,7 @@ fn empty_descriptor_results_check_authority_on_access_and_skip_canceled_content(
                                 )
                                 .unwrap()
                             });
-                            Question::publish_template(
+                            Question::<0>::publish_template(
                                 reservation,
                                 messages,
                                 frame,
@@ -172,8 +172,13 @@ fn empty_descriptor_results_check_authority_on_access_and_skip_canceled_content(
                             .unwrap()
                         } else {
                             let frame = encode(messages, |b| calls::bootstrap(b, id).unwrap());
-                            Question::send(reservation, messages, frame, queue.reserve().unwrap())
-                                .unwrap()
+                            Question::<0>::send(
+                                reservation,
+                                messages,
+                                frame,
+                                queue.reserve().unwrap(),
+                            )
+                            .unwrap()
                         };
                         flush(messages, &mut queue);
                         if plain {
@@ -268,7 +273,8 @@ fn stale_owning_question_cannot_apply_return_to_recycled_wire_id() {
                 let id = reservation.id();
                 let frame = encode(messages, |b| calls::bootstrap(b, id).unwrap());
                 let mut old =
-                    Question::send(reservation, messages, frame, queue.reserve().unwrap()).unwrap();
+                    Question::<0>::send(reservation, messages, frame, queue.reserve().unwrap())
+                        .unwrap();
                 flush(messages, &mut queue);
                 old.cancel(questions);
                 questions.pending_finish().unwrap().accept();
@@ -278,7 +284,8 @@ fn stale_owning_question_cannot_apply_return_to_recycled_wire_id() {
                 assert_eq!(reservation.id(), id);
                 let frame = encode(messages, |b| calls::bootstrap(b, id).unwrap());
                 let new =
-                    Question::send(reservation, messages, frame, queue.reserve().unwrap()).unwrap();
+                    Question::<0>::send(reservation, messages, frame, queue.reserve().unwrap())
+                        .unwrap();
                 flush(messages, &mut queue);
                 let key = new.key();
                 let frame = encode(messages, |b| {
@@ -404,7 +411,7 @@ fn exact_request_survives_mismatched_return_and_reflected_final_param_release() 
                             .scalar(CapDescriptor::SENDER_HOSTED)
                             .set(grant.id().to_wire());
                     });
-                    let question = Question::send_granting(
+                    let question = Question::<0>::send_granting(
                         reservation,
                         batch,
                         messages,
@@ -536,7 +543,8 @@ fn canceled_late_results_need_no_receipt_capacity_and_keep_original_until_return
                 let id = reservation.id();
                 let frame = encode(messages, |b| calls::bootstrap(b, id).unwrap());
                 let mut question =
-                    Question::send(reservation, messages, frame, queue.reserve().unwrap()).unwrap();
+                    Question::<0>::send(reservation, messages, frame, queue.reserve().unwrap())
+                        .unwrap();
                 flush(messages, &mut queue);
                 question.cancel(questions);
                 questions.pending_finish().unwrap().accept();
@@ -600,7 +608,7 @@ fn rejected_send_releases_both_original_and_offered_frame() {
             let reservation = questions.reserve().unwrap();
             let frame = encode(messages, |b| calls::bootstrap(b, reservation.id()).unwrap());
             assert!(matches!(
-                Question::send(reservation, messages, frame, queue.reserve().unwrap()),
+                Question::<0>::send(reservation, messages, frame, queue.reserve().unwrap()),
                 Err(crate::admission::Error::Storage(
                     messages::Error::NoSendSlot
                 ))

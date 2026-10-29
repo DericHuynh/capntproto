@@ -1,4 +1,5 @@
 use super::*;
+use crate::Capacity;
 use capntproto_rpc_engine::{ids::QuestionId, question::Delivery, questions};
 
 #[must_use]
@@ -61,30 +62,102 @@ impl<'m> PreparedReturn<'m> {
     }
 }
 
-/// A private Call encoder's zero/single export and Return policy.
-#[derive(Clone, Copy)]
-pub(crate) struct OriginalMetadata {
+/// Exact grants from a private encoder. Keep the common empty/single cases
+/// inline; multiple grants use the caller's explicit per-message storage policy.
+pub(crate) enum ParameterExports<const N: usize> {
+    Single(Option<ExportId>),
+    Inline {
+        ids: [ExportId; N],
+        count: usize,
+    },
+    #[cfg(feature = "alloc")]
+    Growing(alloc::vec::Vec<ExportId>),
+}
+impl<const N: usize> ParameterExports<N> {
+    pub(crate) fn single(export: Option<ExportId>) -> Self {
+        Self::Single(export)
+    }
+    pub(crate) fn push(&mut self, id: ExportId, capacity: Capacity, maximum: usize) -> Option<()> {
+        match self {
+            Self::Single(None) => *self = Self::Single(Some(id)),
+            Self::Single(Some(first)) => {
+                if maximum < 2 || maximum > capacity.maximum::<N>() {
+                    return None;
+                }
+                if maximum <= N {
+                    let mut ids = [ExportId::from_wire(0); N];
+                    ids[..2].copy_from_slice(&[*first, id]);
+                    *self = Self::Inline { ids, count: 2 };
+                } else {
+                    #[cfg(feature = "alloc")]
+                    {
+                        // Unlike scheduler buffers, this vector's metadata
+                        // fits in the pending question's existing frame space.
+                        // Match legacy param_exports with one allocation.
+                        let mut ids = alloc::vec::Vec::new();
+                        ids.try_reserve_exact(maximum).ok()?;
+                        ids.extend_from_slice(&[*first, id]);
+                        *self = Self::Growing(ids);
+                    }
+                    #[cfg(not(feature = "alloc"))]
+                    return None;
+                }
+            }
+            Self::Inline { ids, count } => {
+                *ids.get_mut(*count)? = id;
+                *count += 1;
+            }
+            #[cfg(feature = "alloc")]
+            Self::Growing(ids) => {
+                // `maximum` is this immutable invocation's descriptor count;
+                // reserve it once above and never grow during publication.
+                if ids.len() == maximum {
+                    return None;
+                }
+                ids.push(id);
+            }
+        }
+        Some(())
+    }
+    fn ids(&self) -> &[ExportId] {
+        match self {
+            Self::Single(None) => &[],
+            Self::Single(Some(id)) => core::slice::from_ref(id),
+            Self::Inline { ids, count } => &ids[..*count],
+            #[cfg(feature = "alloc")]
+            Self::Growing(ids) => ids,
+        }
+    }
+}
+
+/// A private Call encoder's parameter grants and Return policy.
+pub(crate) struct OriginalMetadata<const N: usize> {
     method: (u64, u16),
     redirected: bool,
     allows_handoff: bool,
-    export: Option<ExportId>,
+    exports: ParameterExports<N>,
 }
-impl OriginalMetadata {
+impl<const N: usize> OriginalMetadata<N> {
     // Only private encoders construct this metadata. Their immutable Call
-    // contains this exact method, handoff policy and at most one export grant;
+    // contains this exact method, destination, handoff policy and export grants;
     // ordinary publication still validates the complete frame and grant batch.
-    pub(crate) fn call(method: (u64, u16), allows_handoff: bool, export: Option<ExportId>) -> Self {
+    pub(crate) fn call(
+        method: (u64, u16),
+        redirected: bool,
+        allows_handoff: bool,
+        exports: ParameterExports<N>,
+    ) -> Self {
         Self {
             method,
-            redirected: false,
+            redirected,
             allows_handoff,
-            export,
+            exports,
         }
     }
     pub(crate) fn original(&self) -> Original<'_> {
         Original {
             join: false,
-            params: Parameters::Export(self.export),
+            params: Parameters::Exports(self.exports.ids()),
             redirected: self.redirected,
             allows_handoff: self.allows_handoff,
             method: Some(self.method),
@@ -94,7 +167,7 @@ impl OriginalMetadata {
 enum Parameters<'m> {
     Unchecked(Option<rpc_capnp::payload::Reader<'m>>),
     Published(rpc_capnp::payload::Reader<'m>),
-    Export(Option<ExportId>),
+    Exports(&'m [ExportId]),
 }
 pub(crate) struct Original<'m> {
     join: bool,
@@ -108,7 +181,7 @@ impl<'m> Original<'m> {
     pub(crate) fn data_only(method: (u64, u16), allows_handoff: bool) -> Self {
         Self {
             join: false,
-            params: Parameters::Export(None),
+            params: Parameters::Exports(&[]),
             redirected: false,
             allows_handoff,
             method: Some(method),
@@ -117,7 +190,7 @@ impl<'m> Original<'m> {
     pub(crate) fn optional_control() -> Self {
         Self {
             join: false,
-            params: Parameters::Export(None),
+            params: Parameters::Exports(&[]),
             redirected: false,
             allows_handoff: false,
             method: None,
@@ -183,7 +256,7 @@ impl<'m> Original<'m> {
         let mut original = Self::read(id, root)?;
         original.params = match original.params {
             Parameters::Unchecked(Some(params)) => Parameters::Published(params),
-            Parameters::Unchecked(None) => Parameters::Export(None),
+            Parameters::Unchecked(None) => Parameters::Exports(&[]),
             _ => unreachable!(),
         };
         Ok(original)
@@ -252,10 +325,11 @@ pub(crate) fn returned_prepared<'b, 's, 'r, 'm, 'q, 'i, 'e, 'a, 'qs, 'is, 'es, '
                 &mut releases,
                 params.get_cap_table()?,
             )?,
-            Parameters::Export(Some(export)) => {
-                releases.record(export, 1).map_err(Error::Release)?
+            Parameters::Exports(exports) => {
+                for &export in exports {
+                    releases.record(export, 1).map_err(Error::Release)?;
+                }
             }
-            Parameters::Export(None) => (),
         }
     }
     let releases = releases.finish().map_err(Error::Release)?;

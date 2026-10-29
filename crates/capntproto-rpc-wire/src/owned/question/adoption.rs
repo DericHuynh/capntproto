@@ -32,7 +32,7 @@ impl<'pool, 'id> IncomingAdoption<'pool, 'id> {
         self.frame.release(messages);
     }
 }
-impl<'pool, 'id> Question<'pool, 'id> {
+impl<'pool, 'id, const CAPS: usize> Question<'pool, 'id, CAPS> {
     /// Reserve a callee-selected ID before exposing completion metadata to the
     /// caller. Return may arrive before authorization. The second frame lease
     /// keeps that metadata alive independently of Return consuming the original.

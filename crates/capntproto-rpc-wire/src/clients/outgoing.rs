@@ -551,9 +551,9 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
     }
     /// Create a callable remote pipeline only from a still-owned outgoing
     /// question. Aliases of the same path share one resolution observer.
-    pub fn bind<S, G>(
+    pub fn bind<S, G, const CAPS: usize>(
         &mut self,
-        question: &owned::Question<'_, 'id>,
+        question: &owned::Question<'_, 'id, CAPS>,
         questions: &mut questions::Questions<'id, '_>,
         graph: &mut G,
         path: pipeline::Path<'_>,

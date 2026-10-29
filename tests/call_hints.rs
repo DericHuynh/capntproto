@@ -26,6 +26,83 @@ impl Drop for Dummy {
 impl harness::Server for Dummy {}
 
 #[tokio::test(flavor = "current_thread")]
+async fn multiple_parameter_grants_match_legacy_refunds_and_retained_releases() {
+    tokio::task::LocalSet::new().run_until(async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            for portable in [false, true] {
+              for pending in [false, true] {
+                for refund in [false, true] {
+                    for canceled in [false, true] {
+                        let mut f = Fixture::with_driver(0, portable).await;
+                        let alive = [Rc::new(Cell::new(true)), Rc::new(Cell::new(true))];
+                        let caps: [harness::Client; 2] = core::array::from_fn(|index| {
+                            let cap: harness::Client = capnp_rpc::new_client(Dummy(Some(alive[index].clone())));
+                            if pending {
+                                capnp_rpc::new_future_client(async move {
+                                    futures::future::pending::<()>().await;
+                                    Ok(cap)
+                                })
+                            } else {
+                                cap
+                            }
+                        });
+                        let mut request = f.remote.fd_caps_request();
+                        let mut params = request.get().init_caps(4);
+                        for index in 0..4 {
+                            params.set(index, caps[index as usize % 2].client.hook.add_ref());
+                        }
+                        let mut response = Some(request.send());
+                        drop(caps);
+                        let input = f.next_call().await;
+                        let message::Call(call) = input.get_body().unwrap().get_as::<message::Reader>().unwrap().which().unwrap() else { panic!("Call") };
+                        let call = call.unwrap();
+                        let descriptors = call.get_params().unwrap().get_cap_table().unwrap();
+                        assert_eq!(descriptors.len(), 4, "portable={portable}");
+                        let ids: [_; 4] = core::array::from_fn(|index| {
+                            match descriptors.get(index as u32).which().unwrap() {
+                                cap_descriptor::SenderPromise(id) if pending && index < 2 => id,
+                                cap_descriptor::SenderHosted(id) if !pending || index >= 2 => id,
+                                _ => panic!("portable={portable}: local export"),
+                            }
+                        });
+                        assert_eq!(ids[0], ids[2]);
+                        assert_eq!(ids[1], ids[3]);
+                        assert_ne!(ids[0], ids[1]);
+                        if canceled {
+                            drop(response.take());
+                            settle().await;
+                        }
+                        f.peer.send(|m| {
+                            let mut returned = m.init_return();
+                            returned.set_answer_id(call.get_question_id());
+                            returned.set_release_param_caps(refund);
+                            returned.init_results();
+                        });
+                        if let Some(response) = response {
+                            response.promise.await.unwrap();
+                        }
+                        settle().await;
+                        assert!(alive.iter().all(|alive| alive.get() != refund), "portable={portable}, refund={refund}, canceled={canceled}: each parameter grant must be refunded exactly once");
+                        if !refund {
+                            for id in [ids[0], ids[1]] {
+                                f.peer.send(|m| {
+                                    let mut release = m.init_release();
+                                    release.set_id(id);
+                                    release.set_reference_count(2);
+                                });
+                            }
+                            settle().await;
+                            assert!(alive.iter().all(|alive| !alive.get()), "portable={portable}: peer-owned grants must survive Return until Release");
+                        }
+                    }
+                }
+              }
+            }
+        }).await.unwrap();
+    }).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn resolved_queued_remote_parameters_reflect_directly_like_legacy() {
     tokio::task::LocalSet::new().run_until(async {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {

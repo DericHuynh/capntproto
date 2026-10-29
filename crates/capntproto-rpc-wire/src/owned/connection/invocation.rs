@@ -767,13 +767,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(Error::Input)?
             .map_err(|error| Error::Input(error.into()))?;
         let mut minimum = minimum.max(sized);
-        let mut keys = self
-            .message_capabilities
-            .buffer::<_, CAPS>(count, || None)
-            .ok_or(Error::Input(super::super::Error::Capacity))?;
-        for (key, client) in keys.iter_mut().zip(invocation.capabilities.iter()) {
-            *key = client.as_ref().map(clients::Client::key);
-        }
         let pipeline_only = !redirected
             && count == 0
             && self.pipeline_only_enabled
@@ -799,12 +792,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .message_capabilities
             .buffer::<_, CAPS>(count, || reflection::Descriptor::None)
             .ok_or(Error::Input(super::super::Error::Capacity))?;
-        // As in legacy Question::param_exports, no parameter frame is needed
-        // when its exact refund obligation fits inline. Multiple grants keep
-        // the retained frame, including repeated grants of the same export.
-        let mut param_export = Some(None);
+        // Like legacy Question::param_exports, retain the exact grant IDs,
+        // including duplicates, independently of the serialized parameter body.
+        let mut param_exports = crate::inbound::full::ParameterExports::single(None);
         for index in 0..count {
-            let Some(key) = keys[index] else { continue };
+            // Borrow the queued owner only long enough to copy this key. A
+            // second per-message key buffer adds no ownership or validation.
+            let Task::Invoke(invocation) = self.runtime.queued_owner(dispatch).unwrap() else {
+                unreachable!()
+            };
+            let Some(key) = invocation.capabilities[index]
+                .as_ref()
+                .map(clients::Client::key)
+            else {
+                continue;
+            };
             let client = self.runtime.retain_key(key).map_err(Error::Graph)?;
             let reflect = match self.runtime.inspect(&client) {
                 Ok(clients::Destination::Endpoint { owner, .. }) => {
@@ -851,11 +853,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
             self.runtime.release(client);
             let grant = grant.map_err(Error::Exported)?;
-            param_export = if param_export == Some(None) {
-                Some(Some(grant.id()))
-            } else {
-                None
-            };
+            param_exports
+                .push(grant.id(), self.message_capabilities, count)
+                .ok_or(Error::Input(super::super::Error::Capacity))?;
             staged[index] = reflection::Descriptor::Grant(grant.id(), grant.is_promise(), attached);
             let owner = batch.pending_owner(grant.id()).and_then(|client| {
                 match self.runtime.inspect(client) {
@@ -977,49 +977,29 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .copy_with_capabilities(source.get_params()?.get_content(), mapping)
             })
             .map_err(Error::Input)?;
-        let question = if let Some(export) = param_export.filter(|_| !redirected && !pipeline_only)
-        {
-            Question::send_granting_compact(
-                reservation,
-                batch,
-                messages,
-                frame,
-                scratch,
-                output,
-                crate::inbound::full::OriginalMetadata::call(
-                    method,
-                    self.allow_answer_handoff && !pipeline_only,
-                    export,
-                ),
-                self.writer_policy == WriterPolicy::Checked,
-                |descriptor, index| {
-                    reflection::check(
-                        staged
-                            .get(index)
-                            .and_then(reflection::Descriptor::reflected),
-                        descriptor,
-                    )
-                },
-            )
-        } else {
-            Question::send_granting_reflected_using(
-                reservation,
-                batch,
-                messages,
-                frame,
-                scratch,
-                output,
-                self.writer_policy == WriterPolicy::Checked,
-                |descriptor, index| {
-                    reflection::check(
-                        staged
-                            .get(index)
-                            .and_then(reflection::Descriptor::reflected),
-                        descriptor,
-                    )
-                },
-            )
-        }
+        let question = Question::send_granting_compact(
+            reservation,
+            batch,
+            messages,
+            frame,
+            scratch,
+            output,
+            crate::inbound::full::OriginalMetadata::call(
+                method,
+                redirected,
+                self.allow_answer_handoff && !redirected && !pipeline_only,
+                param_exports,
+            ),
+            self.writer_policy == WriterPolicy::Checked,
+            |descriptor, index| {
+                reflection::check(
+                    staged
+                        .get(index)
+                        .and_then(reflection::Descriptor::reflected),
+                    descriptor,
+                )
+            },
+        )
         .map_err(|error| Error::Input(super::super::Error::Output(error)))?;
         let key = question.key();
         self.ledgers

@@ -66,7 +66,7 @@ pub fn outgoing_question_pipeline(reflected: bool, cancel: bool) {
             })
             .unwrap();
             let mut question =
-                Question::send(pending, messages, frame, queue.reserve().unwrap()).unwrap();
+                Question::<0>::send(pending, messages, frame, queue.reserve().unwrap()).unwrap();
             drain(messages, &mut queue);
             let mut outgoing_slots = [outgoing::Slot::<2>::EMPTY];
             let mut outgoing = outgoing::Bindings::new(&mut outgoing_slots, 1).unwrap();

@@ -170,7 +170,7 @@ pub fn owned_rpc_conversation(chunk: usize, cancel: bool) -> Result<()> {
                                         calls::bootstrap(b, reservation.id())
                                     })
                                     .unwrap();
-                                let bootstrap = owned::Question::send(
+                                let bootstrap = owned::Question::<0>::send(
                                     reservation,
                                     messages,
                                     frame,
@@ -279,7 +279,7 @@ pub fn owned_rpc_conversation(chunk: usize, cancel: bool) -> Result<()> {
                                         )
                                     })
                                     .unwrap();
-                                let mut question = owned::Question::send(
+                                let mut question = owned::Question::<0>::send(
                                     reservation,
                                     messages,
                                     frame,

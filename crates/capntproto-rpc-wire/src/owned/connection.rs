@@ -86,7 +86,7 @@ mod plain_return;
 mod retained;
 
 enum Exchange<'pool, 'id, I, const CAPS: usize> {
-    Pending(Question<'pool, 'id>),
+    Pending(Question<'pool, 'id, CAPS>),
     Returned(Response<'pool, 'id, I, CAPS>),
 }
 impl<'id, I, const CAPS: usize> Exchange<'_, 'id, I, CAPS> {
@@ -626,8 +626,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// Return or retained by the caller until terminal teardown.
     pub fn track(
         &mut self,
-        question: Question<'pool, 'id>,
-    ) -> Result<questions::Key<'id>, Question<'pool, 'id>> {
+        question: Question<'pool, 'id, CAPS>,
+    ) -> Result<questions::Key<'id>, Question<'pool, 'id, CAPS>> {
         let Some(slot_index) = ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges)
         else {
             return Err(question);

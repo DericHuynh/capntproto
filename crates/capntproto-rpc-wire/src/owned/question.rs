@@ -5,19 +5,22 @@ mod adoption;
 pub use adoption::IncomingAdoption;
 
 #[must_use = "retain through Return, including after local cancellation"]
-pub struct Question<'pool, 'q> {
-    original: Original<'pool>,
+/// A pending request with a caller-selected inline parameter-grant capacity.
+/// The connection uses its per-message capability capacity for `CAPS`; standalone
+/// raw-frame requests can use zero because they retain the original frame.
+pub struct Question<'pool, 'q, const CAPS: usize = 0> {
+    original: Original<'pool, CAPS>,
     local: Option<questions::Local<'q>>,
     key: questions::Key<'q>,
 }
-enum Original<'pool> {
+enum Original<'pool, const CAPS: usize> {
     Join(Frame<'pool>),
     RejectedJoin,
     // No parameter grants and no response consumer. Ordered output owns the
     // only request frame; Finish releases any unexpected result grants.
     PipelineOnly,
     Frame(Frame<'pool>),
-    Metadata(inbound::full::OriginalMetadata),
+    Metadata(inbound::full::OriginalMetadata<CAPS>),
     // A checked template has no parameter grants. Retain the method and handoff
     // policy needed by Return admission, without pinning its serialized bytes.
     DataOnly {
@@ -25,14 +28,14 @@ enum Original<'pool> {
         allows_handoff: bool,
     },
 }
-impl<'pool> Original<'pool> {
+impl<'pool, const CAPS: usize> Original<'pool, CAPS> {
     fn release(self, messages: &mut messages::Messages<'pool, '_, '_>) {
         if let Self::Frame(frame) | Self::Join(frame) = self {
             frame.release(messages);
         }
     }
 }
-impl<'pool, 'q> Question<'pool, 'q> {
+impl<'pool, 'q, const CAPS: usize> Question<'pool, 'q, CAPS> {
     pub(super) fn matches_unimplemented_join(
         &self,
         join: rpc_capnp::join::Reader<'_>,
@@ -249,7 +252,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         })
     }
     /// The private encoder has already captured the exact outgoing method and
-    /// zero/single export. Like C++ Question::paramExports, retain that
+    /// parameter grants. Like C++ Question::paramExports, retain that
     /// metadata without pinning the serialized request through Return. The FIFO
     /// remains the affine frame owner through partial writes and physical flush.
     #[allow(clippy::too_many_arguments)]
@@ -260,13 +263,14 @@ impl<'pool, 'q> Question<'pool, 'q> {
         frame: Frame<'pool>,
         scratch: &mut [u32],
         queue: messages::QueueSlot<'_, 'pool, '_, impl Sized>,
-        metadata: inbound::full::OriginalMetadata,
+        metadata: inbound::full::OriginalMetadata<CAPS>,
         check_payload: bool,
         reflected: impl FnMut(
             rpc_capnp::cap_descriptor::Reader<'_>,
             usize,
         ) -> Result<bool, crate::publication::Error>,
     ) -> Result<Self, crate::admission::Error> {
+        let pipeline_only = reservation.id().is_pipeline_only();
         let local = crate::admission::granting_question_reflected_using(
             reservation,
             batch,
@@ -279,7 +283,11 @@ impl<'pool, 'q> Question<'pool, 'q> {
         )?
         .accept(queue);
         Ok(Self {
-            original: Original::Metadata(metadata),
+            original: if pipeline_only {
+                Original::PipelineOnly
+            } else {
+                Original::Metadata(metadata)
+            },
             key: local.key(),
             local: Some(local),
         })
@@ -319,7 +327,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         answers: &mut answers::Answers<'a, '_, A>,
         scratch: &mut [u32],
         make_import: impl FnMut(ImportId) -> I,
-    ) -> Result<Response<'pool, 'q, 'i, 'e, 'a, I, N>, ReturnRejected<'pool, 'q>> {
+    ) -> Result<Response<'pool, 'q, 'i, 'e, 'a, I, N>, ReturnRejected<'pool, 'q, CAPS>> {
         self.returned_with_capacity(
             frame,
             messages,
@@ -344,7 +352,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         scratch: &mut [u32],
         mut make_import: impl FnMut(ImportId) -> I,
         capacity: Capacity,
-    ) -> Result<Response<'pool, 'q, 'i, 'e, 'a, I, N>, ReturnRejected<'pool, 'q>> {
+    ) -> Result<Response<'pool, 'q, 'i, 'e, 'a, I, N>, ReturnRejected<'pool, 'q, CAPS>> {
         self.returned_with_receiver(
             frame,
             messages,
@@ -369,7 +377,7 @@ impl<'pool, 'q> Question<'pool, 'q> {
         scratch: &mut [u32],
         receiver: &mut impl ImportReceiver<I>,
         capacity: Capacity,
-    ) -> Result<Response<'pool, 'q, 'i, 'e, 'a, I, N>, ReturnRejected<'pool, 'q>> {
+    ) -> Result<Response<'pool, 'q, 'i, 'e, 'a, I, N>, ReturnRejected<'pool, 'q, CAPS>> {
         let outcome = frame
             .with(messages, |root| {
                 let rpc_capnp::message::Return(result) =
@@ -736,10 +744,10 @@ impl capnp::private::capability::ResponseHook for PlainResults {
     }
 }
 #[must_use = "retry Return or terminate this connection"]
-pub struct ReturnRejected<'pool, 'q> {
+pub struct ReturnRejected<'pool, 'q, const CAPS: usize = 0> {
     pub error: Error,
     pub frame: Frame<'pool>,
-    pub question: Question<'pool, 'q>,
+    pub question: Question<'pool, 'q, CAPS>,
 }
 enum Kind<'a> {
     Results,

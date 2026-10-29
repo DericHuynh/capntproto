@@ -368,6 +368,7 @@ The legacy-path regression matrix now covers both drivers:
 | Call/Return, scalar and capability payloads | `scoped_vat`, `composed_wire_boundary` |
 | Exception details, cancellation, protected execution | `cancellation`, `static_cancellation`, `exception_metadata` |
 | Finish, Release, ID reuse and high-ID no-Return hints | `call_hints`, `tail_transfer` |
+| Multiple parameter grants, duplicate IDs, refunds and retained peer ownership | `call_hints`; bounded wire tests also reclaim every request buffer before Return |
 | Native tail transfer, dependent calls, local resolution | `tail_transfer` (both drivers replay the same traces) |
 | Flow credit, concurrency and streaming | `flow_control`, `streaming`, `allocations` |
 | Resolve, promise ordering and direct Call/Return/Resolve reflection | `join`, `scoped_vat`, `multiparty_join`, bounded wire tests |
@@ -380,7 +381,10 @@ The legacy-path regression matrix now covers both drivers:
 
 The bounded driver keeps caller-owned storage and explicit capacity errors;
 these are intentional differences from the allocating legacy driver. The hosted
-message bridge still copies frames. Functional trace parity does not establish
+message bridge still copies frames. Published generic calls retain their export
+IDs and Return policy independently of those frames, like legacy. Multiple grants
+use the configured inline capacity or bounded growth; the output queue owns the
+serialized request until physical output completes. Functional trace parity does not establish
 instruction, allocation, or throughput parity; benchmark the portable path
 explicitly before changing the default driver.
 
