@@ -128,6 +128,113 @@ fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
                     "failed admission cannot retain its prefix"
                 );
             }
+            let (call, target) = request(&mut driver, messages, false);
+            for answer in [false, true] {
+                for fail_index in 0..3 {
+                    let prefix = driver
+                        .runtime
+                        .endpoint(
+                            binding::Route::local(201 + fail_index as u32),
+                            clients::Location::Local,
+                        )
+                        .unwrap();
+                    let entries = [Some(&prefix), None, Some(&remote)];
+                    let table = Table {
+                        entries: &entries,
+                        reads: core::array::from_fn(|_| Cell::new(0)),
+                        fail: Some((fail_index, 1)),
+                    };
+                    let fill = |field: capnp::field_api::FixedField<
+                        '_,
+                        capnp::field_api::Generic<capnp::any_pointer::Owned>,
+                    >| field.set_capability_index(2);
+                    let result = if answer {
+                        driver.local_answer_dynamic_table(
+                            call.answer(),
+                            7,
+                            9,
+                            &table,
+                            messages,
+                            512,
+                            Default::default(),
+                            fill,
+                        )
+                    } else {
+                        driver.local_result_dynamic_table(
+                            7,
+                            9,
+                            &table,
+                            messages,
+                            512,
+                            Default::default(),
+                            fill,
+                        )
+                    };
+                    assert!(matches!(
+                        result,
+                        Err(Error::Input(crate::owned::Error::Wire(
+                            capnp::ErrorKind::Overloaded
+                        )))
+                    ));
+                    assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+                    driver.runtime.release(prefix);
+                    assert!(
+                        matches!(driver.runtime.take_retired(), Some(binding::Route::Capability(binding::Endpoint::Local(owner))) if owner == 201 + fail_index as u32),
+                        "failed result retention cannot retain its prefix"
+                    );
+                }
+                let table = Table {
+                    entries: &entries,
+                    reads: core::array::from_fn(|_| Cell::new(0)),
+                    fail: None,
+                };
+                let fill = |field: capnp::field_api::FixedField<
+                    '_,
+                    capnp::field_api::Generic<capnp::any_pointer::Owned>,
+                >| field.set_capability_index(2);
+                let result = if answer {
+                    driver.local_answer_dynamic_table(
+                        call.answer(),
+                        7,
+                        9,
+                        &table,
+                        messages,
+                        512,
+                        Default::default(),
+                        fill,
+                    )
+                } else {
+                    driver.local_result_dynamic_table(
+                        7,
+                        9,
+                        &table,
+                        messages,
+                        512,
+                        Default::default(),
+                        fill,
+                    )
+                }
+                .unwrap();
+                assert_eq!(table.reads.map(|reads| reads.get()), [1, 1, 1]);
+                result
+                    .with(messages, |payload| {
+                        assert_eq!(payload.capabilities().len(), 3);
+                        assert_eq!(
+                            payload.capabilities()[0].as_ref().unwrap().key(),
+                            local.key()
+                        );
+                        assert!(payload.capabilities()[1].is_none());
+                        assert_eq!(
+                            payload.capabilities()[2].as_ref().unwrap().key(),
+                            remote.key()
+                        );
+                        assert_eq!(payload.content().capability_index().unwrap(), 2);
+                    })
+                    .unwrap();
+                result.release(messages, &mut driver.runtime);
+            }
+            driver.release_call(call, messages);
+            driver.runtime.release(target);
             {
                 use capntproto_rpc_engine::completion;
                 use core::{
@@ -1102,6 +1209,20 @@ fn exported_promise_resolves_to_original_peer_routes_without_allocating() {
 
 #[test]
 fn local_result_iterators_preserve_null_slots_and_capacity_without_allocating() {
+    struct Sized<I> {
+        iter: I,
+        advertised: usize,
+    }
+    impl<I: Iterator> Iterator for Sized<I> {
+        type Item = I::Item;
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iter.next()
+        }
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (self.advertised, Some(self.advertised))
+        }
+    }
+    impl<I: Iterator> ExactSizeIterator for Sized<I> {}
     let measured = allocation_counter::measure(|| {
         for native in [false, true] {
             for answer in [false, true] {
@@ -1133,6 +1254,51 @@ fn local_result_iterators_preserve_null_slots_and_capacity_without_allocating() 
                     ));
                     assert_eq!(visited.get(), 0, "reject capacity before consuming clients");
                     assert!(!filled.get(), "reject capacity before constructing output");
+
+                    for advertised in [0, 1, 2, 4] {
+                        let prefix = driver
+                            .runtime
+                            .endpoint(
+                                binding::Route::local(128 + advertised as u32),
+                                clients::Location::Local,
+                            )
+                            .unwrap();
+                        let capabilities = Sized {
+                            iter: [Some(&prefix), None, Some(&prefix)].into_iter(),
+                            advertised,
+                        };
+                        let result = if answer {
+                            driver.local_answer_dynamic(
+                                call.answer(),
+                                7,
+                                9,
+                                capabilities,
+                                messages,
+                                512,
+                                Default::default(),
+                                |_| Ok(()),
+                            )
+                        } else {
+                            driver.local_result_dynamic(
+                                7,
+                                9,
+                                capabilities,
+                                messages,
+                                512,
+                                Default::default(),
+                                |_| Ok(()),
+                            )
+                        };
+                        assert!(matches!(
+                            result,
+                            Err(Error::Input(crate::owned::Error::Capacity))
+                        ));
+                        driver.runtime.release(prefix);
+                        assert!(
+                            matches!(driver.runtime.take_retired(), Some(binding::Route::Capability(binding::Endpoint::Local(owner))) if owner == 128 + advertised as u32),
+                            "incorrect iterator lengths must release the retained prefix"
+                        );
+                    }
 
                     let capabilities = (0..4).map(|index| {
                         visited.set(visited.get() + 1);

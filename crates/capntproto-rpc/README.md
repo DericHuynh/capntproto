@@ -440,6 +440,27 @@ tracked admission also preserves the caller's completion sender. Native
 eligibility is only a hint: the actual borrow checks the current registry entry
 against the private endpoint identity, including after slot removal or reuse.
 
+Native pipeline projections retain their endpoint inline, including clones and
+cached direct routes. Opaque projection hooks preserve their original wrapper.
+Completing a pipeline retains another hook only when waiting projections need
+delivery; its terminal state already owns the completed pipeline. Public
+pipeline interests still control parent cancellation and publication ordering.
+
+Local forwarding retains immutable parameter and result readers with their
+original traversal budgets. Capability hooks are bound separately and keep their
+exact indices, including unused and null slots. Readers remain valid after the
+task, driver and allocating message pool are released. Fixed message backing
+uses an owned copy because its storage cannot escape the caller's scope.
+Network-control replies and their completed pipelines share this same immutable
+payload rather than constructing a second message for pipeline readers.
+
+Server-result collection borrows native capability bindings directly into the
+final local result table. Foreign hooks keep policy-preserving normalization.
+The bounded `local_result_dynamic_table`, `local_answer_dynamic_table` and
+`local_answer_prepared_table` APIs accept `CapabilityTable` storage. Lookup
+failures and inconsistent iterator lengths reclaim the result frame and every
+retained prefix client before returning; answer publication remains retryable.
+
 Promises resolved back to local objects expose their original policy hooks only
 after graph ordering barriers open and older queued calls begin forwarding.
 Resolution does not wait for those calls' replies. The local capabilities remain

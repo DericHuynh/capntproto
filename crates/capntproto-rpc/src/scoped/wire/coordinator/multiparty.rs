@@ -113,7 +113,7 @@ struct Lease {
     _notify: Notify,
 }
 struct Reply {
-    payload: Payload,
+    payload: Rc<Payload>,
     _lease: Rc<Lease>,
 }
 impl ResponseHook for Reply {
@@ -678,16 +678,15 @@ impl<
                                 Err(error) => return Poll::Ready(Err(wire_error(error))),
                                 Ok(response) => {
                                     let result =
-                                        Self::copy_response(&response, coordinator, messages);
+                                        Self::retain_response(&response, coordinator, messages)
+                                            .map(Rc::new);
                                     if let Some(pipeline) = sent.pipeline.take() {
-                                        pipeline.finish(match &result {
-                                            Ok(payload) => {
-                                                Payload::copy(payload.reader()?)?.into_pipeline()
-                                            }
-                                            Err(error) => Box::new(crate::broken::Pipeline::new(
-                                                error.clone(),
+                                        match &result {
+                                            Ok(payload) => pipeline.finish_payload(payload.clone()),
+                                            Err(error) => pipeline.finish(Box::new(
+                                                crate::broken::Pipeline::new(error.clone()),
                                             )),
-                                        });
+                                        }
                                     }
                                     let lease = Rc::new(Lease {
                                         _permit: sent.permit.take().unwrap(),
@@ -927,7 +926,7 @@ impl<
         }
         Ok(())
     }
-    fn copy_response<'s>(
+    fn retain_response<'s>(
         response: &connection::Response<'p, 'id, resources::Import, C>,
         coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
         messages: &messages::Messages<'p, '_, '_>,
@@ -956,9 +955,14 @@ impl<
                         };
                         caps.push(cap);
                     }
-                    let mut content = payload.content();
-                    content.imbue(&caps);
-                    Payload::copy(content)
+                    let content = payload.content();
+                    Payload::retain_or_copy(
+                        content,
+                        response
+                            .retain_results(messages, content)
+                            .map_err(wire_error)?,
+                        caps,
+                    )
                 }
                 owned::Reply::Exception(error) => Err(crate::rpc::remote_exception_to_error(error)),
                 _ => Err(Error::failed("invalid network command response".into())),
@@ -1426,6 +1430,192 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn network_reply_and_pipeline_retain_original_bytes_after_driver_and_pool_teardown() {
+        use capntproto_rpc_engine::{connection as storage, ids::WireId};
+        let commands = Commands::new(1, 256);
+        let (reply, pipeline, pointer) = {
+            let mut buffers = messages::GrowingBuffers::new(4, 2048, 4 * 2055);
+            messages::with_growing_messages(
+                &mut buffers,
+                storage::Growth {
+                    initial: 0,
+                    maximum: 4,
+                },
+                |messages| {
+                    storage::with_domain(|domain| {
+                        let mut slots = connection::FixedStorage::<
+                            resources::Import,
+                            server::Producer,
+                            (),
+                            Rc<dyn ClientHook>,
+                            4,
+                            4,
+                            4,
+                            32,
+                        >::new();
+                        let driver = slots.bind(domain, ()).unwrap();
+                        let mut coordinator = Coordinator::new(
+                            driver,
+                            ClientHooks::new(8, 8),
+                            NonZeroUsize::new(4).unwrap(),
+                            None,
+                            Options {
+                                input_bytes: NonZeroUsize::new(2048).unwrap(),
+                                output_bytes: NonZeroUsize::new(256).unwrap(),
+                                budget: NonZeroUsize::new(16).unwrap(),
+                                reader: Default::default(),
+                            },
+                        )
+                        .unwrap();
+                        let mut sends = [None];
+                        let mut queue = messages::Queue::<()>::new(&mut sends).unwrap();
+                        let key = coordinator
+                            .driver
+                            .send(
+                                messages,
+                                &mut queue,
+                                128,
+                                Default::default(),
+                                capntproto_rpc_wire::calls::bootstrap,
+                            )
+                            .unwrap();
+                        while let Some(window) = queue.window(messages).unwrap() {
+                            let length = window.bytes().len();
+                            window.advance(length).unwrap();
+                        }
+                        let frame = Frame::build(messages, 1024, Default::default(), |builder| {
+                            capntproto_rpc_wire::calls::dynamic_results(
+                                builder,
+                                capntproto_rpc_engine::ids::AnswerId::from_wire(key.id().to_wire()),
+                                |field| {
+                                    field.cast::<capnp::field_api::Data>().init(512)?.fill(0x5a);
+                                    Ok(())
+                                },
+                            )
+                        })
+                        .unwrap();
+                        coordinator
+                            .driver
+                            .receive(
+                                frame,
+                                messages,
+                                &mut [0; 8],
+                                |_| resources::Import::default(),
+                                server::Producer::new,
+                            )
+                            .unwrap_or_else(|_| panic!("Return"));
+                        let response = coordinator.driver.take_response(key).unwrap();
+                        let pointer = response
+                            .with(messages, |reply| {
+                                let owned::Reply::Results(payload) = reply else {
+                                    panic!("Results")
+                                };
+                                payload
+                                    .content()
+                                    .get_as::<capnp::data::Reader>()
+                                    .unwrap()
+                                    .as_ptr()
+                            })
+                            .unwrap();
+                        let mut payload = None;
+                        let counts = allocation_counter::measure(|| {
+                            payload =
+                                Some(
+                                    NetworkControl::<
+                                        (),
+                                        fn() -> capnp::Result<capability::Client>,
+                                        4,
+                                        4,
+                                    >::retain_response(
+                                        &response, &mut coordinator, messages
+                                    )
+                                    .unwrap(),
+                                );
+                        });
+                        assert_eq!(counts.count_total, 0, "retain the already admitted reader");
+                        let payload = Rc::new(payload.unwrap());
+                        let pipeline = PipelineState::prepared(None);
+                        pipeline.finish_payload(payload.clone());
+                        let reply = Reply {
+                            payload,
+                            _lease: Rc::new(Lease {
+                                _permit: commands.capacity.reserve_owned().unwrap(),
+                                _notify: Notify(Rc::downgrade(&commands)),
+                            }),
+                        };
+                        coordinator
+                            .driver
+                            .release_output(CallOutput::Remote(response), messages);
+                        let Coordinator {
+                            mut driver,
+                            hooks,
+                            calls,
+                            worker,
+                            foreign,
+                            ..
+                        } = coordinator;
+                        calls.terminate(&mut driver, messages);
+                        worker.terminate(&mut driver, messages);
+                        foreign.terminate(&mut driver.capabilities());
+                        hooks.close(&mut driver.capabilities(), closed());
+                        let mut closing = driver.terminate(&mut queue);
+                        let mut done = false;
+                        for _ in 0..256 {
+                            if matches!(
+                                closing
+                                    .poll(messages, NonZeroUsize::new(32).unwrap())
+                                    .unwrap(),
+                                connection::Termination::Done
+                            ) {
+                                done = true;
+                                break;
+                            }
+                        }
+                        assert!(done);
+                        (reply, pipeline, pointer)
+                    })
+                },
+            )
+            .unwrap()
+        };
+        let data = reply
+            .get()
+            .unwrap()
+            .get_as::<capnp::data::Reader>()
+            .unwrap();
+        assert_eq!(data.as_ptr(), pointer);
+        assert_eq!(data, &[0x5a; 512]);
+        let weak = Rc::downgrade(&reply.payload);
+        drop(reply);
+        assert_eq!(commands.capacity.used(), 0);
+        assert!(
+            weak.upgrade().is_some(),
+            "pipeline keeps the result after reply release"
+        );
+        {
+            let PipelineVariant::Resolved(CompletedPipeline::Payload(payload)) =
+                &*pipeline.variant.borrow()
+            else {
+                panic!("completed payload")
+            };
+            assert_eq!(
+                payload
+                    .reader()
+                    .unwrap()
+                    .get_as::<capnp::data::Reader>()
+                    .unwrap()
+                    .as_ptr(),
+                pointer
+            );
+        }
+        drop(pipeline);
+        assert!(
+            weak.upgrade().is_none(),
+            "final pipeline release retires the reader"
+        );
+    }
+
     #[test]
     fn commands_bound_queued_and_canceled_work_and_preserve_close_errors() {
         let commands = Commands::new(1, 256);

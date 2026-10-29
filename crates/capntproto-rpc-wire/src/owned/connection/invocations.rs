@@ -69,6 +69,29 @@ impl<'pool, 'id, I, const CAPS: usize, const PATH: usize> LocalCall<'pool, 'id, 
         };
         invocation.with(messages, f)
     }
+    /// Retain this invocation's immutable parameter bytes independently of its
+    /// running task. The selected reader must belong to this frame; its original
+    /// traversal budget is preserved. Fixed backing returns `None` so callers
+    /// can copy into their own storage instead. Capability ownership remains
+    /// separate and must be retained before releasing the invocation.
+    #[cfg(feature = "alloc")]
+    pub fn retain_params(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        content: capnp::any_pointer::Reader<'_>,
+    ) -> Result<
+        Option<
+            capnp::message::CachedPointerReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
+        super::super::Error,
+    > {
+        let Task::Invoke(invocation) = self.running.owner() else {
+            unreachable!()
+        };
+        invocation.retain_params(messages, content)
+    }
     pub fn release<A, P: Copy + Eq, S>(
         self,
         driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,

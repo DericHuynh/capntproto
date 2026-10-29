@@ -577,8 +577,63 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     where
         'id: 'c,
     {
+        self.local_answer_prepared_fallible(
+            answer,
+            interface,
+            method,
+            source,
+            capabilities.map(Ok),
+            messages,
+            options,
+        )
+    }
+
+    /// Retain a prepared result directly from borrowed capability storage.
+    /// Lookup failures reclaim the complete frame and retained client prefix.
+    #[allow(clippy::too_many_arguments)]
+    pub fn local_answer_prepared_table<
+        B: capnp::message::Allocator,
+        T: CapabilityTable<'id> + ?Sized,
+    >(
+        &mut self,
+        answer: answers::Key<'id>,
+        interface: u64,
+        method: u16,
+        source: &FrozenReturn<B>,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error> {
+        self.local_answer_prepared_fallible(
+            answer,
+            interface,
+            method,
+            source,
+            (0..capabilities.len()).map(|index| capabilities.capability(index)),
+            messages,
+            options,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn local_answer_prepared_fallible<'c, B: capnp::message::Allocator>(
+        &mut self,
+        answer: answers::Key<'id>,
+        interface: u64,
+        method: u16,
+        source: &FrozenReturn<B>,
+        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        options: capnp::message::ReaderOptions,
+    ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error>
+    where
+        'id: 'c,
+    {
         let options = self.writer_policy.options(options);
         if capabilities.len() == 0 {
+            if capabilities.next().is_some() {
+                return Err(Error::Input(super::super::Error::Capacity));
+            }
             return self
                 .local_answer_prepared(answer, interface, method, source, messages, options);
         }
@@ -610,7 +665,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             }
             Err(error) => return Err(Error::Input(error)),
         };
-        let mut result = LocalResult {
+        let result = LocalResult {
             capacity: self.message_capabilities,
             frame,
             capabilities: retained,
@@ -619,17 +674,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             method,
             prepared_return: None,
         };
-        for (index, client) in capabilities.enumerate() {
-            let Some(client) = client else { continue };
-            match self.runtime.retain(client) {
-                Ok(client) => result.capabilities[index] = Some(client),
-                Err(error) => {
-                    result.release(messages, &mut self.runtime);
-                    return Err(Error::Graph(error));
-                }
-            }
-        }
-        Ok(Some(result))
+        self.retain_local_result(result, capabilities, messages)
+            .map(Some)
     }
 }
 

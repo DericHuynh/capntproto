@@ -1303,9 +1303,20 @@ impl<'id> ClientHooks<'id> {
             .get()
             .map(|payload| payload.share(results))
             .ok_or_else(|| Error::overloaded("server still owns its results".into()))?;
+        if payload.caps.len() > driver.capability_capacity() {
+            return Err(Error::overloaded(
+                "wire result capability capacity exhausted".into(),
+            ));
+        }
+        // As for native parameters, borrow existing authority until the final
+        // result table owns it. Only foreign normalization needs staging refs.
+        let native = payload.caps.is_empty()
+            || calls::native_parameters(self, &payload.caps, driver.capability_capacity());
         let mut inline = [None];
         let mut overflow = Vec::new();
-        let retained = if payload.caps.len() <= inline.len() {
+        let retained = if native {
+            &mut [][..]
+        } else if payload.caps.len() <= inline.len() {
             &mut inline[..payload.caps.len()]
         } else {
             overflow
@@ -1315,28 +1326,6 @@ impl<'id> ClientHooks<'id> {
             &mut overflow[..]
         };
         let result = (|| {
-            if payload.caps.is_empty() {
-                if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
-                    if let Some(result) = driver
-                        .local_answer_prepared(
-                            answer,
-                            method.interface,
-                            method.method,
-                            source,
-                            messages,
-                            options,
-                        )
-                        .map_err(wire_error)?
-                    {
-                        return Ok(result);
-                    }
-                }
-            }
-            if payload.caps.len() > driver.capability_capacity() {
-                return Err(Error::overloaded(
-                    "wire result capability capacity exhausted".into(),
-                ));
-            }
             for (slot, cap) in retained.iter_mut().zip(&payload.caps) {
                 let client = match cap {
                     None => None,
@@ -1349,14 +1338,19 @@ impl<'id> ClientHooks<'id> {
                 };
                 *slot = client;
             }
+            let table = if native {
+                calls::ParameterCapabilities::Native(self, &payload.caps)
+            } else {
+                calls::ParameterCapabilities::Retained(retained)
+            };
             if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
                 if let Some(result) = driver
-                    .local_answer_prepared_with_capabilities(
+                    .local_answer_prepared_table(
                         answer,
                         method.interface,
                         method.method,
                         source,
-                        retained.iter().map(Option::as_ref),
+                        &table,
                         messages,
                         options,
                     )
@@ -1382,23 +1376,22 @@ impl<'id> ClientHooks<'id> {
                     capnp::wire_capability::IndexMap::identity(payload.caps.len() as u32),
                 )
             };
-            let references = retained.iter().map(Option::as_ref);
             let result = if let Some(answer) = answer {
-                driver.local_answer_dynamic(
+                driver.local_answer_dynamic_table(
                     answer,
                     method.interface,
                     method.method,
-                    references,
+                    &table,
                     messages,
                     minimum,
                     options,
                     fill,
                 )
             } else {
-                driver.local_result_dynamic(
+                driver.local_result_dynamic_table(
                     method.interface,
                     method.method,
-                    references,
+                    &table,
                     messages,
                     minimum,
                     options,

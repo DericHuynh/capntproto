@@ -455,7 +455,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     .iter()
                     .chain(cache.rest.iter())
                     .filter_map(|(path, hook)| {
-                        let hook = hook.as_any()?.downcast_ref::<Hook>()?;
+                        let hook = hook.native()?;
                         Some((path.clone(), hook.0.clone()))
                     })
                     .collect::<Vec<_>>()

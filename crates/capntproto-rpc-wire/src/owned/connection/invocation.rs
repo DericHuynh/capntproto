@@ -150,6 +150,21 @@ impl<'pool, 'id, const CAPS: usize> Invocation<'pool, 'id, CAPS> {
             }))
         })?
     }
+    #[cfg(feature = "alloc")]
+    pub(super) fn retain_params(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        content: capnp::any_pointer::Reader<'_>,
+    ) -> Result<
+        Option<
+            capnp::message::CachedPointerReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
+        super::super::Error,
+    > {
+        self.frame.retain_pointer(messages, content)
+    }
     pub fn release<G: clients::Capabilities<'id>>(
         self,
         messages: &mut messages::Messages<'pool, '_, '_>,

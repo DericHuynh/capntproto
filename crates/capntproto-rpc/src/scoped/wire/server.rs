@@ -128,11 +128,16 @@ impl<'id> ClientHooks<'id> {
                         .transpose()
                 })
                 .collect::<capnp::Result<Vec<_>>>()?;
-            let mut content = params.content()?;
-            content.imbue(&caps);
+            let content = params.content()?;
             Ok(Prepared {
                 method: params.hints(),
-                params: Payload::copy(content)?.into_params().into(),
+                params: Payload::retain_or_copy(
+                    content,
+                    call.retain_params(messages, content).map_err(wire_error)?,
+                    caps,
+                )?
+                .into_params()
+                .into(),
             })
         })
         .map_err(wire_error)?
@@ -195,12 +200,12 @@ impl<'id> ClientHooks<'id> {
                 };
                 caps.push(hook);
             }
+            let content = params.incoming().payload()?.get_content();
             Ok(Prepared {
                 method: params.incoming().hints(),
                 params: Payload::retain_or_copy(
-                    params.incoming().payload()?.get_content(),
-                    call.retain_params(messages, params.incoming().payload()?.get_content())
-                        .map_err(wire_error)?,
+                    content,
+                    call.retain_params(messages, content).map_err(wire_error)?,
                     caps,
                 )?
                 .into_params()

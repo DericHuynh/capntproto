@@ -504,7 +504,7 @@ fn remote<'p, 'id>(driver: &mut Peer<'p, 'id, '_>) -> Client<'id> {
 #[test]
 fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
     for no_promise_pipelining in [false, true] {
-        with_pool(|messages| {
+        let response = with_pool(|messages| {
             with_peer(4, |mut driver| {
                 let target = driver
                     .capabilities()
@@ -572,6 +572,16 @@ fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
                         },
                     )
                     .unwrap();
+                let pointer = output
+                    .with(messages, |payload| {
+                        payload
+                            .content()
+                            .get_as::<capnp::text::Reader>()
+                            .unwrap()
+                            .as_bytes()
+                            .as_ptr()
+                    })
+                    .unwrap();
                 invocations
                     .complete_local(&mut driver, messages, running, Ok(output))
                     .unwrap_or_else(|_| panic!("complete local"));
@@ -584,14 +594,17 @@ fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
                         &mut Context::from_waker(Waker::noop())
                     )
                     .is_ready());
+                let response = ready(&mut remote.promise).unwrap();
+                let text = response
+                    .get()
+                    .unwrap()
+                    .get_as::<capnp::text::Reader>()
+                    .unwrap();
+                assert_eq!(text, "response text");
                 assert_eq!(
-                    ready(&mut remote.promise)
-                        .unwrap()
-                        .get()
-                        .unwrap()
-                        .get_as::<capnp::text::Reader>()
-                        .unwrap(),
-                    "response text"
+                    text.as_bytes().as_ptr(),
+                    pointer,
+                    "retain local response bytes"
                 );
                 settle(&mut invocations, &mut driver, messages);
                 assert!(invocations.is_empty());
@@ -600,8 +613,17 @@ fn owned_text_call_and_result_use_portable_driver_and_tracked_completion() {
                     Error::disconnected("done".into()),
                 );
                 driver.capabilities().release(target);
+                response
             })
         });
+        assert_eq!(
+            response
+                .get()
+                .unwrap()
+                .get_as::<capnp::text::Reader>()
+                .unwrap(),
+            "response text"
+        );
     }
 }
 
@@ -1165,6 +1187,133 @@ fn pipeline_drop_releases_interest_before_synchronous_wake() {
     assert_eq!(observe.0.load(Ordering::SeqCst), 1);
     drop(borrowed);
     OBSERVED.with(|slot| slot.borrow_mut().take());
+}
+
+#[test]
+fn local_server_retains_shared_parameters_and_copies_fixed_backing() {
+    fn exercise(messages: &mut messages::Messages<'_, '_, '_>, shared: bool) -> server::Prepared {
+        with_peer(4, |mut driver| {
+            let target = driver
+                .capabilities()
+                .endpoint(Route::local(42), clients::Location::Local)
+                .unwrap();
+            let mut hooks = ClientHooks::new(8, 4);
+            let mut invocations = connection::Invocations::new_growing(0, 4).unwrap();
+            let (sender, receiver) = shared::channel();
+            invocations
+                .enqueue_dynamic(
+                    &mut driver,
+                    sender.into(),
+                    &target,
+                    DynamicCall::default(),
+                    &[],
+                    messages,
+                    512,
+                    Default::default(),
+                    |field| {
+                        field.cast::<capnp::field_api::Data>().init(256)?.fill(0x5a);
+                        Ok(())
+                    },
+                )
+                .unwrap_or_else(|_| panic!("enqueue"));
+            let running = invocations.accept_local(&mut driver).unwrap().unwrap();
+            let pointer = running
+                .params(messages, |params| {
+                    params
+                        .content()
+                        .unwrap()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap()
+                        .as_ptr()
+                })
+                .unwrap();
+            let mut foreign = capnp::message::Builder::new_default();
+            foreign
+                .set_root::<capnp::data::Owned>(&b"foreign"[..])
+                .unwrap();
+            let foreign = running.retain_params(messages, foreign.get_root_as_reader().unwrap());
+            if shared {
+                assert_eq!(
+                    foreign.err(),
+                    Some(owned::Error::Wire(capnp::ErrorKind::WrongArena))
+                );
+            } else {
+                assert!(foreign.unwrap().is_none());
+            }
+            let mut prepared = None;
+            let counts = allocation_counter::measure(|| {
+                prepared = Some(
+                    hooks
+                        .prepare_local_server(&running, &mut driver, messages)
+                        .unwrap(),
+                );
+            });
+            if shared {
+                assert_eq!(
+                    counts.count_total, 1,
+                    "only the public parameter hook is boxed"
+                );
+            }
+            let prepared = prepared.unwrap();
+            let data = prepared
+                .params()
+                .unwrap()
+                .get_as::<capnp::data::Reader>()
+                .unwrap();
+            assert_eq!(data.as_ptr() == pointer, shared);
+            invocations
+                .complete_local(
+                    &mut driver,
+                    messages,
+                    running,
+                    Err(capnp::ErrorKind::Failed),
+                )
+                .unwrap_or_else(|_| panic!("complete"));
+            drop(receiver);
+            invocations.terminate(&mut driver, messages);
+            if shared {
+                assert_eq!(messages.reserve(16).unwrap_err(), messages::Error::NoBuffer);
+            } else {
+                let writer = messages.reserve(16).unwrap();
+                messages.discard(writer);
+            }
+            hooks.close(
+                &mut driver.capabilities(),
+                Error::disconnected("done".into()),
+            );
+            driver.capabilities().release(target);
+            prepared
+        })
+    }
+    for shared in [false, true] {
+        let prepared = if shared {
+            let mut buffers = messages::GrowingBuffers::new(1, 1024, 1031);
+            messages::with_growing_messages(
+                &mut buffers,
+                storage::Growth {
+                    initial: 0,
+                    maximum: 0,
+                },
+                |messages| exercise(messages, true),
+            )
+            .unwrap()
+        } else {
+            let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 128];
+            let mut buffers = [messages::Buffer::new(capnp::Word::words_to_bytes_mut(
+                &mut words,
+            ))];
+            messages::with_messages(&mut buffers, &mut [], |messages| exercise(messages, false))
+                .unwrap()
+        };
+        assert_eq!(
+            prepared
+                .params()
+                .unwrap()
+                .get_as::<capnp::data::Reader>()
+                .unwrap(),
+            &[0x5a; 256]
+        );
+    }
 }
 
 #[test]
@@ -1971,6 +2120,104 @@ fn retained_plain_params_keep_segments_and_outlive_the_connection() {
             futures::executor::block_on(work).unwrap();
         }
     }
+}
+
+#[test]
+fn pipeline_completion_clones_the_hook_only_for_waiting_delivery() {
+    struct Completed(Rc<Cell<usize>>);
+    impl PipelineHook for Completed {
+        fn add_ref(&self) -> Box<dyn PipelineHook> {
+            self.0.set(self.0.get() + 1);
+            Box::new(Self(self.0.clone()))
+        }
+        fn get_pipelined_cap(&self, _: &[PipelineOp]) -> Box<dyn ClientHook> {
+            crate::broken::new_cap(Error::failed("completed route".into()))
+        }
+    }
+    for waiting in [false, true] {
+        let hooks = ClientHooks::new(8, 8);
+        let state = PipelineState::prepared(Some(&hooks.inbox));
+        let projected = waiting
+            .then(|| WirePipeline(PipelineRef(Some(state.clone()), None)).get_pipelined_cap(&[]));
+        let clones = Rc::new(Cell::new(0));
+        let completed = Box::new(Completed(clones.clone()));
+        let counts = allocation_counter::measure(|| state.finish(completed));
+        assert_eq!(clones.get(), usize::from(waiting));
+        if let Some(projected) = projected {
+            assert_eq!(projected.get_failure().unwrap().extra, "completed route");
+        } else {
+            assert_eq!(
+                counts.count_total, 0,
+                "terminal state already owns the hook"
+            );
+        }
+        assert!(!state.unresolved());
+    }
+}
+
+#[test]
+fn native_projections_clone_and_reuse_with_one_box_and_retain_pipeline_interest() {
+    let hooks = ClientHooks::new(8, 8);
+    let state = PipelineState::prepared(Some(&hooks.inbox));
+    let pipeline = WirePipeline(PipelineRef(Some(state.clone()), None));
+    let first = pipeline.get_pipelined_cap(&[]);
+    let endpoint = Rc::downgrade(&native_hook(&*first).unwrap().0);
+    let mut retained = None;
+    let counts = allocation_counter::measure(|| retained = Some(first.add_ref()));
+    assert_eq!(counts.count_total, 1, "clone the native endpoint inline");
+    let mut reused = None;
+    let counts = allocation_counter::measure(|| reused = Some(pipeline.get_pipelined_cap(&[])));
+    assert_eq!(counts.count_total, 1, "reuse the live projection endpoint");
+    assert!(Rc::ptr_eq(
+        &native_hook(&**reused.as_ref().unwrap()).unwrap().0,
+        &endpoint.upgrade().unwrap()
+    ));
+    let counts = allocation_counter::measure(|| {
+        state
+            .remember_native(Vec::new(), native_hook(&*first).unwrap())
+            .unwrap();
+    });
+    assert_eq!(counts.count_total, 0, "cache the known endpoint inline");
+    let mut cached = None;
+    let counts = allocation_counter::measure(|| cached = Some(pipeline.get_pipelined_cap(&[])));
+    assert_eq!(
+        counts.count_total, 1,
+        "clone the cached native endpoint inline"
+    );
+    assert!(Rc::ptr_eq(
+        &native_hook(&**cached.as_ref().unwrap()).unwrap().0,
+        &endpoint.upgrade().unwrap()
+    ));
+    let state_weak = Rc::downgrade(&state);
+    drop((first, reused, cached, state, pipeline));
+    assert!(state_weak.upgrade().is_some());
+    assert!(endpoint.upgrade().is_some());
+    drop(retained);
+    assert!(state_weak.upgrade().is_none());
+    assert!(endpoint.upgrade().is_none());
+}
+
+#[test]
+fn opaque_projected_hooks_preserve_policy_on_clone_and_resolution() {
+    let hooks = ClientHooks::new(8, 8);
+    let endpoint = Endpoint::projection(Weak::new());
+    let hook = Hook(endpoint.clone(), None);
+    let state = PipelineState::prepared(Some(&hooks.inbox));
+    state
+        .remember(Vec::new(), &crate::scoped::tests::Opaque(hook.add_ref()))
+        .unwrap();
+    let projected = WirePipeline(PipelineRef(Some(state), None)).get_pipelined_cap(&[]);
+    assert!(native_hook(&*projected).is_none());
+    assert!(direct_response_hook(&*projected).is_none());
+    let retained = projected.add_ref();
+    drop(projected);
+    assert!(native_hook(&*retained).is_none());
+    assert!(retained.get_resolved().is_none());
+    assert!(retained.when_more_resolved().is_none());
+    // Opaque's resolution policy is terminal even though its inner native
+    // endpoint is still waiting for binding. Do not replace it with that Hook.
+    futures::executor::block_on(retained.when_resolved()).unwrap();
+    assert!(endpoint.needs_binding());
 }
 
 #[test]

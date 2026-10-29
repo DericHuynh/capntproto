@@ -99,6 +99,24 @@ impl<'pool, 'id, const CAPS: usize> LocalResult<'pool, 'id, CAPS> {
             }))
         })?
     }
+    /// Retain content from this result's exact immutable frame and traversal
+    /// budget. Fixed backing returns `None`. This retains bytes only; callers
+    /// must separately retain capability authority before releasing the result.
+    #[cfg(feature = "alloc")]
+    pub fn retain_results(
+        &self,
+        messages: &messages::Messages<'pool, '_, '_>,
+        content: capnp::any_pointer::Reader<'_>,
+    ) -> Result<
+        Option<
+            capnp::message::CachedPointerReader<
+                capnp::serialize::NoAllocBufferSegments<messages::SharedBytes>,
+            >,
+        >,
+        super::super::Error,
+    > {
+        self.frame.retain_pointer(messages, content)
+    }
     pub fn release<G: clients::Capabilities<'id>>(
         self,
         messages: &mut messages::Messages<'pool, '_, '_>,
@@ -207,7 +225,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             None,
             interface,
             method,
-            capabilities,
+            capabilities.map(Ok),
             messages,
             minimum,
             options,
@@ -247,7 +265,69 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Some((answer.id(), no_finish)),
             interface,
             method,
-            capabilities,
+            capabilities.map(Ok),
+            messages,
+            minimum,
+            options,
+            fill,
+        )
+    }
+
+    /// Construct a local result directly from borrowed capability storage.
+    /// Failed lookups release the frame and every retained prefix client.
+    #[allow(clippy::too_many_arguments)]
+    pub fn local_result_dynamic_table<T: CapabilityTable<'id> + ?Sized>(
+        &mut self,
+        interface: u64,
+        method: u16,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        fill: impl FnOnce(
+            capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
+        ) -> capnp::Result<()>,
+    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
+        self.local_result_envelope(
+            None,
+            interface,
+            method,
+            (0..capabilities.len()).map(|index| capabilities.capability(index)),
+            messages,
+            minimum,
+            options,
+            fill,
+        )
+    }
+
+    /// Prepare an answer from caller-owned capability storage. Ownership and
+    /// publication checks are identical to `local_answer_dynamic`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn local_answer_dynamic_table<T: CapabilityTable<'id> + ?Sized>(
+        &mut self,
+        answer: answers::Key<'id>,
+        interface: u64,
+        method: u16,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        fill: impl FnOnce(
+            capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
+        ) -> capnp::Result<()>,
+    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error> {
+        let no_finish = self
+            .ledgers
+            .answers
+            .prepare_return(answer)
+            .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?
+            .can_omit_finish()
+            && capabilities.is_empty();
+        self.local_result_envelope(
+            Some((answer.id(), no_finish)),
+            interface,
+            method,
+            (0..capabilities.len()).map(|index| capabilities.capability(index)),
             messages,
             minimum,
             options,
@@ -261,7 +341,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         envelope: Option<(capntproto_rpc_engine::ids::AnswerId, bool)>,
         interface: u64,
         method: u16,
-        capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
+        capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
@@ -320,7 +400,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             frame.release(messages);
             return Err(Error::Input(error));
         }
-        let mut result = LocalResult {
+        let result = LocalResult {
             prepared_return: envelope.filter(|_| capabilities.len() == 0),
             capacity: self.message_capabilities,
             frame,
@@ -329,15 +409,43 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             interface,
             method,
         };
-        for (index, client) in capabilities.enumerate() {
-            let Some(client) = client else { continue };
-            match self.runtime.retain(client) {
-                Ok(client) => result.capabilities[index] = Some(client),
-                Err(error) => {
+        self.retain_local_result(result, capabilities, messages)
+    }
+
+    pub(super) fn retain_local_result<'c>(
+        &mut self,
+        mut result: LocalResult<'pool, 'id, CAPS>,
+        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+    ) -> Result<LocalResult<'pool, 'id, CAPS>, Error>
+    where
+        'id: 'c,
+    {
+        for index in 0..result.count {
+            let client = match capabilities.next() {
+                Some(Ok(client)) => client,
+                Some(Err(error)) => {
                     result.release(messages, &mut self.runtime);
-                    return Err(Error::Graph(error));
+                    return Err(Error::Input(error.into()));
+                }
+                None => {
+                    result.release(messages, &mut self.runtime);
+                    return Err(Error::Input(super::super::Error::Capacity));
+                }
+            };
+            if let Some(client) = client {
+                match self.runtime.retain(client) {
+                    Ok(client) => result.capabilities[index] = Some(client),
+                    Err(error) => {
+                        result.release(messages, &mut self.runtime);
+                        return Err(Error::Graph(error));
+                    }
                 }
             }
+        }
+        if capabilities.next().is_some() {
+            result.release(messages, &mut self.runtime);
+            return Err(Error::Input(super::super::Error::Capacity));
         }
         Ok(result)
     }

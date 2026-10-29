@@ -543,6 +543,25 @@ fn prepared_return_rejects_capability_content_before_reserving_storage() {
 
 #[test]
 fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
+    struct Reject<'a, 'id> {
+        client: &'a capntproto_rpc_engine::clients::Client<'id>,
+        fail: usize,
+    }
+    impl<'id> connection::CapabilityTable<'id> for Reject<'_, 'id> {
+        fn len(&self) -> usize {
+            3
+        }
+        fn capability(
+            &self,
+            index: usize,
+        ) -> capnp::Result<Option<&capntproto_rpc_engine::clients::Client<'id>>> {
+            if index == self.fail {
+                Err(Error::from_kind(capnp::ErrorKind::Overloaded))
+            } else {
+                Ok((index < 2).then_some(self.client))
+            }
+        }
+    }
     for first_segment_words in [8, 64] {
         let mut source = connection::PreparedReturn::from_template(
             &connection::PreparedReturnTemplate::default(),
@@ -570,6 +589,26 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                 .capabilities()
                 .endpoint(Route::local(73), clients::Location::Local)
                 .unwrap();
+            for fail in 0..3 {
+                assert!(matches!(
+                    driver.local_answer_prepared_table(
+                        call.answer(),
+                        7,
+                        9,
+                        &source,
+                        &Reject {
+                            client: &value,
+                            fail
+                        },
+                        messages,
+                        Default::default(),
+                    ),
+                    Err(connection::Error::Input(owned::Error::Wire(
+                        capnp::ErrorKind::Overloaded
+                    )))
+                ));
+                assert!(driver.prepare_answer_return(call.answer()).is_ok());
+            }
             for references in [
                 &[Some(&value)][..],
                 &[None, Some(&value), None, None, None][..],
@@ -634,9 +673,19 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
             for writer in reserved {
                 messages.discard(writer);
             }
-            for _ in 0..3 {
-                let result = driver
-                    .local_answer_prepared_with_capabilities(
+            for use_table in [true, false, true] {
+                let result = if use_table {
+                    driver.local_answer_prepared_table(
+                        call.answer(),
+                        7,
+                        9,
+                        &source,
+                        &references[..],
+                        messages,
+                        Default::default(),
+                    )
+                } else {
+                    driver.local_answer_prepared_with_capabilities(
                         call.answer(),
                         7,
                         9,
@@ -645,8 +694,9 @@ fn prepared_capability_results_preserve_indices_limits_and_retry_ownership() {
                         messages,
                         Default::default(),
                     )
-                    .unwrap()
-                    .unwrap();
+                }
+                .unwrap()
+                .unwrap();
                 result
                     .with(messages, |payload| {
                         assert_eq!(payload.capabilities().len(), 2);

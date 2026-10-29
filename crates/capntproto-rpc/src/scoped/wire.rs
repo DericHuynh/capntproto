@@ -709,8 +709,10 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                             Ok(index) => {
                                 *endpoint.direct_parent.borrow_mut() = Rc::downgrade(pipeline);
                                 endpoint.direct.set(Some(index));
-                                pipeline
-                                    .remember(projection.path, &Hook(endpoint.clone(), None))?;
+                                pipeline.remember_native(
+                                    projection.path,
+                                    &Hook(endpoint.clone(), None),
+                                )?;
                                 endpoint.notify_binding();
                             }
                             Err(cap) => {
@@ -740,7 +742,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     let result = result.map(|inner| {
                         if projection.retain_pipeline {
                             Rc::new(Projected {
-                                inner,
+                                inner: ProjectionHook::Opaque(inner),
                                 pipeline: PipelineRef(Some(pipeline.clone()), None),
                             }) as Rc<dyn ClientHook>
                         } else {
@@ -1112,9 +1114,12 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                 .transpose()
                         })
                         .collect::<capnp::Result<Vec<_>>>()?;
-                    let mut content = payload.content();
-                    content.imbue(&caps);
-                    Payload::copy(content)
+                    let content = payload.content();
+                    Payload::retain_or_copy(
+                        content,
+                        local.retain_results(messages, content).map_err(wire_error)?,
+                        caps,
+                    )
                 })
                 .map_err(wire_error)
                 .and_then(core::convert::identity),
@@ -1136,7 +1141,8 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                 }
                             });
                         }
-                        Payload::retain_or_copy(payload.content(), remote.retain_results(messages, payload.content()).map_err(wire_error)?, caps)
+                        let content = payload.content();
+                        Payload::retain_or_copy(content, remote.retain_results(messages, content).map_err(wire_error)?, caps)
                     }
                     owned::Reply::Exception(error) => {
                         Err(crate::rpc::remote_exception_to_error(error))
@@ -1273,7 +1279,7 @@ fn pipeline_fields(path: &[PipelineOp]) -> impl Iterator<Item = u16> + '_ {
         PipelineOp::GetPointerField(field) => Some(*field),
     })
 }
-type CachedProjection = (Vec<PipelineOp>, Box<dyn ClientHook>);
+type CachedProjection = (Vec<PipelineOp>, ProjectionHook);
 #[derive(Default)]
 struct ProjectionCache {
     first: Option<CachedProjection>,
@@ -1283,18 +1289,26 @@ impl ProjectionCache {
     fn len(&self) -> usize {
         usize::from(self.first.is_some()) + self.rest.len()
     }
-    fn get(&self, path: &[PipelineOp]) -> Option<&dyn ClientHook> {
+    fn get(&self, path: &[PipelineOp]) -> Option<&ProjectionHook> {
         self.first
             .iter()
             .chain(self.rest.iter())
             .find(|(key, _)| pipeline_fields(key).eq(pipeline_fields(path)))
-            .map(|(_, hook)| &**hook)
+            .map(|(_, hook)| hook)
     }
     fn remember(
         &mut self,
         path: Vec<PipelineOp>,
         hook: &dyn ClientHook,
         maximum: usize,
+    ) -> capnp::Result<()> {
+        self.remember_with(path, maximum, || ProjectionHook::Opaque(hook.add_ref()))
+    }
+    fn remember_with(
+        &mut self,
+        path: Vec<PipelineOp>,
+        maximum: usize,
+        hook: impl FnOnce() -> ProjectionHook,
     ) -> capnp::Result<()> {
         if self.get(&path).is_some() {
             return Ok(());
@@ -1303,10 +1317,10 @@ impl ProjectionCache {
             return Err(Error::overloaded("wire pipeline cache exhausted".into()));
         }
         if self.first.is_none() {
-            self.first = Some((path, hook.add_ref()));
+            self.first = Some((path, hook()));
         } else {
             self.rest.try_reserve(1).map_err(wire_error)?;
-            self.rest.push((path, hook.add_ref()));
+            self.rest.push((path, hook()));
         }
         Ok(())
     }
@@ -1456,6 +1470,13 @@ impl PipelineState {
     fn remember(&self, path: Vec<PipelineOp>, hook: &dyn ClientHook) -> capnp::Result<()> {
         self.cached.borrow_mut().remember(path, hook, self.maximum)
     }
+    fn remember_native(&self, path: Vec<PipelineOp>, hook: &Hook) -> capnp::Result<()> {
+        self.cached
+            .borrow_mut()
+            .remember_with(path, self.maximum, || {
+                ProjectionHook::Native(Hook(hook.0.clone(), hook.1.clone()))
+            })
+    }
     pub(super) fn finish(&self, pipeline: Box<dyn PipelineHook>) {
         self.finish_completed(CompletedPipeline::Hook(pipeline));
     }
@@ -1471,11 +1492,16 @@ impl PipelineState {
         self.resolve(PipelineVariant::Resolved(pipeline));
     }
     fn resolve(&self, resolved: PipelineVariant) {
-        let pipeline_ref = match &resolved {
+        let has_waiters = !self.waiting.borrow().is_empty();
+        // The terminal state owns the completed pipeline already. Only live
+        // projection delivery needs a separate reference across callbacks.
+        // After publication, reentrant projections read that terminal state
+        // directly and cannot join this waiting queue.
+        let pipeline_ref = has_waiters.then(|| match &resolved {
             PipelineVariant::Resolved(pipeline) => Ok(pipeline.add_ref()),
             PipelineVariant::Broken(error) => Err(error.clone()),
             _ => unreachable!("terminal pipeline state"),
-        };
+        });
         let old = self.variant.replace(resolved);
         drop(old);
         let cached = std::mem::take(&mut *self.cached.borrow_mut());
@@ -1483,10 +1509,12 @@ impl PipelineState {
         let waiting = std::mem::take(&mut *self.waiting.borrow_mut());
         for projection in waiting {
             if let Some(client) = projection.client.upgrade() {
-                client.resolve(match &pipeline_ref {
-                    Ok(pipeline) => Ok(pipeline.get_pipelined_cap(&projection.path)),
-                    Err(error) => Ok(crate::broken::new_cap(error.clone())),
-                });
+                client.resolve(
+                    match pipeline_ref.as_ref().expect("observed waiting projection") {
+                        Ok(pipeline) => Ok(pipeline.get_pipelined_cap(&projection.path)),
+                        Err(error) => Ok(crate::broken::new_cap(error.clone())),
+                    },
+                );
             }
         }
     }
@@ -1588,7 +1616,7 @@ impl PipelineHook for WirePipeline {
             }
         }) {
             return Box::new(Projected {
-                inner: Box::new(Hook(endpoint, None)),
+                inner: ProjectionHook::Native(Hook(endpoint, None)),
                 pipeline: self.0.clone(),
             });
         }
@@ -1614,13 +1642,43 @@ impl PipelineHook for WirePipeline {
             inbox.notify();
         }
         Box::new(Projected {
-            inner: Box::new(Hook(endpoint, None)),
+            inner: ProjectionHook::Native(Hook(endpoint, None)),
             pipeline: self.0.clone(),
         })
     }
 }
+// Like legacy's native pipeline client, retain a known endpoint directly.
+// Opaque hooks must keep their original wrapper, even when their RTTI forwards
+// to a native endpoint: that wrapper may enforce policy or observe calls.
+enum ProjectionHook {
+    Native(Hook),
+    Opaque(Box<dyn ClientHook>),
+}
+impl ProjectionHook {
+    fn native(&self) -> Option<&Hook> {
+        match self {
+            Self::Native(hook) => Some(hook),
+            Self::Opaque(hook) => hook.as_any()?.downcast_ref(),
+        }
+    }
+    fn add_ref(&self) -> Self {
+        match self {
+            Self::Native(hook) => Self::Native(Hook(hook.0.clone(), hook.1.clone())),
+            Self::Opaque(hook) => Self::Opaque(hook.add_ref()),
+        }
+    }
+}
+impl std::ops::Deref for ProjectionHook {
+    type Target = dyn ClientHook;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Native(hook) => hook,
+            Self::Opaque(hook) => &**hook,
+        }
+    }
+}
 struct Projected {
-    inner: Box<dyn ClientHook>,
+    inner: ProjectionHook,
     pipeline: PipelineRef,
 }
 impl Projected {
@@ -1707,20 +1765,12 @@ pub(super) fn native_hook(client: &dyn ClientHook) -> Option<&Hook> {
     if let Some(hook) = any.downcast_ref::<Hook>() {
         Some(hook)
     } else {
-        any.downcast_ref::<Projected>()?
-            .inner
-            .as_any()?
-            .downcast_ref::<Hook>()
+        any.downcast_ref::<Projected>()?.inner.native()
     }
 }
 
 pub(super) fn direct_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
-    client
-        .as_any()?
-        .downcast_ref::<Projected>()?
-        .inner
-        .as_any()?
-        .downcast_ref::<Hook>()
+    client.as_any()?.downcast_ref::<Projected>()?.inner.native()
 }
 
 pub(super) fn request_projected(
@@ -1826,7 +1876,7 @@ impl ClientHook for Projected {
     fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
         self.inner.get_resolved().map(|inner| {
             Box::new(Self {
-                inner,
+                inner: ProjectionHook::Opaque(inner),
                 pipeline: self.pipeline.clone(),
             }) as Box<dyn ClientHook>
         })
@@ -1836,7 +1886,7 @@ impl ClientHook for Projected {
             let pipeline = self.pipeline.clone();
             self.drive(Promise::from_future(async move {
                 Ok(Box::new(Self {
-                    inner: promise.await?,
+                    inner: ProjectionHook::Opaque(promise.await?),
                     pipeline,
                 }) as Box<dyn ClientHook>)
             }))
