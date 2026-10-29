@@ -14,25 +14,25 @@ fn retain_local_hook(hook: &Rc<dyn ClientHook>) -> Option<Box<dyn ClientHook>> {
     Some(hook.add_ref())
 }
 
-/// Inspect private native bindings without creating graph references or
-/// observing public foreign resolutions. The registry and request retain them.
+/// Classify private native bindings without looking up registry entries or
+/// observing public foreign resolutions. The table validates actual borrows.
 #[inline(never)]
-fn native_parameters(
+pub(super) fn native_parameters(
     hooks: &ClientHooks<'_>,
     caps: &[Option<Box<dyn ClientHook>>],
     maximum: usize,
-) -> capnp::Result<bool> {
+) -> bool {
     if caps.len() > maximum {
-        return Ok(false);
+        return false;
     }
     let mut found = false;
     for hook in caps.iter().flatten() {
-        if hooks.try_borrow_native(&**hook)?.is_none() {
-            return Ok(false);
+        if !hooks.can_borrow_native(&**hook) {
+            return false;
         }
         found = true;
     }
-    Ok(found)
+    found
 }
 
 pub(super) enum ParameterCapabilities<'a, 'id> {
@@ -1343,7 +1343,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             if let connection::ImmediateParams::Content(_) = &params {
                 match call.params.capability_table() {
                     Some(caps @ [Some(hook)]) => {
-                        if hooks.try_borrow_native(&**hook)?.is_some() {
+                        if hooks.can_borrow_native(&**hook) {
                             native = Some(ParameterCapabilities::Native(hooks, caps));
                         } else {
                             single = Some(
@@ -1356,7 +1356,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     }
                     Some(caps) if caps.len() > 1 => {
                         let maximum = driver.capability_capacity();
-                        if native_parameters(hooks, caps, maximum)? {
+                        if native_parameters(hooks, caps, maximum) {
                             native = Some(ParameterCapabilities::Native(hooks, caps));
                         } else {
                             multiple = native_bulk_parameters(

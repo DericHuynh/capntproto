@@ -1721,11 +1721,11 @@ fn native_parameter_tables_borrow_existing_authority_without_allocating() {
         let mixed = [Some(client.hook.add_ref()), Some(pending.hook.add_ref())];
         let other = ClientHooks::new(24, 24);
         let measured = allocation_counter::measure(|| {
-            assert!(native_parameters(&hooks, &caps, 3).unwrap());
-            assert!(!native_parameters(&other, &caps, 3).unwrap());
-            assert!(!native_parameters(&hooks, &caps, 2).unwrap());
-            assert!(!native_parameters(&hooks, &empty, 3).unwrap());
-            assert!(!native_parameters(&hooks, &mixed, 3).unwrap());
+            assert!(native_parameters(&hooks, &caps, 3));
+            assert!(!native_parameters(&other, &caps, 3));
+            assert!(!native_parameters(&hooks, &caps, 2));
+            assert!(!native_parameters(&hooks, &empty, 3));
+            assert!(!native_parameters(&hooks, &mixed, 3));
             let table = ParameterCapabilities::Native(&hooks, &caps);
             assert_eq!(table.len(), 3);
             assert!(table.capability(1).unwrap().is_none());

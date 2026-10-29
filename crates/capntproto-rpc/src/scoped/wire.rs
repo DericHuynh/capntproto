@@ -308,8 +308,12 @@ impl<'id> ClientHooks<'id> {
                 ));
             }
             let mut retained: Vec<Option<Client<'id>>> = Vec::new();
-            retained.try_reserve_exact(caps.len()).map_err(wire_error)?;
-            retained.resize_with(caps.len(), || None);
+            let native = caps.is_empty()
+                || calls::native_parameters(self, caps, driver.capability_capacity());
+            if !native {
+                retained.try_reserve_exact(caps.len()).map_err(wire_error)?;
+                retained.resize_with(caps.len(), || None);
+            }
             let result = (|| {
                 for (slot, cap) in retained.iter_mut().zip(caps) {
                     if let Some(cap) = cap {
@@ -321,6 +325,11 @@ impl<'id> ClientHooks<'id> {
                     }
                 }
                 let count = caps.len();
+                let table = if native {
+                    calls::ParameterCapabilities::Native(self, caps)
+                } else {
+                    calls::ParameterCapabilities::Retained(&retained)
+                };
                 let mapping = capnp::wire_capability::IndexMap::identity(
                     u32::try_from(count).map_err(wire_error)?,
                 );
@@ -371,10 +380,10 @@ impl<'id> ClientHooks<'id> {
                 };
                 if direct {
                     let task = driver
-                        .enqueue_dynamic_to(
+                        .enqueue_dynamic_to_table(
                             target,
                             method,
-                            retained.iter().map(Option::as_ref),
+                            &table,
                             messages,
                             minimum,
                             options,
@@ -391,12 +400,12 @@ impl<'id> ClientHooks<'id> {
                 let (sender, receiving) = shared::channel();
                 receiver = Some(receiving);
                 invocations
-                    .enqueue_dynamic_to(
+                    .enqueue_dynamic_to_table(
                         driver,
                         sender.into(),
                         target,
                         method,
-                        retained.iter().map(Option::as_ref),
+                        &table,
                         messages,
                         minimum,
                         options,
@@ -1691,14 +1700,17 @@ pub(crate) fn native_join_target(client: &dyn ClientHook) -> Option<Box<dyn Clie
     Some(hook.add_ref())
 }
 
-// Recognize the same private types in the same order, using one outer RTTI
-// query. Ordinary scoped hooks must not call the virtual as_any() method twice.
+// Direct scoped hooks are the common case. Check them before pipeline wrappers,
+// using one outer RTTI query and no public pointer/brand authority.
 pub(super) fn native_hook(client: &dyn ClientHook) -> Option<&Hook> {
     let any = client.as_any()?;
-    if let Some(projected) = any.downcast_ref::<Projected>() {
-        projected.inner.as_any()?.downcast_ref::<Hook>()
+    if let Some(hook) = any.downcast_ref::<Hook>() {
+        Some(hook)
     } else {
-        any.downcast_ref::<Hook>()
+        any.downcast_ref::<Projected>()?
+            .inner
+            .as_any()?
+            .downcast_ref::<Hook>()
     }
 }
 

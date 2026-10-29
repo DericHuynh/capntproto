@@ -90,6 +90,86 @@ fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
                         .is_none());
                 }
             }
+            let mapping = capnp::wire_capability::IndexMap::identity(3);
+            for fail_index in 0..3 {
+                let prefix = driver
+                    .runtime
+                    .endpoint(
+                        binding::Route::local(101 + fail_index as u32),
+                        clients::Location::Local,
+                    )
+                    .unwrap();
+                let entries = [Some(&prefix), None, Some(&remote)];
+                let table = Table {
+                    entries: &entries,
+                    reads: core::array::from_fn(|_| Cell::new(0)),
+                    fail: Some((fail_index, 1)),
+                };
+                assert!(matches!(
+                    driver.enqueue_dynamic_to_table(
+                        &remote,
+                        method,
+                        &table,
+                        messages,
+                        512,
+                        Default::default(),
+                        calls::CallDestination::Caller,
+                        |field| field.copy_with_capabilities(params, mapping),
+                    ),
+                    Err(Error::Input(crate::owned::Error::Wire(
+                        capnp::ErrorKind::Overloaded
+                    )))
+                ));
+                assert_eq!(driver.runtime.queued(), 0);
+                assert!(driver.ledgers.questions.is_empty());
+                driver.runtime.release(prefix);
+                assert!(
+                    matches!(driver.runtime.take_retired(), Some(binding::Route::Capability(binding::Endpoint::Local(owner))) if owner == 101 + fail_index as u32),
+                    "failed admission cannot retain its prefix"
+                );
+            }
+            {
+                use capntproto_rpc_engine::completion;
+                use core::{
+                    future::Future,
+                    pin::Pin,
+                    task::{Context, Poll, Waker},
+                };
+                let mut reply = completion::Slot::new();
+                let (sender, mut receiver) = reply.pair().unwrap();
+                let mut slots = [InvocationSlot::EMPTY];
+                let mut invocations = Invocations::new(&mut slots).unwrap();
+                let table = Table {
+                    entries: &entries,
+                    reads: core::array::from_fn(|_| Cell::new(0)),
+                    fail: Some((2, 1)),
+                };
+                let rejected = invocations
+                    .enqueue_dynamic_to_table(
+                        &mut driver,
+                        sender,
+                        &remote,
+                        method,
+                        &table,
+                        messages,
+                        512,
+                        Default::default(),
+                        calls::CallDestination::Caller,
+                        |field| field.copy_with_capabilities(params, mapping),
+                    )
+                    .expect_err("lookup failure");
+                assert!(matches!(
+                    rejected.error,
+                    Error::Input(crate::owned::Error::Wire(capnp::ErrorKind::Overloaded))
+                ));
+                assert!(invocations.is_empty());
+                assert_eq!(driver.runtime.queued(), 0);
+                assert!(rejected.sender.send(Err(capnp::ErrorKind::Failed)).is_ok());
+                assert!(matches!(
+                    Pin::new(&mut receiver).poll(&mut Context::from_waker(Waker::noop())),
+                    Poll::Ready(Ok(Err(capnp::ErrorKind::Failed)))
+                ));
+            }
             let table = Table {
                 entries: &entries,
                 reads: core::array::from_fn(|_| Cell::new(0)),

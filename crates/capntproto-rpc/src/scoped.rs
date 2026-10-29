@@ -1231,13 +1231,20 @@ impl<'id> ClientHooks<'id> {
         &self,
         hook: &dyn ClientHook,
     ) -> capnp::Result<Option<&Client<'id>>> {
-        let Some(hook) = wire::native_hook(hook) else {
-            return Ok(None);
-        };
-        if hook.0.inbox.as_ptr() != Rc::as_ptr(&self.inbox) || hook.0.index.get().is_none() {
-            return Ok(None);
+        match self.native_endpoint(hook) {
+            Some(endpoint) => self.lookup(endpoint).map(Some),
+            None => Ok(None),
         }
-        self.lookup(&hook.0).map(Some)
+    }
+    /// Eligibility only. The actual borrow must still validate the current
+    /// registry entry against the private endpoint identity.
+    pub(crate) fn can_borrow_native(&self, hook: &dyn ClientHook) -> bool {
+        self.native_endpoint(hook).is_some()
+    }
+    fn native_endpoint<'a>(&self, hook: &'a dyn ClientHook) -> Option<&'a Rc<Endpoint>> {
+        let hook = wire::native_hook(hook)?;
+        (hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.index.get().is_some())
+            .then_some(&hook.0)
     }
 
     /// Recognize one of this bridge's parameter/result hooks and retain its

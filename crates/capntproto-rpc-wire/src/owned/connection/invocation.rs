@@ -225,7 +225,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     ) -> Result<InvocationKey<'id>, Error> {
         self.enqueue_encoded(
             target,
-            capabilities.iter().copied().map(Some),
+            capabilities.iter().copied().map(Some).map(Ok),
             messages,
             minimum,
             options,
@@ -255,7 +255,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     ) -> Result<InvocationKey<'id>, Error> {
         self.enqueue_encoded(
             target,
-            capabilities.iter().copied().map(Some),
+            capabilities.iter().copied().map(Some).map(Ok),
             messages,
             minimum,
             options,
@@ -273,7 +273,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     fn enqueue_encoded<'c>(
         &mut self,
         target: &clients::Client<'id>,
-        mut capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
+        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
@@ -334,9 +334,16 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             count,
         };
         for index in 0..invocation.count {
-            let Some(client) = capabilities.next() else {
-                invocation.release(messages, &mut self.runtime);
-                return Err(Error::Input(super::super::Error::Capacity));
+            let client = match capabilities.next() {
+                Some(Ok(client)) => client,
+                Some(Err(error)) => {
+                    invocation.release(messages, &mut self.runtime);
+                    return Err(Error::Input(error.into()));
+                }
+                None => {
+                    invocation.release(messages, &mut self.runtime);
+                    return Err(Error::Input(super::super::Error::Capacity));
+                }
             };
             let Some(client) = client else { continue };
             match self.runtime.retain(client) {
@@ -410,6 +417,64 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         target: &clients::Client<'id>,
         method: calls::DynamicCall,
         capabilities: impl ExactSizeIterator<Item = Option<&'c clients::Client<'id>>>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        destination: calls::CallDestination<'_>,
+        fill: impl FnOnce(
+            capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
+        ) -> capnp::Result<()>,
+    ) -> Result<InvocationKey<'id>, Error>
+    where
+        'id: 'c,
+    {
+        self.enqueue_dynamic_fallible(
+            target,
+            method,
+            capabilities.map(Ok),
+            messages,
+            minimum,
+            options,
+            destination,
+            fill,
+        )
+    }
+
+    /// Retain a caller-owned table directly into the queued invocation. Null
+    /// slots preserve their payload indices. Failed lookup, encoding or dispatch
+    /// releases the whole retained prefix and returns its message storage.
+    #[allow(clippy::too_many_arguments)]
+    pub fn enqueue_dynamic_to_table<T: CapabilityTable<'id> + ?Sized>(
+        &mut self,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        destination: calls::CallDestination<'_>,
+        fill: impl FnOnce(
+            capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
+        ) -> capnp::Result<()>,
+    ) -> Result<InvocationKey<'id>, Error> {
+        self.enqueue_dynamic_fallible(
+            target,
+            method,
+            (0..capabilities.len()).map(|index| capabilities.capability(index)),
+            messages,
+            minimum,
+            options,
+            destination,
+            fill,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn enqueue_dynamic_fallible<'c>(
+        &mut self,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,

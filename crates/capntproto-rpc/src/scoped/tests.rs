@@ -1722,6 +1722,55 @@ impl ClientHook for Opaque {
 }
 
 #[test]
+fn native_borrow_hints_cannot_authorize_retargeted_or_vacant_registry_slots() {
+    clients::with_growing_graph::<u32, u8, _>(
+        0,
+        2,
+        clients::NotificationGrowth::bounded(8, 8),
+        |graph| {
+            let first = graph.endpoint(7, Location::Local).unwrap();
+            let second = graph.endpoint(9, Location::Local).unwrap();
+            let mut hooks = ClientHooks::new(2, 1);
+            let client = hooks.export_snapshot(graph, &first).unwrap();
+            let replacement = hooks.export_snapshot(graph, &second).unwrap();
+            let endpoint = &wire::native_hook(&*client.hook).unwrap().0;
+            let original = endpoint.index.get();
+            let other = wire::native_hook(&*replacement.hook).unwrap().0.index.get();
+            assert_ne!(original, other);
+            assert!(hooks.can_borrow_native(&*client.hook));
+            // Simulate stale metadata pointing at another live entry. Private
+            // hook recognition is only a hint; full Rc identity remains required.
+            endpoint.index.set(other);
+            assert!(hooks.can_borrow_native(&*client.hook));
+            assert!(hooks.try_borrow_native(&*client.hook).is_err());
+            assert!(hooks.try_retain(graph, &*client.hook).is_err());
+            endpoint.index.set(original);
+            assert_eq!(
+                hooks
+                    .try_borrow_native(&*client.hook)
+                    .unwrap()
+                    .unwrap()
+                    .key(),
+                first.key()
+            );
+            let index = original.unwrap();
+            let entry = hooks.entries[index].take();
+            assert!(hooks.can_borrow_native(&*client.hook));
+            assert!(hooks.try_borrow_native(&*client.hook).is_err());
+            hooks.entries[index] = entry;
+            hooks.close(graph, Error::disconnected("done".into()));
+            graph.release(first);
+            graph.release(second);
+            let mut retired = [graph.take_retired().unwrap(), graph.take_retired().unwrap()];
+            retired.sort_unstable();
+            assert_eq!(retired, [7, 9]);
+            assert!(graph.is_empty());
+        },
+    )
+    .unwrap();
+}
+
+#[test]
 fn parameter_lookup_preserves_opaque_policy_and_checks_connection_identity() {
     clients::with_growing_graph::<u32, u8, _>(
         0,
@@ -1736,6 +1785,8 @@ fn parameter_lookup_preserves_opaque_policy_and_checks_connection_identity() {
             let opaque = Opaque(client.hook.add_ref());
             assert_eq!(opaque.get_ptr(), client.hook.get_ptr());
             assert_eq!(opaque.get_brand(), client.hook.get_brand());
+            assert!(!hooks.can_borrow_native(&opaque));
+            assert!(!hooks.can_borrow_native(&*other.hook));
             assert!(hooks.try_retain(graph, &opaque).unwrap().is_none());
             assert!(hooks.try_retain(graph, &*other.hook).unwrap().is_none());
             let retained = hooks.try_retain(graph, &*client.hook).unwrap().unwrap();

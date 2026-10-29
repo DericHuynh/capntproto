@@ -433,6 +433,13 @@ policy-preserving admission. Imported reflection IDs are copied once from their
 immutable endpoints, while promised-answer transforms stay behind the final
 exclusive publication ticket.
 
+Queued native calls use the same table through `enqueue_dynamic_to_table`,
+retaining each parameter directly into the invocation's final storage. Encoding,
+lookup and dispatch rejection release its complete retained prefix and frame;
+tracked admission also preserves the caller's completion sender. Native
+eligibility is only a hint: the actual borrow checks the current registry entry
+against the private endpoint identity, including after slot removal or reuse.
+
 Promises resolved back to local objects expose their original policy hooks only
 after graph ordering barriers open and older queued calls begin forwarding.
 Resolution does not wait for those calls' replies. The local capabilities remain

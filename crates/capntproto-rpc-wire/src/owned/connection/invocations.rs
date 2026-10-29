@@ -220,6 +220,43 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Invocations<'s, 'wait, 'pool, 
             )
         })
     }
+    /// Track a call while retaining each borrowed parameter directly into its
+    /// invocation. A failed table lookup preserves the completion sender.
+    #[allow(clippy::too_many_arguments, clippy::result_large_err)]
+    pub fn enqueue_dynamic_to_table<
+        A,
+        P: Copy + Eq,
+        S,
+        const PATH: usize,
+        T: super::CapabilityTable<'id> + ?Sized,
+    >(
+        &mut self,
+        driver: &mut Driver<'pool, 'id, '_, I, A, P, S, CAPS, PATH>,
+        sender: Sender<'wait, CallResult<'pool, 'id, I, CAPS>>,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        destination: calls::CallDestination<'_>,
+        fill: impl FnOnce(
+            capnp::field_api::FixedField<'_, capnp::field_api::Generic<capnp::any_pointer::Owned>>,
+        ) -> capnp::Result<()>,
+    ) -> Result<InvocationKey<'id>, RejectedInvocation<'wait, 'pool, 'id, I, CAPS>> {
+        self.enqueue_with(driver, sender, !method.no_promise_pipelining, |driver| {
+            driver.enqueue_dynamic_to_table(
+                target,
+                method,
+                capabilities,
+                messages,
+                minimum,
+                options,
+                destination,
+                fill,
+            )
+        })
+    }
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
     pub fn enqueue<
         A,
