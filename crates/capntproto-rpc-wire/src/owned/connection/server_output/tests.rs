@@ -6,6 +6,270 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn immediate_tables_roll_back_and_refund_without_allocating_or_pinning_frames() {
+    let measured = allocation_counter::measure(|| {
+        for native in [false, true] {
+            for canceled in [false, true] {
+                for release in [false, true] {
+                    with_driver(|mut driver, messages| {
+                        if native {
+                            driver.use_native_writer();
+                        }
+                        let imported = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
+                        let remote = driver.bind_import(&imported).unwrap();
+                        driver.release_import(imported);
+                        let local = driver
+                            .runtime
+                            .endpoint(binding::Route::local(73), clients::Location::Local)
+                            .unwrap_or_else(|_| panic!("local"));
+                        let words = [
+                            word(1, 0, 0, 0, 38, 0, 0, 0),
+                            word(3, 0, 0, 0, 0, 0, 0, 0),
+                            ZERO,
+                            word(3, 0, 0, 0, 2, 0, 0, 0),
+                            word(3, 0, 0, 0, 3, 0, 0, 0),
+                        ];
+                        let segments = [Word::words_to_bytes(&words)];
+                        let reader = capnp::message::Reader::new(
+                            capnp::message::SegmentArray::new(&segments),
+                            Default::default(),
+                        );
+                        let params = reader.get_root::<capnp::any_pointer::Reader>().unwrap();
+                        let caps = [Some(&local), None, Some(&remote), Some(&local)];
+                        let method = calls::DynamicCall {
+                            interface: 7,
+                            method: 9,
+                            no_promise_pipelining: true,
+                            only_promise_pipeline: false,
+                        };
+                        let older = driver
+                            .enqueue_dynamic(
+                                &remote,
+                                method,
+                                &[],
+                                messages,
+                                128,
+                                Default::default(),
+                                |_| Ok(()),
+                            )
+                            .unwrap();
+                        let mut slots = [None];
+                        let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+                        assert!(driver
+                            .try_send_immediate_with_capabilities(
+                                &remote,
+                                method,
+                                params,
+                                &caps,
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                                (),
+                                |_, _, _| u8::MAX
+                            )
+                            .unwrap()
+                            .is_none());
+                        assert!(driver.cancel_invocation(older, messages));
+                        let mut full = messages::Queue::<()>::new(&mut []).unwrap();
+                        assert!(driver
+                            .try_send_immediate_with_capabilities(
+                                &remote,
+                                method,
+                                params,
+                                &caps,
+                                messages,
+                                &mut full,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                                (),
+                                |_, _, _| u8::MAX
+                            )
+                            .is_err());
+                        let mut held = [None, None, None, None, None, None];
+                        for slot in &mut held {
+                            *slot = Some(messages.reserve(1024).unwrap());
+                        }
+                        assert!(driver
+                            .try_send_immediate_with_capabilities(
+                                &remote,
+                                method,
+                                params,
+                                &caps,
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                                (),
+                                |_, _, _| u8::MAX
+                            )
+                            .is_err());
+                        for writer in held.into_iter().flatten() {
+                            messages.discard(writer);
+                        }
+                        assert!(driver
+                            .try_send_immediate_with_capabilities(
+                                &remote,
+                                method,
+                                params,
+                                &caps,
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [],
+                                (),
+                                |_, _, _| u8::MAX
+                            )
+                            .is_err());
+                        assert!(queue.is_empty());
+                        assert_eq!(driver.ledgers.questions.len(), 0);
+                        for id in 0..8 {
+                            assert!(driver
+                                .ledgers
+                                .exports
+                                .lookup(ExportId::from_wire(id))
+                                .is_none());
+                        }
+                        let key = driver
+                            .try_send_immediate_with_capabilities(
+                                &remote,
+                                method,
+                                params,
+                                &caps,
+                                messages,
+                                &mut queue,
+                                512,
+                                Default::default(),
+                                &mut [0; 8],
+                                (),
+                                |_, _, _| u8::MAX,
+                            )
+                            .unwrap()
+                            .unwrap();
+                        assert_eq!(driver.runtime.queued(), 0);
+                        let mut exported = None;
+                        drain_by(&mut queue, messages, 1, |root| {
+                            let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                                panic!("Call")
+                            };
+                            let payload = call.unwrap().get_params().unwrap();
+                            let table = payload.get_cap_table().unwrap();
+                            assert_eq!(table.len(), 4);
+                            let rpc_capnp::cap_descriptor::SenderHosted(first) =
+                                table.get(0).which().unwrap()
+                            else {
+                                panic!("local export")
+                            };
+                            assert!(matches!(
+                                table.get(1).which().unwrap(),
+                                rpc_capnp::cap_descriptor::None(())
+                            ));
+                            assert!(matches!(
+                                table.get(2).which().unwrap(),
+                                rpc_capnp::cap_descriptor::ReceiverHosted(42)
+                            ));
+                            assert!(
+                                matches!(table.get(3).which().unwrap(), rpc_capnp::cap_descriptor::SenderHosted(id) if id == first)
+                            );
+                            let list = payload
+                                .get_content()
+                                .get_as::<capnp::any_pointer_list::Reader>()
+                                .unwrap();
+                            assert!(list.get(1).is_null());
+                            assert_eq!(list.get(3).capability_index().unwrap(), 3);
+                            exported = Some(ExportId::from_wire(first));
+                        });
+                        let exported = exported.unwrap();
+                        let mut held = [None, None, None, None, None, None];
+                        for slot in &mut held {
+                            *slot = Some(messages.reserve(1024).unwrap());
+                        }
+                        assert!(
+                            messages.reserve(1024).is_err(),
+                            "all six buffers are reusable before Return"
+                        );
+                        for writer in held.into_iter().flatten() {
+                            messages.discard(writer);
+                        }
+                        if canceled {
+                            driver.cancel(key).unwrap();
+                        }
+                        let reply = Frame::build(messages, 512, Default::default(), |builder| {
+                            let mut returned = builder
+                                .try_init_root::<Message>()?
+                                .into_field(Message::RETURN)
+                                .init()?;
+                            returned.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+                            returned.scalar(Return::RELEASE_PARAM_CAPS).set(release);
+                            let mut payload = returned.field(Return::RESULTS).init()?;
+                            payload.field(Payload::CONTENT).set_capability_index(0)?;
+                            payload
+                                .field(Payload::CAP_TABLE)
+                                .init(1)?
+                                .get_mut(0)
+                                .unwrap()
+                                .scalar(CapDescriptor::RECEIVER_HOSTED)
+                                .set(exported.to_wire());
+                            Ok(())
+                        })
+                        .unwrap();
+                        driver
+                            .receive(reply, messages, &mut [0; 8], |_| (), || 0)
+                            .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+                        if canceled {
+                            assert!(driver.drain_canceled_response(messages));
+                        } else {
+                            let response = driver.take_response(key).unwrap();
+                            response
+                                .with(messages, |reply| {
+                                    let super::super::super::Reply::Results(payload) = reply else {
+                                        panic!("Results")
+                                    };
+                                    let Some(reception::full::Capability::Local(lease)) =
+                                        payload.capability_at(0).unwrap()
+                                    else {
+                                        panic!("local lease before final refund")
+                                    };
+                                    assert!(matches!(
+                                        driver
+                                            .runtime
+                                            .inspect(driver.ledgers.exports.get(lease))
+                                            .unwrap(),
+                                        clients::Destination::Endpoint {
+                                            owner: binding::Route::Capability(
+                                                binding::Endpoint::Local(73)
+                                            ),
+                                            ..
+                                        }
+                                    ));
+                                })
+                                .unwrap();
+                            driver.release_response(response, messages);
+                        }
+                        if !release {
+                            driver
+                                .ledgers
+                                .exports
+                                .release_deferred(exported, 2)
+                                .unwrap();
+                        }
+                        assert!(driver.ledgers.exports.lookup(exported).is_none());
+                        driver.runtime.release(local);
+                        driver.runtime.release(remote);
+                        close(driver, messages, &mut queue);
+                    });
+                }
+            }
+        }
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn generic_calls_keep_exact_grant_metadata_without_allocating_or_pinning_frames() {
     let measured = allocation_counter::measure(|| {
         for native in [false, true] {

@@ -1704,6 +1704,286 @@ fn disconnect_prevents_admission_and_termination_recovers_running_requests() {
 }
 
 #[test]
+fn immediate_native_tables_preserve_partial_writes_and_reuse_parameter_storage() {
+    fn poll<'p, 'id>(
+        calls: &mut TestCalls<'_, '_, 'p, 'id>,
+        hooks: &mut ClientHooks<'id>,
+        driver: &mut TestPeer<'p, 'id, '_>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_>,
+    ) -> Poll<capnp::Result<Progress>> {
+        calls.poll(
+            hooks,
+            driver,
+            messages,
+            queue,
+            128,
+            Default::default(),
+            &mut [0; 24],
+            &mut Context::from_waker(Waker::noop()),
+            NonZeroUsize::new(1).unwrap(),
+            |_, _| panic!("native table must not create foreign bindings"),
+        )
+    }
+    with_peer(|mut driver, messages| {
+        driver.use_native_writer();
+        driver.use_owned_output_queues(true);
+        let mut hooks =
+            ClientHooks::new(24, 24).with_message_pool(capnp::message::SegmentPool::new(32768, 8));
+        let client = remote(&mut driver, &mut hooks);
+        let value = local(&mut driver, &mut hooks, server(|_, _, _| ok()));
+        let length = if cfg!(miri) { 4097 } else { 65536 };
+        let make = |byte| {
+            let mut req = request(&client, 1);
+            let mut params = req.get().initn_as::<capnp::any_pointer_list::Builder>(5);
+            params
+                .reborrow()
+                .get(0)
+                .initn_as::<capnp::data::Builder>(length)
+                .fill(byte);
+            for index in 1..=4 {
+                params
+                    .reborrow()
+                    .get(index)
+                    .set_as_capability(if index == 3 {
+                        client.hook.add_ref()
+                    } else {
+                        value.hook.add_ref()
+                    });
+            }
+            params.reborrow().get(2).clear();
+            req
+        };
+        let first = make(0x17).send();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        assert!(matches!(
+            poll(&mut calls, &mut hooks, &mut driver, messages, &mut queue),
+            Poll::Ready(Ok(Progress::Published { plain: false }))
+        ));
+        assert!(calls
+            .entries
+            .iter()
+            .flatten()
+            .all(|entry| matches!(entry.wire.route, CallRoute::Remote(_))));
+        let window = queue.window(messages).unwrap().unwrap();
+        let mut bytes = vec![window.bytes()[0]];
+        window.advance(1).unwrap();
+        let second = make(0x23).send();
+        assert!(matches!(
+            poll(&mut calls, &mut hooks, &mut driver, messages, &mut queue),
+            Poll::Ready(Ok(Progress::Published { plain: false }))
+        ));
+        bytes.extend(drain(&mut queue, messages));
+        let mut input = bytes.as_slice();
+        for byte in [0x17, 0x23] {
+            let reader = capnp::serialize::read_message(&mut input, Default::default()).unwrap();
+            let rpc_capnp::message::Call(call) = reader
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("Call")
+            };
+            let payload = call.unwrap().get_params().unwrap();
+            let table = payload.get_cap_table().unwrap();
+            assert_eq!(table.len(), 4);
+            assert!(matches!(
+                table.get(1).which().unwrap(),
+                rpc_capnp::cap_descriptor::None(())
+            ));
+            assert!(matches!(
+                table.get(2).which().unwrap(),
+                rpc_capnp::cap_descriptor::ReceiverHosted(7)
+            ));
+            assert!(
+                matches!((table.get(0).which().unwrap(), table.get(3).which().unwrap()), (rpc_capnp::cap_descriptor::SenderHosted(a), rpc_capnp::cap_descriptor::SenderHosted(b)) if a == b)
+            );
+            let params = payload
+                .get_content()
+                .get_as::<capnp::any_pointer_list::Reader>()
+                .unwrap();
+            assert!(params
+                .get(0)
+                .get_as::<capnp::data::Reader>()
+                .unwrap()
+                .iter()
+                .all(|value| *value == byte));
+            assert!(params.get(2).is_null());
+            assert_eq!(params.get(4).capability_index().unwrap(), 3);
+        }
+        assert!(input.is_empty());
+        let mut next = None;
+        let allocations = allocation_counter::measure(|| next = Some(make(0x35)));
+        assert!(
+            allocations.bytes_total < u64::from(length),
+            "pending replies must not pin the transmitted builders: {allocations:?}"
+        );
+        drop((next, first, second, value, client));
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn bulk_fallback_does_not_speculatively_import_foreign_promises() {
+    with_peer(|mut driver, messages| {
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let value = local(&mut driver, &mut hooks, server(|_, _, _| ok()));
+        let pending: capability::Client = crate::new_future_client(async {
+            futures::future::pending::<capnp::Result<capability::Client>>().await
+        });
+        let mut req = request(&client, 1);
+        let mut caps = req
+            .get()
+            .initn_as::<capnp::capability_list::Builder<capability::Client>>(4);
+        for (index, cap) in [&value, &pending, &client, &value].into_iter().enumerate() {
+            caps.set(index as u32, cap.hook.add_ref());
+        }
+        let response = req.send();
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        let mut foreign = foreign::ForeignPromises::new(1);
+        let mut imported = 0;
+        for _ in 0..32 {
+            let result = calls.poll(
+                &mut hooks,
+                &mut driver,
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                &mut [0; 24],
+                &mut Context::from_waker(Waker::noop()),
+                NonZeroUsize::new(1).unwrap(),
+                |graph, hook| {
+                    imported += 1;
+                    foreign.import(graph, hook)
+                },
+            );
+            if let Poll::Ready(Err(error)) = result {
+                panic!("one real foreign parameter fits one observer: {error}");
+            }
+            if !queue.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(queue.len(), 1);
+        assert_eq!(
+            imported, 1,
+            "fallback must not repeat a speculative foreign import"
+        );
+        assert!(!foreign.is_empty());
+        let bytes = drain(&mut queue, messages);
+        let reader = capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+        let rpc_capnp::message::Call(call) = reader
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("Call")
+        };
+        let table = call.unwrap().get_params().unwrap().get_cap_table().unwrap();
+        assert!(matches!(
+            table.get(1).which().unwrap(),
+            rpc_capnp::cap_descriptor::SenderPromise(_)
+        ));
+        drop((response, client, value, pending));
+        foreign.terminate(&mut driver.capabilities());
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
+fn bulk_calls_reuse_published_foreign_sources_without_importing_again() {
+    with_peer(|mut driver, messages| {
+        driver.set_export_identity(foreign::export_identity);
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let value = capability::Client::new(server(|_, _, _| ok()).add_ref());
+        let mut calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        let mut foreign = foreign::ForeignPromises::new(0);
+        let mut imported = 0;
+        let mut replies = Vec::new();
+        let mut previous = None;
+        for iteration in 0..2 {
+            let mut req = request(&client, 1);
+            let mut caps = req
+                .get()
+                .initn_as::<capnp::capability_list::Builder<capability::Client>>(4);
+            for index in 0..4 {
+                caps.set(index, value.hook.add_ref());
+            }
+            replies.push(req.send());
+            for step in 0..32 {
+                let result = calls.poll(
+                    &mut hooks,
+                    &mut driver,
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [0; 24],
+                    &mut Context::from_waker(Waker::noop()),
+                    NonZeroUsize::new(16).unwrap(),
+                    |graph, hook| {
+                        imported += 1;
+                        foreign.import(graph, hook)
+                    },
+                );
+                if iteration == 1 && step == 0 {
+                    assert!(
+                        matches!(
+                            result,
+                            Poll::Ready(Ok(Progress::Published { plain: false }))
+                        ),
+                        "an existing export needs no queued template: {result:?}"
+                    );
+                } else if let Poll::Ready(Err(error)) = result {
+                    panic!("{error}");
+                }
+                if !queue.is_empty() {
+                    break;
+                }
+            }
+            assert_eq!(queue.len(), 1);
+            assert_eq!(
+                imported, 4,
+                "only the first publication binds foreign owners"
+            );
+            let bytes = drain(&mut queue, messages);
+            let reader =
+                capnp::serialize::read_message(bytes.as_slice(), Default::default()).unwrap();
+            let rpc_capnp::message::Call(call) = reader
+                .get_root::<rpc_capnp::message::Reader>()
+                .unwrap()
+                .which()
+                .unwrap()
+            else {
+                panic!("Call")
+            };
+            for descriptor in call.unwrap().get_params().unwrap().get_cap_table().unwrap() {
+                let rpc_capnp::cap_descriptor::SenderHosted(id) = descriptor.which().unwrap()
+                else {
+                    panic!("senderHosted")
+                };
+                if let Some(previous) = previous {
+                    assert_eq!(id, previous);
+                }
+                previous = Some(id);
+            }
+        }
+        assert!(foreign.is_empty());
+        drop((replies, client, value));
+        foreign.terminate(&mut driver.capabilities());
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn immediate_single_capability_calls_keep_only_reachable_grants() {
     for reachable in [false, true] {
         with_peer(|mut driver, messages| {

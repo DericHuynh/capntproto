@@ -85,10 +85,7 @@ impl<'id> ForeignPromises<'id> {
         // another graph endpoint, hook owner or promise-resolution observer.
         // The original source keeps its dispatcher ordering; an independent
         // exported promise's forwarding route would bypass that source.
-        if let Some(client) = graph
-            .retain_exported(|| hook_identity(hook))
-            .map_err(graph_error)?
-        {
+        if let Some(client) = retain_published(graph, hook)? {
             return Ok(client);
         }
         let mut original = hook.add_ref();
@@ -356,6 +353,15 @@ where
         }
     }
 }
+pub(super) fn retain_published<'id>(
+    graph: &mut impl Capabilities<'id>,
+    hook: &dyn ClientHook,
+) -> capnp::Result<Option<Client<'id>>> {
+    graph
+        .retain_exported(|| hook_identity(hook))
+        .map_err(graph_error)
+}
+
 fn graph_error(error: clients::Error) -> Error {
     match error {
         clients::Error::Full

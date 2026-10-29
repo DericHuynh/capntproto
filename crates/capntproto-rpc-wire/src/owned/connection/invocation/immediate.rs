@@ -1,5 +1,6 @@
 //! Publish routable calls without a temporary queued Call envelope.
 use super::*;
+use core::borrow::Borrow;
 
 /// Parameters for immediate publication. An encoded Call has one or two unframed
 /// segments. Checked writers validate its payload before copying. Its method
@@ -12,13 +13,294 @@ pub enum ImmediateParams<'a> {
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
+    /// Publish a settled remote call directly from its retained capability table.
+    /// Null slots and duplicate entries preserve their indices. Caller ownership
+    /// protects every capability through publication; output rejection rolls back
+    /// all grants without consuming a question or dispatch sequence. Older queued
+    /// work and unsettled destinations return `None` for ordinary queued dispatch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_send_immediate_with_capabilities<R, C: Borrow<clients::Client<'id>>>(
+        &mut self,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        params: capnp::any_pointer::Reader<'_>,
+        capabilities: &[Option<C>],
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
+        resources: R,
+        mut attach: impl FnMut(
+            &binding::Route<'id, P, S, PATH>,
+            &imports::Imports<'id, '_, I>,
+            &mut R,
+        ) -> u8,
+    ) -> Result<Option<questions::Key<'id>>, Error> {
+        if let [Some(capability)] = capabilities {
+            return self.try_send_immediate_single(
+                target,
+                method,
+                params,
+                capability.borrow(),
+                messages,
+                queue,
+                minimum,
+                options,
+                scratch,
+                resources,
+                attach,
+            );
+        }
+        if capabilities.is_empty() {
+            return self.try_send_immediate(
+                target, method, params, messages, queue, minimum, options, resources,
+            );
+        }
+        self.check_live()?;
+        if method.only_promise_pipeline || self.call.is_some() || self.echo.is_some() {
+            return Ok(None);
+        }
+        let remote = {
+            let Some(ticket) = self
+                .runtime
+                .prepare_immediate(target)
+                .map_err(Error::Dispatch)?
+            else {
+                return Ok(None);
+            };
+            let clients::Destination::Endpoint {
+                owner: binding::Route::Capability(binding::Endpoint::Imported(remote)),
+                location: clients::Location::Remote(peer),
+                ..
+            } = ticket.destination()
+            else {
+                return Ok(None);
+            };
+            if peer != self.imports.peer() {
+                return Err(Error::InvalidInvocationTarget);
+            }
+            remote.id()
+        };
+        let count = capabilities.len();
+        if count > self.capability_capacity() {
+            return Err(Error::Input(super::super::super::Error::Capacity));
+        }
+        let wire_count =
+            u32::try_from(count).map_err(|_| Error::Input(super::super::super::Error::Capacity))?;
+        let options = self.writer_policy.options(options);
+        if self.writer_policy == WriterPolicy::Checked {
+            params
+                .validate_capability_indices(wire_count)
+                .map_err(|e| Error::Input(e.into()))?;
+        }
+        let words = params
+            .target_size()
+            .map_err(|e| Error::Input(e.into()))?
+            .word_count;
+        let descriptor_words = (count as u64).checked_mul(
+            u64::from(CapDescriptor::SIZE.data) + u64::from(CapDescriptor::SIZE.pointers),
+        );
+        let sized = words
+            .checked_add(16)
+            .and_then(|words| words.checked_add(descriptor_words?))
+            .and_then(|words| words.checked_mul(8))
+            .and_then(|bytes| usize::try_from(bytes).ok())
+            .ok_or(Error::Input(super::super::super::Error::Capacity))?;
+        let mut minimum = minimum.max(sized);
+        let slot_index =
+            ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges).ok_or(Error::Busy)?;
+        let slot = &mut self.exchanges[slot_index];
+        let mut output = queue
+            .reserve_with(resources)
+            .map_err(|e| Error::Input(super::super::super::Error::Storage(e)))?;
+        let mut batch = self.ledgers.exports.batch();
+        // Reflected routes are read from their retained clients while encoding
+        // and checked again through the final exclusive ticket. Staging keeps
+        // only sender grants, so no borrowed transform crosses graph mutation.
+        let mut staged = self
+            .message_capabilities
+            .buffer::<_, CAPS>(count, || reflection::Descriptor::None)
+            .ok_or(Error::Input(super::super::super::Error::Capacity))?;
+        let mut exports = crate::inbound::full::ParameterExports::single(None);
+        for (index, capability) in capabilities.iter().enumerate() {
+            let Some(capability) = capability else {
+                continue;
+            };
+            let capability = capability.borrow();
+            if let clients::Destination::Endpoint { owner, .. } =
+                self.runtime.inspect(capability).map_err(Error::Graph)?
+            {
+                if let Some(target) =
+                    reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
+                        .map_err(Error::Question)?
+                {
+                    let extra = match target {
+                        calls::Target::Imported(_) => Some(0),
+                        calls::Target::Promised { path, .. } => path
+                            .fields()
+                            .len()
+                            .checked_mul(8)
+                            .and_then(|n| n.checked_add(32)),
+                    };
+                    minimum = extra
+                        .and_then(|extra| minimum.checked_add(extra))
+                        .ok_or(Error::Input(super::super::super::Error::Capacity))?;
+                    continue;
+                }
+            }
+            let grant = self
+                .exported
+                .stage_using(
+                    &mut self.runtime,
+                    &mut batch,
+                    capability,
+                    self.descriptors.identity,
+                )
+                .map_err(Error::Exported)?;
+            let attached = match self.runtime.inspect(capability) {
+                Ok(clients::Destination::Endpoint { owner, .. }) => {
+                    attach(owner, &self.ledgers.imports, output.resources_mut())
+                }
+                _ => u8::MAX,
+            };
+            exports
+                .push(grant.id(), self.message_capabilities, count)
+                .ok_or(Error::Input(super::super::super::Error::Capacity))?;
+            staged[index] = reflection::Descriptor::Grant(grant.id(), grant.is_promise(), attached);
+            let owner = batch.pending_owner(grant.id()).and_then(|client| {
+                match self.runtime.inspect(client) {
+                    Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
+                    _ => None,
+                }
+            });
+            minimum = minimum
+                .checked_add(
+                    self.descriptors
+                        .bytes(owner, grant.is_promise())
+                        .map_err(|e| Error::Input(e.into()))?,
+                )
+                .ok_or(Error::Input(super::super::super::Error::Capacity))?;
+        }
+        let ticket = match self.runtime.prepare_immediate(target) {
+            Ok(Some(ticket)) => ticket,
+            Ok(None) => return Ok(None),
+            Err(error) => return Err(Error::Dispatch(error)),
+        };
+        if !matches!(ticket.destination(), clients::Destination::Endpoint {
+            owner: binding::Route::Capability(binding::Endpoint::Imported(import)),
+            location: clients::Location::Remote(peer), ..
+        } if import.id() == remote && peer == self.imports.peer())
+        {
+            return Ok(None);
+        }
+        for (descriptor, capability) in staged.iter_mut().zip(capabilities) {
+            if matches!(descriptor, reflection::Descriptor::Grant(..)) {
+                continue;
+            }
+            let Some(capability) = capability else {
+                continue;
+            };
+            let clients::Destination::Endpoint { owner, .. } =
+                ticket.inspect(capability.borrow()).map_err(Error::Graph)?
+            else {
+                return Err(Error::InvalidInvocationTarget);
+            };
+            let reflected = reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
+                .map_err(Error::Question)?
+                .ok_or(Error::InvalidInvocationTarget)?;
+            *descriptor = reflection::Descriptor::Reflected(reflected);
+        }
+        let reservation = self.ledgers.questions.reserve().map_err(Error::Question)?;
+        let frame = Frame::build(messages, minimum, options, |builder| {
+            calls::dynamic_call_payload(
+                builder,
+                reservation.id(),
+                calls::Target::Imported(remote),
+                method,
+                self.allow_answer_handoff,
+                |mut payload| {
+                    payload.field(WirePayload::CONTENT).copy_with_capabilities(
+                        params,
+                        capnp::wire_capability::IndexMap::identity(wire_count),
+                    )?;
+                    let mut table = payload.field(WirePayload::CAP_TABLE).init(count)?;
+                    for (index, grant) in staged[..count].iter().enumerate() {
+                        let mut descriptor = table.get_mut(index).unwrap();
+                        if let reflection::Descriptor::Grant(id, promise, attached) = *grant {
+                            descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
+                            let owner = batch.pending_owner(id).and_then(|client| {
+                                match ticket.inspect(client) {
+                                    Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
+                                    _ => None,
+                                }
+                            });
+                            self.descriptors.describe(owner, id, promise, descriptor)?;
+                        } else if let Some(target) = grant.reflected() {
+                            reflection::write(target, descriptor)?;
+                        } else {
+                            descriptor.void(CapDescriptor::NONE).set();
+                        }
+                    }
+                    Ok(())
+                },
+            )
+        })
+        .map_err(Error::Input)?;
+        let question = Question::send_granting_compact(
+            reservation,
+            batch,
+            messages,
+            frame,
+            scratch,
+            output,
+            crate::inbound::full::OriginalMetadata::call(
+                (method.interface, method.method),
+                false,
+                self.allow_answer_handoff,
+                exports,
+            ),
+            self.writer_policy == WriterPolicy::Checked,
+            |descriptor, index| {
+                reflection::check(
+                    staged
+                        .get(index)
+                        .and_then(reflection::Descriptor::reflected),
+                    descriptor,
+                )
+            },
+        )
+        .map_err(|e| Error::Input(super::super::super::Error::Output(e)))?;
+        let key = question.key();
+        self.ledgers
+            .questions
+            .bind_owner(key, slot_index)
+            .expect("new exchange owner");
+        slot.completion_owner = None;
+        let reserved = self
+            .free_exchanges
+            .take(&mut self.exchanges, |slot| &mut slot.free);
+        debug_assert_eq!(reserved, slot_index);
+        let slot = &mut self.exchanges[slot_index];
+        slot.exchange = Some(Exchange::Pending(question));
+        slot.canceled = false;
+        slot.tail_taken = false;
+        slot.authorized = true;
+        // Growing storage can retain borrowed reflection paths until dropped.
+        // Inline-only storage has no destructor and its last use ends the loan.
+        #[cfg(feature = "alloc")]
+        drop(staged);
+        ticket.accept_published();
+        Ok(Some(key))
+    }
+
     /// Publish a settled call whose parameter table contains exactly one
     /// capability. The caller retains that capability through this operation;
     /// successful publication transfers an ordinary descriptor grant to the
     /// question. Rejection preserves the request and rolls back the grant.
     /// Pending destinations and older queued work retain the queued path.
     #[allow(clippy::too_many_arguments)]
-    pub fn try_send_immediate_with_capability<R>(
+    fn try_send_immediate_single<R>(
         &mut self,
         target: &clients::Client<'id>,
         method: calls::DynamicCall,

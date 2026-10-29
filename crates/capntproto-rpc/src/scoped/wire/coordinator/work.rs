@@ -734,18 +734,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         target,
                         method,
                         params,
-                        capability,
+                        capabilities,
                     } => {
-                        if let Some(capability) = capability {
+                        if let Some(capabilities) = capabilities {
                             let connection::ImmediateParams::Content(params) = params else {
                                 unreachable!("capability-bearing content")
                             };
                             return driver
-                                .try_send_immediate_with_capability(
+                                .try_send_immediate_with_capabilities(
                                     target,
                                     method,
                                     *params,
-                                    capability,
+                                    capabilities,
                                     messages,
                                     queue,
                                     options.output_bytes.get(),

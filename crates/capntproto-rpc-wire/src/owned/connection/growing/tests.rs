@@ -743,6 +743,118 @@ fn immediate_promised_targets_preserve_retry_paths_and_segmented_parameters() {
 }
 
 #[test]
+fn immediate_tables_reflect_live_pipeline_paths_without_forwarding_exports() {
+    with_driver(|mut driver, messages| {
+        let target = remote(&mut driver);
+        let value = driver
+            .runtime
+            .endpoint(binding::Route::local(73), clients::Location::Local)
+            .unwrap();
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        let parent = driver
+            .send(
+                messages,
+                &mut queue,
+                256,
+                Default::default(),
+                calls::bootstrap,
+            )
+            .unwrap();
+        drain(&mut queue, messages, |_| ());
+        let projected = driver
+            .pipeline(parent, pipeline::Path::new(&[0, 2]))
+            .unwrap();
+        let words = [
+            capnp::word(1, 0, 0, 0, 38, 0, 0, 0),
+            capnp::word(3, 0, 0, 0, 0, 0, 0, 0),
+            capnp::word(3, 0, 0, 0, 1, 0, 0, 0),
+            capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            capnp::word(3, 0, 0, 0, 3, 0, 0, 0),
+        ];
+        let segments = [capnp::Word::words_to_bytes(&words)];
+        let reader = capnp::message::Reader::new(
+            capnp::message::SegmentArray::new(&segments),
+            Default::default(),
+        );
+        let key = driver
+            .try_send_immediate_with_capabilities(
+                &target,
+                DynamicCall::default(),
+                reader.get_root().unwrap(),
+                &[Some(&projected), Some(&target), None, Some(&value)],
+                messages,
+                &mut queue,
+                512,
+                Default::default(),
+                &mut [0; 8],
+                (),
+                |_, _, _| u8::MAX,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(driver.runtime.queued(), 0);
+        let mut exported = None;
+        drain(&mut queue, messages, |root| {
+            let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                panic!("Call")
+            };
+            let table = call.unwrap().get_params().unwrap().get_cap_table().unwrap();
+            assert_eq!(table.len(), 4);
+            let rpc_capnp::cap_descriptor::ReceiverAnswer(answer) = table.get(0).which().unwrap()
+            else {
+                panic!("reflect original pipeline")
+            };
+            let answer = answer.unwrap();
+            assert_eq!(answer.get_question_id(), parent.id().to_wire());
+            let path = answer.get_transform().unwrap();
+            assert_eq!(path.len(), 2);
+            assert!(matches!(
+                path.get(0).which().unwrap(),
+                rpc_capnp::promised_answer::op::GetPointerField(0)
+            ));
+            assert!(matches!(
+                path.get(1).which().unwrap(),
+                rpc_capnp::promised_answer::op::GetPointerField(2)
+            ));
+            assert!(matches!(
+                table.get(1).which().unwrap(),
+                rpc_capnp::cap_descriptor::ReceiverHosted(41)
+            ));
+            assert!(matches!(
+                table.get(2).which().unwrap(),
+                rpc_capnp::cap_descriptor::None(())
+            ));
+            let rpc_capnp::cap_descriptor::SenderHosted(id) = table.get(3).which().unwrap() else {
+                panic!("only the local service is exported")
+            };
+            exported = Some(capntproto_rpc_engine::ids::ExportId::from_wire(id));
+        });
+        let reply = Frame::build(messages, 128, Default::default(), |builder| {
+            let mut returned = builder
+                .try_init_root::<Message>()?
+                .into_field(Message::RETURN)
+                .init()?;
+            returned.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+            returned.scalar(Return::RELEASE_PARAM_CAPS).set(true);
+            returned.field(Return::RESULTS).init()?;
+            Ok(())
+        })
+        .unwrap();
+        driver
+            .receive(reply, messages, &mut [0; 8], |_| (), || ())
+            .unwrap_or_else(|rejected| panic!("{}", rejected.error));
+        assert!(driver.ledgers.exports.lookup(exported.unwrap()).is_none());
+        let response = driver.take_response(key).unwrap();
+        driver.release_response(response, messages);
+        driver.cancel(parent).unwrap();
+        driver.runtime.release(projected);
+        driver.runtime.release(value);
+        driver.runtime.release(target);
+        close(driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn immediate_capability_publication_preserves_retries_and_descriptor_authority() {
     for failure in ["queue", "storage", "reader", "index", "scratch", "older"] {
         with_driver(|mut driver, messages| {
@@ -806,11 +918,11 @@ fn immediate_capability_publication_preserves_retries_and_descriptor_authority()
                 Default::default()
             };
             let mut scratch = [0; 16];
-            let rejected = driver.try_send_immediate_with_capability(
+            let rejected = driver.try_send_immediate_with_capabilities(
                 &target,
                 method,
                 if failure == "index" { invalid } else { params },
-                &value,
+                &[Some(&value)],
                 messages,
                 if failure == "queue" {
                     &mut full
@@ -850,11 +962,11 @@ fn immediate_capability_publication_preserves_retries_and_descriptor_authority()
                 assert!(driver.cancel_invocation(task, messages));
             }
             let key = driver
-                .try_send_immediate_with_capability(
+                .try_send_immediate_with_capabilities(
                     &target,
                     method,
                     params,
-                    &value,
+                    &[Some(&value)],
                     messages,
                     &mut queue,
                     128,
@@ -2609,14 +2721,14 @@ fn plain_results_preserve_parameter_grants_until_the_peer_releases_them() {
             );
             let mut queue = messages::Queue::new_growing(0, 8).unwrap();
             let key = driver
-                .try_send_immediate_with_capability(
+                .try_send_immediate_with_capabilities(
                     &target,
                     DynamicCall {
                         no_promise_pipelining: true,
                         ..Default::default()
                     },
                     reader.get_root().unwrap(),
-                    &value,
+                    &[Some(&value)],
                     messages,
                     &mut queue,
                     256,
@@ -3790,11 +3902,11 @@ fn compact_parameter_grants_keep_authority_after_output_reclamation() {
                         .question
                 } else {
                     driver
-                        .try_send_immediate_with_capability(
+                        .try_send_immediate_with_capabilities(
                             &target,
                             method,
                             reader.get_root().unwrap(),
-                            &value,
+                            &[Some(&value)],
                             messages,
                             &mut queue,
                             256,

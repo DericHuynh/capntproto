@@ -386,17 +386,21 @@ IDs and Return policy independently of those frames, like legacy. Multiple grant
 use the configured inline capacity or bounded growth; the output queue owns the
 serialized request until physical output completes. Private request builders whose
 capability tables fit the wire budget preserve their descriptor indices without
-rebuilding the payload. Opaque parameters and oversized sparse tables still use
-bounded collection. Functional trace parity does not establish
-instruction, allocation, or throughput parity; benchmark the portable path
+rebuilding the payload. Settled remote calls with native or already-published
+parameter owners write directly into the final output frame, preserving null
+slots, duplicate grants and same-peer reflections. First-time foreign owners,
+unsettled targets and older queued work keep ordinary queued dispatch; retries
+do not create speculative promise observers. Opaque parameters and oversized
+sparse tables still use bounded collection. Functional trace parity does not
+establish instruction, allocation, or throughput parity; benchmark the portable path
 explicitly before changing the default driver.
 
 Hosted requests release their original parameter builders and capability hooks
 after FIFO publication; pending questions retain their separate protocol
 obligations. Ordinary calls with zero or one parameter export retain only the
-method, return policy and export grant; larger grant lists retain the original
-frame in bounded storage. Standalone `ClientHooks` users can configure
-`with_message_pool` before exporting clients to reuse transmitted request
+method, return policy and export grant. Larger grant lists use configured inline
+storage or bounded growth without retaining the original request frame. Standalone
+`ClientHooks` users can configure `with_message_pool` before exporting clients to reuse transmitted request
 segments. Queued frames retain their bytes through partial writes, so live
 segments cannot be recycled.
 Promises resolved back to local objects expose their original policy hooks only

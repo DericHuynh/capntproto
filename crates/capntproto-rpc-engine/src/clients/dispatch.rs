@@ -297,6 +297,11 @@ impl<'id, T, P: Copy + Eq> Immediate<'_, 'id, '_, T, P> {
     pub fn destination(&self) -> Destination<'id, '_, T, P> {
         self.call.destination()
     }
+    /// Inspect another retained capability while this ticket keeps the graph
+    /// unchanged. This grants no dispatch or mutation authority over that route.
+    pub fn inspect(&self, client: &Client<'id>) -> Result<Destination<'id, '_, T, P>, Error> {
+        self.call.graph.inspect(client)
+    }
     /// Commit dispatch after successful publication, retaining the destination.
     /// Release the returned client through the same runtime after use.
     pub fn accept(self) -> Client<'id> {

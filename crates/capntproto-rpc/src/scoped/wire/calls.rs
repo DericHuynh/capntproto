@@ -13,6 +13,57 @@ type Local<'p, 'id, I, const C: usize, const H: usize> = connection::LocalCall<'
 fn retain_local_hook(hook: &Rc<dyn ClientHook>) -> Option<Box<dyn ClientHook>> {
     Some(hook.add_ref())
 }
+
+/// Bulk publication only reuses existing owners. Fresh foreign hooks take the
+/// queued path, so ordering/output retries never create speculative observers.
+#[inline(never)]
+fn native_bulk_parameters<'id, G: Capabilities<'id>>(
+    hooks: &ClientHooks<'id>,
+    graph: &mut G,
+    caps: &[Option<Box<dyn ClientHook>>],
+    maximum: usize,
+) -> capnp::Result<Option<Vec<Option<Client<'id>>>>> {
+    let Some(first) = caps.iter().position(Option::is_some) else {
+        return Ok(Some(Vec::new()));
+    };
+    if caps.len() > maximum {
+        return Ok(None);
+    }
+    let retain = |graph: &mut G, hook: &dyn ClientHook| match hooks.try_retain(graph, hook)? {
+        Some(client) => Ok(Some(client)),
+        None => foreign::retain_published(graph, hook),
+    };
+    let Some(first_client) = retain(graph, &**caps[first].as_ref().unwrap())? else {
+        return Ok(None);
+    };
+    let mut retained = Vec::new();
+    if let Err(error) = retained.try_reserve_exact(caps.len()) {
+        graph.release(first_client);
+        return Err(wire_error(error));
+    }
+    retained.resize_with(caps.len(), || None);
+    retained[first] = Some(first_client);
+    let result = (|| {
+        for (slot, hook) in retained.iter_mut().zip(caps).skip(first + 1) {
+            let Some(hook) = hook else { continue };
+            *slot = retain(graph, &**hook)?;
+            if slot.is_none() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })();
+    match result {
+        Ok(true) => Ok(Some(retained)),
+        result => {
+            for client in retained.into_iter().flatten() {
+                graph.release(client);
+            }
+            result.map(|_| None)
+        }
+    }
+}
+
 enum Stage {
     Prepare,
     Execute(server::Execution),
@@ -45,7 +96,7 @@ pub(super) enum Publication<'a, 'id> {
         target: &'a Client<'id>,
         method: DynamicCall,
         params: &'a connection::ImmediateParams<'a>,
-        capability: Option<&'a Client<'id>>,
+        capabilities: Option<&'a [Option<Client<'id>>]>,
     },
 }
 pub(super) enum SendOutcome<'id> {
@@ -418,18 +469,18 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         target,
                         method,
                         params,
-                        capability,
+                        capabilities,
                     } => {
-                        if let Some(capability) = capability {
+                        if let Some(capabilities) = capabilities {
                             let connection::ImmediateParams::Content(params) = params else {
                                 unreachable!("capability-bearing content")
                             };
                             return driver
-                                .try_send_immediate_with_capability(
+                                .try_send_immediate_with_capabilities(
                                     target,
                                     method,
                                     *params,
-                                    capability,
+                                    capabilities,
                                     messages,
                                     queue,
                                     minimum,
@@ -520,11 +571,11 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         target,
                         method,
                         params,
-                        capability,
+                        capabilities,
                     } => {
                         // The fixed attachment adapter retains its ordinary
                         // queued descriptor transaction for capability tables.
-                        if capability.is_some() {
+                        if capabilities.is_some() {
                             return Ok(None);
                         }
                         return driver
@@ -1234,39 +1285,65 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 Some(encoded) => connection::ImmediateParams::EncodedCall(encoded),
                 None => connection::ImmediateParams::Content(call.params()?),
             };
-            // A private one-slot table preserves its exact capability mapping.
-            // Import through the ordinary authority/membrane path, then retain
-            // that branded owner until transactional publication has finished.
-            let retained = match (&params, call.params.capability_table()) {
-                // Like legacy Request::send_internal/write_descriptors, use
-                // the builder's capability table. Rewalking the entire payload
-                // just to rediscover this live entry duplicates publication work.
-                (connection::ImmediateParams::Content(_), Some([Some(hook)])) => Some(match hooks
-                    .try_retain(&mut driver.capabilities(), &**hook)?
-                {
-                    Some(client) => client,
-                    None => import(&mut driver.capabilities(), &**hook)?,
-                }),
-                _ => None,
-            };
+            // Keep zero/single-capability admission free of the bulk binding
+            // vector and its cleanup loop. Both publish through the table API.
+            let mut single = None;
+            let mut multiple = None;
+            let mut immediate = true;
+            if let connection::ImmediateParams::Content(_) = &params {
+                match call.params.capability_table() {
+                    Some([Some(hook)]) => {
+                        single = Some(
+                            match hooks.try_retain(&mut driver.capabilities(), &**hook)? {
+                                Some(client) => client,
+                                None => import(&mut driver.capabilities(), &**hook)?,
+                            },
+                        );
+                    }
+                    Some(caps) if caps.len() > 1 => {
+                        let maximum = driver.capability_capacity();
+                        multiple = native_bulk_parameters(
+                            hooks,
+                            &mut driver.capabilities(),
+                            caps,
+                            maximum,
+                        )?;
+                        immediate = multiple.is_some();
+                    }
+                    _ => (),
+                }
+            }
             let progress = Progress::Published {
-                plain: retained.is_none(),
+                plain: single.is_none() && multiple.as_ref().is_none_or(Vec::is_empty),
             };
-            let publication = Publication::Immediate {
-                target,
-                method,
-                params: &params,
-                capability: retained.as_ref(),
+            let capabilities = if single.is_some() {
+                Some(core::slice::from_ref(&single))
+            } else {
+                multiple.as_deref()
             };
-            let published = send(
-                &mut self.invocations,
-                driver,
-                messages,
-                credit.clone(),
-                publication,
-            );
-            if let Some(capability) = retained {
+            let published = if immediate {
+                send(
+                    &mut self.invocations,
+                    driver,
+                    messages,
+                    credit.clone(),
+                    Publication::Immediate {
+                        target,
+                        method,
+                        params: &params,
+                        capabilities,
+                    },
+                )
+            } else {
+                Ok(None)
+            };
+            if let Some(capability) = single {
                 driver.capabilities().release(capability);
+            }
+            if let Some(multiple) = multiple {
+                for capability in multiple.into_iter().flatten() {
+                    driver.capabilities().release(capability);
+                }
             }
             if let Some(published) = published? {
                 if let SendOutcome::Blocked(error) = published {
