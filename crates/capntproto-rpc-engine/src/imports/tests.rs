@@ -338,6 +338,7 @@ fn nonempty_backing_is_rejected_without_dropping_its_owner() {
         release_next: None,
         generation: 7,
         entry: Some(Entry {
+            client_binding: None,
             #[cfg(feature = "alloc")]
             presence: Default::default(),
             wire: ImportId::from_wire(1),
@@ -453,4 +454,75 @@ fn release_queue_preserves_rejection_and_unlinks_revived_head_middle_and_tail() 
         assert_eq!(imports.next_release().unwrap().commit(), 9);
     })
     .unwrap();
+}
+
+#[test]
+fn connection_client_links_are_weak_and_check_both_generations() {
+    use crate::clients::{self, Location};
+    let measured = allocation_counter::measure(|| {
+        clients::with_graph(
+            &mut [clients::Slot::EMPTY],
+            clients::NotificationStorage {
+                listeners: &mut [],
+                subscriptions: &mut [],
+            },
+            |graph: &mut clients::Graph<'_, '_, u8, u8>| {
+                let mut slots = [Slot::EMPTY];
+                let mut imports = new_scope(&mut slots).unwrap();
+                let local = imports.admit(ImportId::from_wire(u32::MAX), ()).unwrap();
+                let first = graph.endpoint(7, Location::Local).unwrap();
+                let original = first.key();
+                let key = local.key();
+                imports.bind_client(&local, &first);
+                assert_eq!(imports.client_binding(key), Some(original));
+                graph.release(first);
+                assert_eq!(graph.take_retired(), Some(7));
+                assert!(graph.is_empty(), "the import link cannot retain its client");
+                let replacement = graph.endpoint(9, Location::Local).unwrap();
+                assert_ne!(replacement.key(), original);
+                assert_eq!(
+                    graph
+                        .retain_key(imports.client_binding(key).unwrap())
+                        .unwrap_err(),
+                    clients::Error::Stale
+                );
+                imports.release(local);
+                // Rejected revival leaves the prior import generation intact.
+                let mut aliases = [ReceiveSlot::alias(ImportId::from_wire(u32::MAX))];
+                drop(imports.prepare_receive(&mut aliases).unwrap());
+                assert_eq!(imports.client_binding(key), Some(original));
+                imports.prepare_receive(&mut aliases).unwrap().commit();
+                let revived = aliases[0].take_local().unwrap();
+                assert_ne!(revived.key(), key);
+                assert!(imports.client_binding(key).is_none());
+                assert!(imports.client_binding(revived.key()).is_none());
+                imports.bind_client(&revived, &replacement);
+                assert_eq!(
+                    imports.client_binding(revived.key()),
+                    Some(replacement.key())
+                );
+                let revived_key = revived.key();
+                imports.release(revived);
+                let received = imports.receive(ImportId::from_wire(u32::MAX)).unwrap();
+                assert_ne!(received.key(), revived_key);
+                assert!(imports.client_binding(revived_key).is_none());
+                assert!(imports.client_binding(received.key()).is_none());
+                imports.bind_client(&received, &replacement);
+                let received_key = received.key();
+                imports.release(received);
+                assert_eq!(imports.next_release().unwrap().commit(), ());
+                assert!(imports.client_binding(received_key).is_none());
+                let fresh = imports.admit(ImportId::from_wire(0), ()).unwrap();
+                assert!(imports.client_binding(fresh.key()).is_none());
+                assert!(imports.client_binding(received_key).is_none());
+                imports.release(fresh);
+                imports.next_release().unwrap().commit();
+                graph.release(replacement);
+                assert_eq!(graph.take_retired(), Some(9));
+                assert!(imports.is_empty() && graph.is_empty());
+            },
+        )
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
 }

@@ -34,11 +34,44 @@ impl<'graph> Bound<'graph> {
     }
 }
 
-impl<'graph, 'imports, P: Copy + Eq> Imports<'_, 'graph, 'imports, P> {
+/// Admitted import bindings for one graph and import ownership domain.
+/// Implementations are sealed; connection drivers use the import ledger itself,
+/// while independently branded low-level graphs use an explicit binding map.
+pub trait ImportBindings<'graph, 'imports, P: Copy + Eq>: super::sealed::Sealed {
+    fn peer(&self) -> P;
+    fn bind<I, G>(
+        &mut self,
+        graph: &mut G,
+        imports: &mut imports::Imports<'imports, '_, I>,
+        local: &imports::Local<'imports>,
+    ) -> Result<clients::Client<'graph>, super::Error>
+    where
+        G: clients::Capabilities<'graph, Peer = P>,
+        G::Owner: EndpointOwner<'imports, P>;
+    fn resolution_target<I>(
+        &self,
+        key: imports::Key<'imports>,
+        imports: &imports::Imports<'imports, '_, I>,
+    ) -> Option<clients::Key<'graph>>;
+
+    /// Freeze the exact receiverHosted route without following a promise.
+    fn freeze_import<I, G>(
+        &self,
+        graph: &mut G,
+        imports: &mut imports::Imports<'imports, '_, I>,
+        local: &imports::Local<'imports>,
+    ) -> Result<clients::Client<'graph>, super::Error>
+    where
+        G: clients::Capabilities<'graph, Peer = P>,
+        G::Owner: EndpointOwner<'imports, P>,
+    {
+        super::import_client(graph, imports, local, self.peer(), false)
+    }
+
     /// Bind an admitted capability from parameters, results, or Resolve. The
     /// original receipt is preserved; the returned client has independent life.
     #[allow(clippy::too_many_arguments)]
-    pub fn bind_capability<'e, 'a, I, A, const PATH: usize, G>(
+    fn bind_capability<'e, 'a, I, A, const PATH: usize, G>(
         &mut self,
         capability: Capability<'_, '_, 'imports, 'e, 'a>,
         graph: &mut G,
@@ -86,5 +119,79 @@ impl<'graph, 'imports, P: Copy + Eq> Imports<'_, 'graph, 'imports, P> {
             source,
             observer,
         })
+    }
+}
+
+impl<P> super::sealed::Sealed for Imports<'_, '_, '_, P> {}
+impl<'graph, 'imports, P: Copy + Eq> ImportBindings<'graph, 'imports, P>
+    for Imports<'_, 'graph, 'imports, P>
+{
+    fn peer(&self) -> P {
+        self.peer
+    }
+    fn bind<I, G>(
+        &mut self,
+        graph: &mut G,
+        imports: &mut imports::Imports<'imports, '_, I>,
+        local: &imports::Local<'imports>,
+    ) -> Result<clients::Client<'graph>, super::Error>
+    where
+        G: clients::Capabilities<'graph, Peer = P>,
+        G::Owner: EndpointOwner<'imports, P>,
+    {
+        Imports::bind(self, graph, imports, local)
+    }
+    fn resolution_target<I>(
+        &self,
+        key: imports::Key<'imports>,
+        _: &imports::Imports<'imports, '_, I>,
+    ) -> Option<clients::Key<'graph>> {
+        Imports::resolution_target(self, key)
+    }
+}
+
+/// A driver's graph and import ledger share one affine connection domain.
+/// Their weak link lives in the import entry; there is no second table/budget.
+pub(crate) struct ConnectionImports<P> {
+    peer: P,
+}
+impl<P> ConnectionImports<P> {
+    pub(crate) fn new(peer: P) -> Self {
+        Self { peer }
+    }
+}
+impl<P> super::sealed::Sealed for ConnectionImports<P> {}
+impl<'id, P: Copy + Eq> ImportBindings<'id, 'id, P> for ConnectionImports<P> {
+    fn peer(&self) -> P {
+        self.peer
+    }
+    fn bind<I, G>(
+        &mut self,
+        graph: &mut G,
+        imports: &mut imports::Imports<'id, '_, I>,
+        local: &imports::Local<'id>,
+    ) -> Result<clients::Client<'id>, super::Error>
+    where
+        G: clients::Capabilities<'id, Peer = P>,
+        G::Owner: EndpointOwner<'id, P>,
+    {
+        if let Some(key) = imports.client_binding(local.key()) {
+            match graph.retain_key(key) {
+                Ok(client) => return Ok(client),
+                Err(clients::Error::Stale) => (),
+                Err(error) => return Err(super::Error::Graph(error)),
+            }
+        }
+        let pending = imports.promise_state(local) == promise::ImportState::Pending;
+        let client = super::import_client(graph, imports, local, self.peer, pending)?;
+        imports.bind_client(local, &client);
+        Ok(client)
+    }
+    fn resolution_target<I>(
+        &self,
+        key: imports::Key<'id>,
+        imports: &imports::Imports<'id, '_, I>,
+    ) -> Option<clients::Key<'id>> {
+        imports.client_binding(key)
     }
 }

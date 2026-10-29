@@ -243,6 +243,9 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
             let slot = &mut self.imports.slots[plan.index];
             let wire = receipt.wire.take().expect("planned wire identity");
             if let Some(entry) = slot.entry.as_mut() {
+                if entry.local == 0 {
+                    entry.client_binding = None;
+                }
                 entry.promise = entry
                     .promise
                     .descriptor(receipt.promise)
@@ -258,6 +261,7 @@ impl<'receipts, 'id, T> Receive<'_, 'receipts, 'id, '_, T> {
                 let mut remote = ImportRefs::new();
                 remote.receive(1).unwrap();
                 slot.entry = Some(Entry {
+                    client_binding: None,
                     #[cfg(feature = "alloc")]
                     presence: self.imports.observation.enter(),
                     wire,

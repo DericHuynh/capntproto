@@ -194,7 +194,6 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
                     }
                 }
                 9 => {
-                    driver.imports.clear_terminal();
                     driver.outgoing.clear_terminal(&mut driver.runtime);
                     driver
                         .invocation_pipelines

@@ -11,8 +11,7 @@ pub(crate) const OUTGOING: usize = 7;
 pub(crate) const PIPELINES: usize = 8;
 pub(crate) const BARRIERS: usize = 9;
 pub(crate) const TASKS: usize = 10;
-pub(crate) const IMPORT_BINDINGS: usize = 11;
-pub(crate) const COUNT: usize = 12;
+pub(crate) const COUNT: usize = 11;
 pub(crate) fn graph_wait<'id>(
     error: clients::Error,
     graph: &impl clients::Capabilities<'id>,

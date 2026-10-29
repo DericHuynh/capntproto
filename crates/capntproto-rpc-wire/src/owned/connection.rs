@@ -2,7 +2,7 @@
 //! Storage and scheduling remain with the caller. Capacity pressure retains an
 //! admitted operation, so retry never receives its capability grants twice.
 use super::*;
-use crate::clients::{self as binding, outgoing, EndpointOwner};
+use crate::clients::{self as binding, outgoing, EndpointOwner, ImportBindings};
 use capntproto_rpc_engine::{
     clients::{self, dispatch},
     connection,
@@ -170,7 +170,6 @@ pub struct Storage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> {
     /// At least two slots. One is reserved for a sender loopback so application
     /// calls waiting on its echo cannot consume the capacity needed to send it.
     pub tasks: &'s mut [dispatch::TaskSlot<Task<'pool, 'id, I, CAPS, PATH>>],
-    pub imports: &'s mut [binding::ImportSlot<'id, 'id>],
     pub pipelines: &'s mut [pipelines::Slot<'id, 'id, PATH>],
     pub outgoing: &'s mut [outgoing::Slot<'id, PATH>],
     pub exported: &'s mut [binding::exporting::Slot<'id, 'id>],
@@ -187,7 +186,6 @@ struct PreparedStorage<'pool, 'id, 's, I, const CAPS: usize, const PATH: usize> 
     message_capabilities: Capacity,
     message_path: Capacity,
     tasks: SlotStorage<'s, dispatch::TaskSlot<Task<'pool, 'id, I, CAPS, PATH>>>,
-    imports: SlotStorage<'s, binding::ImportSlot<'id, 'id>>,
     pipelines: SlotStorage<'s, pipelines::Slot<'id, 'id, PATH>>,
     outgoing: SlotStorage<'s, outgoing::Slot<'id, PATH>>,
     exported: SlotStorage<'s, binding::exporting::Slot<'id, 'id>>,
@@ -243,7 +241,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     descriptors: crate::publication::descriptors::Descriptors<binding::Route<'id, P, S, PATH>>,
     ledgers: connection::Connection<'id, 's, I, clients::Client<'id>, Answer<'pool, 'id, A, CAPS>>,
     runtime: Runtime<'pool, 'id, 's, I, P, S, CAPS, PATH>,
-    imports: binding::Imports<'s, 'id, 'id, P>,
+    imports: binding::ConnectionImports<P>,
     pipelines: pipelines::Bindings<'s, 'id, 'id, PATH>,
     exported: binding::exporting::Bindings<'s, 'id, 'id>,
     outgoing: outgoing::Bindings<'s, 'id, P, PATH>,
@@ -482,7 +480,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             connection,
             PreparedStorage {
                 tasks: SlotStorage::borrowed(storage.tasks),
-                imports: SlotStorage::borrowed(storage.imports),
                 pipelines: SlotStorage::borrowed(storage.pipelines),
                 outgoing: SlotStorage::borrowed(storage.outgoing),
                 exported: SlotStorage::borrowed(storage.exported),
@@ -547,10 +544,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 Ok(value) => value,
                 Err(error) => return Err((Error::Loopback(error), connection)),
             };
-        let imports = match binding::Imports::from_storage(storage.imports, peer) {
-            Ok(value) => value,
-            Err(error) => return Err((Error::Imports(error), connection)),
-        };
+        let imports = binding::ConnectionImports::new(peer);
         let pipelines = match pipelines::Bindings::from_storage_with_capacity(
             storage.pipelines,
             storage.message_path,

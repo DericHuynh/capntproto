@@ -395,6 +395,18 @@ sparse tables still use bounded collection. Functional trace parity does not
 establish instruction, allocation, or throughput parity; benchmark the portable path
 explicitly before changing the default driver.
 
+The owning driver's import entries hold weak graph links, like legacy. Binding an
+existing import checks its ledger slot and graph generation directly, without a
+second table or a linear search. Re-admitting an import clears the old link;
+failed admission preserves it. Links retain neither graph clients nor wire grants.
+Custom driver `Storage` no longer takes an `imports` binding array, and driver
+`GrowingStorage` no longer has a separate import-binding budget. The engine import
+ledger and graph node capacities limit imported clients; `FixedStorage` dispatch
+slots do not. Import entries carry additional weak-link metadata, so size custom
+storage pools for the new layout. Independently branded low-level graphs still
+use `clients::Imports`; import `clients::ImportBindings` to call its shared
+`bind_capability` method.
+
 Hosted requests release their original parameter builders and capability hooks
 after FIFO publication; pending questions retain their separate protocol
 obligations. Ordinary calls with zero or one parameter export retain only the

@@ -6,7 +6,8 @@
 use capntproto_rpc_engine::storage::Storage as SlotStorage;
 use capntproto_rpc_engine::{clients, ids::ImportId, imports, promise};
 mod binding;
-pub use binding::{BindError, Bound};
+pub(crate) use binding::ConnectionImports;
+pub use binding::{BindError, Bound, ImportBindings};
 mod typed;
 pub use typed::{CallTarget, TypedClient};
 pub mod exporting;
@@ -164,18 +165,6 @@ pub struct Imports<'slots, 'graph, 'imports, P> {
     peer: P,
 }
 impl<'slots, 'graph, 'imports, P: Copy + Eq> Imports<'slots, 'graph, 'imports, P> {
-    pub(crate) fn clear_terminal(&mut self) {
-        for slot in self.slots.iter_mut() {
-            slot.link = None;
-        }
-    }
-    pub(crate) fn maximum(&self) -> usize {
-        self.slots.maximum()
-    }
-    pub(crate) fn peer(&self) -> P {
-        self.peer
-    }
-
     /// Retain the exact wire import endpoint for a receiverHosted descriptor.
     /// This deliberately does not follow the observed promise's resolution:
     /// an already-advertised reflected route must keep its original ordering.
@@ -189,22 +178,7 @@ impl<'slots, 'graph, 'imports, P: Copy + Eq> Imports<'slots, 'graph, 'imports, P
         G: clients::Capabilities<'graph, Peer = P>,
         G::Owner: EndpointOwner<'imports, P>,
     {
-        let retained = imports.retain(local).map_err(Error::Imports)?;
-        let owner = G::Owner::imported(Remote {
-            wire: imports.wire_id(local),
-            peer: self.peer,
-            local: retained,
-        });
-        graph
-            .endpoint(owner, clients::Location::Remote(self.peer))
-            .map_err(|rejected| {
-                let remote = rejected
-                    .value
-                    .into_import()
-                    .unwrap_or_else(|_| unreachable!("sealed imported owner"));
-                imports.release(remote.local);
-                Error::Graph(rejected.error)
-            })
+        import_client(graph, imports, local, self.peer, false)
     }
     pub fn new(slots: &'slots mut [ImportSlot<'graph, 'imports>], peer: P) -> Result<Self, Error> {
         Self::from_storage(SlotStorage::borrowed(slots), peer)
@@ -251,31 +225,7 @@ impl<'slots, 'graph, 'imports, P: Copy + Eq> Imports<'slots, 'graph, 'imports, P
             })
             .ok_or(Error::Full)?;
         let pending = imports.promise_state(local) == promise::ImportState::Pending;
-        let peer = self.peer;
-        let retained = imports.retain(local).map_err(Error::Imports)?;
-        let endpoint = G::Owner::imported(Remote {
-            wire: imports.wire_id(local),
-            peer,
-            local: retained,
-        });
-        let client = if pending {
-            graph.imported_promise(endpoint, peer)
-        } else {
-            graph.endpoint(endpoint, clients::Location::Remote(peer))
-        };
-        let client = match client {
-            Ok(client) => client,
-            Err(rejected) => {
-                // The only rejected owner is the one import just retained.
-                // Recover its receipt through the sealed owner implementation.
-                let remote = rejected
-                    .value
-                    .into_import()
-                    .unwrap_or_else(|_| unreachable!("sealed imported owner"));
-                imports.release(remote.local);
-                return Err(Error::Graph(rejected.error));
-            }
-        };
+        let client = import_client(graph, imports, local, self.peer, pending)?;
         self.slots[slot].link = Some((local.key(), client.key()));
         Ok(client)
     }
@@ -303,4 +253,42 @@ pub fn reflected<'g, 'e, G: clients::Capabilities<'g>>(
     lease: &capntproto_rpc_engine::exports::Lease<'e>,
 ) -> Result<clients::Client<'g>, clients::Error> {
     graph.retain_key(exports.get(lease).key())
+}
+
+fn import_client<'g, 'i, P: Copy + Eq, I, G>(
+    graph: &mut G,
+    imports: &mut imports::Imports<'i, '_, I>,
+    local: &imports::Local<'i>,
+    peer: P,
+    pending: bool,
+) -> Result<clients::Client<'g>, Error>
+where
+    G: clients::Capabilities<'g, Peer = P>,
+    G::Owner: EndpointOwner<'i, P>,
+{
+    let retained = imports.retain(local).map_err(Error::Imports)?;
+    let endpoint = G::Owner::imported(Remote {
+        wire: imports.wire_id(local),
+        peer,
+        local: retained,
+    });
+    let client = if pending {
+        graph.imported_promise(endpoint, peer)
+    } else {
+        graph.endpoint(endpoint, clients::Location::Remote(peer))
+    };
+    let client = match client {
+        Ok(client) => client,
+        Err(rejected) => {
+            // The only rejected owner is the one import just retained.
+            // Recover its receipt through the sealed owner implementation.
+            let remote = rejected
+                .value
+                .into_import()
+                .unwrap_or_else(|_| unreachable!("sealed imported owner"));
+            imports.release(remote.local);
+            return Err(Error::Graph(rejected.error));
+        }
+    };
+    Ok(client)
 }

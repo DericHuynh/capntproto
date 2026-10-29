@@ -176,8 +176,6 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
         #[cfg(not(feature = "growing"))]
         let mut tasks = [const { dispatch::TaskSlot::EMPTY }; TASKS];
         #[cfg(not(feature = "growing"))]
-        let mut bindings = [const { binding::ImportSlot::EMPTY }; 4];
-        #[cfg(not(feature = "growing"))]
         let mut pipelines = [const { pipelines::Slot::EMPTY }; 4];
         #[cfg(not(feature = "growing"))]
         let mut outgoing = [const { outgoing::Slot::EMPTY }; 4];
@@ -199,7 +197,6 @@ pub(super) fn with_owned_peer_storage<'p, const TASKS: usize, const ADOPTED: usi
             connection,
             Storage {
                 tasks: &mut tasks,
-                imports: &mut bindings,
                 pipelines: &mut pipelines,
                 outgoing: &mut outgoing,
                 exported: &mut exported,

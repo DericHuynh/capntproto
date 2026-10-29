@@ -13,6 +13,7 @@ closed spec fn received<T>(s: Slot<T>, t: Slot<T>, r: Result<bool, Error>) -> bo
         &&& t.entry.unwrap().value == e.value
         &&& t.entry.unwrap().wire == e.wire
         &&& t.entry.unwrap().promise == e.promise
+        &&& t.entry.unwrap().client_binding == (if e.local == 0 { None } else { e.client_binding })
     }
 }
 proof fn revived_import_cannot_reuse_stale_generation<T>(s: Slot<T>, t: Slot<T>)

@@ -41,7 +41,7 @@ impl<'pool, 'i, 'e, 'a, I> Resolution<'pool, 'i, 'e, 'a, I> {
         self,
         messages: &mut messages::Messages<'pool, '_, '_>,
         graph: &mut G,
-        bindings: &mut crate::clients::Imports<'_, 'g, 'i, P>,
+        bindings: &mut impl crate::clients::ImportBindings<'g, 'i, P>,
         imports: &mut imports::Imports<'i, '_, I>,
         exports: &mut exports::Exports<'e, '_, clients::Client<'g>>,
         answers: &mut answers::Answers<
@@ -57,7 +57,7 @@ impl<'pool, 'i, 'e, 'a, I> Resolution<'pool, 'i, 'e, 'a, I> {
     {
         let target = self
             .target
-            .and_then(|target| bindings.resolution_target(target));
+            .and_then(|target| bindings.resolution_target(target, imports));
         let observed = match target.map(|key| graph.retain_key(key)).transpose() {
             Ok(observed) => observed,
             Err(clients::Error::Stale) => None,

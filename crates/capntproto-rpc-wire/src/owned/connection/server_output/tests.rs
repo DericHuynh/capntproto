@@ -6,6 +6,118 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn imported_clients_use_ledger_capacity_without_a_second_binding_budget() {
+    let measured = allocation_counter::measure(|| {
+        let mut bytes = [[ZERO; 128]; 6];
+        let mut buffers = bytes
+            .each_mut()
+            .map(|b| messages::Buffer::new(Word::words_to_bytes_mut(b)));
+        messages::with_messages(&mut buffers, &mut [messages::SendSlot::EMPTY], |messages| {
+            storage::with_domain(|domain| {
+                // Two dispatch slots, thirty-two import slots. A binding does
+                // not spend a dispatch-sized slot or allocate another table.
+                let mut slots = FixedStorage::<(), u32, u8, u32, 4, 4, 2, 64, 0, 32>::new();
+                let mut driver = slots.bind(domain, 1).unwrap();
+                let mut clients = [const { None }; 32];
+                for (index, slot) in clients.iter_mut().enumerate() {
+                    let receipt = driver
+                        .admit_import(ImportId::from_wire(u32::MAX - index as u32), ())
+                        .unwrap();
+                    let client = driver.bind_import(&receipt).unwrap();
+                    let alias = driver.bind_import(&receipt).unwrap();
+                    assert_eq!(client.key(), alias.key());
+                    assert_eq!(
+                        driver.ledgers.imports.client_binding(receipt.key()),
+                        Some(client.key())
+                    );
+                    driver.runtime.release(alias);
+                    driver.release_import(receipt);
+                    *slot = Some(client);
+                }
+                for client in clients.into_iter().flatten() {
+                    driver.runtime.release(client);
+                }
+                let mut queue_slots = [None];
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::<()>::new(&mut queue_slots).unwrap(),
+                );
+            });
+        })
+        .unwrap();
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
+fn imported_client_links_retry_exhaustion_and_rebind_stale_graph_slots() {
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let receipt = driver
+                .admit_import(ImportId::from_wire(u32::MAX), ())
+                .unwrap();
+            let held = core::array::from_fn::<_, 24, _>(|_| {
+                driver
+                    .runtime
+                    .endpoint(binding::Route::local(0), clients::Location::Local)
+                    .unwrap()
+            });
+            assert!(matches!(
+                driver.bind_import(&receipt),
+                Err(binding::Error::Graph(clients::Error::Full))
+            ));
+            assert!(driver
+                .ledgers
+                .imports
+                .client_binding(receipt.key())
+                .is_none());
+            assert!(!driver.ledgers.imports.has_pending_release());
+            for client in held {
+                driver.runtime.release(client);
+            }
+            while let Some(owner) = driver.runtime.take_retired() {
+                assert_eq!(
+                    owner.release(&mut driver.ledgers.imports, &mut driver.ledgers.questions),
+                    Some(0)
+                );
+            }
+            let first = driver.bind_import(&receipt).unwrap();
+            let original = first.key();
+            driver.runtime.release(first);
+            let owner = driver.runtime.take_retired().unwrap();
+            assert!(owner
+                .release(&mut driver.ledgers.imports, &mut driver.ledgers.questions)
+                .is_none());
+            let replacement = driver
+                .runtime
+                .endpoint(binding::Route::local(0), clients::Location::Local)
+                .unwrap();
+            assert_ne!(replacement.key(), original);
+            let rebound = driver.bind_import(&receipt).unwrap();
+            assert_ne!(rebound.key(), original);
+            assert_ne!(rebound.key(), replacement.key());
+            assert!(
+                matches!(driver.runtime.inspect(&rebound).unwrap(), clients::Destination::Endpoint { owner: binding::Route::Capability(binding::Endpoint::Imported(remote)), .. } if remote.id() == ImportId::from_wire(u32::MAX))
+            );
+            let alias = driver.bind_import(&receipt).unwrap();
+            assert_eq!(alias.key(), rebound.key());
+            driver.runtime.release(alias);
+            driver.runtime.release(rebound);
+            driver.runtime.release(replacement);
+            driver.release_import(receipt);
+            let mut queue_slots = [None];
+            close(
+                driver,
+                messages,
+                &mut messages::Queue::<()>::new(&mut queue_slots).unwrap(),
+            );
+        })
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn immediate_tables_roll_back_and_refund_without_allocating_or_pinning_frames() {
     let measured = allocation_counter::measure(|| {
         for native in [false, true] {

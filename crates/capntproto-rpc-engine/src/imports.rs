@@ -91,6 +91,8 @@ struct Entry<T> {
     local: u32,
     remote: ImportRefs,
     promise: promise::ImportState,
+    // Weak graph slot/generation; reviving an import clears the prior link.
+    client_binding: Option<(usize, u64)>,
 }
 
 /// Storage and cleanup capacity for one distinct import. Generations survive
@@ -144,6 +146,9 @@ impl<T> Slot<T> {
         };
         if entry.remote.receive(1).is_err() {
             return Err(Error::RemoteReferencesExhausted);
+        }
+        if revived {
+            entry.client_binding = None;
         }
         entry.local = local;
         self.generation = generation;
@@ -398,6 +403,7 @@ impl<'id, T> Imports<'id, '_, T> {
         remote.receive(1).expect("first remote reference");
         slot.generation += 1;
         slot.entry = Some(Entry {
+            client_binding: None,
             #[cfg(feature = "alloc")]
             presence: self.observation.enter(),
             wire: id,
@@ -599,3 +605,43 @@ mod proofs;
 mod resolution_tests;
 #[cfg(test)]
 mod tests;
+
+impl<'id, T> Imports<'id, '_, T> {
+    /// The connection's non-owning graph link for this exact import generation.
+    /// The returned key must still be checked by the graph; a retired node can
+    /// be reused independently of its import. This creates no capability grant.
+    pub fn client_binding(&self, key: Key<'id>) -> Option<crate::clients::Key<'id>> {
+        let slot = self.slots.get(key.index)?;
+        if slot.generation != key.generation {
+            return None;
+        }
+        let (index, client_generation) = slot.entry.as_ref()?.client_binding?;
+        Some(crate::clients::Key::from_raw(crate::clients::Raw {
+            index,
+            generation: client_generation,
+        }))
+    }
+    /// Record a weak client link in the import itself, like legacy ImportClient.
+    /// Both handles belong to this connection's affine ownership domain. The
+    /// link does not keep a graph client, import, or resolved promise alive.
+    /// ```compile_fail,E0521
+    /// use capntproto_rpc_engine::{clients, imports, ids::{ImportId, WireId}};
+    /// imports::with_imports(&mut [imports::Slot::EMPTY], |imports| {
+    ///     let receipt = imports.admit(ImportId::from_wire(7), ()).unwrap();
+    ///     clients::with_graph(&mut [clients::Slot::EMPTY], clients::NotificationStorage {
+    ///         listeners: &mut [], subscriptions: &mut [],
+    ///     }, |graph: &mut clients::Graph<'_, '_, u8, u8>| {
+    ///         let client = graph.endpoint(1, clients::Location::Local).unwrap();
+    ///         imports.bind_client(&receipt, &client); // distinct affine domains
+    ///     }).unwrap();
+    /// }).unwrap();
+    /// ```
+    pub fn bind_client(&mut self, local: &Local<'id>, client: &crate::clients::Client<'id>) {
+        let slot = &mut self.slots[local.key.index];
+        debug_assert_eq!(slot.generation, local.key.generation);
+        debug_assert!(slot.entry.as_ref().is_some_and(|entry| entry.local != 0));
+        let raw = client.key().raw();
+        slot.entry.as_mut().expect("live import").client_binding =
+            Some((raw.index, raw.generation));
+    }
+}

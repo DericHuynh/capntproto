@@ -169,15 +169,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 self.runtime.available_tasks(),
                 self.runtime.maximum_tasks(),
             ),
-            (
-                r::IMPORT_BINDINGS,
-                self.ledgers.imports.binding_revision(),
-                if self.imports.maximum() == 0 {
-                    0
-                } else {
-                    usize::MAX
-                },
-            ),
         ] {
             a.values[resource] = available;
             a.limits[resource] = limit;
@@ -205,7 +196,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 binding::BindError::Graph(e) => graph(e),
                 binding::BindError::Pipeline(e) => pipeline(e),
                 binding::BindError::Imports(binding::Error::Graph(e)) => graph(e),
-                binding::BindError::Imports(binding::Error::Full) => Some(r::IMPORT_BINDINGS),
                 _ => None,
             }
         }

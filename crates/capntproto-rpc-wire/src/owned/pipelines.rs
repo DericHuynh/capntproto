@@ -914,7 +914,7 @@ impl<'pool, 'id, const N: usize> Published<'pool, 'id, N> {
         messages: &mut messages::Messages<'pool, '_, '_>,
         batch: &exports::Batch<'_, 'id, '_, Client<'id>>,
         graph: &mut G,
-        bindings: &crate::clients::Imports<'_, 'id, 'id, P>,
+        bindings: &impl crate::clients::ImportBindings<'id, 'id, P>,
         references: &mut crate::publication::reflected::References<'_, 'id, '_, 'id, '_, '_, I>,
         scratch: &mut [u32],
     ) -> Result<Self, Error>
@@ -940,7 +940,7 @@ impl<'pool, 'id, const N: usize> Published<'pool, 'id, N> {
         messages: &mut messages::Messages<'pool, '_, '_>,
         batch: &exports::Batch<'_, 'id, '_, Client<'id>>,
         graph: &mut G,
-        bindings: &crate::clients::Imports<'_, 'id, 'id, P>,
+        bindings: &impl crate::clients::ImportBindings<'id, 'id, P>,
         references: &mut crate::publication::reflected::References<'_, 'id, '_, 'id, '_, '_, I>,
         scratch: &mut [u32],
         capacity: Capacity,

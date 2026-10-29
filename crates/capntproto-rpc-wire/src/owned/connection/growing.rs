@@ -13,7 +13,6 @@ pub struct GrowingStorage {
     /// Per-message non-noop pipeline transform budget.
     pub message_path: Capacity,
     pub tasks: connection::Growth,
-    pub imports: connection::Growth,
     pub pipelines: connection::Growth,
     pub outgoing: connection::Growth,
     pub exported: connection::Growth,
@@ -43,7 +42,6 @@ impl GrowingStorage {
             message_capabilities: Capacity::Inline,
             message_path: Capacity::Inline,
             tasks: bound,
-            imports: bound,
             pipelines: bound,
             outgoing: bound,
             exported: bound,
@@ -100,11 +98,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 tasks: SlotStorage::growing(storage.tasks.initial, storage.tasks.maximum, || {
                     dispatch::TaskSlot::EMPTY
                 })?,
-                imports: SlotStorage::growing(
-                    storage.imports.initial,
-                    storage.imports.maximum,
-                    || binding::ImportSlot::EMPTY,
-                )?,
                 pipelines: SlotStorage::growing(
                     storage.pipelines.initial,
                     storage.pipelines.maximum,

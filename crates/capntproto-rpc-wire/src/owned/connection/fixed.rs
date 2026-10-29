@@ -51,7 +51,6 @@ pub struct FixedStorage<
     listeners: [clients::ListenerSlot; 8],
     subscriptions: [[clients::SubscriptionSlot; 4]; NODES],
     tasks: [dispatch::TaskSlot<Task<'pool, 'id, I, CAPS, PATH>>; SLOTS],
-    import_bindings: [binding::ImportSlot<'id, 'id>; SLOTS],
     pipelines: [pipelines::Slot<'id, 'id, PATH>; SLOTS],
     outgoing: [outgoing::Slot<'id, PATH>; SLOTS],
     exported: [binding::exporting::Slot<'id, 'id>; SLOTS],
@@ -88,7 +87,6 @@ impl<
             listeners: [const { clients::ListenerSlot::EMPTY }; 8],
             subscriptions: [const { [const { clients::SubscriptionSlot::EMPTY }; 4] }; NODES],
             tasks: [const { dispatch::TaskSlot::EMPTY }; SLOTS],
-            import_bindings: [const { binding::ImportSlot::EMPTY }; SLOTS],
             pipelines: [const { pipelines::Slot::EMPTY }; SLOTS],
             outgoing: [const { outgoing::Slot::EMPTY }; SLOTS],
             exported: [const { binding::exporting::Slot::EMPTY }; SLOTS],
@@ -155,7 +153,6 @@ impl<
             connection,
             Storage {
                 tasks: &mut self.tasks,
-                imports: &mut self.import_bindings,
                 pipelines: &mut self.pipelines,
                 outgoing: &mut self.outgoing,
                 exported: &mut self.exported,

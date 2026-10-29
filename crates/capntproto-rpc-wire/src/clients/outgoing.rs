@@ -435,7 +435,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         questions: &mut questions::Questions<'id, '_>,
         messages: &messages::Messages<'pool, '_, '_>,
         graph: &mut G,
-        bindings: &mut super::Imports<'_, 'id, 'id, P>,
+        bindings: &mut impl super::ImportBindings<'id, 'id, P>,
         imports: &mut imports::Imports<'id, '_, I>,
         exports: &exports::Exports<'id, '_, clients::Client<'id>>,
         answers: &mut answers::Answers<
