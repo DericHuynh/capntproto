@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn promise_aliases_require_an_introduction_before_hosted_descriptors() {
+    with_exports(&mut [Slot::EMPTY], |exports| {
+        let mut batch = exports.batch();
+        let first = batch.export_promise(7).unwrap();
+        let _ = batch.grant(first.key()).unwrap();
+        let mut scratch = [0];
+        let mut check = batch.descriptors(&mut scratch).unwrap();
+        assert_eq!(check.record(first.id()), Err(DescriptorError::PromiseKind));
+        assert_eq!(check.finish(), Err(DescriptorError::Unreserved));
+        for second_is_promise in [false, true] {
+            let mut check = batch.descriptors(&mut scratch).unwrap();
+            check.record_kind(first.id(), true).unwrap();
+            check.record_kind(first.id(), second_is_promise).unwrap();
+            check.finish().unwrap();
+        }
+        batch.commit();
+        let mut batch = exports.batch();
+        let _ = batch.grant(first.key()).unwrap();
+        let mut check = batch.descriptors(&mut scratch).unwrap();
+        check.record(first.id()).unwrap();
+        check.finish().unwrap();
+        batch.commit();
+        assert_eq!(exports.release(first.id(), 3), Ok(Some(7)));
+    })
+    .unwrap();
+}
+
+#[test]
 fn descriptor_multiplicities_are_exact_poisoned_and_do_not_change_reservations() {
     let mut slots = [const { Slot::EMPTY }; 2];
     with_exports(&mut slots, |exports| {

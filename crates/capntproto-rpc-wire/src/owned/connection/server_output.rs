@@ -400,7 +400,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     }
                     let grant = self
                         .exported
-                        .stage(&mut self.runtime, &mut batch, client)
+                        .stage_using(
+                            &mut self.runtime,
+                            &mut batch,
+                            client,
+                            self.descriptors.identity,
+                        )
                         .map_err(Error::Exported)?;
                     let attached = match self.runtime.inspect(client) {
                         Ok(clients::Destination::Endpoint { owner, .. }) => {

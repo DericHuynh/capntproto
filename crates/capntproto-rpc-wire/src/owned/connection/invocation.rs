@@ -837,7 +837,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 }
                 Ok(None) => (),
             }
-            let grant = self.exported.stage(&mut self.runtime, &mut batch, &client);
+            let grant = self.exported.stage_using(
+                &mut self.runtime,
+                &mut batch,
+                &client,
+                self.descriptors.identity,
+            );
             let attached = match self.runtime.inspect(&client) {
                 Ok(clients::Destination::Endpoint { owner, .. }) if grant.is_ok() => {
                     attach(owner, &self.ledgers.imports, output.resources_mut())

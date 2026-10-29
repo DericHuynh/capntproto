@@ -40,6 +40,28 @@ fn registered_liveness_can_be_read_while_dispatch_state_is_borrowed() {
 }
 
 #[test]
+fn local_identity_does_not_borrow_dispatch_state_or_allocate() {
+    let client = Client::new(Server(Rc::new(())));
+    let expected = client.get_ptr();
+    let exclusive = client.state.borrow_mut();
+    let counts = allocation_counter::measure(|| {
+        assert_eq!(client.get_ptr(), expected);
+        assert_eq!(
+            client
+                .as_any()
+                .unwrap()
+                .downcast_ref::<Identity>()
+                .unwrap()
+                .get(),
+            expected
+        );
+        assert_eq!(client.clone().get_ptr(), expected);
+    });
+    assert_eq!(counts.count_total, 0);
+    drop(exclusive);
+}
+
+#[test]
 fn weak_registration_does_not_retain_the_service_or_its_state() {
     let token = Rc::new(());
     let client = Client::new(Server(token.clone()));

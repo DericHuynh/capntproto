@@ -26,6 +26,89 @@ impl Drop for Dummy {
 impl harness::Server for Dummy {}
 
 #[tokio::test(flavor = "current_thread")]
+async fn repeated_local_exports_match_legacy_identity_and_promise_descriptors() {
+    tokio::task::LocalSet::new().run_until(async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            for portable in [false, true] {
+                for pending in [false, true] {
+                    let mut f = Fixture::with_driver(0, portable).await;
+                    let alive = Rc::new(Cell::new(true));
+                    let original: harness::Client = capnp_rpc::new_client(Dummy(Some(alive.clone())));
+                    let (resolve, resolved) = futures::channel::oneshot::channel::<harness::Client>();
+                    let cap = if pending {
+                        capnp_rpc::new_future_client(async move {
+                            resolved.await.map_err(|_| capnp::Error::disconnected("producer dropped".into()))
+                        })
+                    } else {
+                        original.clone()
+                    };
+                    let mut exported = None;
+                    for i in 0..3 {
+                        let mut request = f.remote.bounce_request();
+                        request.get().set_cap(cap.clone());
+                        let response = request.send();
+                        let input = f.next_call().await;
+                        let message::Call(call) = input.get_body().unwrap().get_as::<message::Reader>().unwrap().which().unwrap() else { panic!("Call") };
+                        let call = call.unwrap();
+                        let descriptor = call.get_params().unwrap().get_cap_table().unwrap().get(0);
+                        let id = match descriptor.which().unwrap() {
+                            cap_descriptor::SenderPromise(id) if pending && i == 0 => id,
+                            cap_descriptor::SenderHosted(id) if !pending || i != 0 => id,
+                            _ => panic!("portable={portable}, pending={pending}, send={i}: descriptor differs from legacy"),
+                        };
+                        if let Some(previous) = exported { assert_eq!(id, previous, "portable={portable}: repeated capability must reuse its export ID"); }
+                        exported = Some(id);
+                        // Keep one grant after each reply, as if the peer stored
+                        // the capability. Later Calls must reuse the same export.
+                        f.peer.send(|m| {
+                            let mut returned = m.init_return();
+                            returned.set_answer_id(call.get_question_id());
+                            returned.set_release_param_caps(false);
+                            returned.init_results();
+                        });
+                        response.promise.await.unwrap();
+                    }
+                    if pending {
+                        resolve.send(original.clone()).unwrap_or_else(|_| panic!("producer abandoned"));
+                        loop {
+                            let input = f.peer.recv().await;
+                            let body = input.get_body().unwrap().get_as::<message::Reader>().unwrap();
+                            if let message::Resolve(resolved) = body.which().unwrap() {
+                                assert_eq!(resolved.unwrap().get_promise_id(), exported.unwrap());
+                                break;
+                            }
+                        }
+                    }
+                    // Final release must discard the canonical identity, even
+                    // though the application keeps the same local object alive.
+                    f.peer.send(|m| {
+                        let mut release = m.init_release();
+                        release.set_id(exported.unwrap());
+                        release.set_reference_count(3);
+                    });
+                    settle().await;
+                    assert!(alive.get());
+                    let mut request = f.remote.bounce_request();
+                    request.get().set_cap(original.clone());
+                    let response = request.send();
+                    let input = f.next_call().await;
+                    let message::Call(call) = input.get_body().unwrap().get_as::<message::Reader>().unwrap().which().unwrap() else { panic!("Call") };
+                    let call = call.unwrap();
+                    assert!(matches!(call.get_params().unwrap().get_cap_table().unwrap().get(0).which().unwrap(), cap_descriptor::SenderHosted(_)));
+                    f.peer.send(|m| {
+                        let mut returned = m.init_return();
+                        returned.set_answer_id(call.get_question_id());
+                        returned.set_release_param_caps(true);
+                        returned.init_results();
+                    });
+                    response.promise.await.unwrap();
+                }
+            }
+        }).await.unwrap();
+    }).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn published_parameter_cap_lifetimes_match_legacy() {
     tokio::task::LocalSet::new()
         .run_until(async {

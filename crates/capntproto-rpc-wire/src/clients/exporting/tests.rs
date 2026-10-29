@@ -14,6 +14,96 @@ fn owner<'g>(graph: &Graph<'g, '_, Endpoint<'_, u8, u32>, u8>, client: &Client<'
 }
 
 #[test]
+fn direct_and_observed_stage_share_known_route_exports_without_allocating() {
+    let counts = allocation_counter::measure(|| {
+        clients::with_graph(
+            &mut [clients::Slot::EMPTY],
+            clients::NotificationStorage {
+                listeners: &mut [],
+                subscriptions: &mut [],
+            },
+            |graph: &mut Graph<'_, '_, u8, u8>| {
+                let source = graph.endpoint(7, Location::Local).unwrap();
+                exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
+                    let mut bindings = Bindings::new(&mut []).unwrap();
+                    let mut batch = exports.batch();
+                    let first = crate::clients::stage(graph, &mut batch, &source).unwrap();
+                    let second = bindings.stage(graph, &mut batch, &source).unwrap();
+                    assert_eq!(first.id(), second.id());
+                    batch.commit();
+                    graph.release(exports.release(first.id(), 2).unwrap().unwrap());
+                })
+                .unwrap();
+                graph.release(source);
+                assert_eq!(graph.take_retired(), Some(7));
+                assert!(graph.is_empty());
+            },
+        )
+        .unwrap();
+    });
+    assert_eq!(counts.count_total, 0);
+}
+
+#[test]
+fn repeated_pending_exports_share_one_observer_and_rollback_only_the_new_grants() {
+    let counts = allocation_counter::measure(|| {
+        clients::with_graph(
+            &mut [const { clients::Slot::EMPTY }; 2],
+            clients::NotificationStorage {
+                listeners: &mut [const { clients::ListenerSlot::EMPTY }; 1],
+                subscriptions: &mut [const { clients::SubscriptionSlot::EMPTY }; 2],
+            },
+            |graph: &mut Graph<'_, '_, Endpoint<'_, u8, ()>, u8>| {
+                exports::with_exports(&mut [exports::Slot::EMPTY], |exports| {
+                    let source = graph.promise(&mut None).unwrap();
+                    let mut slots = [Slot::EMPTY];
+                    let mut bindings = Bindings::new(&mut slots).unwrap();
+                    let mut batch = exports.batch();
+                    let first = bindings.stage(graph, &mut batch, &source).unwrap();
+                    assert!(first.is_promise());
+                    for _ in 0..7 {
+                        let alias = bindings.stage(graph, &mut batch, &source).unwrap();
+                        assert_eq!(alias.id(), first.id());
+                        assert!(
+                            !alias.is_promise(),
+                            "aliases match legacy senderHosted descriptors"
+                        );
+                    }
+                    batch.commit();
+                    assert_eq!(bindings.live, 1);
+                    for forgotten in [false, true] {
+                        let mut batch = exports.batch();
+                        let alias = bindings.stage(graph, &mut batch, &source).unwrap();
+                        assert_eq!(alias.id(), first.id());
+                        assert!(!alias.is_promise());
+                        if forgotten {
+                            core::mem::forget(batch);
+                        } else {
+                            drop(batch);
+                        }
+                        assert!(exports.pop_retired().is_none());
+                        assert_eq!(bindings.live, 1);
+                    }
+                    assert_eq!(
+                        exports.release(first.id(), 9).unwrap_err(),
+                        exports::Error::OverRelease
+                    );
+                    graph.release(exports.release(first.id(), 8).unwrap().unwrap());
+                    graph.release(source);
+                    while bindings.drain_one(graph) {}
+                    assert!(bindings.is_empty());
+                    assert!(graph.is_empty());
+                    assert!(exports.is_empty());
+                })
+                .unwrap();
+            },
+        )
+        .unwrap();
+    });
+    assert_eq!(counts.count_total, 0);
+}
+
+#[test]
 fn exported_promise_freezes_once_before_retrying_resolve_output() {
     let measured = allocation_counter::measure(|| {
         let mut words = [word(0, 0, 0, 0, 0, 0, 0, 0); 64];

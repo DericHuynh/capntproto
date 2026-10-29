@@ -122,6 +122,7 @@ fn apply<T>(exports: &mut Exports<'_, '_, T>, counts: &[u32]) {
         };
         if refs.release(count).expect("preflight reference count") {
             entry.state = State::Retired;
+            exports.remove_canonical(index);
         }
         exports.enqueue_retired(index);
     }

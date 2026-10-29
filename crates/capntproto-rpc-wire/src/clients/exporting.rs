@@ -172,12 +172,42 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         batch: &mut exports::Batch<'_, 'e, '_, clients::Client<'g>>,
         client: &clients::Client<'g>,
     ) -> Result<exports::Grant<'e>, Error> {
+        self.stage_using(graph, batch, client, |_| None)
+    }
+
+    /// Stage with an optional privately authenticated hosted-owner identity.
+    pub fn stage_using<G: clients::Capabilities<'g>>(
+        &mut self,
+        graph: &mut G,
+        batch: &mut exports::Batch<'_, 'e, '_, clients::Client<'g>>,
+        client: &clients::Client<'g>,
+        identify: fn(&G::Owner) -> Option<exports::Identity>,
+    ) -> Result<exports::Grant<'e>, Error> {
         let (snapshot, pending) = graph.snapshot_for_export(client).map_err(Error::Graph)?;
+        let identity = match graph.inspect(&snapshot) {
+            Ok(clients::Destination::Endpoint { owner, .. }) => identify(owner),
+            _ => None,
+        }
+        .unwrap_or_else(|| snapshot.key().into());
+        let reused = batch.grant_canonical(identity);
+        match reused {
+            Ok(Some(grant)) => {
+                graph.release(snapshot);
+                return Ok(grant);
+            }
+            Err(error) => {
+                graph.release(snapshot);
+                return Err(Error::Export(error));
+            }
+            Ok(None) => (),
+        }
         if !pending {
-            return batch.export(snapshot).map_err(|rejected| {
-                graph.release(rejected.value);
-                Error::Export(rejected.error)
-            });
+            return batch
+                .export_canonical(identity, snapshot)
+                .map_err(|rejected| {
+                    graph.release(rejected.value);
+                    Error::Export(rejected.error)
+                });
         }
         let Some(index) = self
             .slots
@@ -237,7 +267,7 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
                 return Err(Error::Graph(error));
             }
         };
-        let grant = match batch.export_promise(promise) {
+        let grant = match batch.export_canonical_promise(identity, promise) {
             Ok(grant) => grant,
             Err(rejected) => {
                 graph.unsubscribe(source_subscription);
@@ -495,11 +525,25 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         let mut batch = exports.batch();
         batch.resolve_promise(entry.export).map_err(Error::Export)?;
         let grant = if exception.is_none() && !reflectable {
-            let candidate = graph.retain_key(frozen.key()).map_err(Error::Graph)?;
-            Some(batch.export(candidate).map_err(|rejected| {
-                graph.release(rejected.value);
-                Error::Export(rejected.error)
-            })?)
+            let identity = match graph.inspect(frozen).map_err(Error::Graph)? {
+                clients::Destination::Endpoint { owner, .. } => (descriptors.identity)(owner),
+                _ => None,
+            }
+            .unwrap_or_else(|| frozen.key().into());
+            Some(
+                match batch.grant_canonical(identity).map_err(Error::Export)? {
+                    Some(grant) => grant,
+                    None => {
+                        let candidate = graph.retain_key(frozen.key()).map_err(Error::Graph)?;
+                        batch
+                            .export_canonical(identity, candidate)
+                            .map_err(|rejected| {
+                                graph.release(rejected.value);
+                                Error::Export(rejected.error)
+                            })?
+                    }
+                },
+            )
         } else {
             None
         };

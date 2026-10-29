@@ -13,6 +13,8 @@ fn exported_resolution_requires_output_acceptance() {
         free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
+        canonical: None,
+        bucket: None,
         generation: 1,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -41,6 +43,7 @@ fn exported_resolution_requires_output_acceptance() {
         slots: crate::storage::Storage::borrowed(&mut slots),
         open_batch: false,
         pending_resolution: None,
+        canonical_count: 0,
         brand: PhantomData,
     };
     let key = exports.key(0);
@@ -109,6 +112,7 @@ fn descriptor_multiset_matches_reservations() {
         slots: crate::storage::Storage::borrowed(&mut slots),
         open_batch: true,
         pending_resolution: None,
+        canonical_count: 0,
         brand: PhantomData,
     };
     for index in 0..2 {
@@ -166,6 +170,8 @@ fn descriptor_count_admission_never_wraps() {
         free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
+        canonical: None,
+        bucket: None,
         generation: 1,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -206,6 +212,8 @@ fn export_publication_and_lease_lifecycle() {
         free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
+        canonical: None,
+        bucket: None,
         generation,
         entry: None,
     }];
@@ -286,6 +294,8 @@ fn export_reservations_preserve_published_counts() {
         free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
+        canonical: None,
+        bucket: None,
         generation: 1,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]
@@ -314,6 +324,7 @@ fn export_reservations_preserve_published_counts() {
         slots: crate::storage::Storage::borrowed(&mut slots),
         open_batch: true,
         pending_resolution: None,
+        canonical_count: 0,
         brand: PhantomData,
     };
     if pending != 0 {

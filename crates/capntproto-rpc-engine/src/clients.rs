@@ -27,6 +27,11 @@ pub struct Key<'id> {
     raw: Raw,
     brand: Brand<'id>,
 }
+impl Key<'_> {
+    pub(crate) fn export_identity(self) -> crate::exports::Identity {
+        crate::exports::Identity::new(self.raw.index, self.raw.generation)
+    }
+}
 #[derive(Debug)]
 #[must_use = "release through the graph or terminate its scope"]
 pub struct Client<'id> {

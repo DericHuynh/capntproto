@@ -982,7 +982,16 @@ trait RegisteredState: Any {
 /// Liveness does not borrow the application's mutable state or allocate a second owner.
 struct LocalState<S: capability::Server + Clone> {
     live: Cell<bool>,
+    identity: Identity,
     inner: RefCell<ClientState<S>>,
+}
+// Private RTTI carries the actual local identity. Public brands or pointers on
+// an opaque wrapper cannot authorize canonicalization to its inner client.
+pub(crate) struct Identity(Cell<usize>);
+impl Identity {
+    pub(crate) fn get(&self) -> usize {
+        self.0.get()
+    }
 }
 impl<S: capability::Server + Clone> std::ops::Deref for LocalState<S> {
     type Target = RefCell<ClientState<S>>;
@@ -1017,7 +1026,6 @@ where
     S: capability::Server + Clone,
 {
     inner: Option<S>,
-    identity: usize,
     registration: Option<LocalKey>,
     resolved: Option<Box<dyn ClientHook>>,
     resolve_task: Option<futures::future::Shared<Promise<(), Error>>>,
@@ -1403,10 +1411,7 @@ where
                 let state: Rc<dyn Any> = state;
                 state.downcast::<LocalState<S>>().ok()
             })
-            .is_some_and(|state| {
-                let state = state.borrow();
-                state.identity == identity && state.inner.is_some()
-            })
+            .is_some_and(|state| state.identity.get() == identity && state.borrow().inner.is_some())
     }
 
     pub(crate) fn into_hook(self) -> Box<dyn ClientHook>
@@ -1490,7 +1495,7 @@ where
             };
             // A direct self-resolution would otherwise form a reference cycle
             // and make when_resolved() loop forever.
-            if target.hook.get_ptr() == state.borrow().identity && target.hook.get_brand() == 0 {
+            if target.hook.get_ptr() == state.identity.get() && target.hook.get_brand() == 0 {
                 return Err(Error::failed("shorten_path resolved to itself".into()));
             }
             let mut state = state.borrow_mut();
@@ -1574,8 +1579,8 @@ where
         let client = Self {
             state: Rc::new(LocalState {
                 live: Cell::new(true),
+                identity: Identity(Cell::new(0)),
                 inner: RefCell::new(ClientState {
-                    identity: 0,
                     registration: None,
                     resolved: None,
                     resolve_task: None,
@@ -1591,7 +1596,11 @@ where
                 }),
             }),
         };
-        client.state.borrow_mut().identity = Rc::as_ptr(&client.state) as usize;
+        client
+            .state
+            .identity
+            .0
+            .set(Rc::as_ptr(&client.state) as usize);
         client
     }
 }
@@ -1611,6 +1620,9 @@ impl<S> ClientHook for Client<S>
 where
     S: capability::Server + Clone + 'static,
 {
+    fn as_any(&self) -> Option<&dyn Any> {
+        Some(&self.state.identity)
+    }
     fn get_failure(&self) -> Option<Error> {
         let state = self.state.borrow();
         // shorten_path explicitly released replacement authority. As with an
@@ -1766,7 +1778,7 @@ where
     }
 
     fn get_ptr(&self) -> usize {
-        self.state.borrow().identity
+        self.state.identity.get()
     }
 
     fn get_brand(&self) -> usize {

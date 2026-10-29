@@ -38,7 +38,9 @@ use vstd::prelude::*;
 #[cfg(capntproto_verus)]
 include!("exports/verified.rs");
 
+mod canonical;
 mod descriptors;
+pub use canonical::Identity;
 pub use descriptors::{DescriptorCheck, DescriptorError};
 mod leases;
 mod release;
@@ -165,6 +167,8 @@ pub struct Slot<T> {
     entry: Option<Entry<T>>,
     retirement: crate::work_queue::Link,
     publication: crate::work_queue::Link,
+    canonical: Option<canonical::Entry>,
+    bucket: canonical::Link,
 }
 impl<T> Slot<T> {
     pub const EMPTY: Self = Self {
@@ -173,6 +177,8 @@ impl<T> Slot<T> {
         entry: None,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
+        canonical: None,
+        bucket: None,
     };
 }
 
@@ -222,6 +228,7 @@ pub struct Exports<'id, 'storage, T> {
     staged: crate::work_queue::Queue,
     open_batch: bool,
     pending_resolution: Option<Key<'id>>,
+    canonical_count: usize,
     brand: Brand<'id>,
 }
 
@@ -261,6 +268,7 @@ pub(crate) fn new_scope<'id, T>(slots: &mut [Slot<T>]) -> Result<Exports<'id, '_
         staged: crate::work_queue::Queue::EMPTY,
         open_batch: false,
         pending_resolution: None,
+        canonical_count: 0,
         brand: PhantomData,
     })
 }
@@ -285,6 +293,7 @@ pub(crate) fn new_growing_scope<'id, 's, T>(
         staged: crate::work_queue::Queue::EMPTY,
         open_batch: false,
         pending_resolution: None,
+        canonical_count: 0,
         brand: PhantomData,
     })
 }
@@ -388,6 +397,12 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
                 .as_mut()
                 .expect("staged export")
                 .abort();
+            if matches!(
+                self.slots[index].entry.as_ref().unwrap().state,
+                State::Retired
+            ) {
+                self.remove_canonical(index);
+            }
             self.enqueue_retired(index);
         }
         self.open_batch = false;
@@ -475,6 +490,7 @@ impl<'id, 'storage, T> Exports<'id, 'storage, T> {
         };
         if refs.release(count).map_err(|_| Error::OverRelease)? {
             entry.state = State::Retired;
+            self.remove_canonical(index);
         }
         Ok(index)
     }
@@ -510,12 +526,15 @@ impl<T> Drop for Exports<'_, '_, T> {
             let entry = slot.entry.take();
             slot.retirement = crate::work_queue::Link::EMPTY;
             slot.publication = crate::work_queue::Link::EMPTY;
+            slot.canonical = None;
+            slot.bucket = None;
             drop(entry);
         }
     }
 }
 impl<T> Exports<'_, '_, T> {
     pub(crate) fn take_terminal_owner(&mut self, index: usize) -> Option<T> {
+        self.remove_canonical(index);
         let slot = self.slots.get_mut(index)?;
         let entry = slot.entry.take()?;
         self.unavailable -= usize::from(slot.generation != u64::MAX);
@@ -562,8 +581,11 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
                 self.exports
                     .free
                     .take(&mut self.exports.slots, |slot| &mut slot.free);
-            } else if !self.exports.slots.grow(1, || Slot::EMPTY) {
-                break None;
+            } else {
+                if !self.exports.slots.grow(1, || Slot::EMPTY) {
+                    break None;
+                }
+                self.exports.rehash_canonical();
             }
         };
         let Some(index) = index else {
@@ -668,6 +690,7 @@ impl<'id, T> Batch<'_, 'id, '_, T> {
                 .promise
                 .resolution()
                 .expect("reserved pending promise");
+            self.exports.remove_canonical(key.index);
         }
         while let Some(index) = self
             .exports

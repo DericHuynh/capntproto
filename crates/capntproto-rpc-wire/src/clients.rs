@@ -41,7 +41,18 @@ pub fn stage<'g, 'e, G: clients::Capabilities<'g>>(
         graph.release(frozen);
         return Err(ExportError::PendingSource);
     }
-    let result = batch.export(frozen);
+    match batch.grant_canonical(frozen.key()) {
+        Ok(Some(grant)) => {
+            graph.release(frozen);
+            return Ok(grant);
+        }
+        Err(error) => {
+            graph.release(frozen);
+            return Err(ExportError::Export(error));
+        }
+        Ok(None) => (),
+    }
+    let result = batch.export_canonical(frozen.key(), frozen);
     result.map_err(|rejected| {
         graph.release(rejected.value);
         ExportError::Export(rejected.error)

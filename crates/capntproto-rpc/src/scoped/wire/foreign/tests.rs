@@ -38,6 +38,18 @@ impl capability::Server for Service {
 fn settled() -> capability::Client {
     capability::Client::new(Box::new(crate::local::Client::new(Service)))
 }
+
+#[test]
+fn export_identity_recognizes_private_clients_and_keeps_opaque_wrappers_distinct() {
+    let original = settled();
+    let opaque = crate::scoped::tests::Opaque(original.hook.add_ref());
+    assert_eq!(opaque.get_ptr(), original.hook.get_ptr());
+    assert_eq!(opaque.get_brand(), original.hook.get_brand());
+    let original = Owner::local(Rc::from(original.hook));
+    let wrapped = Owner::local(Rc::new(opaque));
+    assert!(export_identity(&original).is_some());
+    assert!(export_identity(&wrapped).is_none());
+}
 fn pending() -> (
     shared::Sender<capnp::Result<capability::Client>>,
     capability::Client,

@@ -1400,6 +1400,7 @@ fn introduction_publication_validates_grants_and_retries_without_allocation() {
             let mut slots = [None];
             let mut queue = messages::Queue::new(&mut slots).unwrap();
             driver.set_descriptors(Descriptors {
+                identity: |_| None,
                 extra_bytes: |_| Ok(64),
                 write: |_, _, mut field| {
                     let mut third = field.field(CapDescriptor::THIRD_PARTY_HOSTED).init()?;
@@ -1427,6 +1428,7 @@ fn introduction_publication_validates_grants_and_retries_without_allocation() {
             );
             assert!(queue.is_empty());
             driver.set_descriptors(Descriptors {
+                identity: |_| None,
                 extra_bytes: |_| Ok(64),
                 write: |_, id, mut field| {
                     let mut third = field.field(CapDescriptor::THIRD_PARTY_HOSTED).init()?;

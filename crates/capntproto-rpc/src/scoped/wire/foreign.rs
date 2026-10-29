@@ -350,6 +350,35 @@ fn graph_error(error: clients::Error) -> Error {
         _ => wire_error(error),
     }
 }
+
+/// Only concrete private clients provide canonical outgoing identities. An
+/// opaque hook can preserve get_ptr/get_brand diagnostics without allowing its
+/// interception policy to be bypassed by a previously exported inner client.
+pub(crate) fn export_identity<P, const H: usize>(
+    route: &Route<'_, P, Rc<dyn ClientHook>, H>,
+) -> Option<capntproto_rpc_engine::exports::Identity> {
+    fn identify(hook: &dyn ClientHook) -> Option<capntproto_rpc_engine::exports::Identity> {
+        let any = hook.as_any()?;
+        let identity = if let Some(local) = any.downcast_ref::<crate::local::Identity>() {
+            (1, local.get())
+        } else {
+            let queued = any.downcast_ref::<crate::queued::Client>()?;
+            (2, queued.get_ptr())
+        };
+        // Match legacy's normalization before exports_by_cap lookup, including
+        // a queued client which has already resolved back to a local server.
+        if let Some(next) = hook.get_resolved() {
+            return identify(&*next);
+        }
+        Some(capntproto_rpc_engine::exports::Identity::for_owner(
+            identity.0, identity.1,
+        ))
+    }
+    match route {
+        Route::Capability(Endpoint::Local(hook)) => identify(&**hook),
+        _ => None,
+    }
+}
 /// Metadata from the original local hook, including imported failure details.
 /// Descriptor ownership is queried through the policy hook, never its inner cap.
 pub fn local_metadata(hook: &Rc<dyn ClientHook>) -> EndpointMetadata {

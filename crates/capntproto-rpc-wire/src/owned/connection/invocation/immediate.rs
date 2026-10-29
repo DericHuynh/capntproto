@@ -106,7 +106,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let grant = if reflected_import.is_none() {
             Some(
                 self.exported
-                    .stage(&mut self.runtime, &mut batch, capability)
+                    .stage_using(
+                        &mut self.runtime,
+                        &mut batch,
+                        capability,
+                        self.descriptors.identity,
+                    )
                     .map_err(Error::Exported)?,
             )
         } else {

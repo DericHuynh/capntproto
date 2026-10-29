@@ -143,6 +143,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         commands: Rc<Commands>,
     ) -> capnp::Result<Self> {
         driver.defer_call_dispatch(true);
+        driver.set_export_identity(foreign::export_identity);
         let notifications = Notifications::default();
         let enqueue_waker = Rc::new(notifications.enqueue());
         let control_waker = notifications.control_waker();

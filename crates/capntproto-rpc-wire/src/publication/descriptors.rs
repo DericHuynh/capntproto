@@ -5,6 +5,9 @@ use capnp::field_api::FixedStruct;
 use capntproto_rpc_engine::ids::{ExportId, WireId};
 
 pub struct Descriptors<O> {
+    /// Optional identity for a privately recognized owner. None keeps the
+    /// generational graph identity, including for opaque policy wrappers.
+    pub identity: fn(&O) -> Option<capntproto_rpc_engine::exports::Identity>,
     pub extra_bytes: fn(&O) -> capnp::Result<usize>,
     pub write: fn(&O, ExportId, FixedStruct<'_, CapDescriptor>) -> capnp::Result<()>,
 }
@@ -17,6 +20,7 @@ impl<O> Clone for Descriptors<O> {
 impl<O> Default for Descriptors<O> {
     fn default() -> Self {
         Self {
+            identity: |_| None,
             extra_bytes: |_| Ok(0),
             write: |_, id, mut field| {
                 field.scalar(CapDescriptor::SENDER_HOSTED).set(id.to_wire());

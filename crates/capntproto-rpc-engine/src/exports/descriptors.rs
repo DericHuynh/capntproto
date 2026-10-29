@@ -66,8 +66,15 @@ impl<T> DescriptorCheck<'_, T> {
             self.rejected = true;
             return Err(DescriptorError::Unreserved);
         }
-        if promise
-            != (self.slots[index].entry.as_ref().unwrap().promise == promise::ImportState::Pending)
+        let entry = self.slots[index].entry.as_ref().unwrap();
+        let pending = entry.promise == promise::ImportState::Pending;
+        // The first descriptor for a new promise must introduce it. Subsequent
+        // aliases (including later messages) may be senderHosted, as in legacy.
+        if (promise && !pending)
+            || (!promise
+                && pending
+                && matches!(entry.state, State::Staged)
+                && self.counts[index] == 0)
         {
             self.rejected = true;
             return Err(DescriptorError::PromiseKind);

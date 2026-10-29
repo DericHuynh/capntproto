@@ -254,6 +254,7 @@ pub(crate) fn descriptors<'id, P: Copy, const H: usize>(
 ) -> capntproto_rpc_wire::publication::descriptors::Descriptors<Route<'id, P, Rc<dyn ClientHook>, H>>
 {
     capntproto_rpc_wire::publication::descriptors::Descriptors {
+        identity: crate::scoped::wire::foreign::export_identity,
         extra_bytes: |route| match route {
             Route::Vine(owner) => {
                 vine(owner).map_or(Ok(0), |v| minimum(v.contact.get_root_as_reader()?))

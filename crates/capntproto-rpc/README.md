@@ -397,6 +397,17 @@ after graph ordering barriers open and older queued calls begin forwarding.
 Resolution does not wait for those calls' replies. The local capabilities remain
 usable when their former connection closes.
 
+Repeated capability descriptors reuse one export ID and retain one grant per
+descriptor, as in legacy. Export slots contain their own identity index; fixed
+storage allocates no hash map. Pending aliases share one resolution observer:
+the first descriptor introduces `senderPromise`, and later aliases use
+`senderHosted`. Output rejection rolls back only unpublished grants. Final peer
+Release removes the identity before any retained local call lease completes.
+The hosted policy recognizes private local and queued clients; opaque wrappers
+keep separate graph identities even when they forward public brand/pointer
+diagnostics. Custom `Descriptors` policies supply an `identity` callback, or
+return `None` to retain graph identity.
+
 Use `send_invocation_with_attachments`,
 `Invocations::send_one_with_attachments` and
 `poll_maintenance_with_attachments` for automatic Call/Resolve descriptors.

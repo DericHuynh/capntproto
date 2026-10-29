@@ -61,6 +61,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         self.descriptors = policy;
     }
 
+    /// Configure outgoing owner identity without replacing descriptor metadata
+    /// or authenticated introduction policy.
+    pub fn set_export_identity(
+        &mut self,
+        identity: fn(&binding::Route<'id, P, S, PATH>) -> Option<exports::Identity>,
+    ) {
+        self.descriptors.identity = identity;
+    }
+
     /// The original method and cancellation state of this affine handoff job.
     /// Never infer either from metadata or an unscoped numeric question ID.
     pub fn awaiting_method(&self, awaiting: &AwaitingResult<'pool, 'id>) -> Option<(u64, u16)> {

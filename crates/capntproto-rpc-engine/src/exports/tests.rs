@@ -265,6 +265,8 @@ fn nonempty_storage_rejection_and_terminal_unwind_preserve_ownership() {
         free: crate::free_slots::Link::EMPTY,
         retirement: crate::work_queue::Link::EMPTY,
         publication: crate::work_queue::Link::EMPTY,
+        canonical: None,
+        bucket: None,
         generation: 9,
         entry: Some(Entry {
             #[cfg(feature = "alloc")]

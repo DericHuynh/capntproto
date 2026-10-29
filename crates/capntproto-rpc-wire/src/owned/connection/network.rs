@@ -591,7 +591,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let mut batch = self.ledgers.exports.batch();
             let grant = self
                 .exported
-                .stage(&mut self.runtime, &mut batch, ready.authority())
+                .stage_using(
+                    &mut self.runtime,
+                    &mut batch,
+                    ready.authority(),
+                    self.descriptors.identity,
+                )
                 .map_err(Error::Exported)?;
             let frame = Frame::build(messages, minimum, options, |builder| {
                 crate::network::accepted(builder, key.id(), &grant)

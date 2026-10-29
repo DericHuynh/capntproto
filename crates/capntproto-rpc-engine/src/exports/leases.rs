@@ -133,6 +133,8 @@ mod proofs {
             free: crate::free_slots::Link::EMPTY,
             retirement: crate::work_queue::Link::EMPTY,
             publication: crate::work_queue::Link::EMPTY,
+            canonical: None,
+            bucket: None,
             generation: 1,
             entry: Some(Entry {
                 #[cfg(feature = "alloc")]
@@ -161,6 +163,7 @@ mod proofs {
             slots: crate::storage::Storage::borrowed(&mut slots),
             open_batch: false,
             pending_resolution: None,
+            canonical_count: 0,
             brand: PhantomData,
         };
         let mut receipts = [
