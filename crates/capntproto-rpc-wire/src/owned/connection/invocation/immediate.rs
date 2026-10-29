@@ -10,6 +10,28 @@ pub enum ImmediateParams<'a> {
     EncodedCall(EncodedCall<'a>),
 }
 
+/// Borrowed parameter authority in payload index order. The table owns or
+/// borrows each client through publication; reading an entry must preserve its
+/// identity. None denotes a null slot. Lookup failures roll back publication.
+/// Implementations need no allocation or additional graph references.
+pub trait CapabilityTable<'id> {
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    fn capability(&self, index: usize) -> capnp::Result<Option<&clients::Client<'id>>>;
+}
+impl<'id, C: Borrow<clients::Client<'id>>> CapabilityTable<'id> for [Option<C>] {
+    fn len(&self) -> usize {
+        self.len()
+    }
+    fn capability(&self, index: usize) -> capnp::Result<Option<&clients::Client<'id>>> {
+        self.get(index)
+            .map(|entry| entry.as_ref().map(Borrow::borrow))
+            .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::Failed))
+    }
+}
+
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
@@ -31,26 +53,60 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         scratch: &mut [u32],
         resources: R,
+        attach: impl FnMut(
+            &binding::Route<'id, P, S, PATH>,
+            &imports::Imports<'id, '_, I>,
+            &mut R,
+        ) -> u8,
+    ) -> Result<Option<questions::Key<'id>>, Error> {
+        self.try_send_immediate_with_capability_table(
+            target,
+            method,
+            params,
+            capabilities,
+            messages,
+            queue,
+            minimum,
+            options,
+            scratch,
+            resources,
+            attach,
+        )
+    }
+
+    /// Publish from existing caller-owned capability storage. Unlike building a
+    /// temporary retained table, lookups borrow their clients only while needed.
+    /// Transactional grants, reflected ordering and queued fallback are the same
+    /// as for `try_send_immediate_with_capabilities`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_send_immediate_with_capability_table<R, T: CapabilityTable<'id> + ?Sized>(
+        &mut self,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        params: capnp::any_pointer::Reader<'_>,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
+        resources: R,
         mut attach: impl FnMut(
             &binding::Route<'id, P, S, PATH>,
             &imports::Imports<'id, '_, I>,
             &mut R,
         ) -> u8,
     ) -> Result<Option<questions::Key<'id>>, Error> {
-        if let [Some(capability)] = capabilities {
-            return self.try_send_immediate_single(
-                target,
-                method,
-                params,
-                capability.borrow(),
-                messages,
-                queue,
-                minimum,
-                options,
-                scratch,
-                resources,
-                attach,
-            );
+        if capabilities.len() == 1 {
+            if let Some(capability) = capabilities
+                .capability(0)
+                .map_err(|e| Error::Input(e.into()))?
+            {
+                return self.try_send_immediate_single(
+                    target, method, params, capability, messages, queue, minimum, options, scratch,
+                    resources, attach,
+                );
+            }
         }
         if capabilities.is_empty() {
             return self.try_send_immediate(
@@ -115,19 +171,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .reserve_with(resources)
             .map_err(|e| Error::Input(super::super::super::Error::Storage(e)))?;
         let mut batch = self.ledgers.exports.batch();
-        // Reflected routes are read from their retained clients while encoding
-        // and checked again through the final exclusive ticket. Staging keeps
-        // only sender grants, so no borrowed transform crosses graph mutation.
+        // Imported endpoints own immutable IDs, as on the single-capability
+        // path. Copy those once. Promised transforms borrow graph storage, so
+        // select them only through the final exclusive ticket after staging.
         let mut staged = self
             .message_capabilities
             .buffer::<_, CAPS>(count, || reflection::Descriptor::None)
             .ok_or(Error::Input(super::super::super::Error::Capacity))?;
         let mut exports = crate::inbound::full::ParameterExports::single(None);
-        for (index, capability) in capabilities.iter().enumerate() {
-            let Some(capability) = capability else {
+        for index in 0..count {
+            let Some(capability) = capabilities
+                .capability(index)
+                .map_err(|e| Error::Input(e.into()))?
+            else {
                 continue;
             };
-            let capability = capability.borrow();
             if let clients::Destination::Endpoint { owner, .. } =
                 self.runtime.inspect(capability).map_err(Error::Graph)?
             {
@@ -135,6 +193,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
                         .map_err(Error::Question)?
                 {
+                    if let calls::Target::Imported(id) = target {
+                        staged[index] =
+                            reflection::Descriptor::Reflected(calls::Target::Imported(id));
+                        continue;
+                    }
                     let extra = match target {
                         calls::Target::Imported(_) => Some(0),
                         calls::Target::Promised { path, .. } => path
@@ -194,15 +257,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         {
             return Ok(None);
         }
-        for (descriptor, capability) in staged.iter_mut().zip(capabilities) {
-            if matches!(descriptor, reflection::Descriptor::Grant(..)) {
+        for (index, descriptor) in staged[..count].iter_mut().enumerate() {
+            if matches!(
+                descriptor,
+                reflection::Descriptor::Grant(..) | reflection::Descriptor::Reflected(..)
+            ) {
                 continue;
             }
-            let Some(capability) = capability else {
+            let Some(capability) = capabilities
+                .capability(index)
+                .map_err(|e| Error::Input(e.into()))?
+            else {
                 continue;
             };
             let clients::Destination::Endpoint { owner, .. } =
-                ticket.inspect(capability.borrow()).map_err(Error::Graph)?
+                ticket.inspect(capability).map_err(Error::Graph)?
             else {
                 return Err(Error::InvalidInvocationTarget);
             };

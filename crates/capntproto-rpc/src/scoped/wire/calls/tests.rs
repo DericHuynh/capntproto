@@ -1704,6 +1704,43 @@ fn disconnect_prevents_admission_and_termination_recovers_running_requests() {
 }
 
 #[test]
+fn native_parameter_tables_borrow_existing_authority_without_allocating() {
+    use connection::CapabilityTable;
+    with_peer(|mut driver, messages| {
+        let mut hooks = ClientHooks::new(24, 24);
+        let client = remote(&mut driver, &mut hooks);
+        let caps = [
+            Some(client.hook.add_ref()),
+            None,
+            Some(client.hook.add_ref()),
+        ];
+        let empty = [None, None];
+        let pending: capability::Client = crate::new_future_client(async {
+            futures::future::pending::<capnp::Result<capability::Client>>().await
+        });
+        let mixed = [Some(client.hook.add_ref()), Some(pending.hook.add_ref())];
+        let other = ClientHooks::new(24, 24);
+        let measured = allocation_counter::measure(|| {
+            assert!(native_parameters(&hooks, &caps, 3).unwrap());
+            assert!(!native_parameters(&other, &caps, 3).unwrap());
+            assert!(!native_parameters(&hooks, &caps, 2).unwrap());
+            assert!(!native_parameters(&hooks, &empty, 3).unwrap());
+            assert!(!native_parameters(&hooks, &mixed, 3).unwrap());
+            let table = ParameterCapabilities::Native(&hooks, &caps);
+            assert_eq!(table.len(), 3);
+            assert!(table.capability(1).unwrap().is_none());
+            let first = table.capability(0).unwrap().unwrap().key();
+            assert_eq!(table.capability(2).unwrap().unwrap().key(), first);
+        });
+        assert_eq!(measured.count_total, 0);
+        drop((caps, mixed, client, pending));
+        let calls = Calls::new(8, None).unwrap();
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        teardown(calls, hooks, driver, messages, &mut queue);
+    });
+}
+
+#[test]
 fn immediate_native_tables_preserve_partial_writes_and_reuse_parameter_storage() {
     fn poll<'p, 'id>(
         calls: &mut TestCalls<'_, '_, 'p, 'id>,

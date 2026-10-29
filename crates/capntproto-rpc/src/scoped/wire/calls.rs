@@ -14,6 +14,55 @@ fn retain_local_hook(hook: &Rc<dyn ClientHook>) -> Option<Box<dyn ClientHook>> {
     Some(hook.add_ref())
 }
 
+/// Inspect private native bindings without creating graph references or
+/// observing public foreign resolutions. The registry and request retain them.
+#[inline(never)]
+fn native_parameters(
+    hooks: &ClientHooks<'_>,
+    caps: &[Option<Box<dyn ClientHook>>],
+    maximum: usize,
+) -> capnp::Result<bool> {
+    if caps.len() > maximum {
+        return Ok(false);
+    }
+    let mut found = false;
+    for hook in caps.iter().flatten() {
+        if hooks.try_borrow_native(&**hook)?.is_none() {
+            return Ok(false);
+        }
+        found = true;
+    }
+    Ok(found)
+}
+
+pub(super) enum ParameterCapabilities<'a, 'id> {
+    Retained(&'a [Option<Client<'id>>]),
+    Native(&'a ClientHooks<'id>, &'a [Option<Box<dyn ClientHook>>]),
+}
+impl<'id> connection::CapabilityTable<'id> for ParameterCapabilities<'_, 'id> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Retained(caps) => caps.len(),
+            Self::Native(_, caps) => caps.len(),
+        }
+    }
+    fn capability(&self, index: usize) -> capnp::Result<Option<&Client<'id>>> {
+        match self {
+            Self::Retained(caps) => Ok(caps[index].as_ref()),
+            Self::Native(hooks, caps) => caps[index]
+                .as_ref()
+                .map(|hook| {
+                    hooks.try_borrow_native(&**hook)?.ok_or_else(|| {
+                        Error::disconnected(
+                            "native parameter binding is no longer available".into(),
+                        )
+                    })
+                })
+                .transpose(),
+        }
+    }
+}
+
 /// Bulk publication only reuses existing owners. Fresh foreign hooks take the
 /// queued path, so ordering/output retries never create speculative observers.
 #[inline(never)]
@@ -96,7 +145,7 @@ pub(super) enum Publication<'a, 'id> {
         target: &'a Client<'id>,
         method: DynamicCall,
         params: &'a connection::ImmediateParams<'a>,
-        capabilities: Option<&'a [Option<Client<'id>>]>,
+        capabilities: Option<&'a ParameterCapabilities<'a, 'id>>,
     },
 }
 pub(super) enum SendOutcome<'id> {
@@ -476,7 +525,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                                 unreachable!("capability-bearing content")
                             };
                             return driver
-                                .try_send_immediate_with_capabilities(
+                                .try_send_immediate_with_capability_table(
                                     target,
                                     method,
                                     *params,
@@ -1285,41 +1334,54 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 Some(encoded) => connection::ImmediateParams::EncodedCall(encoded),
                 None => connection::ImmediateParams::Content(call.params()?),
             };
-            // Keep zero/single-capability admission free of the bulk binding
-            // vector and its cleanup loop. Both publish through the table API.
+            // Native tables borrow authority already held by the registry and
+            // request. Only ordinary foreign binding needs temporary owners.
             let mut single = None;
             let mut multiple = None;
+            let mut native = None;
             let mut immediate = true;
             if let connection::ImmediateParams::Content(_) = &params {
                 match call.params.capability_table() {
-                    Some([Some(hook)]) => {
-                        single = Some(
-                            match hooks.try_retain(&mut driver.capabilities(), &**hook)? {
-                                Some(client) => client,
-                                None => import(&mut driver.capabilities(), &**hook)?,
-                            },
-                        );
+                    Some(caps @ [Some(hook)]) => {
+                        if hooks.try_borrow_native(&**hook)?.is_some() {
+                            native = Some(ParameterCapabilities::Native(hooks, caps));
+                        } else {
+                            single = Some(
+                                match hooks.try_retain(&mut driver.capabilities(), &**hook)? {
+                                    Some(client) => client,
+                                    None => import(&mut driver.capabilities(), &**hook)?,
+                                },
+                            );
+                        }
                     }
                     Some(caps) if caps.len() > 1 => {
                         let maximum = driver.capability_capacity();
-                        multiple = native_bulk_parameters(
-                            hooks,
-                            &mut driver.capabilities(),
-                            caps,
-                            maximum,
-                        )?;
-                        immediate = multiple.is_some();
+                        if native_parameters(hooks, caps, maximum)? {
+                            native = Some(ParameterCapabilities::Native(hooks, caps));
+                        } else {
+                            multiple = native_bulk_parameters(
+                                hooks,
+                                &mut driver.capabilities(),
+                                caps,
+                                maximum,
+                            )?;
+                            immediate = multiple.is_some();
+                        }
                     }
                     _ => (),
                 }
             }
             let progress = Progress::Published {
-                plain: single.is_none() && multiple.as_ref().is_none_or(Vec::is_empty),
+                plain: single.is_none()
+                    && native.is_none()
+                    && multiple.as_ref().is_none_or(Vec::is_empty),
             };
             let capabilities = if single.is_some() {
-                Some(core::slice::from_ref(&single))
+                Some(ParameterCapabilities::Retained(core::slice::from_ref(
+                    &single,
+                )))
             } else {
-                multiple.as_deref()
+                native.or_else(|| multiple.as_deref().map(ParameterCapabilities::Retained))
             };
             let published = if immediate {
                 send(
@@ -1331,7 +1393,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         target,
                         method,
                         params: &params,
-                        capabilities,
+                        capabilities: capabilities.as_ref(),
                     },
                 )
             } else {

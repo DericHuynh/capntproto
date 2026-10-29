@@ -1225,6 +1225,21 @@ impl<'id> ClientHooks<'id> {
             .ok_or_else(|| Error::disconnected("call belongs to another or closed scope".into()))
     }
 
+    /// Borrow an already-bound private hook from this bridge. The registry and
+    /// caller keep its authority alive; no public foreign resolution is polled.
+    pub(crate) fn try_borrow_native(
+        &self,
+        hook: &dyn ClientHook,
+    ) -> capnp::Result<Option<&Client<'id>>> {
+        let Some(hook) = wire::native_hook(hook) else {
+            return Ok(None);
+        };
+        if hook.0.inbox.as_ptr() != Rc::as_ptr(&self.inbox) || hook.0.index.get().is_none() {
+            return Ok(None);
+        }
+        self.lookup(&hook.0).map(Some)
+    }
+
     /// Recognize one of this bridge's parameter/result hooks and retain its
     /// graph authority, following already-available public resolutions first.
     /// Unresolved foreign and opaque hooks return None, so the caller can

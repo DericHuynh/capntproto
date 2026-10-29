@@ -2434,7 +2434,9 @@ mod terminated;
 pub use terminated::{Terminating, Termination};
 mod invocation;
 mod tail;
-pub use invocation::{EncodedCall, ImmediateParams, Invocation, InvocationParams, SentInvocation};
+pub use invocation::{
+    CapabilityTable, EncodedCall, ImmediateParams, Invocation, InvocationParams, SentInvocation,
+};
 #[cfg(feature = "alloc")]
 pub use invocation::{PreparedCall, PreparedCallTemplate};
 mod invocation_pipeline;

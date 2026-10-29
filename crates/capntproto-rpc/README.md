@@ -423,6 +423,16 @@ including null entries; use `table.iter().map(Option::as_ref)` for owned binding
 or `table.iter().copied()` for borrowed bindings. Incorrect iterator lengths
 reject the invocation and release its retained prefix before dispatch.
 
+Immediate native calls borrow parameter authority from the hosted registry and
+request rather than allocating another retained capability vector. The bounded
+`CapabilityTable` interface also accepts caller-owned tables with fallible
+lookups; `try_send_immediate_with_capability_table` rolls back staged grants on
+failure. Its slice convenience API uses the same path. Native hook recognition
+checks the private bridge identity; opaque and foreign hooks keep ordinary
+policy-preserving admission. Imported reflection IDs are copied once from their
+immutable endpoints, while promised-answer transforms stay behind the final
+exclusive publication ticket.
+
 Promises resolved back to local objects expose their original policy hooks only
 after graph ordering barriers open and older queued calls begin forwarding.
 Resolution does not wait for those calls' replies. The local capabilities remain

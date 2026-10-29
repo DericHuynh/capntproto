@@ -6,6 +6,143 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
+    use core::cell::Cell;
+    struct Table<'a, 'id> {
+        entries: &'a [Option<&'a clients::Client<'id>>],
+        reads: [Cell<u8>; 3],
+        fail: Option<(usize, u8)>,
+    }
+    impl<'id> CapabilityTable<'id> for Table<'_, 'id> {
+        fn len(&self) -> usize {
+            self.entries.len()
+        }
+        fn capability(&self, index: usize) -> capnp::Result<Option<&clients::Client<'id>>> {
+            let reads = &self.reads[index];
+            reads.set(reads.get() + 1);
+            if self.fail == Some((index, reads.get())) {
+                return Err(capnp::Error::from_kind(capnp::ErrorKind::Overloaded));
+            }
+            Ok(self.entries[index])
+        }
+    }
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let receipt = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
+            let remote = driver.bind_import(&receipt).unwrap();
+            driver.release_import(receipt);
+            let local = driver
+                .runtime
+                .endpoint(binding::Route::local(73), clients::Location::Local)
+                .unwrap();
+            let entries = [Some(&local), None, Some(&remote)];
+            let words = [
+                word(1, 0, 0, 0, 30, 0, 0, 0),
+                word(3, 0, 0, 0, 0, 0, 0, 0),
+                ZERO,
+                word(3, 0, 0, 0, 2, 0, 0, 0),
+            ];
+            let segments = [Word::words_to_bytes(&words)];
+            let reader = capnp::message::Reader::new(
+                capnp::message::SegmentArray::new(&segments),
+                Default::default(),
+            );
+            let params = reader.get_root().unwrap();
+            let method = calls::DynamicCall {
+                no_promise_pipelining: true,
+                ..Default::default()
+            };
+            let mut queue_slots = [None];
+            let mut queue = messages::Queue::<()>::new(&mut queue_slots).unwrap();
+            // Fail after a grant has been staged, then during final table
+            // inspection. Neither failure may consume an output or ID.
+            for fail in [Some((1, 1)), Some((1, 2))] {
+                let table = Table {
+                    entries: &entries,
+                    reads: core::array::from_fn(|_| Cell::new(0)),
+                    fail,
+                };
+                assert!(matches!(
+                    driver.try_send_immediate_with_capability_table(
+                        &remote,
+                        method,
+                        params,
+                        &table,
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        &mut [0; 8],
+                        (),
+                        |_, _, _| u8::MAX,
+                    ),
+                    Err(Error::Input(crate::owned::Error::Wire(
+                        capnp::ErrorKind::Overloaded
+                    )))
+                ));
+                assert!(queue.is_empty());
+                assert_eq!(driver.ledgers.questions.len(), 0);
+                for id in 0..8 {
+                    assert!(driver
+                        .ledgers
+                        .exports
+                        .lookup(ExportId::from_wire(id))
+                        .is_none());
+                }
+            }
+            let table = Table {
+                entries: &entries,
+                reads: core::array::from_fn(|_| Cell::new(0)),
+                fail: None,
+            };
+            let key = driver
+                .try_send_immediate_with_capability_table(
+                    &remote,
+                    method,
+                    params,
+                    &table,
+                    messages,
+                    &mut queue,
+                    512,
+                    Default::default(),
+                    &mut [0; 8],
+                    (),
+                    |_, _, _| u8::MAX,
+                )
+                .unwrap()
+                .unwrap();
+            // Three entries occupy a four-entry inline buffer: no lookup may
+            // inspect its unused suffix or re-read an already-staged grant.
+            assert_eq!(table.reads.map(|reads| reads.get()), [1, 2, 1]);
+            drain(&mut queue, messages, |root| {
+                let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                    panic!("Call")
+                };
+                let table = call.unwrap().get_params().unwrap().get_cap_table().unwrap();
+                assert_eq!(table.len(), 3);
+                assert!(matches!(
+                    table.get(0).which().unwrap(),
+                    rpc_capnp::cap_descriptor::SenderHosted(_)
+                ));
+                assert!(matches!(
+                    table.get(1).which().unwrap(),
+                    rpc_capnp::cap_descriptor::None(())
+                ));
+                assert!(matches!(
+                    table.get(2).which().unwrap(),
+                    rpc_capnp::cap_descriptor::ReceiverHosted(42)
+                ));
+            });
+            driver.cancel(key).unwrap();
+            driver.runtime.release(local);
+            driver.runtime.release(remote);
+            close(driver, messages, &mut queue);
+        });
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn imported_clients_use_ledger_capacity_without_a_second_binding_budget() {
     let measured = allocation_counter::measure(|| {
         let mut bytes = [[ZERO; 128]; 6];

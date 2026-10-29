@@ -741,7 +741,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                                 unreachable!("capability-bearing content")
                             };
                             return driver
-                                .try_send_immediate_with_capabilities(
+                                .try_send_immediate_with_capability_table(
                                     target,
                                     method,
                                     *params,
