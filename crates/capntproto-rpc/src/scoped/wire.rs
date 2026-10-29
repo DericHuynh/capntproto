@@ -283,13 +283,15 @@ impl<'id> ClientHooks<'id> {
             let direct = direct && call.third_party.is_none();
             let params = call.params()?;
             let size = params.target_size()?;
-            // A private one-slot table with a reachable capability already has
-            // the identity mapping. Its original hook still passes through the
-            // ordinary import/membrane path below. Larger or foreign tables
-            // retain the copy which collects and remaps reachable capabilities.
+            // Like legacy write_descriptors, use a private builder's existing
+            // table and preserve its indices, including null and repeated slots.
+            // Every original hook still passes through ordinary import/membrane
+            // handling. Opaque parameters need collection; a table exceeding the
+            // wire budget also needs collection to compact unreachable slots.
             let direct_caps = (size.cap_count != 0)
-                .then(|| call.params.single_capability_table())
-                .flatten();
+                .then(|| call.params.capability_table())
+                .flatten()
+                .filter(|caps| caps.len() <= driver.capability_capacity());
             // Data-only parameters already have the identity wire cap mapping.
             // Keep their caller-owned reader through the transactional copy
             // instead of allocating and copying a second hosted message first.

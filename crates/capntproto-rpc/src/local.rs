@@ -89,9 +89,6 @@ impl Params {
     pub(crate) fn capability_table(&self) -> &[Option<Box<dyn ClientHook>>] {
         &self.cap_table
     }
-    pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
-        matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
-    }
 
     #[inline(always)]
     pub(crate) fn scoped(
@@ -664,9 +661,6 @@ impl Request {
     }
     pub(crate) fn capability_table(&self) -> &[Option<Box<dyn ClientHook>>] {
         &self.cap_table
-    }
-    pub(crate) fn single_capability_table(&self) -> Option<&[Option<Box<dyn ClientHook>>]> {
-        matches!(self.cap_table.as_slice(), [Some(_)]).then_some(&self.cap_table)
     }
     pub(crate) fn prepared_call(
         &self,

@@ -26,6 +26,102 @@ impl Drop for Dummy {
 impl harness::Server for Dummy {}
 
 #[tokio::test(flavor = "current_thread")]
+async fn private_parameter_tombstones_keep_legacy_indices_and_refunds() {
+    async fn scenario(portable: bool, canceled: bool) {
+        let mut f = Fixture::with_driver(0, portable).await;
+        let alive = [Rc::new(Cell::new(true)), Rc::new(Cell::new(true))];
+        let caps: [harness::Client; 2] =
+            core::array::from_fn(|index| capnp_rpc::new_client(Dummy(Some(alive[index].clone()))));
+        let mut request = f.remote.fd_caps_request();
+        let mut list = request.get().init_caps(4);
+        for index in 0..4 {
+            list.set(index, caps[index as usize % 2].client.hook.add_ref());
+        }
+        request
+            .hook
+            .get()
+            .get_as::<capnp::any_struct::Builder>()
+            .unwrap()
+            .get_pointer_section()
+            .get(0)
+            .get_as::<capnp::any_pointer_list::Builder>()
+            .unwrap()
+            .get(1)
+            .clear();
+        let mut response = Some(request.send());
+        drop(caps);
+        let input = f.next_call().await;
+        let message::Call(call) = input
+            .get_body()
+            .unwrap()
+            .get_as::<message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("Call")
+        };
+        let call = call.unwrap();
+        let payload = call.get_params().unwrap();
+        let table = payload.get_cap_table().unwrap();
+        assert_eq!(
+            table.len(),
+            4,
+            "portable={portable}: use the builder's descriptor table"
+        );
+        assert!(matches!(
+            table.get(1).which().unwrap(),
+            cap_descriptor::None(())
+        ));
+        assert!(
+            matches!((table.get(0).which().unwrap(), table.get(2).which().unwrap()), (cap_descriptor::SenderHosted(a), cap_descriptor::SenderHosted(b)) if a == b)
+        );
+        let list = payload
+            .get_content()
+            .get_as::<capnp::any_struct::Reader>()
+            .unwrap()
+            .get_pointer_section()
+            .get(0)
+            .get_as::<capnp::any_pointer_list::Reader>()
+            .unwrap();
+        assert!(list.get(1).is_null());
+        assert_eq!(list.get(2).capability_index().unwrap(), 2);
+        assert_eq!(list.get(3).capability_index().unwrap(), 3);
+        if canceled {
+            drop(response.take());
+            settle().await;
+        }
+        f.peer.send(|m| {
+            let mut returned = m.init_return();
+            returned.set_answer_id(call.get_question_id());
+            returned.set_release_param_caps(true);
+            returned.init_results();
+        });
+        if let Some(response) = response {
+            response.promise.await.unwrap();
+        }
+        settle().await;
+        assert!(
+            alive.iter().all(|alive| !alive.get()),
+            "portable={portable}, canceled={canceled}: release each live descriptor exactly once"
+        );
+    }
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                for portable in [false, true] {
+                    for canceled in [false, true] {
+                        scenario(portable, canceled).await;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn multiple_parameter_grants_match_legacy_refunds_and_retained_releases() {
     tokio::task::LocalSet::new().run_until(async {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {

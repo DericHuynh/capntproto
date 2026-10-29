@@ -1486,6 +1486,225 @@ fn redirected_server_calls_cannot_suppress_required_result_completion() {
 }
 
 #[test]
+fn private_parameter_tables_skip_payload_rebuilds_and_keep_original_indices() {
+    struct OpaqueParams(Box<dyn ParamsHook>);
+    impl ParamsHook for OpaqueParams {
+        fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            self.0.get()
+        }
+    }
+    fn exercise<'p>(
+        mut driver: Peer<'p, '_, '_>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        opaque: bool,
+        sparse: bool,
+    ) {
+        let length = if cfg!(miri) { 4097 } else { 65536 };
+        let target = remote(&mut driver);
+        let value = driver
+            .capabilities()
+            .endpoint(Route::local(55), clients::Location::Local)
+            .unwrap();
+        let mut hooks = ClientHooks::new(8, 8);
+        let client = hooks
+            .export_client(&mut driver.capabilities(), &target)
+            .unwrap();
+        let original = hooks
+            .export_client(&mut driver.capabilities(), &value)
+            .unwrap();
+        // An opaque capability must still reach ordinary import
+        // handling, even when its enclosing parameter table is known.
+        let cap = capability::Client::new(Box::new(crate::scoped::tests::Opaque(
+            original.hook.add_ref(),
+        )));
+        let mut request = client.new_call_with_hints::<any_pointer::Owned, any_pointer::Owned>(
+            47,
+            1,
+            None,
+            CallHints {
+                no_promise_pipelining: true,
+                only_promise_pipeline: false,
+            },
+        );
+        let mut params = request
+            .get()
+            .initn_as::<capnp::any_pointer_list::Builder>(5);
+        params
+            .reborrow()
+            .get(0)
+            .initn_as::<capnp::data::Builder>(length)
+            .fill(0x5a);
+        if sparse {
+            // Replaced pointers leave null table slots. The complete
+            // private table exceeds the four-descriptor wire budget,
+            // while its single reachable capability still fits.
+            for _ in 0..8 {
+                params
+                    .reborrow()
+                    .get(1)
+                    .set_as_capability(cap.hook.add_ref());
+            }
+        } else {
+            for index in 1..=4 {
+                params
+                    .reborrow()
+                    .get(index)
+                    .set_as_capability(cap.hook.add_ref());
+            }
+            params.reborrow().get(2).clear();
+        }
+        let reply = request.send();
+        let mut queued = next(&mut hooks);
+        let original_count = queued.params.capability_table().unwrap().len();
+        assert_eq!(original_count, if sparse { 8 } else { 4 });
+        if opaque {
+            queued.params = CallParams::Hook(Box::new(OpaqueParams(queued.params.into_hook())));
+        }
+        let warm = messages
+            .reserve_exact((length as usize).next_multiple_of(8) + 4096)
+            .unwrap();
+        messages.discard(warm);
+        let mut invocations = connection::Invocations::new_growing(0, 8).unwrap();
+        let mut wire = None;
+        let mut imported = 0;
+        let allocations = allocation_counter::measure(|| {
+            wire = Some(
+                hooks
+                    .enqueue_wire(
+                        queued,
+                        &mut driver,
+                        &mut invocations,
+                        messages,
+                        Default::default(),
+                        |graph, hook| {
+                            assert!(
+                                hook.as_any().is_none(),
+                                "do not unwrap opaque capability policy"
+                            );
+                            imported += 1;
+                            graph.retain_key(value.key()).map_err(wire_error)
+                        },
+                    )
+                    .unwrap_or_else(|rejected| panic!("{}", rejected.error)),
+            );
+        });
+        assert_eq!(imported, if sparse { 1 } else { 3 });
+        if !opaque && !sparse {
+            assert!(allocations.bytes_total < u64::from(length), "private parameters must not allocate another payload-sized buffer: {allocations:?}");
+        }
+        let mut queue = messages::Queue::<()>::new_growing(0, 4).unwrap();
+        invocations
+            .send_one(
+                &mut driver,
+                messages,
+                &mut queue,
+                256,
+                Default::default(),
+                &mut [0; 16],
+            )
+            .unwrap()
+            .unwrap();
+        let window = queue.window(messages).unwrap().unwrap();
+        let mut encoded = window.bytes();
+        let reader = capnp::serialize::read_message_from_flat_slice_no_alloc(
+            &mut encoded,
+            Default::default(),
+        )
+        .unwrap();
+        let rpc_capnp::message::Call(call) = reader
+            .get_root::<rpc_capnp::message::Reader>()
+            .unwrap()
+            .which()
+            .unwrap()
+        else {
+            panic!("Call")
+        };
+        let payload = call.unwrap().get_params().unwrap();
+        let params = payload
+            .get_content()
+            .get_as::<capnp::any_pointer_list::Reader>()
+            .unwrap();
+        assert!(params
+            .get(0)
+            .get_as::<capnp::data::Reader>()
+            .unwrap()
+            .iter()
+            .all(|byte| *byte == 0x5a));
+        let count = if sparse {
+            1
+        } else if opaque {
+            3
+        } else {
+            4
+        };
+        let table = payload.get_cap_table().unwrap();
+        assert_eq!(table.len(), count);
+        assert_eq!(params.get(1).capability_index().unwrap(), 0);
+        if !sparse {
+            assert!(params.get(2).is_null());
+            assert_eq!(
+                params.get(3).capability_index().unwrap(),
+                if opaque { 1 } else { 2 }
+            );
+            assert_eq!(
+                params.get(4).capability_index().unwrap(),
+                if opaque { 2 } else { 3 }
+            );
+        }
+        let mut export = None;
+        for (index, descriptor) in table.iter().enumerate() {
+            match descriptor.which().unwrap() {
+                rpc_capnp::cap_descriptor::None(()) => assert!(!opaque && !sparse && index == 1),
+                rpc_capnp::cap_descriptor::SenderHosted(id) => {
+                    if let Some(previous) = export {
+                        assert_eq!(id, previous);
+                    }
+                    export = Some(id);
+                }
+                _ => panic!("local export"),
+            }
+        }
+        let n = window.bytes().len();
+        window.advance(n).unwrap();
+        wire.take().unwrap().cancel();
+        invocations.terminate(&mut driver, messages);
+        drop((reply, cap, original, client));
+        hooks.close(
+            &mut driver.capabilities(),
+            Error::disconnected("done".into()),
+        );
+        driver.capabilities().release(value);
+        driver.capabilities().release(target);
+        let mut closing = driver.terminate(&mut queue);
+        for _ in 0..1024 {
+            if matches!(
+                closing
+                    .poll(messages, core::num::NonZeroUsize::new(16).unwrap())
+                    .unwrap(),
+                connection::Termination::Done
+            ) {
+                return;
+            }
+        }
+        panic!("terminal cleanup");
+    }
+    for opaque in [false, true] {
+        for sparse in [false, true] {
+            let mut buffers = messages::GrowingBuffers::new(8, 1 << 18, 1 << 20);
+            messages::with_growing_messages(
+                &mut buffers,
+                storage::Growth {
+                    initial: 0,
+                    maximum: 8,
+                },
+                |messages| with_peer(8, |driver| exercise(driver, messages, opaque, sparse)),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[test]
 fn hosted_hook_bridge_exceeds_inline_capability_capacity_in_both_directions() {
     use capntproto_rpc_wire::Capacity;
     with_pool(|messages| {

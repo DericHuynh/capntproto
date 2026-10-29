@@ -1237,7 +1237,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             // A private one-slot table preserves its exact capability mapping.
             // Import through the ordinary authority/membrane path, then retain
             // that branded owner until transactional publication has finished.
-            let retained = match (&params, call.params.single_capability_table()) {
+            let retained = match (&params, call.params.capability_table()) {
                 // Like legacy Request::send_internal/write_descriptors, use
                 // the builder's capability table. Rewalking the entire payload
                 // just to rediscover this live entry duplicates publication work.

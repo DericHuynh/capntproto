@@ -384,7 +384,10 @@ these are intentional differences from the allocating legacy driver. The hosted
 message bridge still copies frames. Published generic calls retain their export
 IDs and Return policy independently of those frames, like legacy. Multiple grants
 use the configured inline capacity or bounded growth; the output queue owns the
-serialized request until physical output completes. Functional trace parity does not establish
+serialized request until physical output completes. Private request builders whose
+capability tables fit the wire budget preserve their descriptor indices without
+rebuilding the payload. Opaque parameters and oversized sparse tables still use
+bounded collection. Functional trace parity does not establish
 instruction, allocation, or throughput parity; benchmark the portable path
 explicitly before changing the default driver.
 
