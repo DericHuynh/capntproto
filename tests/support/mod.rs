@@ -209,6 +209,9 @@ impl Drop for ReadLease {
 pub struct Endpoint(Rc<Inner>);
 impl Endpoint {
     fn publish_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
+        if self.0.status.borrow().fail_body {
+            return Err(Error::failed("injected outgoing body failure".into()));
+        }
         #[cfg(unix)]
         let mut frame = frame;
         let result = (|| {

@@ -1794,7 +1794,7 @@ fn stop_before_admission_rejects_owned_commands_without_io() {
         let Poll::Ready(Err(error)) = Pin::new(&mut result).poll(&mut cx) else {
             panic!("pending command must close")
         };
-        assert_eq!(error.kind, capnp::ErrorKind::Overloaded);
+        assert_eq!(error.kind, capnp::ErrorKind::Disconnected);
         assert_eq!(error.extra, "caller stopped this connection");
         assert_eq!(input.borrow().read_calls, 0);
         assert_eq!(output.borrow().write_calls, 0);

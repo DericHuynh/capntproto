@@ -91,6 +91,74 @@ impl<V: 'static> System<V> {
             Self::Portable(s) => s.run().await,
         }
     }
+
+    /// Keep the same control operations available while either driver runs.
+    /// The hosted driver retains its original shared poll owner for tests of
+    /// reentrant bootstrap and disconnect callbacks.
+    pub fn start(
+        self,
+    ) -> (
+        RunningSystem<V>,
+        futures::future::LocalBoxFuture<'static, capnp::Result<()>>,
+    ) {
+        match self {
+            Self::Hosted(system) => {
+                let system = Rc::new(RefCell::new(system));
+                let driver = system.clone();
+                (
+                    RunningSystem::Hosted(system),
+                    Box::pin(futures::future::poll_fn(move |cx| {
+                        std::future::Future::poll(std::pin::Pin::new(&mut *driver.borrow_mut()), cx)
+                    })),
+                )
+            }
+            Self::Portable(system) => {
+                let running = RunningSystem::Portable {
+                    bootstrapper: system.get_bootstrapper(),
+                    control: system.control(),
+                    disconnect: futures::FutureExt::shared(Promise::from_future(
+                        system.get_disconnector(),
+                    )),
+                };
+                (running, Box::pin(system.run()))
+            }
+        }
+    }
+}
+
+pub enum RunningSystem<V: 'static = u8> {
+    Hosted(Rc<RefCell<capnp_rpc::RpcSystem<V>>>),
+    Portable {
+        bootstrapper: capnp_rpc::portable::Bootstrapper<V>,
+        control: capnp_rpc::portable::Control,
+        disconnect: futures::future::Shared<Promise<(), Error>>,
+    },
+}
+impl<V: 'static> RunningSystem<V> {
+    pub fn bootstrap<T: capnp::capability::FromClientHook>(&mut self, id: V) -> T {
+        match self {
+            Self::Hosted(system) => system.borrow_mut().bootstrap(id),
+            Self::Portable { bootstrapper, .. } => bootstrapper.bootstrap(id),
+        }
+    }
+    pub fn set_trace_encoder(&mut self, encoder: impl Fn(&Error) -> String + 'static) {
+        match self {
+            Self::Hosted(system) => system.borrow_mut().set_trace_encoder(encoder),
+            Self::Portable { control, .. } => control.set_trace_encoder(encoder),
+        }
+    }
+    pub fn clear_trace_encoder(&mut self) {
+        match self {
+            Self::Hosted(system) => system.borrow_mut().clear_trace_encoder(),
+            Self::Portable { control, .. } => control.clear_trace_encoder(),
+        }
+    }
+    pub fn get_disconnector(&self) -> Promise<(), Error> {
+        match self {
+            Self::Hosted(system) => Promise::from_future(system.borrow().get_disconnector()),
+            Self::Portable { disconnect, .. } => Promise::from_future(disconnect.clone()),
+        }
+    }
 }
 
 pub enum Joiner<V: 'static> {

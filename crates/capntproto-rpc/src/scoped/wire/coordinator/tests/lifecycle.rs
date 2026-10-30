@@ -1,4 +1,5 @@
 use super::*;
+use crate::rpc_capnp;
 
 pub(super) fn queued<'p>(
     driver: &mut TestPeer<'p, '_, '_>,
@@ -75,10 +76,38 @@ fn orderly_stop_and_eof_drain_flush_and_close_before_completion() {
                     }
                 }
                 assert!(reached_close);
-                assert_eq!(
-                    output.borrow().bytes.iter().copied().collect::<Vec<_>>(),
-                    expected
-                );
+                let bytes: Vec<_> = output.borrow().bytes.iter().copied().collect();
+                assert_eq!(&bytes[..expected.len()], expected);
+                let mut terminal = &bytes[expected.len()..];
+                if eof {
+                    let message = capnp::serialize::read_message_from_flat_slice_no_alloc(
+                        &mut terminal,
+                        Default::default(),
+                    )
+                    .unwrap();
+                    let rpc_capnp::message::Abort(error) = message
+                        .get_root::<rpc_capnp::message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    else {
+                        panic!("one terminal Abort after accepted output")
+                    };
+                    let error = error.unwrap();
+                    assert_eq!(
+                        error.get_type().unwrap(),
+                        rpc_capnp::exception::Type::Disconnected
+                    );
+                    assert_eq!(
+                        error.get_reason().unwrap().to_str().unwrap(),
+                        "client requested disconnect"
+                    );
+                    assert!(terminal.is_empty());
+                } else {
+                    // The existing frame fills this one-entry FIFO when stop
+                    // wins; best-effort Abort must not replace accepted output.
+                    assert!(terminal.is_empty());
+                }
                 assert!(output.borrow().flush_calls > 0);
                 assert!(!output.borrow().closed);
                 if let Some(command) = command {

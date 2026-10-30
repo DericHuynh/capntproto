@@ -80,7 +80,8 @@ impl<'p, 'id, 's, P: Copy + Eq, V, const C: usize, const H: usize>
             }
             failure.as_mut().poll(cx)
         });
-        self.registered
+        let result = self
+            .registered
             .run_connection(
                 messages,
                 queue,
@@ -92,6 +93,14 @@ impl<'p, 'id, 's, P: Copy + Eq, V, const C: usize, const H: usize>
                 shutdown,
                 aborted,
             )
-            .await
+            .await;
+        if let Err(RunError {
+            cause: Some(Cause::Protocol(error)),
+            ..
+        }) = &result
+        {
+            writer.shutdown_reason(error.clone());
+        }
+        result
     }
 }

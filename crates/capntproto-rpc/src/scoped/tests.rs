@@ -2453,7 +2453,11 @@ fn hook_index_preserves_converged_aliases_and_recycled_generations() {
             hooks.collect(graph);
             assert_eq!(hooks.bindings.len(), 1);
             let head = hooks.export_client(graph, &terminal).unwrap();
-            assert_eq!(head.hook.get_ptr(), b_hook.hook.get_ptr());
+            assert_eq!(head.hook.get_ptr(), a_hook.hook.get_ptr());
+            assert_eq!(
+                b_hook.hook.get_resolved().unwrap().get_ptr(),
+                a_hook.hook.get_ptr()
+            );
             drop((head, b_hook));
             hooks.reclaim_released(graph);
             let remaining = hooks.export_client(graph, &terminal).unwrap();

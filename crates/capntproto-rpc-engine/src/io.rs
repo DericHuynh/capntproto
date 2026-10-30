@@ -31,6 +31,12 @@ pub trait Flush {
 /// queued output has flushed. Completion means the write half is closed.
 pub trait Close: Flush {
     fn poll_close(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Self::Error>>>;
+    /// Close after output has failed, without requiring another successful
+    /// flush. Completion still confirms physical closure. Adapters which cannot
+    /// distinguish these operations retain their normal close behavior.
+    fn poll_abort(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Self::Error>>> {
+        self.poll_close(cx)
+    }
 }
 pub trait Write: Flush {
     /// The returned count is consumed before the next call. Pending must arrange
@@ -106,7 +112,7 @@ pub trait WriteResources<R>: Flush {
 }
 
 mod output;
-pub use output::{poll_close, Output};
+pub use output::{poll_abort, poll_close, Output};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SendError<E> {

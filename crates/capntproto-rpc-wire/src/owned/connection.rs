@@ -1385,13 +1385,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         receiver: &mut impl ImportReceiver<I>,
         make_producer: impl FnOnce() -> A,
     ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
-        self.receive_with_policy(frame, messages, scratch, receiver, |_| Ok(make_producer()))
+        self.receive_with_policy(
+            frame,
+            messages,
+            scratch,
+            receiver,
+            |_| Ok(make_producer()),
+            |_| {},
+        )
     }
 
     /// Apply caller admission policy before accepting an incoming producer.
     /// The factory receives the complete serialized Call size in words (zero
     /// for control producers). Unreachable words are included. Rejection leaves
     /// the frame and protocol tables intact; Busy never invokes the factory.
+    /// The Abort observer can retain diagnostics before their frame is released.
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
     #[inline(never)]
     pub fn receive_with_policy(
@@ -1401,6 +1409,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         scratch: &mut [u32],
         receiver: &mut impl ImportReceiver<I>,
         make_producer: impl FnOnce(usize) -> capnp::Result<A>,
+        on_abort: impl FnOnce(rpc_capnp::exception::Reader<'_>),
     ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
         if self.disconnected.is_none()
             && self.delayed_finish.as_ref().is_some_and(|finish| {
@@ -1543,7 +1552,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 },
             }
         }
-        self.receive_general(frame, messages, scratch, receiver, make_producer.unwrap())
+        self.receive_general(
+            frame,
+            messages,
+            scratch,
+            receiver,
+            make_producer.unwrap(),
+            on_abort,
+        )
     }
 
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
@@ -1555,6 +1571,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         scratch: &mut [u32],
         receiver: &mut impl ImportReceiver<I>,
         make_producer: impl FnOnce(usize) -> capnp::Result<A>,
+        on_abort: impl FnOnce(rpc_capnp::exception::Reader<'_>),
     ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
         if let Err(error) = self.check_live() {
             return Err(Rejected {
@@ -1564,6 +1581,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             });
         }
         use IncomingKind as Kind;
+        let mut on_abort = Some(on_abort);
         let propagation_blocked = self.resolution.is_some() || self.has_ordered_propagation();
         let mut admitted_return = None;
         let mut admitted_call = None;
@@ -1685,7 +1703,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     }
                     Ok(rpc_capnp::message::Release(_)) => Kind::Release,
                     Ok(rpc_capnp::message::Abort(exception)) => {
-                        Kind::Abort(controls::abort_reason(exception?)?)
+                        let exception = exception?;
+                        let reason = controls::abort_reason(exception);
+                        on_abort.take().unwrap()(exception);
+                        Kind::Abort(reason)
                     }
                     Ok(rpc_capnp::message::Unimplemented(message)) => {
                         match controls::unimplemented(message?)? {
@@ -1833,6 +1854,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     scratch,
                     receiver,
                     make_producer.take().unwrap(),
+                    on_abort.take().unwrap(),
                 )
             }
             Kind::PipelineReturn => {

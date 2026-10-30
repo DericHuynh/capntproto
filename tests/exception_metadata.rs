@@ -3,11 +3,14 @@ mod support;
 use capnp::{traits::HasTypeId, Error};
 use capnp_rpc::{
     rpc_capnp::{cap_descriptor, exception, message, return_},
-    IncomingMessage, RpcSystem,
+    IncomingMessage,
 };
 use capntproto_test_support::runtime_test_capnp::harness;
-use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc};
-use support::{Endpoint, Hub};
+use std::{cell::RefCell, rc::Rc};
+use support::{
+    driver::{RunningSystem, System as RpcSystem},
+    Endpoint, Hub,
+};
 
 struct Forward(Rc<RefCell<Option<Error>>>);
 impl harness::Server for Forward {
@@ -24,7 +27,7 @@ impl harness::Server for Forward {
 struct Fixture {
     _hub: Rc<RefCell<Hub>>,
     _network: support::Network,
-    system: Rc<RefCell<RpcSystem<u8>>>,
+    system: RunningSystem<u8>,
     task: tokio::task::JoinHandle<capnp::Result<()>>,
     peer: Endpoint,
     remote: harness::Client,
@@ -40,19 +43,20 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
-    async fn new() -> Self {
+    async fn new(portable: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
         let cloned = Rc::new(RefCell::new(None));
         let local: harness::Client = capnp_rpc::new_client(Forward(cloned.clone()));
-        let mut system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), Some(local.client));
+        let mut system = RpcSystem::new(
+            portable,
+            Box::new(Hub::network(&hub, 1)),
+            Some(local.client),
+        );
         let remote: harness::Client = system.bootstrap(2);
         let mut peer = hub.borrow_mut().connect(2, 1);
-        let system = Rc::new(RefCell::new(system));
-        let driver = system.clone();
-        let task = tokio::task::spawn_local(futures::future::poll_fn(move |cx| {
-            Pin::new(&mut *driver.borrow_mut()).poll(cx)
-        }));
+        let (system, driver) = system.start();
+        let task = tokio::task::spawn_local(driver);
         let input = peer.recv().await;
         let message::Bootstrap(b) = input
             .get_body()
@@ -293,8 +297,8 @@ fn check_error(error: &Error, trace: Option<&str>) {
     assert_eq!(error.detail(13), None);
     assert_eq!(error.details().count(), 2);
 }
-async fn replay(steps: &[serde_json::Value], kind: u16, trace: bool) {
-    let mut f = Fixture::new().await;
+async fn replay(portable: bool, steps: &[serde_json::Value], kind: u16, trace: bool) {
+    let mut f = Fixture::new(portable).await;
     for step in steps {
         let state = step["state"].as_array().unwrap();
         match step["action"].as_str().unwrap() {
@@ -305,11 +309,9 @@ async fn replay(steps: &[serde_json::Value], kind: u16, trace: bool) {
             }
             "configure" => {
                 if state[5] == 1 {
-                    f.system
-                        .borrow_mut()
-                        .set_trace_encoder(|_| "encoded trace".into());
+                    f.system.set_trace_encoder(|_| "encoded trace".into());
                 } else {
-                    f.system.borrow_mut().clear_trace_encoder();
+                    f.system.clear_trace_encoder();
                 }
             }
             "forward" => f.forward().await,
@@ -327,14 +329,17 @@ async fn replay_tlc_exception_metadata_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for case in cases {
-                for kind in [0, 1, 2, 3, 65535] {
-                    replay(
-                        case["steps"].as_array().unwrap(),
-                        kind,
-                        case["trace"].as_bool().unwrap(),
-                    )
-                    .await;
+            for portable in [false, true] {
+                for case in &cases {
+                    for kind in [0, 1, 2, 3, 65535] {
+                        replay(
+                            portable,
+                            case["steps"].as_array().unwrap(),
+                            kind,
+                            case["trace"].as_bool().unwrap(),
+                        )
+                        .await;
+                    }
                 }
             }
         })
@@ -344,23 +349,29 @@ async fn replay_tlc_exception_metadata_traces() {
 async fn owned_details_survive_clone_forwarding_and_second_decode() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                let mut f = Fixture::new().await;
-                f.receive(65535, true).await;
-                check_error(f.original.as_ref().unwrap(), Some("origin trace"));
-                *f.cloned.borrow_mut() = f.original.take();
-                f.forward().await;
-                f.decode().await;
-                check_error(f.observed.as_ref().unwrap(), None);
-            })
-            .await
-            .unwrap();
+            for portable in [false, true] {
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    let mut f = Fixture::new(portable).await;
+                    f.receive(65535, true).await;
+                    check_error(f.original.as_ref().unwrap(), Some("origin trace"));
+                    *f.cloned.borrow_mut() = f.original.take();
+                    f.forward().await;
+                    f.decode().await;
+                    check_error(f.observed.as_ref().unwrap(), None);
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
 
-async fn disconnect_trace(steps: &[serde_json::Value], original_kind: exception::Type) {
-    let mut f = Fixture::new().await;
+async fn disconnect_trace(
+    portable: bool,
+    steps: &[serde_json::Value],
+    original_kind: exception::Type,
+) {
+    let mut f = Fixture::new(portable).await;
     let mut first = Some(f.remote.echo_request().send().promise);
     let mut second = Some(f.remote.echo_request().send().promise);
     f.next_call().await;
@@ -416,14 +427,16 @@ async fn replay_tlc_exception_disconnect_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for trace in cases {
-                for kind in [
-                    exception::Type::Failed,
-                    exception::Type::Overloaded,
-                    exception::Type::Disconnected,
-                    exception::Type::Unimplemented,
-                ] {
-                    disconnect_trace(&trace, kind).await;
+            for portable in [false, true] {
+                for trace in &cases {
+                    for kind in [
+                        exception::Type::Failed,
+                        exception::Type::Overloaded,
+                        exception::Type::Disconnected,
+                        exception::Type::Unimplemented,
+                    ] {
+                        disconnect_trace(portable, trace, kind).await;
+                    }
                 }
             }
         })
@@ -433,16 +446,49 @@ async fn replay_tlc_exception_disconnect_traces() {
 async fn abort_rejects_pending_and_future_calls_with_owned_diagnostics() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                disconnect_trace(
-                    &["abort", "second", "create", "third", "first"]
-                        .map(|action| serde_json::json!({"action": action})),
-                    exception::Type::Overloaded,
-                )
-                .await;
-            })
-            .await
-            .unwrap();
+            for portable in [false, true] {
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    disconnect_trace(
+                        portable,
+                        &["abort", "second", "create", "third", "first"]
+                            .map(|action| serde_json::json!({"action": action})),
+                        exception::Type::Overloaded,
+                    )
+                    .await;
+                })
+                .await
+                .unwrap();
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn malformed_abort_reason_keeps_its_kind_trace_and_details() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                let mut f = Fixture::new(portable).await;
+                let pending = f.remote.echo_request().send().promise;
+                f.next_call().await;
+                f.peer.send(|message| {
+                    let mut error = message.init_abort();
+                    error.set_type(exception::Type::Overloaded);
+                    error.reborrow().init_reason(1).as_bytes_mut()[0] = 0xff;
+                    error.set_trace("origin trace");
+                    let mut details = error.init_details(1);
+                    details.reborrow().get(0).set_detail_id(11);
+                    details.get(0).set_data(b"owned");
+                });
+                let error = pending.await.err().unwrap();
+                assert_eq!(error.kind, capnp::ErrorKind::Disconnected);
+                assert_eq!(
+                    error.extra,
+                    "remote exception: <malformed utf-8 in error reason>"
+                );
+                assert_eq!(error.remote_trace(), Some("origin trace"));
+                assert_eq!(error.detail(11), Some(b"owned".as_slice()));
+            }
         })
         .await;
 }

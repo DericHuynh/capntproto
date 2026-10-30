@@ -1,17 +1,17 @@
 #[allow(dead_code)]
 mod support;
 use capnp::{capability::FromClientHook, traits::ImbueMut};
-use capnp_rpc::{
-    rpc_capnp::{message, message_target},
-    RpcSystem,
-};
+use capnp_rpc::rpc_capnp::{message, message_target};
 use capntproto_test_support::runtime_test_capnp::harness;
 use std::{cell::RefCell, rc::Rc};
-use support::{Endpoint, Hub};
+use support::{
+    driver::{RunningSystem, System as RpcSystem},
+    Endpoint, Hub,
+};
 struct Dummy;
 impl harness::Server for Dummy {}
 struct Fixture {
-    system: Rc<RefCell<RpcSystem<u8>>>,
+    system: RunningSystem<u8>,
     task: tokio::task::JoinHandle<capnp::Result<()>>,
     peer: Endpoint,
     _hub: Rc<RefCell<Hub>>,
@@ -25,21 +25,15 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
-    async fn new() -> Self {
-        use std::{future::Future, pin::Pin};
+    async fn new(portable: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let system = Rc::new(RefCell::new(RpcSystem::new(
-            Box::new(Hub::network(&hub, 1)),
-            None,
-        )));
+        let (system, driver) =
+            RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), None).start();
         let peer = hub.borrow_mut().connect(1, 2);
         drop(peer);
         let peer = hub.borrow_mut().connect(2, 1);
-        let driver = system.clone();
-        let task = tokio::task::spawn_local(futures::future::poll_fn(move |cx| {
-            Pin::new(&mut *driver.borrow_mut()).poll(cx)
-        }));
+        let task = tokio::task::spawn_local(driver);
         let mut f = Self {
             system,
             task,
@@ -53,7 +47,7 @@ impl Fixture {
         f
     }
     async fn bootstrap(&mut self) -> harness::Client {
-        let cap: harness::Client = self.system.borrow_mut().bootstrap(2);
+        let cap: harness::Client = self.system.bootstrap(2);
         let question = loop {
             let m = self.peer.recv().await;
             match m
@@ -155,12 +149,14 @@ async fn replay_tlc_import_alias_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for trace in traces {
-                tokio::time::timeout(std::time::Duration::from_secs(3), async {
-                    Fixture::new().await.replay(&trace).await;
-                })
-                .await
-                .unwrap();
+            for portable in [false, true] {
+                for trace in &traces {
+                    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                        Fixture::new(portable).await.replay(trace).await;
+                    })
+                    .await
+                    .unwrap();
+                }
             }
         })
         .await;
@@ -170,7 +166,31 @@ async fn dropping_reimport_does_not_break_original_capability() {
     let trace = serde_json::json!([{"action":"first"},{"action":"acquire"},{"action":"drop"},{"action":"last"}]);
     tokio::task::LocalSet::new()
         .run_until(async {
-            Fixture::new().await.replay(trace.as_array().unwrap()).await;
+            for portable in [false, true] {
+                Fixture::new(portable)
+                    .await
+                    .replay(trace.as_array().unwrap())
+                    .await;
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn repeated_reimports_keep_the_original_canonical_client() {
+    let trace = serde_json::json!([
+        {"action":"first"}, {"action":"acquire"}, {"action":"acquire"},
+        {"action":"drop"}, {"action":"acquire"}, {"action":"drop"},
+        {"action":"acquire"}, {"action":"last"}
+    ]);
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                Fixture::new(portable)
+                    .await
+                    .replay(trace.as_array().unwrap())
+                    .await;
+            }
         })
         .await;
 }

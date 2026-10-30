@@ -381,6 +381,27 @@ struct OutputState {
 // set the physical publication limit from their configured output queue.
 const MAXIMUM_PENDING_FRAMES: usize = 64;
 impl Writer {
+    fn poll_shutdown(
+        &mut self,
+        cx: &mut Context<'_>,
+        reason: capnp::Result<()>,
+    ) -> Poll<Result<(), IoError<Error>>> {
+        if let Some(result) = &self.result {
+            return Poll::Ready(result.clone().map_err(IoError::Failed));
+        }
+        if self.shutdown.is_none() {
+            self.closing.close();
+            self.shutdown = Some(self.state.borrow_mut().output.shutdown(reason));
+        }
+        let result = ready!(Pin::new(self.shutdown.as_mut().unwrap()).poll(cx));
+        self.shutdown = None;
+        self.result = Some(result.clone());
+        Poll::Ready(result.map_err(IoError::Failed))
+    }
+    pub(crate) fn shutdown_reason(&mut self, mut error: Error) {
+        error.kind = capnp::ErrorKind::Disconnected;
+        self.state.borrow_mut().failure = Some(error);
+    }
     pub(crate) fn publication_queue<'p, 's>(
         &mut self,
         messages: &messages::Messages<'p, '_, '_>,
@@ -482,14 +503,16 @@ impl io::Close for Writer {
             return Poll::Ready(result.clone().map_err(IoError::Failed));
         }
         ready!(io::Flush::poll_flush(self, cx))?;
-        if self.shutdown.is_none() {
-            self.closing.close();
-            self.shutdown = Some(self.state.borrow_mut().output.shutdown(Ok(())));
-        }
-        let result = ready!(Pin::new(self.shutdown.as_mut().unwrap()).poll(cx));
-        self.shutdown = None;
-        self.result = Some(result.clone());
-        Poll::Ready(result.map_err(IoError::Failed))
+        self.poll_shutdown(cx, Ok(()))
+    }
+    fn poll_abort(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Error>>> {
+        let error = self
+            .state
+            .borrow()
+            .failure
+            .clone()
+            .unwrap_or_else(|| Error::disconnected("portable output failed".into()));
+        self.poll_shutdown(cx, Err(error))
     }
 }
 

@@ -198,6 +198,24 @@ pub fn poll_close<W: Close>(
     Poll::Pending
 }
 
+/// Retry interrupted error closure within the caller's cooperative budget.
+pub fn poll_abort<W: Close>(
+    writer: &mut W,
+    cx: &mut Context<'_>,
+    budget: NonZeroUsize,
+) -> Poll<Result<(), W::Error>> {
+    for _ in 0..budget.get() {
+        match writer.poll_abort(cx) {
+            Poll::Ready(Err(IoError::Interrupted)) => (),
+            Poll::Ready(Err(IoError::Failed(error))) => return Poll::Ready(Err(error)),
+            Poll::Ready(Ok(())) => return Poll::Ready(Ok(())),
+            Poll::Pending => return Poll::Pending,
+        }
+    }
+    cx.waker().wake_by_ref();
+    Poll::Pending
+}
+
 #[cfg(kani)]
 mod proofs;
 #[cfg(test)]

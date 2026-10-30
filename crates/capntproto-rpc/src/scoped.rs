@@ -683,11 +683,12 @@ impl<'id> ClientHooks<'id> {
             client,
             pending,
             metadata: None,
-            same_key_next: self.bindings.insert(key, index),
+            same_key_next: None,
             route_subscription,
             metadata_work: capntproto_rpc_engine::work_queue::Link::EMPTY,
             metadata_watch: None,
         });
+        self.link_binding(key, index);
         self.queue_metadata(index);
         self.unsettled += usize::from(pending);
         endpoint.notify_binding();
@@ -913,12 +914,39 @@ impl<'id> ClientHooks<'id> {
         project_metadata: bool,
         bind_sources: bool,
     ) {
-        let entry = self.entries[index].as_mut().expect("notified endpoint");
+        let entry = self.entries[index].as_ref().expect("notified endpoint");
         let Some(endpoint) = entry.endpoint.upgrade() else {
             return;
         };
         let old_key = entry.client.key();
         let destination = graph.inspect(&entry.client);
+        // A newly settled promise can reach an import already represented by
+        // another public hook. Legacy redirects that promise to its canonical
+        // import client rather than creating a second public identity.
+        let canonical = if entry.pending {
+            if let Ok(capntproto_rpc_engine::clients::Destination::Endpoint { key, .. }) =
+                &destination
+            {
+                let mut matching = self.bindings.get(key).copied();
+                let mut canonical = None;
+                while let Some(other) = matching {
+                    let candidate = self.entries[other].as_ref().expect("indexed endpoint");
+                    if other != index {
+                        if let Some(endpoint) = candidate.endpoint.upgrade() {
+                            canonical = Some(endpoint);
+                            break;
+                        }
+                    }
+                    matching = candidate.same_key_next;
+                }
+                canonical
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let entry = self.entries[index].as_mut().expect("notified endpoint");
         endpoint.remote.set(matches!(
             destination,
             Ok(capntproto_rpc_engine::clients::Destination::Endpoint {
@@ -975,7 +1003,14 @@ impl<'id> ClientHooks<'id> {
             }
         }
         if entry.pending {
-            Self::settle_endpoint(graph, entry, &endpoint, &mut self.unsettled, local);
+            Self::settle_endpoint(
+                graph,
+                entry,
+                &endpoint,
+                &mut self.unsettled,
+                local,
+                canonical,
+            );
         } else if project_metadata && bind_sources && !endpoint.remote.get() {
             // A generic collect can observe settlement before the hosted
             // ownership refresh. That later refresh must still expose the
@@ -1004,8 +1039,22 @@ impl<'id> ClientHooks<'id> {
         let new_key = entry.client.key();
         if new_key != old_key {
             self.unlink_binding(old_key, index);
-            let next = self.bindings.insert(new_key, index);
+            self.link_binding(new_key, index);
+        }
+    }
+
+    fn link_binding(&mut self, key: capntproto_rpc_engine::clients::Key<'id>, index: usize) {
+        if let Some(head) = self.bindings.get(&key).copied() {
+            // Keep the first live endpoint canonical. Inserting later aliases
+            // after it prevents a chain of promise-to-promise forwarding.
+            let next = self.entries[head]
+                .as_mut()
+                .unwrap()
+                .same_key_next
+                .replace(index);
             self.entries[index].as_mut().unwrap().same_key_next = next;
+        } else {
+            self.bindings.insert(key, index);
         }
     }
 
@@ -1018,6 +1067,7 @@ impl<'id> ClientHooks<'id> {
         endpoint: &Endpoint,
         unsettled: &mut usize,
         local: &mut impl FnMut(&G::Owner) -> Option<Rc<dyn ClientHook>>,
+        canonical: Option<Rc<Endpoint>>,
     ) {
         // Export inspection does not accept a call or mark the promise used.
         // A reflected resolution waits for its original-route loopback.
@@ -1047,7 +1097,10 @@ impl<'id> ClientHooks<'id> {
             let resolved = if result.is_ok() && endpoint.introduced.borrow().is_none() {
                 match graph.inspect(&entry.client) {
                     Ok(capntproto_rpc_engine::clients::Destination::Endpoint { owner, .. }) => {
-                        local(owner)
+                        local(owner).or_else(|| {
+                            canonical
+                                .map(|endpoint| Rc::new(Hook(endpoint, None)) as Rc<dyn ClientHook>)
+                        })
                     }
                     _ => None,
                 }
@@ -1603,18 +1656,19 @@ impl Call {
         mut self: Box<Self>,
         inbox: Option<Rc<Inbox>>,
     ) -> Result<Rc<Inbox>, Box<Error>> {
-        if let Some(error) = self.endpoint().failure.borrow().clone() {
-            return Err(Box::new(error));
+        let failure = self.endpoint().failure.borrow().clone();
+        if let Some(error) = failure {
+            return Err(self.reject_owned(error));
         }
         let Some(inbox) = inbox.filter(|inbox| !inbox.closed.get()) else {
-            return Err(Box::new(Error::disconnected(
-                "scoped ClientHook driver closed".into(),
-            )));
+            return Err(self.reject_owned(self.shutdown.reason().unwrap_or_else(|| {
+                Error::disconnected("scoped ClientHook driver closed".into())
+            })));
         };
         if inbox.live_calls.get() == inbox.maximum_calls {
-            return Err(Box::new(Error::overloaded(
-                "scoped call capacity exhausted".into(),
-            )));
+            return Err(
+                self.reject_owned(Error::overloaded("scoped call capacity exhausted".into()))
+            );
         }
         let credit = self
             .credit
@@ -1622,13 +1676,11 @@ impl Call {
             .or_else(|| inbox.admission.clone().map(admission::Credit::new));
         if self.endpoint().remote.get() {
             if let Some(credit) = &credit {
-                credit.ensure()?;
+                credit.ensure().map_err(|error| self.reject_owned(error))?;
             }
         }
         if inbox.queue.borrow_mut().try_reserve(1).is_err() {
-            return Err(Box::new(Error::overloaded(
-                "scoped call queue exhausted".into(),
-            )));
+            return Err(self.reject_owned(Error::overloaded("scoped call queue exhausted".into())));
         }
         // Reserve before invoking a custom results hook, which may reenter or
         // close this connection. The guard rolls back even during unwinding.
@@ -1641,9 +1693,11 @@ impl Call {
             self.results.retain_context(credit.clone());
         }
         if inbox.closed.get() {
-            return Err(Box::new(Error::disconnected(
-                "scoped ClientHook driver closed".into(),
-            )));
+            return Err(
+                self.reject_owned(inbox.shutdown.reason().unwrap_or_else(|| {
+                    Error::disconnected("scoped ClientHook driver closed".into())
+                })),
+            );
         }
         self.credit = credit;
         // Requests built by this hook already retain this exact shutdown state.
@@ -1657,6 +1711,14 @@ impl Call {
         inbox.queue.borrow_mut().push_back(self);
         inbox.notify_enqueue();
         Ok(inbox)
+    }
+
+    #[cold]
+    fn reject_owned(&mut self, error: Error) -> Box<Error> {
+        // Publish the actual rejection before Drop's cancellation fallback can
+        // settle a retained pipeline with a generic error.
+        self.completion.complete(Err(error.clone()));
+        Box::new(error)
     }
 
     fn into_request(mut self: Box<Self>) -> Box<crate::local::Request> {

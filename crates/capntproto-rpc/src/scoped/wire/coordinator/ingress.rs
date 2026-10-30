@@ -109,6 +109,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 let was_idle = self.schedule.active == WorkSet::NONE
                     && self.control_idle
                     && !self.output_blocked;
+                let mut abort = None;
                 let event = match self.driver.receive_with_policy(
                     frame,
                     messages,
@@ -120,8 +121,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                             self.hooks.inbox.message_pool.clone(),
                         ))
                     },
+                    |exception| abort = Some(crate::rpc::remote_exception_to_error(exception)),
                 ) {
                     Ok(event) => {
+                        if let connection::Received::Aborted(kind) = event {
+                            return Poll::Ready(Err(Box::new(Cause::Protocol(
+                                abort.unwrap_or_else(|| Error::from_kind(kind)),
+                            ))));
+                        }
                         reader.finish_frame();
                         pump.frames += 1;
 
@@ -145,9 +152,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                         }
                     }
                 };
-                if let connection::Received::Aborted(kind) = event {
-                    return Poll::Ready(Err(Box::new(Cause::Protocol(Error::from_kind(kind)))));
-                }
                 if controls.observes_hooks(&event) {
                     Self::collect_hooks(&mut self.hooks, &mut self.driver, output);
                 }

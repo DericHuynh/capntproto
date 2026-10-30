@@ -6,6 +6,46 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn abort_observer_reads_the_original_frame_once_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let frame = Frame::build(messages, 256, Default::default(), |builder| {
+                calls::abort(
+                    builder,
+                    capnp::ErrorKind::Overloaded,
+                    "owned peer diagnostics",
+                )
+            })
+            .unwrap();
+            let mut observed = 0;
+            assert!(matches!(
+                driver.receive_with_policy(
+                    frame,
+                    messages,
+                    &mut [],
+                    &mut |_| panic!("Abort has no imports"),
+                    |_| panic!("Abort has no producer"),
+                    |exception| {
+                        observed += 1;
+                        assert_eq!(
+                            exception.get_reason().unwrap().to_str().unwrap(),
+                            "owned peer diagnostics"
+                        );
+                    }
+                ),
+                Ok(Received::Aborted(capnp::ErrorKind::Overloaded))
+            ));
+            assert_eq!(observed, 1);
+            assert_eq!(driver.disconnected(), Some(capnp::ErrorKind::Overloaded));
+            let mut slots = [None];
+            let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+            close(driver, messages, &mut queue);
+        })
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn early_finish_yields_once_and_preserves_checked_frame_identity_and_budget() {
     let measured = allocation_counter::measure(|| {
         for deferred in [false, true] {
@@ -4500,9 +4540,14 @@ fn unsupported_frames_echo_without_admitting_answers_or_losing_retry_ownership()
                 .unwrap();
                 assert!(matches!(
                     driver
-                        .receive_with_policy(frame, messages, &mut [], &mut |_| (), |_| {
-                            panic!("unsupported messages have no application producer")
-                        })
+                        .receive_with_policy(
+                            frame,
+                            messages,
+                            &mut [],
+                            &mut |_| (),
+                            |_| { panic!("unsupported messages have no application producer") },
+                            |_| {}
+                        )
                         .unwrap_or_else(|r| panic!("{:?}", r.error)),
                     Received::Network
                 ));

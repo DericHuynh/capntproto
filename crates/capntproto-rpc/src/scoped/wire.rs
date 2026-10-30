@@ -16,6 +16,7 @@ use capntproto_rpc_wire::{
 
 mod calls;
 pub mod coordinator;
+mod exception;
 pub mod foreign;
 mod projections;
 pub(crate) mod ready;

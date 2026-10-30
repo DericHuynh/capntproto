@@ -805,39 +805,12 @@ impl Results {
     /// are not forwarded as a local trace; outgoing traces remain opt-in.
     pub fn write_exception(
         &self,
-        mut output: capnp::field_api::FixedStruct<
-            '_,
-            capntproto_rpc_wire::rpc_capnp::api::Exception,
-        >,
+        output: capnp::field_api::FixedStruct<'_, capntproto_rpc_wire::rpc_capnp::api::Exception>,
     ) -> capnp::Result<()> {
-        use capntproto_rpc_wire::rpc_capnp::api::{
-            exception::{Detail, Type},
-            Exception,
-        };
         let error = self
             .failure()
             .ok_or_else(|| Error::failed("service has no exception".into()))?;
-        output.scalar(Exception::TYPE).set(match error.kind {
-            capnp::ErrorKind::Disconnected => Type::Disconnected,
-            capnp::ErrorKind::Overloaded => Type::Overloaded,
-            capnp::ErrorKind::Unimplemented
-            | capnp::ErrorKind::SettingDynamicCapabilitiesIsUnsupported => Type::Unimplemented,
-            _ => Type::Failed,
-        });
-        let reason = exception_reason(&error);
-        output.field(Exception::REASON).copy_from(reason.as_str())?;
-        if let Some(trace) = self.0.trace.borrow().as_ref() {
-            output.field(Exception::TRACE).copy_from(trace.as_str())?;
-        }
-        let mut details = output
-            .field(Exception::DETAILS)
-            .init(error.details().count())?;
-        for (index, (id, data)) in error.details().enumerate() {
-            let mut detail = details.get_mut(index).expect("allocated details");
-            detail.scalar(Detail::DETAIL_ID).set(id);
-            detail.field(Detail::DATA).copy_from(data)?;
-        }
-        Ok(())
+        crate::scoped::wire::exception::write(&error, self.0.trace.borrow().as_deref(), output)
     }
 }
 
@@ -851,15 +824,7 @@ impl PipelineHook for EarlyPipeline {
     }
 }
 
-fn exception_reason(error: &Error) -> String {
-    match error.kind {
-        capnp::ErrorKind::Failed
-        | capnp::ErrorKind::Disconnected
-        | capnp::ErrorKind::Overloaded
-        | capnp::ErrorKind::Unimplemented => error.extra.clone(),
-        _ => error.to_string(),
-    }
-}
+use crate::scoped::wire::exception::reason as exception_reason;
 
 /// Poll with the connection's executor. Dropping interest cancels cancellable
 /// methods; generated non-cancellable methods retain their independent executor

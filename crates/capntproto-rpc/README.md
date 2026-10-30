@@ -380,6 +380,8 @@ The legacy-path regression matrix now covers both drivers:
 | Call/Return, scalar and capability payloads | `scoped_vat`, `composed_wire_boundary` |
 | Exception details, cancellation, protected execution | `cancellation`, `static_cancellation`, `exception_metadata` |
 | Ignored results, shortening and server revocation | `ignore_result`, `server_hooks` (local, legacy and portable) |
+| Repeated imports and canonical client identity | `import_alias` (both drivers), scoped hook-index tests |
+| Abort diagnostics, stale requests and reentrant disconnect cleanup | `disconnect_cleanup`, `exception_metadata` (both drivers) |
 | Finish, Release, ID reuse and high-ID no-Return hints | `call_hints`, `tail_transfer` |
 | Multiple parameter grants, duplicate IDs, refunds and retained peer ownership | `call_hints`; bounded wire tests also reclaim every request buffer before Return |
 | Native tail transfer, dependent calls, local resolution | `tail_transfer` (both drivers replay the same traces) |

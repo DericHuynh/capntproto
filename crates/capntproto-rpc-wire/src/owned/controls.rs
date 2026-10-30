@@ -3,19 +3,13 @@ use super::*;
 use capnp::field_api::Schema;
 use capntproto_rpc_engine::questions;
 
-pub(crate) fn abort_reason(
-    exception: rpc_capnp::exception::Reader<'_>,
-) -> Result<capnp::ErrorKind, Error> {
-    exception
-        .get_reason()?
-        .to_str()
-        .map_err(capnp::Error::from)?;
-    Ok(match exception.get_type() {
+pub(crate) fn abort_reason(exception: rpc_capnp::exception::Reader<'_>) -> capnp::ErrorKind {
+    match exception.get_type() {
         Ok(rpc_capnp::exception::Type::Overloaded) => capnp::ErrorKind::Overloaded,
         Ok(rpc_capnp::exception::Type::Disconnected) => capnp::ErrorKind::Disconnected,
         Ok(rpc_capnp::exception::Type::Unimplemented) => capnp::ErrorKind::Unimplemented,
         _ => capnp::ErrorKind::Failed,
-    })
+    }
 }
 pub(crate) enum Unimplemented {
     Resolve(Option<ExportId>),
@@ -38,7 +32,7 @@ pub(crate) fn unimplemented(
     };
     let id = match resolve?.which().map_err(|_| Error::WrongMessage)? {
         rpc_capnp::resolve::Exception(exception) => {
-            abort_reason(exception?)?;
+            exception?;
             None
         }
         rpc_capnp::resolve::Cap(cap) => match cap?.which().map_err(|_| Error::WrongMessage)? {

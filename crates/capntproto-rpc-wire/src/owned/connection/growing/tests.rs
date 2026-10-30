@@ -3800,8 +3800,14 @@ fn direct_deferred_admission_matches_general_validation_and_ownership() {
                     })
                     .unwrap();
                     assert!(matches!(
-                        driver
-                            .receive_general(frame, messages, &mut [0; 8], &mut |_| (), |_| Ok(())),
+                        driver.receive_general(
+                            frame,
+                            messages,
+                            &mut [0; 8],
+                            &mut |_| (),
+                            |_| Ok(()),
+                            |_| {}
+                        ),
                         Ok(Received::DeferredCall(_))
                     ));
                 }
@@ -3857,9 +3863,23 @@ fn direct_deferred_admission_matches_general_validation_and_ownership() {
                     imports += 1;
                 };
                 let result = if direct {
-                    driver.receive_with_policy(frame, messages, &mut [0; 8], &mut receiver, make)
+                    driver.receive_with_policy(
+                        frame,
+                        messages,
+                        &mut [0; 8],
+                        &mut receiver,
+                        make,
+                        |_| {},
+                    )
                 } else {
-                    driver.receive_general(frame, messages, &mut [0; 8], &mut receiver, make)
+                    driver.receive_general(
+                        frame,
+                        messages,
+                        &mut [0; 8],
+                        &mut receiver,
+                        make,
+                        |_| {},
+                    )
                 };
                 let result = match result {
                     Ok(Received::DeferredCall(key)) => Ok(key.id().to_wire()),
@@ -3940,6 +3960,7 @@ fn direct_retirement_matches_general_validation_ownership_and_callbacks() {
                                 &mut [0; 8],
                                 &mut |_| (),
                                 |_| Ok(()),
+                                |_| {},
                             ),
                             Ok(Received::DeferredCall(_))
                         ));
@@ -3995,6 +4016,7 @@ fn direct_retirement_matches_general_validation_ownership_and_callbacks() {
                                 scratch,
                                 &mut receiver,
                                 producer,
+                                |_| {},
                             )
                         } else {
                             driver.receive_general(
@@ -4003,6 +4025,7 @@ fn direct_retirement_matches_general_validation_ownership_and_callbacks() {
                                 scratch,
                                 &mut receiver,
                                 producer,
+                                |_| {},
                             )
                         };
                         outcomes.push(match result {

@@ -71,6 +71,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             )
             .await
             .map_err(|error| *error);
+        if let Err(Cause::Protocol(error)) = &outcome {
+            self.disconnect_clients(error);
+        }
         reader.finish_frame();
         if let Some(frame) = pending {
             frame.release(messages);
@@ -80,10 +83,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     }
 
     /// Managed byte stream: orderly stop/EOF drains accepted frames, flushes and
-    /// closes the write half. No new application work is admitted during drain.
+    /// closes the write half. Active connections attempt a terminal Abort, like
+    /// legacy. No new application work is admitted during drain.
     /// The separate abort future supplies a deadline or immediate cancellation;
-    /// it remains polled during writes, flush and close. Error/abort exits skip
-    /// further IO and return all protocol storage; the caller then drops the IO.
+    /// it remains polled during writes, flush and close. Immediate abort skips
+    /// further IO; protocol failures only attempt output which is ready now.
+    /// All exits return protocol storage before the caller drops the IO.
     /// Completion confirms local closure, never peer receipt or RPC completion.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_stream<R: io::Read, W: io::Write + io::Close>(
@@ -140,9 +145,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         let shutdown = std::pin::pin!(shutdown);
         let mut shutdown = std::pin::pin!(notified::Notified::new(shutdown));
         let mut pending = None;
+        let mut hard_abort = false;
         let outcome = {
             let stop = std::future::poll_fn(|cx| {
                 if let Poll::Ready(error) = abort.as_mut().poll(cx) {
+                    hard_abort = true;
                     return Poll::Ready(Err(error));
                 }
                 shutdown.as_mut().poll(cx)
@@ -161,33 +168,45 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             .await
             .map_err(|error| *error)
         };
+        // Publish the complete failure before dropping input resources or
+        // invoking the trace encoder: both can reenter application RPC.
+        let terminal_reason = match &outcome {
+            Err(Cause::Protocol(error)) => Some(error.clone()),
+            Ok(()) => Some(Error::disconnected("client requested disconnect".into())),
+            _ => None,
+        };
+        let output_was_failed = queue.is_failed();
+        if let Some(error) = &terminal_reason {
+            self.disconnect_clients(error);
+        }
         reader.finish_frame();
         if let Some(frame) = pending {
             frame.release(messages);
         }
-        if let Err(Cause::Protocol(error)) = &outcome {
-            if error.kind != capnp::ErrorKind::Disconnected
-                && self.driver.disconnected().is_none()
-                && self
-                    .driver
-                    .send_abort(
-                        messages,
-                        queue,
-                        self.options.reader,
-                        error.kind,
-                        &error.extra,
-                    )
-                    .is_ok()
-            {
-                // Flush what the transport can accept immediately. Terminal
-                // notification must not wait forever on a broken/blocked peer.
-                std::future::poll_fn(|cx| {
-                    let _ = self
-                        .output
-                        .poll(writer, queue, messages, cx, self.options.budget);
-                    Poll::Ready(())
-                })
-                .await;
+        if let Some(error) = &terminal_reason {
+            if !hard_abort && !self.idle {
+                let trace = self.policy.trace(error);
+                if let Ok(minimum) =
+                    super::super::exception::publication_bytes(error, trace.as_deref())
+                {
+                    if self
+                        .driver
+                        .send_abort(messages, queue, self.options.reader, minimum, |output| {
+                            super::super::exception::write(error, trace.as_deref(), output)
+                        })
+                        .is_ok()
+                    {
+                        // Flush what the transport can accept immediately. Terminal
+                        // notification must not wait forever on a broken/blocked peer.
+                        std::future::poll_fn(|cx| {
+                            let _ =
+                                self.output
+                                    .poll(writer, queue, messages, cx, self.options.budget);
+                            Poll::Ready(())
+                        })
+                        .await;
+                    }
+                }
             }
         }
         // Stop owned commands before a potentially blocked drain. In-flight
@@ -201,6 +220,17 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         });
         let outcome = match outcome {
             Err(error) => Err(error),
+            // Abort construction/publication is best effort. If it failed,
+            // still await physical shutdown without retrying its failed flush.
+            Ok(()) if !output_was_failed && queue.is_failed() => {
+                std::future::poll_fn(|cx| {
+                    if let Poll::Ready(error) = abort.as_mut().poll(cx) {
+                        return Poll::Ready(Err(Cause::Protocol(error)));
+                    }
+                    io::poll_abort(writer, cx, self.options.budget).map_err(Cause::Close)
+                })
+                .await
+            }
             Ok(()) => {
                 let mut drained = false;
                 std::future::poll_fn(|cx| {
@@ -237,16 +267,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     ) -> Result<(), RunError<R, W>> {
         let reason = match &outcome {
             Err(Cause::Protocol(error)) => error.clone(),
+            Ok(()) => Error::disconnected("client requested disconnect".into()),
             _ => Error::disconnected("connection stopped".into()),
         };
         // All IO borrows (including the pending receive writer) have ended.
         self.notifications.detach();
-        self.policy.close();
-        self.commands.close(reason.clone());
+        self.disconnect_clients(&reason);
         let mut client_reason = reason.clone();
         client_reason.kind = capnp::ErrorKind::Disconnected;
-        self.hooks.disconnect(client_reason.clone());
-        self.driver.disconnect(reason.kind);
         for pending in self.native_tails.drain(..) {
             self.driver.release_question(pending.retained);
         }
@@ -278,6 +306,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             registration.complete(&result);
         }
         result
+    }
+
+    fn disconnect_clients(&mut self, error: &Error) {
+        if let Some(registration) = &self.registration {
+            registration.detach();
+        }
+        self.policy.close();
+        let mut reason = error.clone();
+        reason.kind = capnp::ErrorKind::Disconnected;
+        self.commands.close(reason.clone());
+        self.hooks.disconnect(reason);
+        self.driver.disconnect(error.kind);
     }
 
     #[inline(always)]

@@ -5,20 +5,18 @@ use capnp::{
     traits::ImbueMut,
     Error, ErrorKind,
 };
-use capnp_rpc::{
-    rpc_capnp::{cap_descriptor, message},
-    RpcSystem,
-};
+use capnp_rpc::rpc_capnp::{cap_descriptor, message};
 
 use capntproto_test_support::runtime_test_capnp::harness;
 use std::{
     cell::{Cell, RefCell},
-    future::Future,
-    pin::Pin,
     rc::Rc,
     time::Duration,
 };
-use support::{ConnectionStatus, Endpoint, Hub};
+use support::{
+    driver::{RunningSystem, System as RpcSystem},
+    ConnectionStatus, Endpoint, Hub,
+};
 
 type EchoPromise = ResponsePromise<harness::value::Owned>;
 type EchoRequest = Request<harness::echo_params::Owned, harness::value::Owned>;
@@ -52,7 +50,7 @@ async fn drain() {
 struct Fixture {
     _hub: Rc<RefCell<Hub>>,
     _network: support::Network,
-    system: Rc<RefCell<RpcSystem<u8>>>,
+    system: RunningSystem<u8>,
     task: tokio::task::JoinHandle<capnp::Result<()>>,
     peer: Endpoint,
     status: Rc<RefCell<ConnectionStatus>>,
@@ -69,18 +67,15 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
-    async fn new(prebuilt: bool) -> Self {
+    async fn new(portable: bool, prebuilt: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let mut system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
+        let mut system = RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), None);
         let remote: harness::Client = system.bootstrap(2);
         let mut peer = hub.borrow_mut().connect(2, 1);
         let status = hub.borrow_mut().connect(1, 2).status();
-        let system = Rc::new(RefCell::new(system));
-        let driver = system.clone();
-        let task = tokio::task::spawn_local(futures::future::poll_fn(move |cx| {
-            Pin::new(&mut *driver.borrow_mut()).poll(cx)
-        }));
+        let (system, driver) = system.start();
+        let task = tokio::task::spawn_local(driver);
         let input = peer.recv().await;
         let message::Bootstrap(b) = input
             .get_body()
@@ -178,32 +173,34 @@ impl Fixture {
 }
 fn check_error(e: Error) {
     assert_eq!(e.kind, ErrorKind::Disconnected);
-    assert_eq!(e.remote_trace(), Some("cleanup trace"));
+    assert_eq!(e.remote_trace(), Some("cleanup trace"), "{e:?}");
     assert_eq!(e.detail(9), Some(&b"owned"[..]));
 }
 #[tokio::test(flavor = "current_thread")]
 async fn disconnect_marks_broken_before_capability_destructors() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                for prebuilt in [false, true] {
-                    let mut f = Fixture::new(prebuilt).await;
-                    drop(f.cap.take());
-                    let sent = f.status.borrow().sent;
-                    f.abort().await;
-                    assert!(f.destroyed.get());
-                    assert_eq!(
-                        f.status.borrow().sent,
-                        sent + 1,
-                        "only Abort may be sent during disconnect"
-                    );
-                    let p = f.result.borrow_mut().take().unwrap();
-                    check_error(p.await.err().unwrap());
-                    check_error(f.question.take().unwrap().promise.await.err().unwrap());
-                }
-            })
-            .await
-            .unwrap();
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    for prebuilt in [false, true] {
+                        let mut f = Fixture::new(portable, prebuilt).await;
+                        drop(f.cap.take());
+                        let sent = f.status.borrow().sent;
+                        f.abort().await;
+                        assert!(f.destroyed.get());
+                        assert_eq!(
+                            f.status.borrow().sent,
+                            sent + 1,
+                            "only Abort may be sent during disconnect"
+                        );
+                        let p = f.result.borrow_mut().take().unwrap();
+                        check_error(p.await.err().unwrap());
+                        check_error(f.question.take().unwrap().promise.await.err().unwrap());
+                    }
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
@@ -211,23 +208,25 @@ async fn disconnect_marks_broken_before_capability_destructors() {
 async fn requests_built_before_disconnect_fail_without_wire_traffic() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let mut f = Fixture::new(false).await;
-                let ordinary = f.remote.echo_request();
-                let stream = f.remote.stream_request();
-                let pipeline = f.remote.bounce_request();
-                f.abort().await;
-                let sent = f.status.borrow().sent;
-                let pending = ordinary.send().promise;
-                assert_eq!(f.status.borrow().sent, sent, "stale ordinary request sent");
-                check_error(pending.await.err().unwrap());
-                check_error(stream.send().await.err().unwrap());
-                let cap = pipeline.send_for_pipeline().get_cap();
-                check_error(cap.echo_request().send().promise.await.err().unwrap());
-                assert_eq!(f.status.borrow().sent, sent, "stale streaming request sent");
-            })
-            .await
-            .unwrap();
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let mut f = Fixture::new(portable, false).await;
+                    let ordinary = f.remote.echo_request();
+                    let stream = f.remote.stream_request();
+                    let pipeline = f.remote.bounce_request();
+                    f.abort().await;
+                    let sent = f.status.borrow().sent;
+                    let pending = ordinary.send().promise;
+                    assert_eq!(f.status.borrow().sent, sent, "stale ordinary request sent");
+                    check_error(pending.await.err().unwrap());
+                    check_error(stream.send().await.err().unwrap());
+                    let cap = pipeline.send_for_pipeline().get_cap();
+                    check_error(cap.echo_request().send().promise.await.err().unwrap());
+                    assert_eq!(f.status.borrow().sent, sent, "stale streaming request sent");
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
@@ -236,24 +235,26 @@ async fn requests_built_before_disconnect_fail_without_wire_traffic() {
 async fn disconnect_trace_encoder_can_reenter_rpc() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let mut f = Fixture::new(false).await;
-                let remote = f.remote.clone();
-                let reentered = Rc::new(RefCell::new(None));
-                let output = reentered.clone();
-                f.system.borrow_mut().set_trace_encoder(move |_| {
-                    *output.borrow_mut() = Some(remote.echo_request().send().promise);
-                    "encoded".into()
-                });
-                let sent = f.status.borrow().sent;
-                f.abort().await;
-                assert_eq!(f.status.borrow().sent, sent + 1);
-                let p = reentered.borrow_mut().take().unwrap();
-                check_error(p.await.err().unwrap());
-                f.system.borrow_mut().clear_trace_encoder();
-            })
-            .await
-            .unwrap();
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let mut f = Fixture::new(portable, false).await;
+                    let remote = f.remote.clone();
+                    let reentered = Rc::new(RefCell::new(None));
+                    let output = reentered.clone();
+                    f.system.set_trace_encoder(move |_| {
+                        *output.borrow_mut() = Some(remote.echo_request().send().promise);
+                        "encoded".into()
+                    });
+                    let sent = f.status.borrow().sent;
+                    f.abort().await;
+                    assert_eq!(f.status.borrow().sent, sent + 1);
+                    let p = reentered.borrow_mut().take().unwrap();
+                    check_error(p.await.err().unwrap());
+                    f.system.clear_trace_encoder();
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
@@ -268,14 +269,20 @@ fn check_disconnect(error: Error, explicit: bool) {
     }
 }
 
-async fn replay(steps: &[serde_json::Value], prebuilt: bool, fail_body: bool, explicit: bool) {
-    let mut f = Fixture::new(prebuilt).await;
+async fn replay(
+    portable: bool,
+    steps: &[serde_json::Value],
+    prebuilt: bool,
+    fail_body: bool,
+    explicit: bool,
+) {
+    let mut f = Fixture::new(portable, prebuilt).await;
     let encoder_calls = Rc::new(Cell::new(0));
     let calls = encoder_calls.clone();
     let encoder_result = Rc::new(RefCell::new(None));
     let output = encoder_result.clone();
     let remote = f.remote.clone();
-    f.system.borrow_mut().set_trace_encoder(move |_| {
+    f.system.set_trace_encoder(move |_| {
         calls.set(calls.get() + 1);
         *output.borrow_mut() = Some(remote.echo_request().send().promise);
         "cleanup encoder".into()
@@ -297,7 +304,7 @@ async fn replay(steps: &[serde_json::Value], prebuilt: bool, fail_body: bool, ex
             "close" => {
                 f.status.borrow_mut().fail_body = fail_body;
                 if explicit {
-                    let disconnect = f.system.borrow().get_disconnector();
+                    let disconnect = f.system.get_disconnector();
                     disconnect.await.unwrap();
                 } else {
                     f.abort().await;
@@ -332,7 +339,7 @@ async fn replay(steps: &[serde_json::Value], prebuilt: bool, fail_body: bool, ex
                 state[8] as usize,
                 "finishes at {step:?}"
             );
-            assert_eq!(s.aborts, state[9] as usize);
+            assert_eq!(s.aborts, state[9] as usize, "portable={portable}, prebuilt={prebuilt}, fail_body={fail_body}, explicit={explicit}, step={step}");
             assert_eq!(s.shutdowns.len(), state[11] as usize);
             assert_eq!(s.readers, state[12] as usize);
         }
@@ -356,21 +363,24 @@ async fn replay_tlc_disconnect_cleanup_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(60), async {
-                for trace in traces {
-                    for prebuilt in [false, true] {
-                        replay(
-                            trace["steps"].as_array().unwrap(),
-                            prebuilt,
-                            trace["fail_body"].as_bool().unwrap(),
-                            trace["explicit"].as_bool().unwrap(),
-                        )
-                        .await;
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(60), async {
+                    for trace in &traces {
+                        for prebuilt in [false, true] {
+                            replay(
+                                portable,
+                                trace["steps"].as_array().unwrap(),
+                                prebuilt,
+                                trace["fail_body"].as_bool().unwrap(),
+                                trace["explicit"].as_bool().unwrap(),
+                            )
+                            .await;
+                        }
                     }
-                }
-            })
-            .await
-            .unwrap();
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
@@ -379,21 +389,23 @@ async fn replay_tlc_disconnect_cleanup_traces() {
 async fn abort_body_failure_still_releases_capabilities_and_shuts_down() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let mut f = Fixture::new(true).await;
-                drop(f.cap.take());
-                f.status.borrow_mut().fail_body = true;
-                let sent = f.status.borrow().sent;
-                f.abort().await;
-                assert!(f.destroyed.get());
-                assert_eq!(f.status.borrow().sent, sent);
-                assert_eq!(f.status.borrow().shutdowns.len(), 1);
-                let result = f.result.borrow_mut().take().unwrap();
-                check_error(result.await.err().unwrap());
-                check_error(f.question.take().unwrap().promise.await.err().unwrap());
-            })
-            .await
-            .unwrap();
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let mut f = Fixture::new(portable, true).await;
+                    drop(f.cap.take());
+                    f.status.borrow_mut().fail_body = true;
+                    let sent = f.status.borrow().sent;
+                    f.abort().await;
+                    assert!(f.destroyed.get());
+                    assert_eq!(f.status.borrow().sent, sent);
+                    assert_eq!(f.status.borrow().shutdowns.len(), 1);
+                    let result = f.result.borrow_mut().take().unwrap();
+                    check_error(result.await.err().unwrap());
+                    check_error(f.question.take().unwrap().promise.await.err().unwrap());
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
@@ -402,20 +414,49 @@ async fn abort_body_failure_still_releases_capabilities_and_shuts_down() {
 async fn explicit_disconnect_cancels_outstanding_transport_read() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let f = Fixture::new(false).await;
-                assert_eq!(f.status.borrow().readers, 1);
-                let disconnect = f.system.borrow().get_disconnector();
-                disconnect.await.unwrap();
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let f = Fixture::new(portable, false).await;
+                    assert_eq!(f.status.borrow().readers, 1);
+                    let disconnect = f.system.get_disconnector();
+                    disconnect.await.unwrap();
+                    drain().await;
+                    assert_eq!(
+                        f.status.borrow().readers,
+                        0,
+                        "read retained after disconnect"
+                    );
+                })
+                .await
+                .unwrap();
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn failed_terminal_publication_still_awaits_physical_shutdown() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                let mut f = Fixture::new(portable, true).await;
+                drop(f.cap.take());
+                let release = f._hub.borrow_mut().connect(1, 2).gate_shutdown();
+                f.status.borrow_mut().fail_body = true;
+                let mut disconnect = f.system.get_disconnector();
+                assert!(futures::poll!(&mut disconnect).is_pending());
                 drain().await;
-                assert_eq!(
-                    f.status.borrow().readers,
-                    0,
-                    "read retained after disconnect"
+                assert_eq!(f.status.borrow().shutdowns.len(), 1);
+                assert!(
+                    futures::poll!(&mut disconnect).is_pending(),
+                    "portable={portable}: shutdown must finish before disconnect completes"
                 );
-            })
-            .await
-            .unwrap();
+                release.send(()).unwrap();
+                tokio::time::timeout(Duration::from_secs(2), disconnect)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            }
         })
         .await;
 }
