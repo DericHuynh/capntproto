@@ -36,7 +36,7 @@ AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. 
 
 ### LLVM coverage
 
-Latest coverage run: [2026-10-30T05:16:13Z · run 41007486839 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41007486839) · commit `e5e5963b3d3c` · **cancelled**
+Latest coverage run: [2026-10-30T05:23:11Z · run 41008147412 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41008147412) · commit `ffa94cfd5ded` · **cancelled**
 
 No validated coverage/baseline comparison is available for the latest run. Missing or unmapped counters are never presented as 100% coverage.
 
