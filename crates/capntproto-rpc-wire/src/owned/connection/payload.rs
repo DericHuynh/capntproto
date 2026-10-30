@@ -6,7 +6,6 @@ use capnp::{field_api::Schema, traits::IntoInternalStructReader};
 
 pub(super) struct PayloadSegments<'a> {
     pub first: &'a [u8],
-    pub second: Option<&'a [u8]>,
     pub table: usize,
 }
 pub(super) struct WrittenPayload {
@@ -14,11 +13,7 @@ pub(super) struct WrittenPayload {
     pub first_end: usize,
 }
 impl<'a> PayloadSegments<'a> {
-    pub fn new(
-        first: &'a [u8],
-        second: Option<&'a [u8]>,
-        payload: rpc_capnp::payload::Reader<'_>,
-    ) -> Option<Self> {
+    pub fn new(first: &'a [u8], payload: rpc_capnp::payload::Reader<'_>) -> Option<Self> {
         let pointers = payload
             .into_internal_struct_reader()
             .get_pointer_section_as_blob();
@@ -28,20 +23,18 @@ impl<'a> PayloadSegments<'a> {
         if pointers.len() < 16 || table.checked_add(8)? > first.len() {
             return None;
         }
-        Some(Self {
-            first,
-            second,
-            table,
-        })
+        Some(Self { first, table })
     }
     pub fn write(
         &self,
         view: &mut [u8],
+        tail: impl ExactSizeIterator<Item = &'a [u8]>,
         count: usize,
         descriptor_bytes: usize,
         mut fill: impl FnMut(capnp::field_api::FixedList<'_, CapDescriptor>) -> capnp::Result<()>,
     ) -> Result<WrittenPayload, Error> {
-        let header = if self.second.is_some() { 16 } else { 8 };
+        let segments = 1 + tail.len();
+        let header = (segments / 2 + 1) * 8;
         let start = header + self.first.len();
         view[header..start].copy_from_slice(self.first);
         let (table_bytes, root) = {
@@ -57,16 +50,18 @@ impl<'a> PayloadSegments<'a> {
         // their relative pointers. Existing payload segment IDs never change.
         view.copy_within(start + 8..start + table_bytes, start);
         let first_end = start + table_bytes - 8;
-        let second = self.second.unwrap_or(&[]);
-        let length = first_end.checked_add(second.len()).ok_or(Error::Capacity)?;
-        view[first_end..length].copy_from_slice(second);
         view[..header].fill(0);
+        view[..4].copy_from_slice(&((segments - 1) as u32).to_le_bytes());
         let first_words = u32::try_from((first_end - header) / 8).map_err(|_| Error::Capacity)?;
         view[4..8].copy_from_slice(&first_words.to_le_bytes());
-        if self.second.is_some() {
-            view[..4].copy_from_slice(&1u32.to_le_bytes());
-            let second_words = u32::try_from(second.len() / 8).map_err(|_| Error::Capacity)?;
-            view[8..12].copy_from_slice(&second_words.to_le_bytes());
+        let mut length = first_end;
+        for (index, segment) in tail.enumerate() {
+            let end = length.checked_add(segment.len()).ok_or(Error::Capacity)?;
+            view[length..end].copy_from_slice(segment);
+            length = end;
+            let words = u32::try_from(segment.len() / 8).map_err(|_| Error::Capacity)?;
+            let slot = (index + 2) * 4;
+            view[slot..slot + 4].copy_from_slice(&words.to_le_bytes());
         }
         if u32::from_le_bytes(root[..4].try_into().unwrap()) != 1 {
             return Err(Error::WrongMessage);
@@ -136,23 +131,11 @@ pub(super) fn copy_return_frame<'pool>(
         let input = messages.read(&source.lease);
         let reader = source.reader(&input)?;
         let segments = reader.get_segments();
-        let second = match segments.len() {
-            1 => None,
-            2 => segments.get_segment(1),
-            _ => return Ok(None),
-        };
         let first = segments.get_segment(0).ok_or(Error::WrongMessage)?;
         let (offset, payload) = if prepared {
             let (returned, table) = return_header_offsets();
             debug_assert!(table + 8 <= first.len());
-            (
-                returned,
-                PayloadSegments {
-                    first,
-                    second,
-                    table,
-                },
-            )
+            (returned, PayloadSegments { first, table })
         } else {
             let root = root.expect("general Return needs its reader");
             let rpc_capnp::message::Return(returned) =
@@ -187,7 +170,7 @@ pub(super) fn copy_return_frame<'pool>(
             else {
                 return Ok(None);
             };
-            let Some(payload) = PayloadSegments::new(first, second, payload) else {
+            let Some(payload) = PayloadSegments::new(first, payload) else {
                 return Ok(None);
             };
             (offset, payload)
@@ -195,8 +178,15 @@ pub(super) fn copy_return_frame<'pool>(
         let mut view = messages
             .write_borrowed(&mut writer)
             .map_err(Error::Storage)?;
-        let written = payload.write(&mut view, count, descriptor_bytes, fill)?;
-        let header = if second.is_some() { 16 } else { 8 };
+        let written = payload.write(
+            &mut view,
+            (1..segments.len())
+                .map(|index| segments.get_segment(index as u32).expect("frame segment")),
+            count,
+            descriptor_bytes,
+            fill,
+        )?;
+        let header = (segments.len() / 2 + 1) * 8;
         let body = &mut view[header..written.first_end];
         body[offset..offset + 4].copy_from_slice(&answer.to_wire().to_le_bytes());
         // Capability-bearing replies always require the peer's Finish.
@@ -295,6 +285,22 @@ pub(super) mod tests {
             ),
             Err(Error::Wire(capnp::ErrorKind::ReadLimitExceeded))
         ));
+        // A descriptor failure must discard its writer, including when the
+        // original payload spans more than two segments.
+        assert!(matches!(
+            copy_return_frame(
+                &source,
+                true,
+                messages,
+                AnswerId::from_wire(37),
+                3,
+                128,
+                0,
+                Default::default(),
+                |_| Err(capnp::Error::from_kind(capnp::ErrorKind::Overloaded)),
+            ),
+            Err(Error::Wire(capnp::ErrorKind::Overloaded))
+        ));
         for id in [37, 0, u32::MAX] {
             let mut copied = None;
             let measured = allocation_counter::measure(|| {
@@ -313,6 +319,22 @@ pub(super) mod tests {
             });
             assert_eq!(measured.count_total, 0);
             let copied = copied.unwrap();
+            {
+                use capnp::message::ReaderSegments;
+                let input = messages.read(&source.lease);
+                let original = source.reader(&input).unwrap();
+                let input = messages.read(&copied.lease);
+                let actual = copied.reader(&input).unwrap();
+                let original = original.get_segments();
+                let actual = actual.get_segments();
+                assert_eq!(actual.len(), original.len());
+                for index in 1..original.len() {
+                    assert_eq!(
+                        actual.get_segment(index as u32),
+                        original.get_segment(index as u32)
+                    );
+                }
+            }
             copied
                 .with(messages, |root| {
                     let rpc_capnp::message::Return(returned) = root.which().unwrap() else {

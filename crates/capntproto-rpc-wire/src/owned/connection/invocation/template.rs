@@ -1577,7 +1577,6 @@ mod tests {
                     };
                     let checked = PayloadSegments::new(
                         encoded.call.segment,
-                        encoded.call.second,
                         header.unwrap().get_params().unwrap(),
                     )
                     .unwrap();

@@ -483,6 +483,10 @@ Queued Calls and Returns also keep staged grants and copied import IDs through
 descriptor publication, matching immediate Calls. Their final classification
 pass only revisits promised transforms whose paths borrow graph storage; it
 does not inspect every granted or imported capability again.
+Native descriptor append preserves every payload segment, including messages
+with more than two segments. Only the first segment grows; all other segment
+IDs, landing pads and bytes stay unchanged. Fixed-storage publication needs no
+segment-reference allocation, and descriptor errors leave the result retryable.
 
 Native pipeline projections retain their endpoint inline, including clones and
 cached direct routes. Opaque projection hooks preserve their original wrapper.

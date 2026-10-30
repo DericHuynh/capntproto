@@ -87,25 +87,169 @@ impl EncodedCapabilities<'_> {
     ) -> Result<usize, EncodeError> {
         let payload = PayloadSegments {
             first: self.call.segment,
-            second: self.call.second,
             table: self.table,
         };
-        let written = payload.write(view, count, descriptor_bytes, fill)?;
-        let header = if self.call.second.is_some() { 16 } else { 8 };
-        let body = &mut view[header..written.first_end];
-        body[template.call..template.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
-        body[template.target..template.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
-        body[template.call + 16] = (body[template.call + 16] & !0b111)
-            | u8::from(allow_handoff)
-            | (u8::from(template.no_promise_pipelining) << 1);
-        Ok(written.length)
+        write_call(
+            payload,
+            self.call.second.into_iter(),
+            view,
+            template,
+            question,
+            target,
+            count,
+            descriptor_bytes,
+            allow_handoff,
+            fill,
+        )
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_call<'a>(
+    payload: PayloadSegments<'a>,
+    tail: impl ExactSizeIterator<Item = &'a [u8]>,
+    view: &mut [u8],
+    template: PlainTemplate,
+    question: QuestionId,
+    target: ImportId,
+    count: usize,
+    descriptor_bytes: usize,
+    allow_handoff: bool,
+    fill: impl FnMut(capnp::field_api::FixedList<'_, CapDescriptor>) -> capnp::Result<()>,
+) -> Result<usize, EncodeError> {
+    let header = (tail.len().div_ceil(2) + 1) * 8;
+    let written = payload.write(view, tail, count, descriptor_bytes, fill)?;
+    let body = &mut view[header..written.first_end];
+    body[template.call..template.call + 4].copy_from_slice(&question.to_wire().to_le_bytes());
+    body[template.target..template.target + 4].copy_from_slice(&target.to_wire().to_le_bytes());
+    body[template.call + 16] = (body[template.call + 16] & !0b111)
+        | u8::from(allow_handoff)
+        | (u8::from(template.no_promise_pipelining) << 1);
+    Ok(written.length)
 }
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::*;
     use capnp::{word, Word};
+
+    #[test]
+    fn generic_segmented_calls_append_descriptors_without_compacting_their_payload() {
+        use capnp::message::{AllocationStrategy, Builder, HeapAllocator, ReaderSegments};
+        let mut call = PreparedCall::new(
+            Builder::new(
+                HeapAllocator::new()
+                    .first_segment_words(32)
+                    .allocation_strategy(AllocationStrategy::FixedSize),
+            ),
+            7,
+            9,
+        )
+        .unwrap();
+        for _ in 0..2 {
+            call.params()
+                .initn_as::<capnp::data::Builder>(320)
+                .fill(0xaa);
+        }
+        let data = [0x5a; 640];
+        call.params()
+            .set_as::<capnp::data::Owned>(&data[..])
+            .unwrap();
+        assert_eq!(call.message().len(), 4);
+        let bytes = capnp::serialize::write_message_to_words(call.message());
+        let mut a = [word(0, 0, 0, 0, 0, 0, 0, 0); 512];
+        let mut b = a;
+        let mut buffers = [
+            messages::Buffer::new(Word::words_to_bytes_mut(&mut a)),
+            messages::Buffer::new(Word::words_to_bytes_mut(&mut b)),
+        ];
+        messages::with_messages(&mut buffers, &mut [], |messages| {
+            let source = Frame::copy_from(messages, &bytes, Default::default()).unwrap();
+            let mut copied = None;
+            let measured = allocation_counter::measure(|| {
+                copied = copy_frame(
+                    &source,
+                    None,
+                    messages,
+                    QuestionId::from_wire(u32::MAX),
+                    ImportId::from_wire(42),
+                    3,
+                    128,
+                    0,
+                    true,
+                    Default::default(),
+                    |mut table| {
+                        table
+                            .get_mut(0)
+                            .unwrap()
+                            .scalar(CapDescriptor::SENDER_HOSTED)
+                            .set(11);
+                        table.get_mut(1).unwrap().void(CapDescriptor::NONE).set();
+                        table
+                            .get_mut(2)
+                            .unwrap()
+                            .scalar(CapDescriptor::RECEIVER_HOSTED)
+                            .set(13);
+                        Ok(())
+                    },
+                )
+                .unwrap();
+            });
+            assert_eq!(measured.count_total, 0);
+            let (copied, method) = copied.unwrap();
+            assert_eq!(method, (7, 9));
+            {
+                let input = messages.read(&copied.lease);
+                let actual = copied.reader(&input).unwrap();
+                assert_eq!(actual.get_segments().len(), call.message().len());
+                for index in 1..call.message().len() {
+                    assert_eq!(
+                        actual.get_segments().get_segment(index as u32),
+                        call.message().get_segment(index as u32)
+                    );
+                }
+            }
+            copied
+                .with(messages, |root| {
+                    let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                        panic!("Call")
+                    };
+                    let call = call.unwrap();
+                    assert_eq!(call.get_question_id(), u32::MAX);
+                    assert!(call.get_allow_third_party_tail_call());
+                    assert!(matches!(
+                        call.get_target().unwrap().which().unwrap(),
+                        rpc_capnp::message_target::ImportedCap(42)
+                    ));
+                    let payload = call.get_params().unwrap();
+                    assert_eq!(
+                        payload
+                            .get_content()
+                            .get_as::<capnp::data::Reader>()
+                            .unwrap(),
+                        data
+                    );
+                    let table = payload.get_cap_table().unwrap();
+                    assert_eq!(table.len(), 3);
+                    assert!(matches!(
+                        table.get(0).which().unwrap(),
+                        rpc_capnp::cap_descriptor::SenderHosted(11)
+                    ));
+                    assert!(matches!(
+                        table.get(1).which().unwrap(),
+                        rpc_capnp::cap_descriptor::None(())
+                    ));
+                    assert!(matches!(
+                        table.get(2).which().unwrap(),
+                        rpc_capnp::cap_descriptor::ReceiverHosted(13)
+                    ));
+                })
+                .unwrap();
+            copied.release(messages);
+            source.release(messages);
+        })
+        .unwrap();
+    }
 
     #[test]
     fn retained_header_publishes_without_reopening_its_reader_budget() {
@@ -280,11 +424,6 @@ pub(in crate::owned::connection::invocation) fn copy_frame<'pool>(
         let input = messages.read(&source.lease);
         let reader = source.reader(&input)?;
         let segments = reader.get_segments();
-        let second = match segments.len() {
-            1 => None,
-            2 => segments.get_segment(1),
-            _ => return Ok(None),
-        };
         let first = segments.get_segment(0).ok_or(EncodeError::WrongMessage)?;
         let (template, table) = if let Some(prepared) = prepared {
             // Only a private prepared Call can retain capability-bearing
@@ -309,7 +448,7 @@ pub(in crate::owned::connection::invocation) fn copy_frame<'pool>(
             let Some(template) = PlainTemplate::new(call, first) else {
                 return Ok(None);
             };
-            let Some(payload) = PayloadSegments::new(first, second, call.get_params()?) else {
+            let Some(payload) = PayloadSegments::new(first, call.get_params()?) else {
                 return Ok(None);
             };
             (template, payload.table)
@@ -317,22 +456,13 @@ pub(in crate::owned::connection::invocation) fn copy_frame<'pool>(
         if template.only_promise_pipeline {
             return Ok(None);
         }
-        let encoded = EncodedCall {
-            segment: first,
-            second,
-            template,
-            options: None,
-            #[cfg(feature = "alloc")]
-            owner: None,
-        };
-        let encoded = EncodedCapabilities {
-            call: encoded,
-            table,
-        };
         let mut view = messages
             .write_borrowed(&mut writer)
             .map_err(EncodeError::Storage)?;
-        let length = encoded.write(
+        let length = write_call(
+            PayloadSegments { first, table },
+            (1..segments.len())
+                .map(|index| segments.get_segment(index as u32).expect("frame segment")),
             &mut view,
             template,
             question,

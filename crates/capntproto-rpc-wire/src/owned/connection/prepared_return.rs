@@ -687,6 +687,52 @@ mod tests {
     use capntproto_rpc_engine::ids::WireId;
 
     #[test]
+    fn many_segment_returns_append_descriptors_without_compacting_far_payloads() {
+        for discarded in [1, 2, 3] {
+            let mut source = PreparedReturn::from_template(
+                &PreparedReturnTemplate::default(),
+                capnp::message::HeapAllocator::new()
+                    .first_segment_words(16)
+                    .allocation_strategy(capnp::message::AllocationStrategy::FixedSize),
+            );
+            for _ in 0..discarded {
+                source
+                    .results()
+                    .initn_as::<capnp::data::Builder>(320)
+                    .fill(0xaa);
+            }
+            let data = [0x5a; 640];
+            source
+                .results()
+                .set_as::<capnp::data::Owned>(&data[..])
+                .unwrap();
+            let source = source.freeze();
+            assert_eq!(source.segment_count(), discarded + 2);
+            let mut a = [word(0, 0, 0, 0, 0, 0, 0, 0); 512];
+            let mut b = a;
+            let mut buffers = [
+                messages::Buffer::new(Word::words_to_bytes_mut(&mut a)),
+                messages::Buffer::new(Word::words_to_bytes_mut(&mut b)),
+            ];
+            messages::with_messages(&mut buffers, &mut [], |messages| {
+                let source = source
+                    .copy_with_capabilities(
+                        AnswerId::from_wire(0),
+                        true,
+                        3,
+                        messages,
+                        Default::default(),
+                        WriterPolicy::Native,
+                    )
+                    .unwrap()
+                    .unwrap();
+                super::super::payload::tests::check_retained_return(source, messages, &data);
+            })
+            .unwrap();
+        }
+    }
+
+    #[test]
     fn prepared_capability_returns_keep_their_header_across_segments() {
         for length in [0, 64, 320] {
             let mut source = PreparedReturn::from_template(
