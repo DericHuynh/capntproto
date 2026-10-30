@@ -350,7 +350,13 @@ pub fn finished<'pool, 'a, 'e, A, E>(
         ))
     })??;
     finished_parts(id, release_result_caps, messages, answers, exports, scratch)
+        .map(|(_, finished)| finished)
 }
+
+type FinishOutcome<'pool, 'id, A> = (
+    Option<answers::Key<'id>>,
+    Option<answers::Finished<State<'pool, A>>>,
+);
 
 pub(super) fn finished_parts<'pool, 'a, 'e, A, E>(
     id: AnswerId,
@@ -359,16 +365,18 @@ pub(super) fn finished_parts<'pool, 'a, 'e, A, E>(
     answers: &mut answers::Answers<'a, '_, State<'pool, A>>,
     exports: &mut exports::Exports<'e, '_, E>,
     scratch: &mut [u32],
-) -> Result<Option<answers::Finished<State<'pool, A>>>, Error> {
-    let result_exports = answers
-        .lookup(id)
+) -> Result<FinishOutcome<'pool, 'a, A>, Error> {
+    // Retain the exact generation from the existing preflight lookup. Finish
+    // hides the wire ID, while the running producer may still own its record.
+    let question = answers.lookup(id);
+    let result_exports = question
         .and_then(|key| answers.get(key).ok())
         .map(|state| state.result_exports);
     if let Some(result_exports @ (ResultExports::Empty | ResultExports::One { .. })) =
         result_exports
     {
         let Some(pending) = answers.prepare_finish(id, release_result_caps) else {
-            return Ok(None);
+            return Ok((question, None));
         };
         if pending.release_results() {
             if let ResultExports::One { id, count } = result_exports {
@@ -379,10 +387,9 @@ pub(super) fn finished_parts<'pool, 'a, 'e, A, E>(
                 })?;
             }
         }
-        return Ok(Some(pending.accept()));
+        return Ok((question, Some(pending.accept())));
     }
-    let original = match answers
-        .lookup(id)
+    let original = match question
         .and_then(|key| answers.get(key).ok())
         .and_then(|s| s.frame.as_ref())
     {
@@ -406,7 +413,7 @@ pub(super) fn finished_parts<'pool, 'a, 'e, A, E>(
     if let Some(original) = original {
         original.release(messages);
     }
-    result
+    result.map(|finished| (question, finished))
 }
 
 /// Publish an owning Return containing reflected and/or sender-owned results.

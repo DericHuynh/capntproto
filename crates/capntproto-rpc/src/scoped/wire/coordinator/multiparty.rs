@@ -5,6 +5,7 @@ use super::*;
 mod bilateral;
 mod handoff;
 pub(crate) mod introduction;
+mod pending;
 pub(crate) mod tail;
 use crate::multiparty::{JoinNetwork, PartResponse};
 use capnp::private::capability::ResponseHook;
@@ -310,7 +311,7 @@ pub(crate) struct NetworkControl<'p, 'id, V: 'static, F, const C: usize, const H
     connection: vat::Shared<V>,
     joins: Option<Rc<dyn JoinNetwork<V>>>,
     commands: Rc<Commands>,
-    pending: VecDeque<Incoming<'p, 'id, H>>,
+    pending: pending::Pending<'p, 'id, H>,
     sent: Vec<Sent<'p, 'id, C>>,
     local: LocalTasks,
     handoffs: Vec<handoff::Job<'p, 'id>>,
@@ -346,7 +347,7 @@ impl<
             connection,
             joins,
             commands,
-            pending: VecDeque::new(),
+            pending: pending::Pending::default(),
             sent: Vec::new(),
             local: LocalTasks::default(),
             handoffs: Vec::new(),
@@ -399,6 +400,23 @@ impl<
         };
         driver.capabilities().release(client);
         result
+    }
+    fn enqueue_network<'s>(
+        &mut self,
+        job: Incoming<'p, 'id, H>,
+        coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+    ) -> capnp::Result<()> {
+        let key = job.request.answer_key().expect("incoming network answer");
+        let producer = match coordinator.driver.ledgers().answers.get(key) {
+            Ok(answer) => answer.owner.producer.results(),
+            Err(error) => {
+                coordinator.driver.release_network(job.request, messages);
+                return Err(wire_error(error));
+            }
+        };
+        self.pending.push_back(job, producer);
+        Ok(())
     }
     fn receive_network<'s>(
         &mut self,
@@ -496,11 +514,15 @@ impl<
                     })
                 });
                 match prepared {
-                    Ok(future) => self.pending.push_back(Incoming {
-                        request: N::Accept(accept),
-                        future: Some(future),
-                        completed: None,
-                    }),
+                    Ok(future) => self.enqueue_network(
+                        Incoming {
+                            request: N::Accept(accept),
+                            future: Some(future),
+                            completed: None,
+                        },
+                        coordinator,
+                        messages,
+                    )?,
                     Err(error) => {
                         coordinator
                             .driver
@@ -538,11 +560,15 @@ impl<
                         .owner
                         .producer
                         .retain_network(None, guard);
-                    self.pending.push_back(Incoming {
-                        request: N::Join(join),
-                        future: Some(future),
-                        completed: None,
-                    });
+                    self.enqueue_network(
+                        Incoming {
+                            request: N::Join(join),
+                            future: Some(future),
+                            completed: None,
+                        },
+                        coordinator,
+                        messages,
+                    )?;
                     return Ok(());
                 }
                 let prepared = (|| {
@@ -580,11 +606,15 @@ impl<
                     Ok(future) => (Some(future), None),
                     Err(error) => (None, Some(Err(error))),
                 };
-                self.pending.push_back(Incoming {
-                    request: N::Join(join),
-                    future,
-                    completed,
-                });
+                self.enqueue_network(
+                    Incoming {
+                        request: N::Join(join),
+                        future,
+                        completed,
+                    },
+                    coordinator,
+                    messages,
+                )?;
             }
             N::ForwardEmbargo(barrier) => {
                 if self.barriers.len() >= self.maximum || self.barriers.try_reserve(1).is_err() {
@@ -777,32 +807,16 @@ impl<
                     }
                 }
                 3 => {
-                    for _ in 0..self.pending.len() {
-                        let mut job = self.pending.pop_front().unwrap();
-                        let key = job.request.answer_key().unwrap();
-                        let canceled = coordinator
-                            .driver
-                            .ledgers()
-                            .answers
-                            .cancellation_requested(key)
-                            .unwrap_or(true);
-                        if canceled && job.future.is_some() {
-                            job.future = None;
-                            job.completed = Some(Err(closed()));
-                        }
-                        if let Some(future) = &mut job.future {
-                            if let Poll::Ready(result) = Pin::new(future).poll(cx) {
-                                job.future = None;
-                                job.completed = Some(result);
-                            }
-                        }
-                        if available && job.completed.is_some() {
-                            return Poll::Ready(
-                                self.publish(job, coordinator, messages, queue, scratch, output)
-                                    .map(|()| true),
-                            );
-                        }
-                        self.pending.push_back(job);
+                    if let Poll::Ready(result) = self.poll_pending(
+                        coordinator,
+                        messages,
+                        queue,
+                        scratch,
+                        output,
+                        cx,
+                        available,
+                    ) {
+                        return Poll::Ready(result);
                     }
                 }
                 4 => {
@@ -1033,6 +1047,32 @@ impl<
             })
             .map_err(wire_error)?
     }
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn poll_pending<'s>(
+        &mut self,
+        coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, vat::Bundle>,
+        scratch: &mut [u32],
+        output: &vat::Resources,
+        cx: &mut Context<'_>,
+        available: bool,
+    ) -> Poll<capnp::Result<bool>> {
+        let job = std::task::ready!(self.pending.poll(cx, available, |key| {
+            coordinator
+                .driver
+                .ledgers()
+                .answers
+                .cancellation_requested(key)
+                .unwrap_or(true)
+        }));
+        Poll::Ready(
+            self.publish(job, coordinator, messages, queue, scratch, output)
+                .map(|()| true),
+        )
+    }
+
     fn publish<'s>(
         &mut self,
         job: Incoming<'p, 'id, H>,
@@ -1456,6 +1496,13 @@ impl<
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, vat::Bundle>,
     ) -> capnp::Result<()> {
+        let event = match event {
+            connection::Received::Finished { question, producer } if !self.pending.is_empty() => {
+                context.notify_finished(question, producer);
+                return Ok(());
+            }
+            event => event,
+        };
         if matches!(
             event,
             connection::Received::Network | connection::Received::QueuedNetwork
@@ -1498,7 +1545,7 @@ impl<
                 let _ = coordinator.driver.cancel(sent.key);
             }
         }
-        for job in self.pending.drain(..) {
+        for job in self.pending.drain() {
             coordinator.driver.release_network(job.request, messages);
         }
         <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::shutdown(&mut self.bootstrap, &mut ControlContext::new(coordinator), messages);

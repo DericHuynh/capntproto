@@ -179,7 +179,9 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.commands.is_empty();
                 let retirement = matches!(
                     event,
-                    connection::Received::Finished(_) | connection::Received::Released
+                    connection::Received::Finished { .. }
+                        | connection::Received::IgnoredFinish
+                        | connection::Received::Released
                 );
                 let mut context = ControlContext::new(self);
                 let received = controls.received(event, &mut context, messages, queue);

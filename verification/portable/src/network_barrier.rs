@@ -149,7 +149,7 @@ pub fn owning_network_barrier(mode: u8) {
                     assert!(matches!(
                         peer.receive(frame, messages, &mut [0; 4], |_| (), || panic!("Finish"))
                             .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(Some(43))
+                        Received::Finished { producer: Some(43), .. }
                     ));
                     embargoes.close();
                 }
@@ -236,7 +236,7 @@ pub fn owning_network_barrier(mode: u8) {
                     assert!(matches!(
                         peer.receive(frame, messages, &mut [0; 4], |_| (), || panic!("Finish"))
                             .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(Some(43))
+                        Received::Finished { producer: Some(43), .. }
                     ));
                 }
                 if mode == 1 {
@@ -244,7 +244,7 @@ pub fn owning_network_barrier(mode: u8) {
                     assert!(matches!(
                         peer.receive(frame, messages, &mut [0; 4], |_| (), || panic!("Finish"))
                             .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(Some(59))
+                        Received::Finished { producer: Some(59), .. }
                     ));
                 }
                 peer.capabilities().release(service);

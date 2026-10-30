@@ -129,7 +129,7 @@ pub fn owning_tail_driver(chunk: usize) {
             // Retiring the original outgoing route releases its question ref.
             while let Some(server)=alice.drain_endpoint() { assert!(server.is_none()); }
             assert!(alice.send_pending_finish(messages,&mut queue,776,Default::default()).unwrap());
-            assert!(matches!(receive(&mut bob,messages,&mut queue,chunk,0),Received::Finished(Some(47))));
+            assert!(matches!(receive(&mut bob,messages,&mut queue,chunk,0),Received::Finished { producer: Some(47), .. }));
             for _ in 0..200 {
                 if !queue.is_empty(){break}
                 match bob.poll_maintenance(messages,&mut queue,776,Default::default(),&mut [0;4],core::num::NonZeroUsize::new(1).unwrap()).unwrap() {
@@ -138,7 +138,7 @@ pub fn owning_tail_driver(chunk: usize) {
                 }
             }
             assert!(!queue.is_empty(),"Finish releases retained tail child");
-            assert!(matches!(receive(&mut alice,messages,&mut queue,chunk,0),Received::Finished(Some(49))));
+            assert!(matches!(receive(&mut alice,messages,&mut queue,chunk,0),Received::Finished { producer: Some(49), .. }));
             alice.capabilities().release(local_a);
             alice.capabilities().release(result_service);
             bob.capabilities().release(local_b);
@@ -221,7 +221,7 @@ pub fn owning_tail_pipeline() {
             assert!(matches!(
                 peer.receive(frame, messages, &mut [0; 4], |_| (), || panic!("control"))
                     .unwrap_or_else(|_| panic!("Finish")),
-                Received::Finished(None)
+                Received::Finished { producer: None, .. } | Received::IgnoredFinish
             ));
             let frame = Frame::build(messages, 776, Default::default(), |builder| {
                 calls::bootstrap(builder, QuestionId::from_wire(71))
@@ -308,7 +308,7 @@ pub fn owning_tail_pipeline() {
             assert!(matches!(
                 peer.receive(frame, messages, &mut [0; 4], |_| (), || panic!("control"))
                     .unwrap_or_else(|_| panic!("Finish")),
-                Received::Finished(Some(88))
+                Received::Finished { producer: Some(88), .. }
             ));
             peer.capabilities().release(unrelated);
             queue.fail();

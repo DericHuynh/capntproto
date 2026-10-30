@@ -68,7 +68,7 @@ pub fn owning_network_registration(mode: u8) {
                         calls::finish(builder, QuestionId::from_wire(17), true)
                     })
                     .unwrap();
-                    let Received::Finished(owner) = peer
+                    let Received::Finished { producer: owner, .. } = peer
                         .receive(
                             finish,
                             messages,
@@ -120,7 +120,7 @@ pub fn owning_network_registration(mode: u8) {
                             calls::finish(builder, QuestionId::from_wire(17), true)
                         })
                         .unwrap();
-                        let Received::Finished(owner) = peer
+                        let Received::Finished { producer: owner, .. } = peer
                             .receive(
                                 finish,
                                 messages,

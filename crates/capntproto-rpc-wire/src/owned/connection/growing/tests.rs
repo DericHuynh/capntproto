@@ -4033,7 +4033,10 @@ fn direct_retirement_matches_general_validation_ownership_and_callbacks() {
                             )
                         };
                         outcomes.push(match result {
-                            Ok(Received::Finished(retired)) => Ok((0, retired.is_some())),
+                            Ok(Received::Finished {
+                                producer: retired, ..
+                            }) => Ok((0, retired.is_some())),
+                            Ok(Received::IgnoredFinish) => Ok((0, false)),
                             Ok(Received::Released) => Ok((1, false)),
                             Ok(_) => panic!("unexpected retirement event"),
                             Err(rejected) => {

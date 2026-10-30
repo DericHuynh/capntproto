@@ -437,7 +437,7 @@ pub fn owning_loopback_unresolved(chunk: usize) {
                     || panic!("control")
                 )
                 .unwrap_or_else(|_| panic!("Finish")),
-                Received::Finished(None)
+                Received::Finished { producer: None, .. } | Received::IgnoredFinish
             ));
             assert!(
                 peer.answers().dispatch(key, true).unwrap(),

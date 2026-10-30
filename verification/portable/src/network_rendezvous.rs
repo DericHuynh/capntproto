@@ -67,7 +67,7 @@ fn finish<'p>(
         receiver
             .receive(frame, messages, &mut [0; 4], |_| (), || panic!("Finish"))
             .unwrap_or_else(|r| panic!("{}", r.error)),
-        Received::Finished(Some(43))
+        Received::Finished { producer: Some(43), .. }
     ));
 }
 fn send_await<'p, 'id>(

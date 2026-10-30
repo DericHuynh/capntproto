@@ -198,6 +198,21 @@ impl<'a, 'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         }
         Ok(())
     }
+    // Read the producer before waking it: the callback may reenter public RPC.
+    // This names an existing owner and changes no protocol or application state.
+    pub(super) fn notify_finished(
+        &self,
+        question: capntproto_rpc_engine::answers::Key<'id>,
+        retired: Option<server::Producer>,
+    ) {
+        let results = retired.map(|producer| producer.results()).or_else(|| {
+            let answers = &self.coordinator.driver.ledgers().answers;
+            Some(answers.get(question).ok()?.owner.producer.results())
+        });
+        if let Some(results) = results {
+            results.protocol_changed();
+        }
+    }
     pub(super) fn network_idle(&self) -> bool {
         self.coordinator.driver.runtime().queued() == 0
             && !self.coordinator.driver.has_network()

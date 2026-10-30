@@ -243,7 +243,7 @@ fn finish<'p>(
         .unwrap());
     assert!(matches!(
         receive(receiver, messages, queue, chunk),
-        Received::Finished(_)
+        Received::Finished { .. } | Received::IgnoredFinish
     ));
 }
 

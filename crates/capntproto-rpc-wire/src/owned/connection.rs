@@ -397,7 +397,16 @@ pub enum Received<'id, A> {
     IgnoredReturn,
     Resolved,
     DeferredResolution,
-    Finished(Option<A>),
+    /// Exact accepted answer generation for cancellation dispatch, including
+    /// when a running producer still owns the record after its wire ID closes.
+    /// A detached producer is returned only when the answer itself retires.
+    Finished {
+        question: answers::Key<'id>,
+        producer: Option<A>,
+    },
+    /// Unknown/duplicate Finish, or an expired early-cancellation workaround.
+    /// No current answer generation was changed.
+    IgnoredFinish,
     Released,
     Loopback,
     /// Take the owning request and complete it through the authenticated network.
@@ -1422,7 +1431,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             let finish = self.delayed_finish.take().expect("matched Finish retry");
             if self.ledgers.answers.lookup(finish.answer.id()) != Some(finish.answer) {
                 frame.release(messages);
-                return Ok(Received::Finished(None));
+                return Ok(Received::IgnoredFinish);
             }
             return self.receive_finish(
                 finish.answer.id(),
@@ -2378,17 +2387,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             scratch,
         );
         match outcome {
-            Ok(finished) => {
+            Ok((question, finished)) => {
                 frame.release(messages);
-                Ok(Received::Finished(
-                    finished.and_then(|value| value.retired).map(|state| {
-                        state
-                            .release(messages)
-                            .release(messages, &mut self.runtime, |child| {
-                                self.ledgers.questions.release(child)
-                            })
-                    }),
-                ))
+                let producer = finished.and_then(|value| value.retired).map(|state| {
+                    state
+                        .release(messages)
+                        .release(messages, &mut self.runtime, |child| {
+                            self.ledgers.questions.release(child)
+                        })
+                });
+                Ok(match question {
+                    Some(question) => Received::Finished { question, producer },
+                    None => {
+                        debug_assert!(producer.is_none());
+                        Received::IgnoredFinish
+                    }
+                })
             }
             Err(error) => Err(Rejected {
                 error: Error::Input(error),

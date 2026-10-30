@@ -258,7 +258,7 @@ fn early_finish_yields_once_and_preserves_checked_frame_identity_and_budget() {
                         } else {
                             assert!(matches!(
                                 driver.receive(frame, messages, &mut [0; 8], |_| (), || 73),
-                                Ok(Received::Finished(_))
+                                Ok(Received::Finished { .. } | Received::IgnoredFinish)
                             ));
                             None
                         };
@@ -282,7 +282,7 @@ fn early_finish_yields_once_and_preserves_checked_frame_identity_and_budget() {
                         if let Some(pending) = pending {
                             assert!(matches!(
                                 driver.receive(pending, messages, &mut [0; 8], |_| (), || 73),
-                                Ok(Received::Finished(_))
+                                Ok(Received::Finished { .. } | Received::IgnoredFinish)
                             ));
                         }
                         assert_eq!(
@@ -386,7 +386,7 @@ fn delayed_finish_cannot_cancel_a_reused_answer_id() {
             assert_ne!(old, next);
             assert!(matches!(
                 driver.receive(frame, messages, &mut [0; 8], |_| (), || 73),
-                Ok(Received::Finished(None))
+                Ok(Received::Finished { producer: None, .. } | Received::IgnoredFinish)
             ));
             assert!(!driver.ledgers.answers.cancellation_requested(next).unwrap());
             assert!(driver.ledgers.answers.dispatch(next, true).unwrap());
@@ -915,7 +915,7 @@ fn native_returns_preserve_payload_segments_and_compact_only_when_required() {
                 driver
                     .receive(finish, messages, &mut [0; 8], |_| (), || 0)
                     .unwrap_or_else(|r| panic!("{:?}", r.error)),
-                Received::Finished(_)
+                Received::Finished { .. } | Received::IgnoredFinish
             ));
             assert!(driver.ledgers.answers.is_empty());
             driver.runtime.release(target);
@@ -3571,7 +3571,7 @@ fn pipeline_only_completion_retains_capabilities_until_finish_without_allocating
                         driver
                             .receive(finish, messages, &mut [0; 8], |_| (), || 0)
                             .unwrap_or_else(|r| panic!("{:?}", r.error)),
-                        Received::Finished(None)
+                        Received::Finished { producer: None, .. } | Received::IgnoredFinish
                     ));
                 }
                 let projected = driver
@@ -4895,7 +4895,10 @@ fn bilateral_join_results_retry_output_and_keep_explicit_finish_with_or_without_
                             || panic!("Finish has no producer")
                         )
                         .unwrap_or_else(|r| panic!("{:?}", r.error)),
-                    Received::Finished(Some(73))
+                    Received::Finished {
+                        producer: Some(73),
+                        ..
+                    }
                 ));
                 let _ = driver.release_export(id, 1).unwrap();
                 driver.capabilities().release(target);

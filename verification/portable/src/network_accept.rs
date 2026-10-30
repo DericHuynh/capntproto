@@ -93,7 +93,7 @@ pub fn owning_network_acceptance(mode: u8) {
                             || panic!("Finish")
                         )
                         .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(None)
+                        Received::Finished { producer: None, .. } | Received::IgnoredFinish
                     ));
                 }
                 let mut server_count = 0;
@@ -270,7 +270,7 @@ pub fn owning_network_acceptance(mode: u8) {
                             || panic!("Finish")
                         )
                         .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(Some(43))
+                        Received::Finished { producer: Some(43), .. }
                     ));
                 }
                 if let Some(id) = export {

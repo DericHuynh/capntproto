@@ -464,7 +464,7 @@ impl Results {
     pub fn into_producer(self) -> Producer {
         Producer(self)
     }
-    pub(super) fn bind_protocol_waker(&self, waker: Waker) {
+    pub(in crate::scoped::wire) fn bind_protocol_waker(&self, waker: Waker) {
         let previous = self.0.protocol_wake.borrow_mut().replace(waker);
         assert!(
             previous.is_none(),
@@ -482,7 +482,7 @@ impl Results {
         }
         wake.overflow.retain(|old| !old.will_wake(Waker::noop()));
     }
-    pub(super) fn unbind_protocol_waker(&self) {
+    pub(in crate::scoped::wire) fn unbind_protocol_waker(&self) {
         drop(self.0.protocol_wake.borrow_mut().take());
     }
     pub(in crate::scoped::wire) fn protocol_changed(&self) {

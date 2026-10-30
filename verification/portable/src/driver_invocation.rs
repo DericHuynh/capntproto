@@ -455,7 +455,7 @@ pub fn owning_invocation_driver(chunk: usize) {
             client.release_response(response,messages);
             assert!(client.send_pending_finish(messages,&mut queue,776,Default::default()).unwrap());
             let frame=super::owning::exchange(messages,&mut queue,chunk);
-            assert!(matches!(server.receive(frame,messages,&mut [0;4],|_|(),||panic!("Finish")).unwrap_or_else(|_|panic!("Finish")),Received::Finished(Some(47))));
+            assert!(matches!(server.receive(frame,messages,&mut [0;4],|_|(),||panic!("Finish")).unwrap_or_else(|_|panic!("Finish")),Received::Finished { producer: Some(47), .. }));
             // Finish on the result must not release the separately advertised
             // parameter grant; its import emits exactly one Release.
             while let Some(owner)=server.drain_endpoint(){assert!(owner.is_none());}

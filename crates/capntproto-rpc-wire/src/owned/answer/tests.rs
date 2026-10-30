@@ -517,7 +517,7 @@ fn result_export_cleanup_is_atomic_for_repeats_promises_and_multiple_exports() {
                                             let _ = batch.grant(first.key()).unwrap();
                                             batch.commit();
                                         }
-                                        let done = finished_parts(
+                                        let (question, done) = finished_parts(
                                             id,
                                             release,
                                             messages,
@@ -525,29 +525,26 @@ fn result_export_cleanup_is_atomic_for_repeats_promises_and_multiple_exports() {
                                             exports,
                                             release_scratch,
                                         )
-                                        .unwrap()
                                         .unwrap();
-                                        assert_eq!(done.retired.unwrap().release(messages), 41);
-                                        assert!(finished_parts(
-                                            id,
-                                            release,
-                                            messages,
-                                            answers,
-                                            exports,
-                                            &mut []
-                                        )
-                                        .unwrap()
-                                        .is_none());
-                                        assert!(finished_parts(
-                                            AnswerId::from_wire(99),
-                                            true,
-                                            messages,
-                                            answers,
-                                            exports,
-                                            &mut []
-                                        )
-                                        .unwrap()
-                                        .is_none());
+                                        assert_eq!(question, Some(key));
+                                        assert_eq!(
+                                            done.unwrap().retired.unwrap().release(messages),
+                                            41
+                                        );
+                                        for finished_id in [id, AnswerId::from_wire(99)] {
+                                            assert!(matches!(
+                                                finished_parts(
+                                                    finished_id,
+                                                    release,
+                                                    messages,
+                                                    answers,
+                                                    exports,
+                                                    &mut []
+                                                )
+                                                .unwrap(),
+                                                (None, None)
+                                            ));
+                                        }
                                         if release {
                                             assert_eq!(exports.take_retired(0), Some(42));
                                             if distinct == 2 {

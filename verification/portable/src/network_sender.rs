@@ -133,7 +133,7 @@ pub fn owning_adoption_sender(mode: u8) {
                         callee
                             .receive(finish, messages, &mut [0; 4], |_| (), || panic!("Finish"))
                             .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(None)
+                        Received::Finished { producer: None, .. } | Received::IgnoredFinish
                     ));
                 }
                 let frame = Frame::build(messages, 776, Default::default(), |b| {
@@ -196,7 +196,7 @@ pub fn owning_adoption_sender(mode: u8) {
                         callee
                             .receive(frame, messages, &mut [0; 4], |_| (), || panic!("Finish"))
                             .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(Some(43))
+                        Received::Finished { producer: Some(43), .. }
                     ));
                 }
                 assert!(caller.ledgers().questions.is_empty());

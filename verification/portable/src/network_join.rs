@@ -83,7 +83,7 @@ pub fn owning_network_join(mode: u8) {
                         server
                             .receive(frame, messages, &mut [0; 4], |_| (), || panic!("Finish"))
                             .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(None)
+                        Received::Finished { producer: None, .. } | Received::IgnoredFinish
                     ));
                 }
                 if mode == 1 {
@@ -202,7 +202,7 @@ pub fn owning_network_join(mode: u8) {
                         server
                             .receive(frame, messages, &mut [0; 4], |_| (), || panic!("Finish"))
                             .unwrap_or_else(|r| panic!("{}", r.error)),
-                        Received::Finished(Some(43))
+                        Received::Finished { producer: Some(43), .. }
                     ));
                 }
                 if let Some(pipeline) = pipeline {
