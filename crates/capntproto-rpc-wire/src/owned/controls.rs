@@ -3,6 +3,31 @@ use super::*;
 use capnp::field_api::Schema;
 use capntproto_rpc_engine::questions;
 
+/// Queue a terminal exception after ordinary admission has stopped. This needs
+/// no live protocol driver: the transport owns its final publication and flush.
+pub fn send_abort<'pool>(
+    messages: &mut messages::Messages<'pool, '_, '_>,
+    queue: &mut messages::Queue<'pool, '_, impl Default>,
+    options: capnp::message::ReaderOptions,
+    minimum: usize,
+    write: impl FnOnce(
+        capnp::field_api::FixedStruct<'_, rpc_capnp::api::Exception>,
+    ) -> capnp::Result<()>,
+) -> Result<(), Error> {
+    let output = queue.reserve().map_err(Error::Storage)?;
+    let frame = Frame::build(messages, minimum, options, |builder| {
+        write(
+            builder
+                .try_init_root::<rpc_capnp::api::Message>()?
+                .into_field(rpc_capnp::api::Message::ABORT)
+                .init()?,
+        )
+    })?;
+    let offer = frame.offer(messages)?;
+    output.accept(messages, offer);
+    Ok(())
+}
+
 pub(crate) fn abort_reason(exception: rpc_capnp::exception::Reader<'_>) -> capnp::ErrorKind {
     match exception.get_type() {
         Ok(rpc_capnp::exception::Type::Overloaded) => capnp::ErrorKind::Overloaded,

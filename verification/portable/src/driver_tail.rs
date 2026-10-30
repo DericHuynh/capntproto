@@ -36,7 +36,9 @@ fn close<'p>(
     messages: &mut messages::Messages<'p, '_, '_>,
     queue: &mut messages::Queue<'p, '_>,
 ) -> u32 {
-    let mut closing = peer.terminate(queue);
+    queue.fail();
+    while queue.discard_one(messages).unwrap() {}
+    let mut closing = peer.terminate();
     let mut servers = 0;
     for _ in 0..200 {
         match closing
@@ -309,7 +311,9 @@ pub fn owning_tail_pipeline() {
                 Received::Finished(Some(88))
             ));
             peer.capabilities().release(unrelated);
-            let mut closing = peer.terminate(&mut queue);
+            queue.fail();
+            while queue.discard_one(messages).unwrap() {}
+            let mut closing = peer.terminate();
             let mut producer = false;
             let mut done = false;
             for _ in 0..200 {

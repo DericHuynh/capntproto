@@ -157,7 +157,9 @@ pub fn owning_network_registration(mode: u8) {
                 retired_server = 41;
             }
             peer.disconnect(capnp::ErrorKind::Disconnected);
-            let mut closing = peer.terminate(&mut queue);
+            queue.fail();
+            while queue.discard_one(messages).unwrap() {}
+            let mut closing = peer.terminate();
             let mut retired_producer = 0;
             let mut done = false;
             for _ in 0..200 {

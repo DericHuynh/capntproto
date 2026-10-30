@@ -230,12 +230,12 @@ fn shared_input_adoption_validates_ranges_and_falls_back_without_consuming() {
         let bytes = std::sync::Arc::new(bytes);
         let length = if fault == 2 { 16 } else { expected.len() };
         let finished = Rc::new(Cell::new(0));
-        reader.input = Box::new(Frames {
+        reader.input = Some(Box::new(Frames {
             bytes: bytes.clone(),
             range: start..start + length,
             wrong_range: fault == 4,
             finished: finished.clone(),
-        });
+        }));
         assert!(
             matches!(reader.poll_frame_size(&mut cx()), Poll::Ready(Ok(Some(n))) if n == length)
         );
@@ -340,7 +340,7 @@ fn buffered_frame_transfer_preserves_reader_policy_and_ownership_through_validat
             connection.into_io(NonZeroUsize::new(32).unwrap()).unwrap();
         let mut bytes = frame();
         bytes.resize(length, 0);
-        reader.input = Box::new(FrameInput::new(state.clone(), Some(bytes)));
+        reader.input = Some(Box::new(FrameInput::new(state.clone(), Some(bytes))));
         assert!(reader.poll_frame_size(&mut cx()).is_ready());
         let mut words = [capnp::word(0, 0, 0, 0, 0, 0, 0, 0); 4];
         let mut buffers = [messages::Buffer::new(capnp::Word::words_to_bytes_mut(
@@ -359,7 +359,11 @@ fn buffered_frame_transfer_preserves_reader_policy_and_ownership_through_validat
                 // the single framing/limit check under the recorded policy.
                 assert_eq!(frame.size_in_words(messages).is_ok(), valid);
                 assert!(
-                    reader.input.frame().is_some(),
+                    reader
+                        .input
+                        .as_ref()
+                        .and_then(|input| input.frame())
+                        .is_some(),
                     "admission still owns the message and attachments"
                 );
                 assert!(reader
@@ -372,7 +376,11 @@ fn buffered_frame_transfer_preserves_reader_policy_and_ownership_through_validat
             }
             assert_eq!(state.reads.get(), 0);
             reader.finish_frame();
-            assert!(reader.input.frame().is_none());
+            assert!(reader
+                .input
+                .as_ref()
+                .and_then(|input| input.frame())
+                .is_none());
             let writer = messages.reserve(32).unwrap();
             messages.discard(writer);
         })
@@ -393,7 +401,10 @@ fn frame_input_preserves_partial_reads_and_admission_boundary() {
         let (connection, state) = fixture();
         let (mut reader, _writer, _) = connection.into_io(NonZeroUsize::new(32).unwrap()).unwrap();
         let expected = frame();
-        reader.input = Box::new(FrameInput::new(state.clone(), Some(expected.clone())));
+        reader.input = Some(Box::new(FrameInput::new(
+            state.clone(),
+            Some(expected.clone()),
+        )));
         assert!(reader.poll_frame_size(&mut cx()).is_ready());
         let mut received = Vec::new();
         while received.len() < expected.len() {
@@ -416,7 +427,11 @@ fn frame_input_preserves_partial_reads_and_admission_boundary() {
             ));
             reader.finish_frame();
         }
-        assert!(reader.input.frame().is_none());
+        assert!(reader
+            .input
+            .as_ref()
+            .and_then(|input| input.frame())
+            .is_none());
         if consume {
             assert!(reader.poll_read(&mut cx(), &mut [0; 1]).is_pending());
             assert_eq!(state.reads.get(), 1);
@@ -518,7 +533,7 @@ fn frame_sizing_rejects_oversize_before_reservation_and_preserves_pending_receiv
 }
 
 #[test]
-fn interrupted_message_receive_stays_alive_until_output_can_drain() {
+fn stopping_input_cancels_pending_read_without_interrupting_output_drain() {
     let (connection, state) = fixture();
     let (mut reader, mut writer, _) = connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
     assert!(reader.poll_read(&mut cx(), &mut [0; 8]).is_pending());
@@ -526,8 +541,10 @@ fn interrupted_message_receive_stays_alive_until_output_can_drain() {
     assert_eq!(
         state.canceled_reads.get(),
         0,
-        "canceling now can close both transport halves"
+        "frame cleanup alone retains the pending read"
     );
+    reader.stop();
+    assert_eq!(state.canceled_reads.get(), 1);
     let bytes = frame();
     assert_eq!(
         ready_ok(writer.poll_write_resources(&mut cx(), &bytes, None)),
@@ -544,6 +561,31 @@ fn interrupted_message_receive_stays_alive_until_output_can_drain() {
     drop(writer);
     assert_eq!(state.shutdowns.borrow().len(), 1);
     assert!(state.shutdowns.borrow()[0].is_ok());
+}
+
+#[test]
+fn native_shutdown_retains_reason_and_accepts_disconnected_completion_like_legacy() {
+    for kind in [capnp::ErrorKind::Disconnected, capnp::ErrorKind::Overloaded] {
+        let (connection, state) = fixture();
+        let (_reader, mut writer, _failure) =
+            connection.into_io(NonZeroUsize::new(64).unwrap()).unwrap();
+        writer.shutdown_reason(Error::overloaded("original failure".into()));
+        assert!(writer.poll_close(&mut cx()).is_pending());
+        let shutdowns = state.shutdowns.borrow();
+        let error = shutdowns[0].as_ref().unwrap_err();
+        assert_eq!(error.kind, capnp::ErrorKind::Disconnected);
+        assert_eq!(error.extra, "original failure");
+        drop(shutdowns);
+        state.close.complete(Err(Error::from_kind(kind)));
+        for _ in 0..2 {
+            match writer.poll_close(&mut cx()) {
+                Poll::Ready(Ok(())) => assert_eq!(kind, capnp::ErrorKind::Disconnected),
+                Poll::Ready(Err(IoError::Failed(error))) => assert_eq!(error.kind, kind),
+                _ => panic!("close completion must remain ready"),
+            }
+        }
+        assert_eq!(state.shutdowns.borrow().len(), 1);
+    }
 }
 
 #[test]

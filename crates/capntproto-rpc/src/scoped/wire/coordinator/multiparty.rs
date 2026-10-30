@@ -1559,7 +1559,9 @@ mod tests {
                         worker.terminate(&mut driver, messages);
                         foreign.terminate(&mut driver.capabilities());
                         hooks.close(&mut driver.capabilities(), closed());
-                        let mut closing = driver.terminate(&mut queue);
+                        queue.fail();
+                        while queue.discard_one(messages).unwrap() {}
+                        let mut closing = driver.terminate();
                         let mut done = false;
                         for _ in 0..256 {
                             if matches!(

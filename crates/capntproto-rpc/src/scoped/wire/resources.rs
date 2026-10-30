@@ -297,7 +297,9 @@ mod tests {
                     );
                     driver.capabilities().release(route);
                     let mut queue = messages::Queue::new_growing(0, 8).unwrap();
-                    let mut closing = driver.terminate(&mut queue);
+                    queue.fail();
+                    while queue.discard_one(messages).unwrap() {}
+                    let mut closing = driver.terminate();
                     let mut done = false;
                     for _ in 0..256 {
                         if matches!(

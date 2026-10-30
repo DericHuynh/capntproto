@@ -236,17 +236,7 @@ async fn run<V: 'static>(
                 let mut queue = writer
                     .publication_queue(messages, options.output_queue.get())
                     .map_err(error)?;
-                let mut aborted = std::pin::pin!(aborted);
-                let mut failure = std::pin::pin!(failure);
-                let abort = std::future::poll_fn(|cx| {
-                    match aborted.as_mut().poll(cx) {
-                        Poll::Ready(result) => {
-                            return Poll::Ready(result.unwrap_or_else(|_| closing()))
-                        }
-                        Poll::Pending => (),
-                    }
-                    failure.as_mut().poll(cx)
-                });
+                let abort = async { aborted.await.unwrap_or_else(|_| closing()) };
                 // Select the handler once. The ordinary stream loop has no
                 // multiparty collections, weak command queues or feature probes.
                 if let Some(network_commands) = network_commands {
@@ -259,7 +249,7 @@ async fn run<V: 'static>(
                         joiner,
                     );
                     coordinator
-                        .run_connection(
+                        .run_vat(
                             messages,
                             &mut queue,
                             &mut reader,
@@ -269,13 +259,14 @@ async fn run<V: 'static>(
                             &mut controls,
                             async { stopped.await.unwrap_or_else(|_| Err(closing())) },
                             abort,
+                            failure,
                         )
                         .await
                         .map_err(run_error)
                 } else {
                     let mut controls = controls;
                     let result = coordinator
-                        .run_connection(
+                        .run_vat(
                             messages,
                             &mut queue,
                             &mut reader,
@@ -285,6 +276,7 @@ async fn run<V: 'static>(
                             &mut controls,
                             async { stopped.await.unwrap_or_else(|_| Err(closing())) },
                             abort,
+                            failure,
                         )
                         .await;
                     // The idle notifier is weak. Retain this transport owner

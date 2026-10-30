@@ -64,6 +64,12 @@ pub trait Input<I>: io::Read + ImportReceiver<I> {
         Poll::Ready(Ok(None))
     }
     fn finish_frame(&mut self);
+    /// Stop input before retiring application owners or waiting for output.
+    /// Adapters owning a pending read must cancel it here. Borrowed byte readers
+    /// remain caller-owned; their default cleanup releases frame resources.
+    fn stop(&mut self) {
+        self.finish_frame();
+    }
 }
 
 /// Maps exact capability owners to one outgoing frame's resource bundle.
@@ -144,6 +150,9 @@ impl<W: io::Flush> io::Flush for Writer<'_, W> {
 impl<W: io::Close> io::Close for Writer<'_, W> {
     fn poll_close(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::IoError<Self::Error>>> {
         self.0.poll_close(cx)
+    }
+    fn poll_abort(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::IoError<Self::Error>>> {
+        self.0.poll_abort(cx)
     }
 }
 impl<W: io::Write> io::WriteResources<()> for Writer<'_, W> {

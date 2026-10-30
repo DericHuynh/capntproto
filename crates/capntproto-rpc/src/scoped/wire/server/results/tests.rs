@@ -888,7 +888,9 @@ fn close<'p>(
     messages: &mut messages::Messages<'p, '_, '_>,
     queue: &mut messages::Queue<'p, '_>,
 ) {
-    let mut closing = driver.terminate(queue);
+    queue.fail();
+    while queue.discard_one(messages).unwrap() {}
+    let mut closing = driver.terminate();
     for _ in 0..256 {
         if matches!(
             closing

@@ -1824,7 +1824,9 @@ fn private_parameter_tables_skip_payload_rebuilds_and_keep_original_indices() {
         );
         driver.capabilities().release(value);
         driver.capabilities().release(target);
-        let mut closing = driver.terminate(&mut queue);
+        queue.fail();
+        while queue.discard_one(messages).unwrap() {}
+        let mut closing = driver.terminate();
         for _ in 0..1024 {
             if matches!(
                 closing

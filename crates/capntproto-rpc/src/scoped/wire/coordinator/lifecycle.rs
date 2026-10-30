@@ -74,7 +74,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         if let Err(Cause::Protocol(error)) = &outcome {
             self.disconnect_clients(error);
         }
-        reader.finish_frame();
+        reader.stop();
         if let Some(frame) = pending {
             frame.release(messages);
         }
@@ -129,7 +129,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         R: Input<I>,
         W: io::WriteResources<O::Bundle> + io::Close,
     >(
-        mut self,
+        self,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
         reader: &mut R,
@@ -144,6 +144,42 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         let mut abort = std::pin::pin!(notified::Notified::new(abort));
         let shutdown = std::pin::pin!(shutdown);
         let mut shutdown = std::pin::pin!(notified::Notified::new(shutdown));
+        let (closing, result) = self
+            .prepare_connection(
+                messages,
+                queue,
+                reader,
+                writer,
+                scratch,
+                output,
+                controls,
+                shutdown.as_mut(),
+                abort.as_mut(),
+            )
+            .await;
+        closing
+            .finish(messages, queue, writer, abort.as_mut(), result)
+            .await
+    }
+
+    /// Retire protocol ownership while keeping accepted publications with IO.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn prepare_connection<
+        O: Output<I>,
+        R: Input<I>,
+        W: io::WriteResources<O::Bundle>,
+    >(
+        mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, O::Bundle>,
+        reader: &mut R,
+        writer: &mut W,
+        scratch: &mut [u32],
+        output: &O,
+        controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
+        mut shutdown: Pin<&mut impl Future<Output = capnp::Result<()>>>,
+        mut abort: Pin<&mut impl Future<Output = Error>>,
+    ) -> (Closing, Result<(), RunError<R::Error, W::Error>>) {
         let mut pending = None;
         let mut hard_abort = false;
         let outcome = {
@@ -168,94 +204,17 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             .await
             .map_err(|error| *error)
         };
-        // Publish the complete failure before dropping input resources or
-        // invoking the trace encoder: both can reenter application RPC.
-        let terminal_reason = match &outcome {
-            Err(Cause::Protocol(error)) => Some(error.clone()),
-            Ok(()) => Some(Error::disconnected("client requested disconnect".into())),
-            _ => None,
-        };
-        let output_was_failed = queue.is_failed();
-        if let Some(error) = &terminal_reason {
-            self.disconnect_clients(error);
-        }
-        reader.finish_frame();
+        let reason = terminal_reason(&outcome);
+        self.disconnect_clients(&reason);
+        reader.stop();
         if let Some(frame) = pending {
             frame.release(messages);
         }
-        if let Some(error) = &terminal_reason {
-            if !hard_abort && !self.idle {
-                let trace = self.policy.trace(error);
-                if let Ok(minimum) =
-                    super::super::exception::publication_bytes(error, trace.as_deref())
-                {
-                    if self
-                        .driver
-                        .send_abort(messages, queue, self.options.reader, minimum, |output| {
-                            super::super::exception::write(error, trace.as_deref(), output)
-                        })
-                        .is_ok()
-                    {
-                        // Flush what the transport can accept immediately. Terminal
-                        // notification must not wait forever on a broken/blocked peer.
-                        std::future::poll_fn(|cx| {
-                            let _ =
-                                self.output
-                                    .poll(writer, queue, messages, cx, self.options.budget);
-                            Poll::Ready(())
-                        })
-                        .await;
-                    }
-                }
-            }
-        }
-        // Stop owned commands before a potentially blocked drain. In-flight
-        // protocol owners remain alive until all transport polling has ended.
-        if let Some(registration) = &self.registration {
-            registration.detach();
-        }
-        self.commands.close(match &outcome {
-            Err(Cause::Protocol(error)) => error.clone(),
-            _ => Error::disconnected("connection shutting down".into()),
-        });
-        let outcome = match outcome {
-            Err(error) => Err(error),
-            // Abort construction/publication is best effort. If it failed,
-            // still await physical shutdown without retrying its failed flush.
-            Ok(()) if !output_was_failed && queue.is_failed() => {
-                std::future::poll_fn(|cx| {
-                    if let Poll::Ready(error) = abort.as_mut().poll(cx) {
-                        return Poll::Ready(Err(Cause::Protocol(error)));
-                    }
-                    io::poll_abort(writer, cx, self.options.budget).map_err(Cause::Close)
-                })
-                .await
-            }
-            Ok(()) => {
-                let mut drained = false;
-                std::future::poll_fn(|cx| {
-                    if let Poll::Ready(error) = abort.as_mut().poll(cx) {
-                        return Poll::Ready(Err(Cause::Protocol(error)));
-                    }
-                    if !drained {
-                        match self
-                            .output
-                            .poll(writer, queue, messages, cx, self.options.budget)
-                        {
-                            Poll::Pending => return Poll::Pending,
-                            Poll::Ready(Err(error)) => {
-                                return Poll::Ready(Err(Cause::Output(error)))
-                            }
-                            Poll::Ready(Ok(())) => drained = true,
-                        }
-                    }
-                    io::poll_close(writer, cx, self.options.budget).map_err(Cause::Close)
-                })
-                .await
-            }
-        };
-        self.terminate::<O, _, _>(messages, queue, controls, outcome)
-            .await
+        let (mut closing, result) = self
+            .retire::<O, _, _>(messages, controls, outcome, reason)
+            .await;
+        closing.hard_abort = hard_abort;
+        (closing, result)
     }
 
     pub(super) async fn terminate<O: Output<I>, R, W>(
@@ -265,14 +224,30 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
         outcome: Result<(), Cause<R, W>>,
     ) -> Result<(), RunError<R, W>> {
-        let reason = match &outcome {
-            Err(Cause::Protocol(error)) => error.clone(),
-            Ok(()) => Error::disconnected("client requested disconnect".into()),
-            _ => Error::disconnected("connection stopped".into()),
-        };
-        // All IO borrows (including the pending receive writer) have ended.
-        self.notifications.detach();
+        let reason = terminal_reason(&outcome);
         self.disconnect_clients(&reason);
+        let (closing, result) = self
+            .retire::<O, _, _>(messages, controls, outcome, reason)
+            .await;
+        let result = with_cleanup(
+            result,
+            discard_output(messages, queue, closing.options.budget).await,
+        );
+        closing.complete(&result);
+        result
+    }
+
+    // All public routes are already broken before releasing callback-bearing
+    // owners. The final output allocation has its own queue/transport owner.
+    async fn retire<O: Output<I>, R, W>(
+        mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
+        outcome: Result<(), Cause<R, W>>,
+        reason: Error,
+    ) -> (Closing, Result<(), RunError<R, W>>) {
+        let terminal = matches!(outcome, Ok(()) | Err(Cause::Protocol(_)));
+        self.notifications.detach();
         let mut client_reason = reason.clone();
         client_reason.kind = capnp::ErrorKind::Disconnected;
         for pending in self.native_tails.drain(..) {
@@ -283,10 +258,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             .terminate_with_error(&mut self.driver, messages, client_reason);
         self.worker.terminate(&mut self.driver, messages);
         self.foreign.terminate(&mut self.driver.capabilities());
-        self.hooks.close(&mut self.driver.capabilities(), reason);
-        let mut closing = self.driver.terminate(queue);
+        self.hooks
+            .close(&mut self.driver.capabilities(), reason.clone());
+        let mut protocol = self.driver.terminate();
         let cleanup =
-            std::future::poll_fn(|cx| match closing.poll(messages, self.options.budget) {
+            std::future::poll_fn(|cx| match protocol.poll(messages, self.options.budget) {
                 Ok(connection::Termination::Done) => Poll::Ready(Ok(())),
                 Err(error) => Poll::Ready(Err(error)),
                 Ok(_) => {
@@ -302,10 +278,19 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 cleanup: cleanup.err(),
             }),
         };
-        if let Some(registration) = self.registration.take() {
-            registration.complete(&result);
-        }
-        result
+        (
+            Closing {
+                output: self.output,
+                options: self.options,
+                policy: self.policy,
+                registration: self.registration,
+                idle: self.idle,
+                reason,
+                terminal,
+                hard_abort: false,
+            },
+            result,
+        )
     }
 
     fn disconnect_clients(&mut self, error: &Error) {
@@ -462,4 +447,174 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     // Inspecting an arbitrary ParamsHook while borrowing the inbox could invoke
     // application code. This estimate conservatively includes a maximum target
     // transform and avoids retaining output across configured pool pressure.
+}
+
+/// Transport completion after every protocol and application owner has retired.
+/// No graph, answer table, import, export or service task remains in this phase.
+pub(super) struct Closing {
+    output: io::Output,
+    options: Options,
+    policy: Rc<policy::Policy>,
+    registration: Option<network::Registration>,
+    idle: bool,
+    pub(super) reason: Error,
+    terminal: bool,
+    pub(super) hard_abort: bool,
+}
+impl Closing {
+    pub(super) async fn finish<'p, B: Default, R, W: io::WriteResources<B> + io::Close>(
+        mut self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, B>,
+        writer: &mut W,
+        mut abort: Pin<&mut impl Future<Output = Error>>,
+        mut result: Result<(), RunError<R, W::Error>>,
+    ) -> Result<(), RunError<R, W::Error>> {
+        // Cleanup can yield. Recheck the caller deadline before even the
+        // best-effort terminal publication performs IO.
+        let aborted = if self.hard_abort {
+            Poll::Pending
+        } else {
+            std::future::poll_fn(|cx| Poll::Ready(abort.as_mut().poll(cx))).await
+        };
+        if let Poll::Ready(error) = aborted {
+            self.hard_abort = true;
+            result = Err(RunError {
+                cause: Some(Cause::Protocol(error)),
+                cleanup: result.err().and_then(|error| error.cleanup),
+            });
+        }
+        let output_was_failed = queue.is_failed();
+        if result
+            .as_ref()
+            .err()
+            .is_none_or(|error| error.cleanup.is_none())
+            && self.terminal
+            && !self.hard_abort
+            && !self.idle
+        {
+            // Like legacy, encode diagnostics only after exports have dropped.
+            let trace = self.policy.trace(&self.reason);
+            if let Ok(minimum) =
+                super::super::exception::publication_bytes(&self.reason, trace.as_deref())
+            {
+                if owned::controls::send_abort(
+                    messages,
+                    queue,
+                    self.options.reader,
+                    minimum,
+                    |output| super::super::exception::write(&self.reason, trace.as_deref(), output),
+                )
+                .is_ok()
+                {
+                    std::future::poll_fn(|cx| {
+                        let _ = self
+                            .output
+                            .poll(writer, queue, messages, cx, self.options.budget);
+                        Poll::Ready(())
+                    })
+                    .await;
+                }
+            }
+        }
+        if result.is_ok() && !self.hard_abort {
+            let outcome = if !output_was_failed && queue.is_failed() {
+                std::future::poll_fn(|cx| {
+                    if let Poll::Ready(error) = abort.as_mut().poll(cx) {
+                        return Poll::Ready(Err(Cause::Protocol(error)));
+                    }
+                    io::poll_abort(writer, cx, self.options.budget).map_err(Cause::Close)
+                })
+                .await
+            } else {
+                let mut drained = false;
+                std::future::poll_fn(|cx| {
+                    if let Poll::Ready(error) = abort.as_mut().poll(cx) {
+                        return Poll::Ready(Err(Cause::Protocol(error)));
+                    }
+                    if !drained {
+                        match self
+                            .output
+                            .poll(writer, queue, messages, cx, self.options.budget)
+                        {
+                            Poll::Pending => return Poll::Pending,
+                            Poll::Ready(Err(error)) => {
+                                return Poll::Ready(Err(Cause::Output(error)))
+                            }
+                            Poll::Ready(Ok(())) => drained = true,
+                        }
+                    }
+                    io::poll_close(writer, cx, self.options.budget).map_err(Cause::Close)
+                })
+                .await
+            };
+            if let Err(cause) = outcome {
+                result = Err(RunError {
+                    cause: Some(cause),
+                    cleanup: None,
+                });
+            }
+        }
+        let result = with_cleanup(
+            result,
+            discard_output(messages, queue, self.options.budget).await,
+        );
+        self.complete(&result);
+        result
+    }
+    fn complete<R, W>(mut self, result: &Result<(), RunError<R, W>>) {
+        if let Some(registration) = self.registration.take() {
+            registration.complete(result);
+        }
+    }
+}
+
+fn terminal_reason<R, W>(outcome: &Result<(), Cause<R, W>>) -> Error {
+    match outcome {
+        Err(Cause::Protocol(error)) => error.clone(),
+        Ok(()) => Error::disconnected("client requested disconnect".into()),
+        _ => Error::disconnected("connection stopped".into()),
+    }
+}
+
+async fn discard_output<'p, B>(
+    messages: &mut messages::Messages<'p, '_, '_>,
+    queue: &mut messages::Queue<'p, '_, B>,
+    budget: NonZeroUsize,
+) -> Result<(), connection::Error> {
+    queue.fail();
+    std::future::poll_fn(|cx| {
+        for _ in 0..budget.get() {
+            match queue.discard_one(messages) {
+                Ok(true) => (),
+                Ok(false) => return Poll::Ready(Ok(())),
+                Err(error) => {
+                    return Poll::Ready(Err(connection::Error::Input(owned::Error::Storage(error))))
+                }
+            }
+        }
+        cx.waker().wake_by_ref();
+        Poll::Pending
+    })
+    .await
+}
+
+fn with_cleanup<R, W>(
+    mut result: Result<(), RunError<R, W>>,
+    cleanup: Result<(), connection::Error>,
+) -> Result<(), RunError<R, W>> {
+    if let Err(error) = cleanup {
+        match &mut result {
+            Ok(()) => {
+                return Err(RunError {
+                    cause: None,
+                    cleanup: Some(error),
+                })
+            }
+            Err(result) => {
+                result.cleanup.get_or_insert(error);
+            }
+        }
+    }
+    result
 }

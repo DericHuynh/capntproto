@@ -218,8 +218,18 @@ fn shutdown_abort_cancels_blocked_write_flush_and_close_and_preserves_its_reason
                     "partial read must be in flight"
                 );
                 shutdown.stop();
-                for _ in 0..20 {
+                // Protocol retirement is budgeted before physical output starts.
+                for _ in 0..2000 {
                     assert!(run.as_mut().poll(&mut cx).is_pending());
+                    let output = output.borrow();
+                    let reached = match stage {
+                        0 => output.write_calls > 0,
+                        1 => output.flush_calls > 0,
+                        _ => output.close_calls > 0,
+                    };
+                    if reached {
+                        break;
+                    }
                 }
                 let counts = {
                     let output = output.borrow();

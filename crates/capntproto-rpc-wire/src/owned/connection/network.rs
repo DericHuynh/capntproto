@@ -1,6 +1,5 @@
 //! Caller-authenticated third-party jobs owned by the ordinary connection.
 use super::*;
-use crate::rpc_capnp::api::{Exception, Message};
 use capntproto_rpc_engine::clients::Capabilities;
 
 #[must_use = "process the network job or release it through its originating driver"]
@@ -316,33 +315,6 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub fn release_provision(&mut self, provision: questions::Provision<'id>) {
         self.ledgers.questions.release_provision(provision);
     }
-    /// Best-effort terminal notification. The hosting pump owns flushing and
-    /// must stop ordinary admission before calling this method.
-    pub fn send_abort(
-        &mut self,
-        messages: &mut messages::Messages<'pool, '_, '_>,
-        queue: &mut messages::Queue<'pool, '_, impl Default>,
-        options: capnp::message::ReaderOptions,
-        minimum: usize,
-        write: impl FnOnce(capnp::field_api::FixedStruct<'_, Exception>) -> capnp::Result<()>,
-    ) -> Result<(), Error> {
-        let output = queue
-            .reserve()
-            .map_err(|e| Error::Input(super::super::Error::Storage(e)))?;
-        let frame = Frame::build(messages, minimum, options, |builder| {
-            write(
-                builder
-                    .try_init_root::<Message>()?
-                    .into_field(Message::ABORT)
-                    .init()?,
-            )
-        })
-        .map_err(Error::Input)?;
-        let offer = frame.offer(messages).map_err(Error::Input)?;
-        output.accept(messages, offer);
-        Ok(())
-    }
-
     /// Select whether this endpoint implements optional Join. Disabled Join is
     /// echoed as Unimplemented without admitting a peer answer or target lease.
     pub fn allow_join(&mut self, enabled: bool) {

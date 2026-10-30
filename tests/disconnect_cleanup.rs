@@ -460,3 +460,30 @@ async fn failed_terminal_publication_still_awaits_physical_shutdown() {
         })
         .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn disconnect_releases_exports_before_waiting_for_physical_shutdown() {
+    tokio::task::LocalSet::new().run_until(async {
+        for portable in [false, true] {
+            for fail_body in [false, true] {
+                let mut f = Fixture::new(portable, true).await;
+                drop(f.cap.take());
+                let release = f._hub.borrow_mut().connect(1, 2).gate_shutdown();
+                f.status.borrow_mut().fail_body = fail_body;
+                let mut disconnect = f.system.get_disconnector();
+                assert!(futures::poll!(&mut disconnect).is_pending());
+                drain().await;
+                assert_eq!(f.status.borrow().shutdowns.len(), 1);
+                assert!(f.destroyed.get(), "portable={portable}, fail_body={fail_body}: exported contexts must retire before physical shutdown waits");
+                assert_eq!(f.status.borrow().readers, 0, "pending read must stop before shutdown waits");
+                assert_eq!(f.status.borrow().shutdowns, [false], "transport receives the disconnect reason");
+                assert!(futures::poll!(&mut disconnect).is_pending());
+                let response = f.result.borrow_mut().take().unwrap();
+                let error = response.await.err().unwrap();
+                check_disconnect(error, true);
+                release.send(()).unwrap();
+                tokio::time::timeout(Duration::from_secs(2), disconnect).await.unwrap().unwrap();
+            }
+        }
+    }).await;
+}

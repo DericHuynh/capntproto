@@ -74,7 +74,9 @@ pub fn owning_protocol_controls(required_unimplemented: bool) {
             assert!(rejected.producer.is_none());
             rejected.frame.release(messages);
             peer.capabilities().release(service);
-            let mut closing = peer.terminate(&mut queue);
+            queue.fail();
+            while queue.discard_one(messages).unwrap() {}
+            let mut closing = peer.terminate();
             let mut owners = [false; 2];
             let mut done = false;
             for _ in 0..200 {

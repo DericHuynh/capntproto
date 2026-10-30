@@ -33,49 +33,31 @@ pub enum Termination<I, A, S> {
     Server(S),
 }
 
-/// A terminal driver has no input, dispatch or publication methods. First stop
-/// transport IO and return externally executing tasks/response frames. Then
-/// consume the driver and poll cleanup with the original message pool. Owners
+/// A terminal driver has no input, dispatch or publication methods. Stop input
+/// and return externally executing tasks/response frames before consuming it.
+/// Serialized publications remain owned by their output queue: drain or discard
+/// them separately. Poll protocol cleanup with the original message pool. Owners
 /// are returned outside ledger/graph borrows; no application callback runs here.
 /// Finish polling, or end the message-pool scope if this value is dropped early.
 #[must_use = "poll terminal cleanup or end the enclosing message-pool scope"]
-pub struct Terminating<
-    'q,
-    'queue,
-    'p,
-    'id,
-    's,
-    I,
-    A,
-    P: Copy + Eq,
-    S,
-    const CAPS: usize,
-    const PATH: usize,
-    R = (),
-> {
+pub struct Terminating<'p, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize> {
     stage: Stage<'p, 'id, 's, I, A, P, S, CAPS, PATH>,
-    queue: &'q mut messages::Queue<'p, 'queue, R>,
     phase: usize,
     index: usize,
 }
 impl<'p, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'p, 'id, 's, I, A, P, S, CAPS, PATH>
 {
-    pub fn terminate<'q, 'queue, R>(
-        self,
-        queue: &'q mut messages::Queue<'p, 'queue, R>,
-    ) -> Terminating<'q, 'queue, 'p, 'id, 's, I, A, P, S, CAPS, PATH, R> {
-        queue.fail();
+    pub fn terminate(self) -> Terminating<'p, 'id, 's, I, A, P, S, CAPS, PATH> {
         Terminating {
             stage: Stage::Tasks(self),
-            queue,
-            phase: 0,
+            phase: 1,
             index: 0,
         }
     }
 }
-impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
-    Terminating<'_, '_, 'p, '_, '_, I, A, P, S, CAPS, PATH, R>
+impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
+    Terminating<'p, '_, '_, I, A, P, S, CAPS, PATH>
 {
     pub fn poll(
         &mut self,
@@ -83,16 +65,6 @@ impl<'p, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize, R>
         budget: core::num::NonZeroUsize,
     ) -> Result<Termination<I, A, S>, Error> {
         for _ in 0..budget.get() {
-            if self.phase == 0 && !matches!(self.stage, Stage::Done) {
-                if self
-                    .queue
-                    .discard_one(messages)
-                    .map_err(|error| Error::Input(crate::owned::Error::Storage(error)))?
-                {
-                    continue;
-                }
-                self.phase = 1;
-            }
             if let Some(owner) = self.step(messages) {
                 return Ok(owner);
             }

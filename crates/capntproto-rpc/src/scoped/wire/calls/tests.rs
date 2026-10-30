@@ -171,7 +171,9 @@ fn teardown<'p, 'id>(
         &mut driver.capabilities(),
         Error::disconnected("test close".into()),
     );
-    let mut closing = driver.terminate(queue);
+    queue.fail();
+    while queue.discard_one(messages).unwrap() {}
+    let mut closing = driver.terminate();
     let mut done = false;
     for _ in 0..1024 {
         if matches!(
@@ -2458,7 +2460,9 @@ fn resource_output_retries_publication_and_attaches_only_to_first_write() {
             &mut driver.capabilities(),
             Error::disconnected("close".into()),
         );
-        let mut closing = driver.terminate(&mut queue);
+        queue.fail();
+        while queue.discard_one(messages).unwrap() {}
+        let mut closing = driver.terminate();
         let mut done = false;
         for _ in 0..1024 {
             if matches!(

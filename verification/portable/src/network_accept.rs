@@ -307,7 +307,9 @@ pub fn owning_network_acceptance(mode: u8) {
                 );
             })
             .unwrap();
-            let mut closing = peer.terminate(&mut queue);
+            queue.fail();
+            while queue.discard_one(messages).unwrap() {}
+            let mut closing = peer.terminate();
             let mut done = false;
             for _ in 0..200 {
                 match closing

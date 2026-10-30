@@ -115,7 +115,10 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   imported queued Calls and capability-bearing Returns appends descriptors to
   those retained segments. Both keep ordinary grant admission; unsupported
   layouts and pool limits use the compact codec. Terminate both workers before
-  terminating the portable driver.
+  terminating the portable driver. `Driver::terminate()` retires only protocol
+  ownership; accepted serialized publications remain in their output queue.
+  Drain or explicitly fail/discard that queue separately. Terminal Abort
+  publication uses `owned::controls::send_abort` without a live driver.
   The caller still drives IO, maintenance and authenticated network operations.
   `wire::foreign::ForeignPromises` supplies the foreign import callback for
   pending owned hooks. Poll it after graph reclamation and before calls and
@@ -206,9 +209,11 @@ The futures adapter forwards flush and close. The Unix resource adapter closes
 only the write half.
 
 The hosted coordinator's `run`/`run_transport` retain immediate stop semantics.
-Use `run_stream`/`run_connection` for orderly shutdown: stop new work, release
-unclaimed input resources, drain accepted output, flush, then close the write
-half. Supply a separate abort future for an immediate stop or shutdown deadline;
+Use `run_stream`/`run_connection` for orderly shutdown: stop new work and input,
+retire protocol tables and application owners, drain accepted output, flush,
+then close the write half. `Input::stop` cancels an adapter-owned pending read
+before application destructors or blocked physical closure. Native frame IO
+uses one shared teardown path for hosted and registered connections. Supply a separate abort future for an immediate stop or shutdown deadline;
 it stays active during blocked output and close. Protocol storage is reclaimed
 on success and failure. On an error or abort, the caller drops the IO; the
 coordinator makes only one best-effort Abort attempt for a protocol error on a

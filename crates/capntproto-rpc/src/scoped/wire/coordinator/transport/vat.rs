@@ -59,7 +59,8 @@ impl<V> Connection<V> {
     }
     /// Bound the full input frame, including its segment table. The existing
     /// transport must also bound allocation while receiving its original message.
-    /// Keep Failure polled as an abort input, including while output drains.
+    /// Poll Failure while driving requests; output drain/close reports its own
+    /// failures after input and protocol ownership have retired.
     pub fn into_io(self, maximum: NonZeroUsize) -> capnp::Result<(Reader, Writer, Failure)> {
         let (_, reader, writer, failure) = self.into_io_and_peer(maximum)?;
         Ok((reader, writer, failure))
@@ -78,7 +79,7 @@ impl<V> Connection<V> {
         Ok((
             self.peer,
             Reader {
-                input: incoming,
+                input: Some(incoming),
                 active: false,
                 position: 0,
                 remaining: 0,
@@ -91,6 +92,7 @@ impl<V> Connection<V> {
             },
             Writer {
                 shutdown: None,
+                close_reason: None,
                 closing: closing.clone(),
                 result: None,
                 state: Rc::new(RefCell::new(OutputState {
@@ -132,7 +134,7 @@ impl Future for Failure {
 }
 
 pub struct Reader {
-    input: Box<dyn crate::IncomingFrameStream>,
+    input: Option<Box<dyn crate::IncomingFrameStream>>,
     active: bool,
     position: usize,
     remaining: usize,
@@ -148,10 +150,11 @@ impl Reader {
         if self.ended {
             return Poll::Ready(Ok(false));
         }
+        let input = self.input.as_mut().expect("open input");
         if self.active {
             return Poll::Ready(Ok(true));
         }
-        let Some(length) = ready!(self.input.poll_frame_size(cx))? else {
+        let Some(length) = ready!(input.poll_frame_size(cx))? else {
             self.ended = true;
             return Poll::Ready(Ok(false));
         };
@@ -174,7 +177,7 @@ impl Reader {
                 "previous frame has not finished admission".into(),
             )));
         }
-        let count = if let Some(frame) = self.input.frame() {
+        let count = if let Some(frame) = self.input.as_ref().and_then(|input| input.frame()) {
             let source = frame
                 .get(self.position..)
                 .ok_or_else(|| Error::failed("frame changed during admission".into()))?;
@@ -182,7 +185,11 @@ impl Reader {
             bytes[..count].copy_from_slice(&source[..count]);
             count
         } else {
-            let count = ready!(self.input.poll_read_frame(cx, bytes))?;
+            let count = ready!(self
+                .input
+                .as_mut()
+                .expect("active input")
+                .poll_read_frame(cx, bytes))?;
             if count > self.remaining || count > bytes.len() {
                 return Poll::Ready(Err(Error::failed(
                     "stream exceeded its prepared frame".into(),
@@ -200,7 +207,9 @@ impl Reader {
             self.fds_loaded = true;
             self.fds = self
                 .input
-                .take_fds()
+                .as_mut()
+                .map(|input| input.take_fds())
+                .unwrap_or_default()
                 .into_iter()
                 .take(253)
                 .map(|fd| Some(Rc::new(fd)))
@@ -268,12 +277,12 @@ impl Input<resources::Import> for Reader {
         if self.active || self.ended {
             None
         } else {
-            self.input.buffered_next_frame_size()
+            self.input.as_mut()?.buffered_next_frame_size()
         }
     }
     fn buffered_frame(&self) -> Option<&[u8]> {
         if self.active && self.position == 0 {
-            self.input.frame()
+            self.input.as_ref().and_then(|input| input.frame())
         } else {
             None
         }
@@ -291,7 +300,7 @@ impl Input<resources::Import> for Reader {
         if !self.active || self.position != 0 {
             return Ok(None);
         }
-        let Some(bytes) = self.input.frame() else {
+        let Some(bytes) = self.input.as_ref().and_then(|input| input.frame()) else {
             return Ok(None);
         };
         if bytes.len() != self.remaining {
@@ -316,7 +325,8 @@ impl Input<resources::Import> for Reader {
         if !self.active || self.position != 0 {
             return Ok(None);
         }
-        let Some((allocation, range)) = self.input.share_frame() else {
+        let Some((allocation, range)) = self.input.as_mut().and_then(|input| input.share_frame())
+        else {
             return Ok(None);
         };
         if range.len() != self.remaining {
@@ -350,14 +360,22 @@ impl Input<resources::Import> for Reader {
         result
     }
     fn finish_frame(&mut self) {
+        if let Some(input) = &mut self.input {
+            input.finish_frame();
+        }
         self.ended |= self.remaining != 0 || !self.active;
-        self.input.finish_frame();
         self.active = false;
         #[cfg(unix)]
         {
             self.fds.clear();
             self.fds_loaded = false;
         }
+    }
+    fn stop(&mut self) {
+        self.finish_frame();
+        self.input = None;
+        self.ended = true;
+        self.remaining = 0;
     }
 }
 
@@ -369,6 +387,7 @@ impl Input<resources::Import> for Reader {
 /// coordinator's FIFO supplies such windows; arbitrary stream chunks are rejected.
 pub struct Writer {
     shutdown: Option<Promise<(), Error>>,
+    close_reason: Option<Error>,
     closing: Rc<messages::OutputStatus>,
     result: Option<capnp::Result<()>>,
     state: Rc<RefCell<OutputState>>,
@@ -384,23 +403,42 @@ impl Writer {
     fn poll_shutdown(
         &mut self,
         cx: &mut Context<'_>,
-        reason: capnp::Result<()>,
+        aborted: bool,
     ) -> Poll<Result<(), IoError<Error>>> {
         if let Some(result) = &self.result {
             return Poll::Ready(result.clone().map_err(IoError::Failed));
         }
         if self.shutdown.is_none() {
             self.closing.close();
-            self.shutdown = Some(self.state.borrow_mut().output.shutdown(reason));
+            let mut state = self.state.borrow_mut();
+            let reason =
+                self.close_reason
+                    .take()
+                    .or_else(|| {
+                        aborted.then(|| {
+                            state.failure.clone().unwrap_or_else(|| {
+                                Error::disconnected("portable output failed".into())
+                            })
+                        })
+                    })
+                    .map_or(Ok(()), Err);
+            self.shutdown = Some(state.output.shutdown(reason));
         }
-        let result = ready!(Pin::new(self.shutdown.as_mut().unwrap()).poll(cx));
+        let result = ready!(Pin::new(self.shutdown.as_mut().unwrap()).poll(cx)).or_else(|error| {
+            // Legacy accepts an already disconnected transport as closed.
+            if error.kind == capnp::ErrorKind::Disconnected {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        });
         self.shutdown = None;
         self.result = Some(result.clone());
         Poll::Ready(result.map_err(IoError::Failed))
     }
     pub(crate) fn shutdown_reason(&mut self, mut error: Error) {
         error.kind = capnp::ErrorKind::Disconnected;
-        self.state.borrow_mut().failure = Some(error);
+        self.close_reason = Some(error);
     }
     pub(crate) fn publication_queue<'p, 's>(
         &mut self,
@@ -468,9 +506,10 @@ impl Drop for Writer {
     fn drop(&mut self) {
         if !self.closing.close() {
             let mut state = self.state.borrow_mut();
-            let error = state
-                .failure
-                .clone()
+            let error = self
+                .close_reason
+                .take()
+                .or_else(|| state.failure.clone())
                 .unwrap_or_else(|| Error::disconnected("portable transport IO abandoned".into()));
             drop(state.output.shutdown(Err(error)));
         }
@@ -503,16 +542,10 @@ impl io::Close for Writer {
             return Poll::Ready(result.clone().map_err(IoError::Failed));
         }
         ready!(io::Flush::poll_flush(self, cx))?;
-        self.poll_shutdown(cx, Ok(()))
+        self.poll_shutdown(cx, false)
     }
     fn poll_abort(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Error>>> {
-        let error = self
-            .state
-            .borrow()
-            .failure
-            .clone()
-            .unwrap_or_else(|| Error::disconnected("portable output failed".into()));
-        self.poll_shutdown(cx, Err(error))
+        self.poll_shutdown(cx, true)
     }
 }
 

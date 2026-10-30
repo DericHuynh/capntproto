@@ -101,7 +101,9 @@ pub fn bounded_server_output() {
             driver.capabilities().release(observer);
             driver.release_call(call, messages);
             driver.capabilities().release(target);
-            let mut closing = driver.terminate(&mut queue);
+            queue.fail();
+            while queue.discard_one(messages).unwrap() {}
+            let mut closing = driver.terminate();
             for _ in 0..256 {
                 if matches!(
                     closing

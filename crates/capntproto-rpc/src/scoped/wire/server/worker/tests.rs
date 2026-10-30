@@ -400,7 +400,9 @@ fn close<'p, 'id>(
         &mut driver.capabilities(),
         Error::disconnected("closed".into()),
     );
-    let mut closing = driver.terminate(queue);
+    queue.fail();
+    while queue.discard_one(messages).unwrap() {}
+    let mut closing = driver.terminate();
     for _ in 0..1024 {
         if matches!(
             closing
@@ -975,7 +977,9 @@ fn worker_resources_follow_partial_writes_once_and_survive_capacity_failure() {
             &mut driver.capabilities(),
             Error::disconnected("done".into()),
         );
-        let mut closing = driver.terminate(&mut queue);
+        queue.fail();
+        while queue.discard_one(messages).unwrap() {}
+        let mut closing = driver.terminate();
         for _ in 0..1024 {
             if matches!(
                 closing

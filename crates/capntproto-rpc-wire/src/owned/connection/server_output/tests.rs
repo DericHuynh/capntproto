@@ -6,6 +6,63 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn serialized_output_survives_protocol_retirement_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let mut slots = [None];
+            let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+            driver
+                .send(
+                    messages,
+                    &mut queue,
+                    256,
+                    Default::default(),
+                    calls::bootstrap,
+                )
+                .unwrap();
+            let mut terminal = driver.terminate();
+            loop {
+                if matches!(
+                    terminal
+                        .poll(messages, NonZeroUsize::new(1).unwrap())
+                        .unwrap(),
+                    Termination::Done
+                ) {
+                    break;
+                }
+            }
+            assert!(!queue.is_failed());
+            drain(&mut queue, messages, |message| {
+                assert!(matches!(
+                    message.which().unwrap(),
+                    rpc_capnp::message::Bootstrap(_)
+                ));
+            });
+            crate::owned::controls::send_abort(
+                messages,
+                &mut queue,
+                Default::default(),
+                256,
+                |_| Ok(()),
+            )
+            .unwrap();
+            drain(&mut queue, messages, |message| {
+                assert!(matches!(
+                    message.which().unwrap(),
+                    rpc_capnp::message::Abort(_)
+                ));
+            });
+            let mut buffers =
+                core::array::from_fn::<_, 6, _>(|_| Some(messages.reserve(1024).unwrap()));
+            for buffer in &mut buffers {
+                messages.discard(buffer.take().unwrap());
+            }
+        });
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn abort_observer_reads_the_original_frame_once_without_allocating() {
     let measured = allocation_counter::measure(|| {
         with_driver(|mut driver, messages| {
@@ -3548,7 +3605,9 @@ fn close<'p, R>(
     messages: &mut messages::Messages<'p, '_, '_>,
     queue: &mut messages::Queue<'p, '_, R>,
 ) {
-    let mut terminal = driver.terminate(queue);
+    queue.fail();
+    while queue.discard_one(messages).unwrap() {}
+    let mut terminal = driver.terminate();
     for _ in 0..256 {
         if matches!(
             terminal

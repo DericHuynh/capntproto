@@ -186,7 +186,7 @@ pub fn owning_terminal_cleanup(budget: usize) {
                 for client in occupied.into_iter().flatten() {
                     peer.capabilities().release(client);
                 }
-                let mut closing = peer.terminate(&mut queue);
+                let mut closing = peer.terminate();
                 let mut seen_producers = [false; 3];
                 let mut seen_imports = 0;
                 let mut seen_servers = 0;
@@ -219,6 +219,10 @@ pub fn owning_terminal_cleanup(budget: usize) {
                 assert_eq!(seen_servers, servers);
                 assert!(seen_producers.into_iter().all(|seen| seen));
                 drop(closing);
+                // Protocol retirement does not own accepted serialized output.
+                assert!(!queue.is_failed() && !queue.is_empty());
+                queue.fail();
+                while queue.discard_one(messages).unwrap() {}
                 assert!(queue.is_failed() && queue.is_empty());
                 assert!(matches!(queue.reserve(), Err(messages::Error::QueueFailed)));
                 // The pool remains live and all of this connection's buffers and

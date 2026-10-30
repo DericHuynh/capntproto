@@ -506,7 +506,12 @@ fn canceling_registered_drain_retires_owner_without_claiming_success() {
             async { Ok(()) },
             std::future::pending(),
         ));
-        assert!(poll(&mut run).is_pending());
+        for _ in 0..2000 {
+            assert!(poll(&mut run).is_pending());
+            if output.borrow().close_calls > 0 {
+                break;
+            }
+        }
         assert!(network.connection(1).is_none());
         assert!(output.borrow().close_calls > 0 && !output.borrow().closed);
         assert!(poll(&mut disconnected).is_pending());

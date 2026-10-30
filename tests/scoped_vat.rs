@@ -248,7 +248,12 @@ async fn peer(
                 );
                 let (run, driver) = futures::join!(run, driver);
                 run.unwrap();
-                driver.unwrap();
+                // Native shutdown carries the disconnect reason, as legacy
+                // does. The raw network task exposes that queue result; its
+                // managed RPC owner normalizes Disconnected after local close.
+                if let Err(error) = driver {
+                    assert_eq!(error.kind, capnp::ErrorKind::Disconnected);
+                }
                 network.get_disconnector().await.unwrap();
                 assert!(queue.is_empty());
                 let reserved: Vec<_> = (0..64).map(|_| messages.reserve(1024).unwrap()).collect();

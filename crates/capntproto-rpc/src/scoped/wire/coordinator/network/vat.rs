@@ -71,18 +71,9 @@ impl<'p, 'id, 's, P: Copy + Eq, V, const C: usize, const H: usize>
                     .await
             }
         };
-        let mut failure = std::pin::pin!(failure);
-        let mut abort = std::pin::pin!(abort);
-        let aborted = std::future::poll_fn(|cx| {
-            // Explicit deadlines/cancellation retain priority over queue failure.
-            if let Poll::Ready(error) = abort.as_mut().poll(cx) {
-                return Poll::Ready(error);
-            }
-            failure.as_mut().poll(cx)
-        });
-        let result = self
-            .registered
-            .run_connection(
+        self.registered
+            .0
+            .run_vat(
                 messages,
                 queue,
                 &mut reader,
@@ -91,16 +82,65 @@ impl<'p, 'id, 's, P: Copy + Eq, V, const C: usize, const H: usize>
                 resources,
                 controls,
                 shutdown,
-                aborted,
+                abort,
+                failure,
             )
-            .await;
-        if let Err(RunError {
-            cause: Some(Cause::Protocol(error)),
-            ..
-        }) = &result
-        {
-            writer.shutdown_reason(error.clone());
-        }
-        result
+            .await
+    }
+}
+impl<'p, 'id, 's, P: Copy + Eq, const C: usize, const H: usize>
+    Coordinator<'p, 'id, 's, resources::Import, P, C, H>
+{
+    // Both hosted entry points use the same teardown ownership and failure
+    // observation. Native output errors stop work without canceling close.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn run_vat(
+        self,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        queue: &mut messages::Queue<'p, '_, vat::Bundle>,
+        reader: &mut vat::Reader,
+        writer: &mut vat::Writer,
+        scratch: &mut [u32],
+        resources: &vat::Resources,
+        controls: &mut impl Control<'p, 'id, 's, resources::Import, P, C, H, vat::Resources>,
+        shutdown: impl Future<Output = capnp::Result<()>>,
+        abort: impl Future<Output = Error>,
+        failure: vat::Failure,
+    ) -> Result<(), RunError<Error, Error>> {
+        let mut failure = std::pin::pin!(failure);
+        let mut abort = std::pin::pin!(abort);
+        let shutdown = std::pin::pin!(shutdown);
+        let mut shutdown = std::pin::pin!(notified::Notified::new(shutdown));
+        let mut caller_aborted = false;
+        let (mut closing, result) = {
+            let aborted = std::pin::pin!(std::future::poll_fn(|cx| {
+                // Explicit deadlines/cancellation retain priority over queue failure.
+                if let Poll::Ready(error) = abort.as_mut().poll(cx) {
+                    caller_aborted = true;
+                    return Poll::Ready(error);
+                }
+                failure.as_mut().poll(cx)
+            }));
+            let mut aborted = std::pin::pin!(notified::Notified::new(aborted));
+            self.prepare_connection(
+                messages,
+                queue,
+                reader,
+                writer,
+                scratch,
+                resources,
+                controls,
+                shutdown.as_mut(),
+                aborted.as_mut(),
+            )
+            .await
+        };
+        // Queue failure ends protocol work, but does not cancel physical close.
+        // Only the caller's explicit abort/deadline may skip further IO.
+        closing.hard_abort = caller_aborted;
+        writer.shutdown_reason(closing.reason.clone());
+        closing
+            .finish(messages, queue, writer, abort.as_mut(), result)
+            .await
     }
 }
