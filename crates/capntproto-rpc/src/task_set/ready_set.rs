@@ -28,7 +28,7 @@ struct Slot<F> {
     future: Option<F>,
     waker: Waker,
 }
-pub(super) struct ReadySet<F: Future + Unpin> {
+pub(crate) struct ReadySet<F: Future + Unpin> {
     ready: Arc<Ready>,
     tasks: Vec<Slot<F>>,
     queued: Option<FuturesUnordered<F>>,
@@ -37,7 +37,7 @@ pub(super) struct ReadySet<F: Future + Unpin> {
     available: u128,
 }
 impl<F: Future + Unpin> ReadySet<F> {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             ready: Arc::new(Ready::new()),
             tasks: Vec::new(),
@@ -47,12 +47,29 @@ impl<F: Future + Unpin> ReadySet<F> {
             available: u128::MAX,
         }
     }
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.queued
             .as_ref()
             .map_or(self.live, FuturesUnordered::len)
     }
-    pub(super) fn push(&mut self, future: F) {
+    /// Reserve reusable slot storage before consuming a fallible hosted owner.
+    /// Exceptional concurrency keeps the same FuturesUnordered allocation path.
+    pub(crate) fn try_push(
+        &mut self,
+        future: F,
+    ) -> Result<(), (std::collections::TryReserveError, F)> {
+        if self.queued.is_none()
+            && self.live < REUSABLE_TASKS
+            && self.available.trailing_zeros() as usize == self.tasks.len()
+        {
+            if let Err(error) = self.tasks.try_reserve(1) {
+                return Err((error, future));
+            }
+        }
+        self.push(future);
+        Ok(())
+    }
+    pub(crate) fn push(&mut self, future: F) {
         if let Some(queued) = &self.queued {
             queued.push(future);
             return;

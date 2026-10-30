@@ -16,6 +16,7 @@ use capntproto_rpc_wire::{
     clients::{Endpoint, Route},
     owned::TargetRef,
 };
+use futures::Stream;
 
 type Body = capnp::message::Builder<capnp::message::HeapAllocator>;
 type Sender = shared::Sender<capnp::Result<Box<dyn ResponseHook>>>;
@@ -216,10 +217,82 @@ struct Sent<'p, 'id, const C: usize> {
     observer: Weak<Lease>,
     pipeline: Option<Rc<PipelineState>>,
 }
+// Use legacy's exact reusable ready set. Each local callback registers its
+// own completion/cancellation source; unrelated control work never polls it.
 struct Local {
-    sender: Sender,
+    sender: Option<
+        capntproto_rpc_engine::completion::Delivery<'static, capnp::Result<Box<dyn ResponseHook>>>,
+    >,
     future: PartResponse,
+    permit: Option<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>,
+}
+struct LocalCompleted {
+    sender:
+        capntproto_rpc_engine::completion::Delivery<'static, capnp::Result<Box<dyn ResponseHook>>>,
+    result: capnp::Result<Box<dyn ResponseHook>>,
     permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
+}
+impl Local {
+    fn new(
+        sender: Sender,
+        future: PartResponse,
+        permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
+    ) -> Self {
+        let sender: capntproto_rpc_engine::completion::Sender<'static, _> = sender.into();
+        Self {
+            sender: Some(sender.track()),
+            future,
+            permit: Some(permit),
+        }
+    }
+    fn reject(mut self, error: Error) {
+        let _ = self.sender.as_mut().unwrap().try_send(Err(error));
+    }
+}
+impl Future for Local {
+    type Output = Option<LocalCompleted>;
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        if this.sender.as_mut().unwrap().poll_observed(cx).is_ready() {
+            return Poll::Ready(None);
+        }
+        let result = std::task::ready!(Pin::new(&mut this.future).poll(cx));
+        Poll::Ready(Some(LocalCompleted {
+            sender: this.sender.take().unwrap(),
+            result,
+            permit: this.permit.take().unwrap(),
+        }))
+    }
+}
+#[derive(Default)]
+struct LocalTasks {
+    // Ordinary two-party connections have no local network callbacks. Defer
+    // ready-set allocation until the first one and reuse its slots thereafter.
+    ready: Option<Box<crate::task_set::ReadySet<Local>>>,
+}
+impl LocalTasks {
+    fn is_empty(&self) -> bool {
+        self.ready.as_ref().is_none_or(|ready| ready.len() == 0)
+    }
+    fn push(&mut self, local: Local) {
+        if let Err((_, local)) = self
+            .ready
+            .get_or_insert_with(|| Box::new(crate::task_set::ReadySet::new()))
+            .try_push(local)
+        {
+            local.reject(Error::overloaded(
+                "network callback allocation failed".into(),
+            ));
+        }
+    }
+    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<Option<Option<LocalCompleted>>> {
+        self.ready.as_mut().map_or(Poll::Ready(None), |ready| {
+            Pin::new(&mut **ready).poll_next(cx)
+        })
+    }
+    fn clear(&mut self) {
+        drop(self.ready.take());
+    }
 }
 struct LocalReply {
     inner: Box<dyn ResponseHook>,
@@ -239,7 +312,7 @@ pub(crate) struct NetworkControl<'p, 'id, V: 'static, F, const C: usize, const H
     commands: Rc<Commands>,
     pending: VecDeque<Incoming<'p, 'id, H>>,
     sent: Vec<Sent<'p, 'id, C>>,
-    local: Vec<Local>,
+    local: LocalTasks,
     handoffs: Vec<handoff::Job<'p, 'id>>,
     provided: Vec<introduction::Provided<'id>>,
     accepting_vines: Vec<introduction::AcceptedVine<'id>>,
@@ -275,7 +348,7 @@ impl<
             commands,
             pending: VecDeque::new(),
             sent: Vec::new(),
-            local: Vec::new(),
+            local: LocalTasks::default(),
             handoffs: Vec::new(),
             provided: Vec::new(),
             accepting_vines: Vec::new(),
@@ -618,30 +691,23 @@ impl<
                         );
                     }
                 }
-                1 => {
-                    for index in (0..self.local.len()).rev() {
-                        if self.local[index].sender.is_closed() {
-                            self.local.swap_remove(index);
-                            return Poll::Ready(Ok(true));
-                        }
-                        if let Poll::Ready(result) =
-                            Pin::new(&mut self.local[index].future).poll(cx)
-                        {
-                            let local = self.local.swap_remove(index);
-                            let result = result.map(|inner| {
-                                Box::new(LocalReply {
-                                    inner,
-                                    _lease: Lease {
-                                        _permit: local.permit,
-                                        _notify: Notify(Rc::downgrade(&self.commands)),
-                                    },
-                                }) as Box<dyn ResponseHook>
-                            });
-                            let _ = local.sender.send(result);
-                            return Poll::Ready(Ok(true));
-                        }
+                1 => match self.local.poll(cx) {
+                    Poll::Ready(Some(Some(mut local))) => {
+                        let result = local.result.map(|inner| {
+                            Box::new(LocalReply {
+                                inner,
+                                _lease: Lease {
+                                    _permit: local.permit,
+                                    _notify: Notify(Rc::downgrade(&self.commands)),
+                                },
+                            }) as Box<dyn ResponseHook>
+                        });
+                        let _ = local.sender.try_send(result);
+                        return Poll::Ready(Ok(true));
                     }
-                }
+                    Poll::Ready(Some(None)) => return Poll::Ready(Ok(true)),
+                    _ => (),
+                },
                 2 => {
                     for index in (0..self.sent.len()).rev() {
                         let sent = &mut self.sent[index];
@@ -743,9 +809,7 @@ impl<
                     if available {
                         let request = self.commands.queue.borrow_mut().pop_front();
                         if let Some(request) = request {
-                            if self.sent.try_reserve(1).is_err()
-                                || self.local.try_reserve(1).is_err()
-                            {
+                            if self.sent.try_reserve(1).is_err() {
                                 let _ = request.sender.send(Err(Error::overloaded(
                                     "network command allocation failed".into(),
                                 )));
@@ -917,11 +981,9 @@ impl<
                 observer: Weak::new(),
                 pipeline: None,
             }),
-            Ok(Err(future)) => self.local.push(Local {
-                sender: request.sender,
-                future,
-                permit: request.permit,
-            }),
+            Ok(Err(future)) => self
+                .local
+                .push(Local::new(request.sender, future, request.permit)),
             Err(error) => {
                 let _ = request.sender.send(Err(error));
             }
@@ -1446,6 +1508,100 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_callback_readiness_polls_only_its_owner_and_cancels_without_io() {
+        let counts: &[usize] = if cfg!(miri) { &[1, 4] } else { &[1, 32, 129] };
+        for &count in counts {
+            let quota =
+                Rc::new(capntproto_rpc_engine::flow_control::outgoing::Outgoing::new(count));
+            let polls = Rc::new(RefCell::new(vec![0; count]));
+            let wakes = Rc::new(RefCell::new(vec![None::<Waker>; count]));
+            let ready = Rc::new(RefCell::new(vec![false; count]));
+            let mut tasks = LocalTasks::default();
+            let mut receivers = Vec::new();
+            for index in 0..count {
+                let (sender, receiver) = shared::channel();
+                receivers.push(Some(receiver));
+                let polls = polls.clone();
+                let wakes = wakes.clone();
+                let ready = ready.clone();
+                tasks.push(Local::new(
+                    sender,
+                    Promise::from_future(std::future::poll_fn(move |cx| {
+                        polls.borrow_mut()[index] += 1;
+                        wakes.borrow_mut()[index] = Some(cx.waker().clone());
+                        if ready.borrow()[index] {
+                            Poll::Ready(Err(Error::failed(format!("local callback {index}"))))
+                        } else {
+                            Poll::Pending
+                        }
+                    })),
+                    quota.reserve_owned().unwrap(),
+                ));
+            }
+            let mut cx = Context::from_waker(Waker::noop());
+            assert!(tasks.poll(&mut cx).is_pending());
+            assert_eq!(*polls.borrow(), vec![1; count]);
+            for _ in 0..8 {
+                assert!(tasks.poll(&mut cx).is_pending());
+            }
+            assert_eq!(
+                *polls.borrow(),
+                vec![1; count],
+                "unrelated control polls restarted callbacks"
+            );
+            ready.borrow_mut()[0] = true;
+            wakes.borrow()[0].as_ref().unwrap().wake_by_ref();
+            let Poll::Ready(Some(Some(mut completed))) = tasks.poll(&mut cx) else {
+                panic!("notified callback must complete");
+            };
+            let _ = completed.sender.try_send(completed.result);
+            drop(completed.permit);
+            assert_eq!(polls.borrow()[0], 2);
+            assert!(polls.borrow()[1..].iter().all(|&polls| polls == 1));
+            assert_eq!(quota.used(), count - 1);
+            let Poll::Ready(Ok(Err(error))) =
+                Pin::new(receivers[0].as_mut().unwrap()).poll(&mut cx)
+            else {
+                panic!("completion did not reach its original receiver");
+            };
+            assert_eq!(error.extra, "local callback 0");
+            if count > 1 {
+                drop(receivers[count - 1].take());
+                assert!(matches!(tasks.poll(&mut cx), Poll::Ready(Some(None))));
+                assert_eq!(
+                    polls.borrow()[count - 1],
+                    1,
+                    "cancellation polled the callback future"
+                );
+                assert_eq!(quota.used(), count - 2);
+            }
+            tasks.clear();
+            assert_eq!(
+                quota.used(),
+                0,
+                "shutdown retained local callback admission"
+            );
+            assert!(tasks.is_empty());
+            for wake in wakes.borrow().iter().flatten() {
+                wake.wake_by_ref();
+            }
+            assert!(matches!(tasks.poll(&mut cx), Poll::Ready(None)));
+        }
+    }
+    #[test]
+    fn unused_local_callback_scheduler_requires_no_allocation() {
+        let measured = allocation_counter::measure(|| {
+            let mut tasks = LocalTasks::default();
+            assert!(tasks.is_empty());
+            assert!(matches!(
+                tasks.poll(&mut Context::from_waker(Waker::noop())),
+                Poll::Ready(None)
+            ));
+            tasks.clear();
+        });
+        assert_eq!(measured.count_total, 0);
+    }
     #[test]
     fn network_reply_and_pipeline_retain_original_bytes_after_driver_and_pool_teardown() {
         use capntproto_rpc_engine::{connection as storage, ids::WireId};
