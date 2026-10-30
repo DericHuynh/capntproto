@@ -140,6 +140,7 @@ struct Entry<'p, 'id, I, const C: usize, const H: usize> {
     local: Option<Box<Execution<'p, 'id, I, C, H>>>,
     // Occupancy only; the full generation lives in the existing wire route.
     published: bool,
+    plain_receiver: bool,
     #[cfg(test)]
     polls: usize,
     unpublished: bool,
@@ -225,6 +226,9 @@ pub struct Calls<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> {
     live: usize,
     first_free: usize,
     published: usize,
+    // Published direct owners eligible for a data-only Return. Cancellation is
+    // rechecked by the keyed selector before any protocol state is committed.
+    plain_receivers: usize,
     pending: Option<Box<Call>>,
     maximum: usize,
     admission_wait: Option<std::sync::Arc<super::ready::Signal>>,
@@ -248,6 +252,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             live: 0,
             first_free: 0,
             published: 0,
+            plain_receivers: 0,
             pending: None,
             maximum,
             admission_wait: None,
@@ -282,7 +287,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         self.published != 0
     }
     pub(super) fn has_plain_receivers(&self) -> bool {
-        self.published != 0
+        self.plain_receivers != 0
     }
     pub(super) fn idle_after_publication(&self) -> bool {
         self.pending.is_none() && self.ready.is_empty()
@@ -386,6 +391,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         }
         self.unpublished -= usize::from(entry.unpublished);
         self.published -= usize::from(entry.published);
+        self.plain_receivers -= usize::from(entry.plain_receiver);
         self.live -= 1;
         self.first_free = self.first_free.min(index);
         drop(entry);
@@ -419,8 +425,14 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         {
             self.ready.push(index);
         }
+        entry.plain_receiver = entry.published
+            && entry
+                .wire
+                .question()
+                .is_some_and(|key| entry.wire.accepts_plain(key));
         self.unpublished += usize::from(entry.unpublished);
         self.published += usize::from(entry.published);
+        self.plain_receivers += usize::from(entry.plain_receiver);
         if index == self.entries.len() {
             self.entries.push(Some(entry));
         } else {
@@ -1111,6 +1123,8 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             debug_assert_eq!(sent.task, task);
             entry.wire.route = CallRoute::Remote(sent.question);
         }
+        entry.plain_receiver = entry.wire.accepts_plain(sent.question);
+        self.plain_receivers += usize::from(entry.plain_receiver);
         if let Some(credit) = credit {
             driver
                 .retain_call_credit(sent.question, credit)
@@ -1488,12 +1502,6 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                         .map_err(wire_error)?;
                 }
                 let mut call = self.pending.take().expect("published call");
-                if let CallParams::OwnedRequest(request) = &mut call.params {
-                    // Like C++ RpcRequest's target, this interest protects the
-                    // request through send(). The child now owns its question
-                    // and FIFO frame, so a parent Finish cannot overtake it.
-                    request.publication_committed();
-                }
                 let pipeline = match hooks.attach_pipeline(&mut call) {
                     Ok(pipeline) => pipeline,
                     Err(error) => {
@@ -1515,6 +1523,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     },
                     local: None,
                     published: true,
+                    plain_receiver: false,
                     #[cfg(test)]
                     polls: 0,
                     unpublished: false,
@@ -1631,6 +1640,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             wire,
             local: None,
             published: false,
+            plain_receiver: false,
             #[cfg(test)]
             polls: 0,
             unpublished: true,

@@ -22,6 +22,9 @@ pub(super) struct State {
     receive: Cell<Option<Waker>>,
     canceled: Cell<Option<Waker>>,
     response_interest: Cell<bool>,
+    // An unsent child must observe a locally failed projection even before the
+    // coordinator admits it. Publication transfers that duty to its question.
+    projection: Cell<Option<Weak<Endpoint>>>,
     pipeline_interest: Cell<usize>,
     pipeline: Cell<Option<Weak<wire::PipelineState>>>,
 }
@@ -80,6 +83,7 @@ impl Cache {
                         && !has_value(&state.results)
                         && !has_value(&state.receive)
                         && !has_value(&state.canceled)
+                        && !has_value(&state.projection)
                 );
                 state.observed.set(false);
                 state.ready.set(false);
@@ -451,6 +455,10 @@ struct Response {
 }
 
 impl Completion {
+    pub(super) fn published(&self) {
+        self.0.projection.take();
+    }
+
     pub(super) fn tail_acknowledged(&self) {
         // ResultsSentElsewhere completes execution, not the promised results.
         // The wire owner retains that pipeline through the original Finish.
@@ -550,6 +558,11 @@ impl State {
             return Poll::Ready(Err(Box::new(closed_reason(shutdown))));
         }
         if !self.ready() {
+            if has_value(&self.projection) {
+                if let Some(error) = self.projection_failure(cx) {
+                    return Poll::Ready(Err(Box::new(error)));
+                }
+            }
             let registered = registered(&self.receive, cx.waker());
             if !registered {
                 let wake = cx.waker().clone();
@@ -585,8 +598,23 @@ impl State {
             },
         ))
     }
+    #[cold]
+    #[inline(never)]
+    fn projection_failure(&self, cx: &mut Context<'_>) -> Option<Error> {
+        let projection = self.projection.take();
+        let endpoint = projection.as_ref().and_then(Weak::upgrade);
+        self.projection.set(projection);
+        let endpoint = endpoint?;
+        endpoint.binding_pending(cx);
+        if endpoint.index.get().is_none() {
+            Hook(endpoint, None).get_failure()
+        } else {
+            None
+        }
+    }
     fn cancel_response(self: &Rc<Self>, inbox: &Weak<Inbox>) {
         self.response_interest.set(false);
+        self.projection.take();
         if self.pipeline_interest.get() != 0 && !self.observed.get() {
             // The response future is gone, but an owned projection still needs
             // the operation. Completion publishes its pipeline without polling.
@@ -699,6 +727,9 @@ pub(crate) fn request_scoped(
         .inbox
         .upgrade()
         .map_or_else(Rc::default, |inbox| inbox.completion_cache.acquire());
+    if hook.0.index.get().is_none() {
+        state.projection.set(Some(Rc::downgrade(&hook.0)));
+    }
     let results = Results::direct(ResultsSender(state.clone()), context);
     let completion = CallCompletion::Response(Completion(state.clone()));
     let admitted = hook.enqueue(
@@ -818,6 +849,57 @@ mod tests {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
+    #[test]
+    fn projection_failure_is_observed_before_publication_and_does_not_replace_child_results() {
+        for published in [false, true] {
+            let hooks = ClientHooks::new(4, 4);
+            let state = Rc::new(State::default());
+            let completion = Completion(state.clone());
+            let sender = ResultsSender(state.clone());
+            let endpoint = Endpoint::projection(Rc::downgrade(&hooks.inbox));
+            state.projection.set(Some(Rc::downgrade(&endpoint)));
+            let mut promise = state.clone().promise(hooks.inbox.clone());
+            let wake = Arc::new(WakeCount(AtomicUsize::new(0)));
+            let waker = Waker::from(wake.clone());
+            let mut cx = Context::from_waker(&waker);
+            assert!(Pin::new(&mut promise).poll(&mut cx).is_pending());
+            if published {
+                completion.published();
+            }
+            endpoint.forward_projection(Err(Error::overloaded("parent failed".into())));
+            assert!(wake.0.load(Ordering::SeqCst) != 0);
+            let result = Pin::new(&mut promise).poll(&mut cx);
+            if published {
+                assert!(result.is_pending(), "a published child owns its response");
+                sender.send(results("child response"));
+                completion.complete(Ok(()));
+                let Poll::Ready(Ok(response)) = Pin::new(&mut promise).poll(&mut cx) else {
+                    panic!("child response")
+                };
+                assert_eq!(
+                    response
+                        .get()
+                        .unwrap()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "child response"
+                );
+            } else {
+                let Poll::Ready(Err(error)) = result else {
+                    panic!("unsent child must observe the parent's original failure")
+                };
+                assert_eq!(error.kind, capnp::ErrorKind::Overloaded);
+                assert_eq!(error.extra, "parent failed");
+                drop(sender);
+            }
+            drop(promise);
+            assert!(
+                !has_value(&state.projection),
+                "recycled completion retained a prior target"
+            );
+        }
+    }
+
     #[test]
     fn fused_reply_finishes_pipeline_and_retains_response_context() {
         for early in [false, true] {

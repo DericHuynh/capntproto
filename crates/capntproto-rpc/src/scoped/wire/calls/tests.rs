@@ -1484,6 +1484,8 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                     })
                     .collect();
                 assert_eq!(calls.published, 12);
+                assert_eq!(calls.plain_receivers, 12);
+                assert!(calls.has_plain_receivers());
                 assert_eq!(calls.live, 12);
                 assert_eq!(calls.first_free, calls.entries.len());
                 for old in &previous {
@@ -1582,6 +1584,8 @@ fn immediate_reply_index_survives_bursts_cancellation_and_question_reuse() {
                 }
                 assert!(calls.is_empty());
                 assert_eq!(calls.live, 0);
+                assert_eq!(calls.plain_receivers, 0);
+                assert!(!calls.has_plain_receivers());
                 assert_eq!(calls.first_free, 0);
                 assert!(
                     (calls.published == 0),
@@ -2613,6 +2617,10 @@ fn unprojected_reply_delivers_directly_and_preserves_late_capabilities() {
             let mut calls = Calls::new(8, None).unwrap();
             let mut queue = messages::Queue::new_growing(0, 8).unwrap();
             drive(&mut calls, &mut hooks, &mut driver, messages, &mut queue);
+            assert!(
+                !calls.has_plain_receivers(),
+                "a capability result owner needs general completion"
+            );
             let entry = calls.entries.iter().flatten().next().unwrap();
             assert!(entry.wire.pipeline.is_some());
             let CallRoute::Remote(question) = entry.wire.route else {

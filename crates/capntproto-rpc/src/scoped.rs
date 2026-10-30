@@ -1635,6 +1635,15 @@ impl Call {
         self._permit.release_target();
     }
     fn publication_committed(&mut self) {
+        if let CallCompletion::Response(completion) = &self.completion {
+            completion.published();
+        }
+        if let CallParams::OwnedRequest(request) = &mut self.params {
+            // The question and FIFO now protect the child's route. Clear the
+            // response guard before releasing parent interest: its destructor
+            // may synchronously wake and poll the child.
+            request.publication_committed();
+        }
         // The FIFO owns the bytes and the question owns descriptor grants.
         // Like legacy RpcRequest::send_data, neither the destination nor the
         // original parameter builder belongs to the pending reply.

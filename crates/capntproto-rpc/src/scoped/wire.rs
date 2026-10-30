@@ -1893,7 +1893,7 @@ fn request_projected_on<H: ProjectionInner>(
     context: Option<Rc<dyn std::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
     params.retain_pipeline(projected.pipeline.clone());
-    let mut response = response::request_scoped(
+    response::request_scoped(
         projected
             .inner
             .native()
@@ -1903,9 +1903,7 @@ fn request_projected_on<H: ProjectionInner>(
         hints,
         params,
         context,
-    );
-    response.promise = capability::ResponsePromise::new(projected.drive(response.promise));
-    response
+    )
 }
 impl<H: ProjectionInner> ClientHook for Projected<H> {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
