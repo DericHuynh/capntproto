@@ -2396,3 +2396,219 @@ fn plain_admission_does_not_repoll_a_parked_sibling() {
         }
     }
 }
+
+#[test]
+fn retirement_preserves_parked_calls_and_delivers_exact_cancellation() {
+    use capntproto_rpc_wire::rpc_capnp::api::{Finish, Message, Release};
+    struct Dropped(Rc<Cell<usize>>);
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    #[derive(Clone)]
+    struct Parked {
+        polls: Rc<Cell<usize>>,
+        drops: Rc<Cell<usize>>,
+    }
+    impl capability::Server for Parked {
+        fn as_ptr(&self) -> usize {
+            Rc::as_ptr(&self.polls) as usize
+        }
+        fn dispatch_call(
+            self,
+            _: u64,
+            _: u16,
+            context: capability::CallContext<'_, any_pointer::Owned, any_pointer::Owned>,
+        ) -> capability::DispatchCallResult {
+            let (params, results) = context.into_owned();
+            let dropped = Dropped(self.drops);
+            capability::DispatchCallResult {
+                promise: Promise::from_future(std::future::poll_fn(move |_| {
+                    self.polls.set(self.polls.get() + 1);
+                    let _ = (&params, &results, &dropped);
+                    Poll::Pending
+                })),
+                is_streaming: false,
+                allow_cancellation: true,
+            }
+        }
+    }
+    for budget in [1, 7] {
+        for notify in [false, true] {
+            with_peer(|mut driver, messages| {
+                let polls = Rc::new(Cell::new(0));
+                let drops = Rc::new(Cell::new(0));
+                let target = expose(
+                    &mut driver,
+                    Rc::new(crate::local::Client::new(Parked {
+                        polls: polls.clone(),
+                        drops: drops.clone(),
+                    })),
+                );
+                let mut hooks = ClientHooks::new(8, 8);
+                let remote = remote(&mut driver, &mut hooks, ImportId::from_wire(88));
+                let mut outstanding = remote
+                    .new_call::<any_pointer::Owned, any_pointer::Owned>(7, 0, None)
+                    .send();
+                let mut opts = options();
+                opts.budget = NonZeroUsize::new(budget).unwrap();
+                let mut coordinator =
+                    Coordinator::new(driver, hooks, NonZeroUsize::new(8).unwrap(), None, opts)
+                        .unwrap();
+                let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+                let pipe = Rc::new(RefCell::new(Pipe::default()));
+                let mut writer = Writer(pipe.clone());
+                let mut reader = BufferedInput;
+                let mut control = Policy {
+                    preserve_plain: true,
+                    ..Default::default()
+                };
+                let mut pending = Some(
+                    Frame::build(messages, 512, opts.reader, |builder| {
+                        calls::dynamic_call(
+                            builder,
+                            QuestionId::from_wire(0),
+                            calls::Target::Imported(target),
+                            DynamicCall {
+                                interface: 7,
+                                no_promise_pipelining: true,
+                                ..Default::default()
+                            },
+                            |_| Ok(()),
+                        )
+                    })
+                    .unwrap(),
+                );
+                let mut pump = Pump::default();
+                let mut stop = std::pin::pin!(std::future::pending());
+                let mut cx = Context::from_waker(Waker::noop());
+                let wake = coordinator.notifications.waker();
+                macro_rules! drain {
+                    () => {
+                        for _ in 0..512 {
+                            if let Poll::Ready(result) = coordinator.poll_prepared(
+                                messages,
+                                &mut queue,
+                                &mut reader,
+                                &mut transport::Writer(&mut writer),
+                                &mut [0; 32],
+                                &NoResources,
+                                &mut control,
+                                stop.as_mut(),
+                                &mut pending,
+                                &mut pump,
+                                &mut cx,
+                                &wake,
+                            ) {
+                                result.unwrap();
+                            }
+                            if pending.is_none()
+                                && coordinator.schedule.active == WorkSet::NONE
+                                && coordinator.notifications.pending() == WorkSet::NONE
+                                && queue.is_empty()
+                                && coordinator.output.is_clean()
+                            {
+                                break;
+                            }
+                        }
+                        assert!(pending.is_none() && queue.is_empty());
+                        assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+                    };
+                }
+                drain!();
+                assert!(polls.get() > 0);
+                assert!(!coordinator.worker.is_empty() && !coordinator.calls.is_empty());
+                let parked_polls = polls.get();
+                let control_polls = control.polls;
+                control.notify_receive = notify;
+                // An unrelated Finish and the last exported service grant may
+                // retire while both an incoming and outgoing call are asleep.
+                for release in [false, true] {
+                    pending = Some(
+                        Frame::build(messages, 128, opts.reader, |builder| {
+                            let root = builder.try_init_root::<Message>()?;
+                            if release {
+                                let mut release = root.into_field(Message::RELEASE).init()?;
+                                release.scalar(Release::ID).set(target.to_wire());
+                                release.scalar(Release::REFERENCE_COUNT).set(1);
+                            } else {
+                                root.into_field(Message::FINISH)
+                                    .init()?
+                                    .scalar(Finish::QUESTION_ID)
+                                    .set(7);
+                            }
+                            Ok(())
+                        })
+                        .unwrap(),
+                    );
+                    drain!();
+                    assert_eq!(polls.get(), parked_polls, "retirement repolled a sibling");
+                    assert_eq!(drops.get(), 0, "retirement canceled a live call");
+                }
+                if notify {
+                    assert!(
+                        control.polls > control_polls,
+                        "control notification was lost"
+                    );
+                } else {
+                    assert_eq!(
+                        control.polls, control_polls,
+                        "retirement restarted controls"
+                    );
+                }
+                pending = Some(
+                    Frame::build(messages, 128, opts.reader, |builder| {
+                        builder
+                            .try_init_root::<Message>()?
+                            .into_field(Message::FINISH)
+                            .init()?
+                            .scalar(Finish::QUESTION_ID)
+                            .set(0);
+                        Ok(())
+                    })
+                    .unwrap(),
+                );
+                drain!();
+                assert!(
+                    coordinator.worker.is_empty(),
+                    "Finish lost its execution owner"
+                );
+                assert_eq!(drops.get(), 1, "cancellation must drop the producer once");
+                assert!(Pin::new(&mut outstanding.promise)
+                    .poll(&mut cx)
+                    .is_pending());
+                let bytes: Vec<_> = pipe.borrow_mut().bytes.drain(..).collect();
+                let mut bytes = bytes.as_slice();
+                let mut canceled = 0;
+                while !bytes.is_empty() {
+                    let message = capnp::serialize::read_message(&mut bytes, opts.reader).unwrap();
+                    if let crate::rpc_capnp::message::Return(result) = message
+                        .get_root::<crate::rpc_capnp::message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    {
+                        let result = result.unwrap();
+                        assert_eq!(result.get_answer_id(), 0);
+                        assert!(matches!(
+                            result.which().unwrap(),
+                            crate::rpc_capnp::return_::Canceled(())
+                        ));
+                        canceled += 1;
+                    }
+                }
+                assert_eq!(canceled, 1);
+                drop((outstanding, remote));
+                futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                    messages,
+                    &mut queue,
+                    &mut control,
+                    Ok(()),
+                ))
+                .unwrap();
+                reclaimed(messages);
+            });
+        }
+    }
+}

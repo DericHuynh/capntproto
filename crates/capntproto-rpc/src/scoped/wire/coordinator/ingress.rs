@@ -177,20 +177,10 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     && self.driver.runtime().queued() == 0
                     && self.foreign.is_empty()
                     && self.commands.is_empty();
-                let retirement = was_idle
-                    && matches!(
-                        event,
-                        connection::Received::Finished(_) | connection::Received::Released
-                    )
-                    && self.worker.is_empty()
-                    // Reclaimed storage can unblock an outgoing admission or
-                    // completion even without an application notification.
-                    && self.calls.is_empty()
-                    && self.foreign.is_empty()
-                    && self.commands.is_empty()
-                    && self.driver.runtime().queued() == 0
-                    && !self.driver.has_pending_call()
-                    && self.hooks.inbox.queue.borrow().is_empty();
+                let retirement = matches!(
+                    event,
+                    connection::Received::Finished(_) | connection::Received::Released
+                );
                 let mut context = ControlContext::new(self);
                 let received = controls.received(event, &mut context, messages, queue);
                 let preserves_application = !context.has_effects();
@@ -199,14 +189,19 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 if retirement
                     && preserves_application
                     && controls.preserves_idle(Activity::Retirement)
-                    && self.notifications.pending() == WorkSet::NONE
                 {
-                    // No application execution can progress from these owner
-                    // drops. Reclaim their ledger/graph state without restarting
-                    // every idle application scan. Destructors and independent
-                    // control commands still invalidate through their wakers.
-                    self.schedule.active = WorkSet::MAINTENANCE;
-                    self.schedule.cursor = Lane::Maintenance;
+                    // Finish/Release retire their exact owners, as in legacy's
+                    // receive loop. Preserve already-runnable application work;
+                    // producer notifications own cancellation, and maintenance
+                    // reports the consumers of reclaimed protocol resources.
+                    self.schedule.resume_at(Lane::Maintenance);
+                    self.schedule.active |= WorkSet::MAINTENANCE;
+                    if self.driver.ledgers().answers.has_changed_producers() {
+                        self.schedule.active |= WorkSet::WORKER;
+                    }
+                    if self.driver.runtime().queued() != 0 || self.driver.has_pending_call() {
+                        self.schedule.active |= WorkSet::ACCEPT;
+                    }
                 } else if plain_call
                     && preserves_application
                     && controls.preserves_idle(Activity::PlainCall)

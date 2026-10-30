@@ -282,25 +282,21 @@ fn projection_reports_partial_resolution_before_its_target_settles() {
         if let Some(more) = &mut more {
             assert!(Pin::new(more).poll(&mut cx).is_pending());
         }
+        let target_ptr = target.hook.get_ptr();
         endpoint.forward_projection(Ok(target.hook));
+        assert_eq!(hook.get_resolved().unwrap().get_ptr(), target_ptr);
         let mut more = more.unwrap_or_else(|| hook.when_more_resolved().unwrap());
-        if subscribe_before_binding {
-            let Poll::Ready(Ok(next)) = Pin::new(&mut more).poll(&mut cx) else {
-                panic!("projection hid its partial resolution until final completion");
-            };
-            assert!(next.when_more_resolved().is_some());
-        } else {
-            assert!(Pin::new(&mut more).poll(&mut cx).is_pending());
-        }
+        let Poll::Ready(Ok(next)) = Pin::new(&mut more).poll(&mut cx) else {
+            panic!("projection hid its partial resolution until final completion");
+        };
+        assert_eq!(next.get_ptr(), target_ptr);
+        assert!(next.when_more_resolved().is_some());
         assert!(Pin::new(&mut complete).poll(&mut cx).is_pending());
         send.send(capability::Client::new(crate::broken::new_cap(
             Error::unimplemented("final test target".into()),
         )))
         .unwrap_or_else(|_| panic!("target resolution was abandoned"));
         assert!(Pin::new(&mut complete).poll(&mut cx).is_ready());
-        if !subscribe_before_binding {
-            assert!(Pin::new(&mut more).poll(&mut cx).is_ready());
-        }
     }
 }
 
@@ -2647,4 +2643,153 @@ fn redirected_projection_follows_adopted_metadata_and_notifies_existing_watchers
         });
         assert!(Rc::ptr_eq(&fd, &hook.get_fd().unwrap()));
     }
+}
+
+#[test]
+fn third_party_resolution_queries_are_lazy_and_acceptance_is_reentrant_once() {
+    use wire::coordinator::multiparty::{self, introduction};
+    type Body = capnp::message::Builder<capnp::message::HeapAllocator>;
+    struct Network {
+        hook: RefCell<Option<Box<dyn ClientHook>>>,
+        calls: Cell<usize>,
+        fail: bool,
+    }
+    impl introduction::Network for Network {
+        fn supports_answers(&self) -> bool {
+            false
+        }
+        fn tail_destination(
+            &self,
+            _: any_pointer::Reader<'_>,
+        ) -> capnp::Result<multiparty::tail::Destination> {
+            panic!("no tail transfer")
+        }
+        fn domain(&self) -> usize {
+            0
+        }
+        fn peer(&self) -> Box<dyn std::any::Any> {
+            Box::new(())
+        }
+        fn introduce(&self, _: Box<dyn std::any::Any>) -> capnp::Result<Option<(Body, Body)>> {
+            panic!("no outgoing introduction")
+        }
+        fn accept(
+            &self,
+            _: any_pointer::Reader<'_>,
+        ) -> capnp::Result<(Vec<u8>, Promise<Box<dyn ClientHook>, Error>)> {
+            self.calls.set(self.calls.get() + 1);
+            assert_eq!(
+                self.calls.get(),
+                1,
+                "reentrant use repeated network acceptance"
+            );
+            let hook = self.hook.borrow().as_ref().unwrap().add_ref();
+            let next = ready(&mut hook.when_more_resolved().unwrap()).unwrap();
+            let failure = next
+                .get_failure()
+                .expect("reentrant acceptance must fail promptly");
+            assert_eq!(failure.kind, capnp::ErrorKind::Failed);
+            assert_eq!(failure.extra, "reentrant third-party acceptance");
+            if self.fail {
+                Err(Error::overloaded("acceptance rejected".into()))
+            } else {
+                Ok((vec![1], Promise::from_future(std::future::pending())))
+            }
+        }
+    }
+    for fail in [false, true] {
+        let commands = multiparty::Commands::new(4, 1024);
+        let network = Rc::new(Network {
+            hook: RefCell::new(None),
+            calls: Cell::new(0),
+            fail,
+        });
+        *commands.network.borrow_mut() = Some(network.clone());
+        let hooks = ClientHooks::new(4, 4).with_joins(commands.handle());
+        let endpoint = Endpoint::projection(Rc::downgrade(&hooks.inbox));
+        let mut contact = Body::new_default();
+        contact.set_root("contact").unwrap();
+        *endpoint.introduction.borrow_mut() = Some(Rc::new(contact));
+        let hook = Hook(endpoint.clone(), None);
+        *network.hook.borrow_mut() = Some(hook.add_ref());
+        for _ in 0..3 {
+            assert!(hook.get_resolved().is_none());
+            assert!(endpoint.introduced.borrow().is_none());
+            assert_eq!(network.calls.get(), 0, "get_resolved started acceptance");
+        }
+        let accepted = ready(&mut hook.when_more_resolved().unwrap()).unwrap();
+        let expected = accepted.get_ptr();
+        assert_eq!(network.calls.get(), 1);
+        for _ in 0..3 {
+            assert_eq!(hook.get_resolved().unwrap().get_ptr(), expected);
+            let repeated = ready(&mut hook.when_more_resolved().unwrap()).unwrap();
+            assert_eq!(repeated.get_ptr(), expected);
+            assert_eq!(network.calls.get(), 1, "accepted result was not retained");
+            if fail {
+                let error = repeated.get_failure().unwrap();
+                assert_eq!(error.kind, capnp::ErrorKind::Overloaded);
+                assert_eq!(error.extra, "acceptance rejected");
+            }
+        }
+        let endpoint_owner = Rc::downgrade(&endpoint);
+        drop(accepted);
+        drop(network.hook.borrow_mut().take());
+        drop((hook, endpoint));
+        // Pending marker ownership is legitimate. Closing it must also drop
+        // an unpolled acceptance, rather than leaving endpoint -> future ->
+        // endpoint alive after every public capability has disappeared.
+        commands.close(Error::disconnected("test complete".into()));
+        assert!(
+            endpoint_owner.upgrade().is_none(),
+            "acceptance retained an endpoint cycle"
+        );
+    }
+}
+
+#[test]
+fn accepted_native_parameters_follow_the_new_authority_before_borrowing() {
+    clients::with_growing_graph::<u32, u8, _>(
+        0,
+        4,
+        clients::NotificationGrowth::bounded(8, 16),
+        |graph| {
+            let old = graph.endpoint(7, Location::Remote(1)).unwrap();
+            let new = graph.endpoint(9, Location::Remote(1)).unwrap();
+            let mut hooks = ClientHooks::new(4, 4);
+            let original = hooks.export_client(graph, &old).unwrap();
+            let accepted = hooks.export_client(graph, &new).unwrap();
+            let native = wire::native_hook(&*original.hook).unwrap();
+            native.0.forward_projection(Ok(accepted.hook.add_ref()));
+            assert!(!hooks.can_borrow_native(&*original.hook));
+            assert!(hooks.try_borrow_native(&*original.hook).unwrap().is_none());
+            let retained = hooks.try_retain(graph, &*original.hook).unwrap().unwrap();
+            assert_eq!(
+                retained.key(),
+                new.key(),
+                "parameter reused its pre-acceptance route"
+            );
+            graph.release(retained);
+            let opaque = Opaque(original.hook.add_ref());
+            assert!(hooks.try_retain(graph, &opaque).unwrap().is_none());
+            native.0.local_deferred.set(true);
+            let retained = hooks.try_retain(graph, &*original.hook).unwrap().unwrap();
+            assert_eq!(retained.key(), old.key(), "ordering fence was bypassed");
+            graph.release(retained);
+            assert_eq!(
+                hooks
+                    .try_borrow_native(&*original.hook)
+                    .unwrap()
+                    .unwrap()
+                    .key(),
+                old.key()
+            );
+            drop((opaque, original, accepted));
+            hooks.close(graph, Error::disconnected("done".into()));
+            graph.release(old);
+            graph.release(new);
+            while graph.take_retired().is_some() {}
+            assert!(graph.is_empty());
+        },
+    )
+    .unwrap();
 }

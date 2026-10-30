@@ -242,6 +242,7 @@ pub(crate) struct NetworkControl<'p, 'id, V: 'static, F, const C: usize, const H
     local: Vec<Local>,
     handoffs: Vec<handoff::Job<'p, 'id>>,
     provided: Vec<introduction::Provided<'id>>,
+    accepting_vines: Vec<introduction::AcceptedVine<'id>>,
     barriers: VecDeque<connection::VineBarrier<'p, 'id>>,
     produced: VecDeque<tail::Produced<'id>>,
     maximum: usize,
@@ -277,6 +278,7 @@ impl<
             local: Vec::new(),
             handoffs: Vec::new(),
             provided: Vec::new(),
+            accepting_vines: Vec::new(),
             barriers: VecDeque::new(),
             produced: VecDeque::new(),
             maximum,
@@ -1200,6 +1202,13 @@ impl<
         output: &vat::Resources,
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<bool>> {
+        // Acceptance completion/cancellation releases its original vine even
+        // under output pressure. Its weak interest notifies this exact control.
+        if let Some(index) = self.accepting_vines.iter().position(|vine| !vine.is_live()) {
+            let vine = self.accepting_vines.swap_remove(index);
+            coordinator.driver.capabilities().release(vine.target);
+            return Poll::Ready(Ok(true));
+        }
         let unsupported = coordinator.driver.peek_network().is_some_and(|request| {
             let connection = self.connection.borrow();
             match request {
@@ -1246,6 +1255,7 @@ impl<
             && self.local.is_empty()
             && self.handoffs.is_empty()
             && self.provided.is_empty()
+            && self.accepting_vines.is_empty()
             && self.barriers.is_empty()
             && self.produced.is_empty()
             && self.commands.queue.borrow().is_empty()
@@ -1305,6 +1315,7 @@ impl<
             && self.local.is_empty()
             && self.handoffs.is_empty()
             && self.provided.is_empty()
+            && self.accepting_vines.is_empty()
             && self.barriers.is_empty()
             && self.produced.is_empty()
             && self.commands.queue.borrow().is_empty()
@@ -1350,6 +1361,7 @@ impl<
             && self.local.is_empty()
             && self.handoffs.is_empty()
             && self.provided.is_empty()
+            && self.accepting_vines.is_empty()
             && self.barriers.is_empty()
             && self.produced.is_empty()
             && self.commands.adoptions.borrow().is_empty()
@@ -1365,6 +1377,7 @@ impl<
             && self.local.is_empty()
             && self.handoffs.is_empty()
             && self.provided.is_empty()
+            && self.accepting_vines.is_empty()
             && self.barriers.is_empty()
             && self.produced.is_empty()
             && self.commands.adoptions.borrow().is_empty()
@@ -1404,6 +1417,9 @@ impl<
                 connection::NetworkRequest::ForwardEmbargo(barrier),
                 messages,
             );
+        }
+        for vine in self.accepting_vines.drain(..) {
+            coordinator.driver.capabilities().release(vine.target);
         }
         for provision in self.provided.drain(..) {
             coordinator.driver.release_provision(provision.wire);

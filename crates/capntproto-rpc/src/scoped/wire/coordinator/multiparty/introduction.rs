@@ -22,14 +22,39 @@ pub(crate) trait Network {
 }
 pub(crate) type Policy = Rc<dyn Fn(&dyn ClientHook) -> Option<Rc<dyn ClientHook>>>;
 pub(super) struct Marker {
-    target: Box<dyn ClientHook>,
+    // The original vine remains authoritative for its embargo even after the
+    // public hook exposes the accepted route, as in legacy ThirdPartyClient.
+    target: crate::scoped::Hook,
     id: Vec<u8>,
+    interest: Weak<Acceptance>,
     _permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
+}
+struct Acceptance(Weak<Commands>);
+impl Drop for Acceptance {
+    fn drop(&mut self) {
+        if let Some(commands) = self.0.upgrade() {
+            commands.notify();
+        }
+    }
+}
+// Keep the protocol vine independently of the public endpoint's new accepted
+// client. Capturing that endpoint in its own acceptance future forms a cycle.
+// Branded graph authority stays in the coordinator; the future owns only this
+// generation's weakly observed interest, as with legacy's separate vine owner.
+pub(super) struct AcceptedVine<'id> {
+    pub(super) target: capntproto_rpc_engine::clients::Client<'id>,
+    interest: Weak<Acceptance>,
+    _permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
+}
+impl AcceptedVine<'_> {
+    pub(super) fn is_live(&self) -> bool {
+        self.interest.strong_count() != 0
+    }
 }
 impl Handle {
     pub(crate) fn introduced(
         &self,
-        target: Box<dyn ClientHook>,
+        target: crate::scoped::Hook,
         contact: any_pointer::Reader<'_>,
     ) -> capnp::Result<Box<dyn ClientHook>> {
         let commands = self.0.upgrade().ok_or_else(closed)?;
@@ -50,16 +75,17 @@ impl Handle {
         // The marker's FIFO publication is not the remote acceptance fence.
         // Keep the forwarding vine until Accept completes, so its Provide
         // cannot finish while the destination is still dispatching the marker.
-        let accepting_vine = target.add_ref();
+        let accepting = Rc::new(Acceptance(Rc::downgrade(&commands)));
         commands.markers.borrow_mut().push_back(Marker {
             target,
             id,
+            interest: Rc::downgrade(&accepting),
             _permit: permit,
         });
         commands.notify();
         let client: capability::Client = crate::new_future_client(async move {
             let result = future.await;
-            drop(accepting_vine);
+            drop(accepting);
             result.map(capability::Client::new)
         });
         Ok(client.hook)
@@ -296,10 +322,17 @@ impl<
     ) -> capnp::Result<bool> {
         let marker = self.commands.markers.borrow_mut().pop_front();
         if let Some(marker) = marker {
+            // Borrow the original privately retained authority. Normalizing
+            // through the public hook would select its new accepted route and
+            // send the marker to the wrong connection. Its endpoint keeps the
+            // generational registry entry alive throughout publication.
+            self.accepting_vines.try_reserve(1).map_err(wire_error)?;
+            let target = coordinator.hooks.lookup(&marker.target.0)?.key();
             let target = coordinator
-                .hooks
-                .try_retain(&mut coordinator.driver.capabilities(), &*marker.target)?
-                .ok_or_else(|| Error::failed("foreign vine marker".into()))?;
+                .driver
+                .capabilities()
+                .retain_key(target)
+                .map_err(wire_error)?;
             let result = coordinator.driver.send_accept_embargo(
                 &target,
                 &marker.id,
@@ -308,8 +341,15 @@ impl<
                 marker.id.len().saturating_add(128 + H * 16),
                 coordinator.options.reader,
             );
-            coordinator.driver.capabilities().release(target);
-            result.map_err(wire_error)?;
+            if let Err(error) = result {
+                coordinator.driver.capabilities().release(target);
+                return Err(wire_error(error));
+            }
+            self.accepting_vines.push(AcceptedVine {
+                target,
+                interest: marker.interest,
+                _permit: marker._permit,
+            });
             return Ok(true);
         }
         for index in (0..self.provided.len()).rev() {

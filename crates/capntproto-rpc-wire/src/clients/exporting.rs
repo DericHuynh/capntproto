@@ -494,35 +494,32 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         let State::Ready(frozen) = &entry.state else {
             unreachable!()
         };
-        let exception = match graph.inspect(frozen).map_err(Error::Graph)? {
-            clients::Destination::Endpoint { owner, .. } => owner.exception(),
-            clients::Destination::Waiting(_) => unreachable!("frozen settled route"),
+        // Like legacy descriptor publication, inspect the settled owner once.
+        // Keep the borrowed authority through metadata selection; graph mutation
+        // starts only after its final use when retaining a new grant below.
+        let destination = graph.inspect(frozen).map_err(Error::Graph)?;
+        let clients::Destination::Endpoint { owner, .. } = destination else {
+            unreachable!("frozen settled route")
         };
-        let reflectable = match graph.inspect(frozen).map_err(Error::Graph)? {
-            clients::Destination::Endpoint { owner, .. } if exception.is_none() => reflect(owner)
+        let exception = owner.exception();
+        let reflectable = exception.is_none()
+            && reflect(owner)
                 .map_err(|e| {
                     Error::Output(owned::Error::Output(
                         crate::publication::Error::Question(e).into(),
                     ))
                 })?
-                .is_some(),
-            _ => false,
-        };
-        let attached = match graph.inspect(frozen).map_err(Error::Graph)? {
-            clients::Destination::Endpoint { owner, .. } if exception.is_none() && !reflectable => {
-                attach(owner, &mut resources)
-            }
-            _ => u8::MAX,
+                .is_some();
+        let attached = if exception.is_none() && !reflectable {
+            attach(owner, &mut resources)
+        } else {
+            u8::MAX
         };
         let output = queue.reserve_with(resources).map_err(Error::Storage)?;
         let mut batch = exports.batch();
         batch.resolve_promise(entry.export).map_err(Error::Export)?;
         let grant = if exception.is_none() && !reflectable {
-            let identity = match graph.inspect(frozen).map_err(Error::Graph)? {
-                clients::Destination::Endpoint { owner, .. } => (descriptors.identity)(owner),
-                _ => None,
-            }
-            .unwrap_or_else(|| frozen.key().into());
+            let identity = (descriptors.identity)(owner).unwrap_or_else(|| frozen.key().into());
             Some(
                 match batch.grant_canonical(identity).map_err(Error::Export)? {
                     Some(grant) => grant,

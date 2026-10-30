@@ -1299,8 +1299,10 @@ impl<'id> ClientHooks<'id> {
     }
     fn native_endpoint<'a>(&self, hook: &'a dyn ClientHook) -> Option<&'a Rc<Endpoint>> {
         let hook = wire::native_hook(hook)?;
-        (hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox) && hook.0.index.get().is_some())
-            .then_some(&hook.0)
+        (hook.0.inbox.as_ptr() == Rc::as_ptr(&self.inbox)
+            && hook.0.index.get().is_some()
+            && (hook.0.local_deferred.get() || hook.0.introduced.borrow().is_none()))
+        .then_some(&hook.0)
     }
 
     /// Recognize one of this bridge's parameter/result hooks and retain its
@@ -1317,7 +1319,11 @@ impl<'id> ClientHooks<'id> {
         let hook = loop {
             let current = resolved.as_deref().unwrap_or(hook);
             if let Some(scoped) = wire::native_hook(current) {
-                break scoped;
+                // An accepted introduction/local handoff has a new authority.
+                // Preserve an older route only while its ordering fence is shut.
+                if scoped.0.local_deferred.get() || scoped.0.introduced.borrow().is_none() {
+                    break scoped;
+                }
             }
             // Legacy normalizes public resolutions before recognizing a
             // same-connection capability. Opaque wrappers keep returning None.
@@ -1894,6 +1900,7 @@ impl Drop for Permit {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Hook(Rc<Endpoint>, Option<Rc<admission::Credit>>);
 impl Hook {
     fn call_to(
@@ -2026,6 +2033,12 @@ impl Hook {
             return Some(client.add_ref());
         }
         let contact = self.0.introduction.borrow().clone()?;
+        // Match legacy ThirdPartyClient::ensure_accepted: install a terminal
+        // reentrancy result before entering caller-owned network callbacks.
+        // Reentrant calls observe it rather than starting another acceptance.
+        *self.0.introduced.borrow_mut() = Some(Rc::from(crate::broken::new_cap(Error::failed(
+            "reentrant third-party acceptance".into(),
+        ))));
         let result = (|| {
             let inbox = self
                 .0
@@ -2036,7 +2049,7 @@ impl Hook {
                 .joins
                 .as_ref()
                 .ok_or_else(|| Error::unimplemented("introduction network unavailable".into()))?
-                .introduced(self.add_ref(), contact.get_root_as_reader()?)
+                .introduced(self.clone(), contact.get_root_as_reader()?)
         })();
         let client: Rc<dyn ClientHook> = Rc::from(result.unwrap_or_else(crate::broken::new_cap));
         let result = client.add_ref();
@@ -2246,16 +2259,23 @@ impl ClientHook for Hook {
         Rc::as_ptr(&self.0) as usize
     }
     fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
-        self.introduced()
-            .map(|client| client.get_resolved().unwrap_or(client))
+        if self.0.local_deferred.get() {
+            return None;
+        }
+        // A metadata query must not start an introduction. Legacy exposes an
+        // already accepted hook here and starts acceptance from actual use.
+        self.0
+            .introduced
+            .borrow()
+            .as_ref()
+            .map(|client| client.add_ref())
     }
     fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
         if let Some(client) = self.introduced() {
-            return Some(
-                client
-                    .when_more_resolved()
-                    .unwrap_or_else(|| Promise::ok(client)),
-            );
+            // Match legacy PromiseClient: expose this accepted resolution
+            // step immediately. Only when_resolved follows the next promise;
+            // waiting on it here hides progress from late subscribers.
+            return Some(Promise::ok(client));
         }
         if let Some(error) = self.0.failure.borrow().clone() {
             return Some(Promise::err(error));
