@@ -45,6 +45,7 @@ pub struct ForeignPromises<'id> {
     maximum: usize,
     ready: ready::Queue,
     live: usize,
+    first_free: usize,
     prefer_ready: bool,
     introductions: Option<coordinator::multiparty::introduction::Policy>,
 }
@@ -56,6 +57,7 @@ impl<'id> ForeignPromises<'id> {
             maximum,
             ready: ready::Queue::default(),
             live: 0,
+            first_free: 0,
             prefer_ready: true,
             introductions: None,
         }
@@ -108,11 +110,7 @@ impl<'id> ForeignPromises<'id> {
                 .endpoint(route, Location::Local)
                 .map_err(|e| graph_error(e.error));
         };
-        let index = self
-            .entries
-            .iter()
-            .position(Option::is_none)
-            .unwrap_or(self.entries.len());
+        let index = self.first_free;
         if index == self.entries.len() {
             if index == self.maximum {
                 return Err(Error::overloaded(
@@ -165,6 +163,10 @@ impl<'id> ForeignPromises<'id> {
             self.entries[index] = entry;
         }
         self.live += 1;
+        self.first_free = self.entries[index + 1..]
+            .iter()
+            .position(Option::is_none)
+            .map_or(self.entries.len(), |offset| index + 1 + offset);
         self.ready.notify_parent();
         Ok(client)
     }
@@ -274,6 +276,7 @@ impl<'id> ForeignPromises<'id> {
             graph.unsubscribe(entry.subscription);
             self.ready.remove(index);
             self.live -= 1;
+            self.first_free = self.first_free.min(index);
         }
     }
     pub fn terminate<G: Capabilities<'id>>(mut self, graph: &mut G) {

@@ -3,6 +3,7 @@
 //! cancellation or consumption, including while the transport remains idle.
 use super::*;
 use capntproto_rpc_engine::completion::{Delivery, Sender};
+use capntproto_rpc_engine::free_slots::{FreeSlots, Link as FreeLink};
 use core::task::{Context, Poll};
 
 enum ReplyDelivery<'wait, 'pool, 'id, I, const CAPS: usize> {
@@ -36,9 +37,13 @@ struct Entry<'wait, 'pool, 'id, I, const CAPS: usize> {
 }
 pub struct ReplySlot<'wait, 'pool, 'id, I, const CAPS: usize> {
     entry: Option<Entry<'wait, 'pool, 'id, I, CAPS>>,
+    free: FreeLink,
 }
 impl<I, const CAPS: usize> ReplySlot<'_, '_, '_, I, CAPS> {
-    pub const EMPTY: Self = Self { entry: None };
+    pub const EMPTY: Self = Self {
+        entry: None,
+        free: FreeLink::EMPTY,
+    };
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReplyError {
@@ -86,19 +91,25 @@ pub enum ReplyProgress {
 #[must_use = "drain or cancel reply bindings before terminating their connection"]
 pub struct Replies<'s, 'wait, 'pool, 'id, I, const CAPS: usize> {
     slots: &'s mut [ReplySlot<'wait, 'pool, 'id, I, CAPS>],
+    free: FreeSlots,
+    live: usize,
 }
 impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Replies<'s, 'wait, 'pool, 'id, I, CAPS> {
     pub fn new(slots: &'s mut [ReplySlot<'wait, 'pool, 'id, I, CAPS>]) -> Result<Self, ReplyError> {
         if slots.iter().any(|slot| slot.entry.is_some()) {
             return Err(ReplyError::NonemptyStorage);
         }
-        Ok(Self { slots })
+        Ok(Self {
+            slots,
+            free: FreeSlots::new(),
+            live: 0,
+        })
     }
     pub fn capacity(&self) -> usize {
         self.slots.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.slots.iter().all(|slot| slot.entry.is_none())
+        self.live == 0
     }
 
     /// Register an admitted outgoing question. Rejection leaves its sender
@@ -121,7 +132,20 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Replies<'s, 'wait, 'pool, 'id,
             delivery: ReplyDelivery::Wire(sender.track()),
             waiting: true,
         });
+        self.commit(index);
         Ok(index)
+    }
+
+    fn commit(&mut self, index: usize) {
+        let committed = self.free.take(self.slots, |slot| &mut slot.free);
+        debug_assert_eq!(committed, index);
+        self.live += 1;
+    }
+
+    fn retire(&mut self, index: usize) {
+        self.slots[index].entry = None;
+        self.free.release(index, self.slots, |slot| &mut slot.free);
+        self.live -= 1;
     }
 
     fn available<A, P: Copy + Eq, S, const PATH: usize>(
@@ -137,19 +161,18 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Replies<'s, 'wait, 'pool, 'id,
         }) {
             return Err(ReplyError::AlreadyTracked);
         }
-        if !driver.exchanges.iter().any(|slot| {
-            !slot.canceled
-                && slot.authorized
-                && slot
-                    .exchange
-                    .as_ref()
-                    .is_some_and(|exchange| exchange.key() == question)
-        }) {
+        // The question records its exchange owner, including after Return.
+        // Verify that generation instead of searching unrelated exchanges.
+        if !ExchangeSlot::index(&driver.exchanges, &driver.ledgers.questions, question).is_some_and(
+            |index| {
+                let slot = &driver.exchanges[index];
+                !slot.canceled && slot.authorized
+            },
+        ) {
             return Err(ReplyError::Connection(Error::UnknownQuestion));
         }
-        self.slots
-            .iter()
-            .position(|slot| slot.entry.is_none())
+        self.free
+            .peek(self.slots, |slot| &slot.free)
             .ok_or(ReplyError::Full)
     }
     /// Track ordinary or third-party completion using the same caller-owned slot.
@@ -171,6 +194,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Replies<'s, 'wait, 'pool, 'id,
             delivery: ReplyDelivery::Output(sender.track()),
             waiting: true,
         });
+        self.commit(index);
         Ok(index)
     }
 
@@ -202,7 +226,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Replies<'s, 'wait, 'pool, 'id,
             } else {
                 ReplyProgress::Consumed
             };
-            slot.entry = None;
+            self.retire(index);
             return Ok(progress);
         }
         if !entry.waiting {
@@ -238,7 +262,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Replies<'s, 'wait, 'pool, 'id,
             if let Ok(output) = response {
                 driver.release_output(output, messages);
             }
-            slot.entry = None;
+            self.retire(index);
             return Ok(ReplyProgress::Reclaimed);
         }
         Ok(ReplyProgress::Delivered)
@@ -265,7 +289,7 @@ impl<'s, 'wait, 'pool, 'id, I, const CAPS: usize> Replies<'s, 'wait, 'pool, 'id,
         if let Some(Ok(output)) = entry.delivery.cancel() {
             driver.release_output(output, messages);
         }
-        slot.entry = None;
+        self.retire(index);
         Ok(true)
     }
 }

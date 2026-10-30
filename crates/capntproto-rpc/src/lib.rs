@@ -97,7 +97,7 @@ pub use crate::system::Disconnector;
 /// Task-owned hosted runtime over the portable engine. This opt-in replacement
 /// integrates authenticated introductions, independent-path Join, answer handoff
 /// and third-party tail transfer. Live flow limits and diagnostics are supported.
-/// It remains opt-in pending performance qualification and remaining Join parity.
+/// It remains opt-in pending performance qualification.
 #[cfg(feature = "std")]
 pub mod portable;
 #[cfg(feature = "std")]

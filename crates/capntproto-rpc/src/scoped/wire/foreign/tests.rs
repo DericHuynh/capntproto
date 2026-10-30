@@ -145,6 +145,51 @@ fn pending() -> (
         crate::new_future_client(async move { receiver.await.map_err(crate::canceled_to_error)? }),
     )
 }
+
+#[test]
+fn foreign_admission_reuses_retired_slots_and_preserves_capacity_after_rejection() {
+    let count = if cfg!(miri) { 3 } else { 137 };
+    with_graph(count * 3 + 5, |graph| {
+        let mut foreign = ForeignPromises::new(count);
+        let mut hooks = ClientHooks::new(1, 1);
+        let owners: Vec<_> = (0..count).map(|_| pending()).collect();
+        let mut clients: Vec<_> = owners
+            .iter()
+            .map(|(_, hook)| Some(foreign.import(graph, &*hook.hook).unwrap()))
+            .collect();
+        assert_eq!(foreign.first_free, count);
+        let (_sender, hook) = pending();
+        assert_eq!(
+            foreign.import(graph, &*hook.hook).unwrap_err().kind,
+            capnp::ErrorKind::Overloaded
+        );
+        assert_eq!(foreign.first_free, count);
+        for index in [count - 1, count / 2, 0] {
+            graph.release(clients[index].take().unwrap());
+        }
+        for _ in 0..count * 4 {
+            if let Poll::Ready(result) = poll_tied(&mut foreign, &mut hooks, graph) {
+                result.unwrap();
+            }
+            if foreign.live == count - 3 {
+                break;
+            }
+        }
+        assert_eq!(foreign.live, count - 3);
+        for index in [0, count / 2, count - 1] {
+            assert_eq!(foreign.first_free, index);
+            clients[index] = Some(foreign.import(graph, &*hook.hook).unwrap());
+        }
+        assert_eq!(foreign.first_free, count);
+        for client in clients.into_iter().flatten() {
+            graph.release(client);
+        }
+        foreign.terminate(graph);
+        hooks.close(graph, Error::disconnected("done".into()));
+        drain(graph);
+        assert!(graph.is_empty());
+    });
+}
 fn poll_tied<'id>(
     foreign: &mut ForeignPromises<'id>,
     hooks: &mut ClientHooks<'id>,

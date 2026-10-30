@@ -117,6 +117,19 @@ pub fn tracked_reply_delivery(mode: u8) {
             assert!(replies.is_empty());
             assert_eq!(replies.poll_one(index, &mut peer, messages, &mut cx).unwrap(), ReplyProgress::Idle);
             assert!(!replies.cancel(index, &mut peer, messages).unwrap());
+            if mode == 0 {
+                // Return may arrive before its caller registers delivery. The
+                // question's exact owner still locates the returned exchange.
+                let frame = Frame::build(messages, 776, Default::default(), |builder| {
+                    let mut root = builder.try_init_root::<Message>()?;
+                    let mut result = root.field(Message::RETURN).init()?;
+                    result.scalar(Return::ANSWER_ID).set(second_sent.question.id().to_wire());
+                    result.scalar(Return::RELEASE_PARAM_CAPS).set(false);
+                    result.field(Return::RESULTS).init()?;
+                    Ok(())
+                }).unwrap();
+                assert!(matches!(peer.receive(frame, messages, &mut [0;4], |_| (), || panic!("Return")).unwrap_or_else(|_| panic!("Return")), Received::Returned(key, _) if key == second_sent.question));
+            }
             // The sender rejected on capacity remains valid and can be retried.
             let second_index = replies.track(&peer, second_sent.question, rejected.sender).unwrap_or_else(|_| panic!("retry reply binding"));
             assert!(replies.cancel(second_index, &mut peer, messages).unwrap());

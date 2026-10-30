@@ -2,6 +2,7 @@
 //! question references prevent Finish until the last original route retires.
 use super::*;
 use crate::buffer::{Buffer, Capacity};
+use capntproto_rpc_engine::free_slots::{FreeSlots, Link as FreeLink};
 use capntproto_rpc_engine::storage::Storage as SlotStorage;
 use capntproto_rpc_engine::waiting::{Requirement, Slot as WaitSlot, Waiting};
 mod handoff;
@@ -129,12 +130,14 @@ struct Entry<'id, const PATH: usize> {
 }
 pub struct Slot<'id, const PATH: usize> {
     retry: WaitSlot,
+    free: FreeLink,
     entry: Option<Entry<'id, PATH>>,
 }
 impl<const PATH: usize> Slot<'_, PATH> {
     pub const EMPTY: Self = Self {
         entry: None,
         retry: WaitSlot::EMPTY,
+        free: FreeLink::EMPTY,
     };
 }
 pub struct Bindings<'s, 'id, P, const PATH: usize> {
@@ -145,6 +148,7 @@ pub struct Bindings<'s, 'id, P, const PATH: usize> {
     live: usize,
     listener: Option<clients::Listener<'id>>,
     retry: Waiting<{ crate::resources::COUNT }>,
+    free: FreeSlots,
 }
 pub enum Progress<'id> {
     Unrelated,
@@ -207,6 +211,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             slot.retry = WaitSlot::EMPTY;
         }
         self.retry = Waiting::EMPTY;
+        self.free = FreeSlots::new();
         self.live = 0;
         self.registry = None;
     }
@@ -264,6 +269,8 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         }
         questions.remove_observer(entry.question, false);
         self.live -= 1;
+        self.free
+            .release(index, &mut self.slots, |slot| &mut slot.free);
         if self.live == 0 {
             if let Some(registry) = self.registry.take() {
                 questions.release_outgoing_registry(registry);
@@ -356,6 +363,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             live: 0,
             listener: None,
             retry: Waiting::EMPTY,
+            free: FreeSlots::new(),
             slots,
             peer,
             path_capacity,
@@ -367,6 +375,15 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
         questions: &questions::Questions<'id, '_>,
     ) -> bool {
         self.live != 0 && questions.has_observers(question, false)
+    }
+
+    fn vacant(&mut self) -> Result<usize, Error> {
+        if self.free.peek(&self.slots, |slot| &slot.free).is_none() {
+            self.slots.grow(1, || Slot::EMPTY);
+        }
+        self.free
+            .peek(&self.slots, |slot| &slot.free)
+            .ok_or(Error::ObserversFull)
     }
 
     /// Register an observer whose invocation was still queued when Return
@@ -383,10 +400,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             return Err(Error::Capacity);
         }
         self.claim_registry(questions)?;
-        let index = self
-            .slots
-            .vacant(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
-            .ok_or(Error::ObserversFull)?;
+        let index = self.vacant()?;
         let fields = self
             .path_capacity
             .copy(path.fields())
@@ -399,6 +413,8 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
                 return Err(Error::Graph(error));
             }
         };
+        let committed = self.free.take(&mut self.slots, |slot| &mut slot.free);
+        debug_assert_eq!(committed, index);
         self.live += 1;
         let next = self.link(index, response.key(), questions);
         self.slots[index].entry = Some(Entry {
@@ -592,13 +608,7 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
             }
         }
         self.claim_registry(questions)?;
-        let index = matching
-            .or_else(|| self.slots.iter().position(|slot| slot.entry.is_none()))
-            .or_else(|| {
-                self.slots
-                    .vacant(|_, slot| slot.entry.is_none(), || Slot::EMPTY)
-            })
-            .ok_or(Error::ObserversFull)?;
+        let index = self.vacant()?;
         let fields = self
             .path_capacity
             .copy(path.fields())
@@ -630,14 +640,12 @@ impl<'s, 'id, P: Copy + Eq, const PATH: usize> Bindings<'s, 'id, P, PATH> {
                 return Err(Error::Graph(error));
             }
         };
-        let (previous, next) = if let Some(old) = self.slots[index].entry.as_ref() {
-            (old.previous, old.next)
-        } else {
-            self.live += 1;
-            (None, self.link(index, question.key(), questions))
-        };
+        let committed = self.free.take(&mut self.slots, |slot| &mut slot.free);
+        debug_assert_eq!(committed, index);
+        self.live += 1;
+        let next = self.link(index, question.key(), questions);
         self.slots[index].entry = Some(Entry {
-            previous,
+            previous: None,
             next,
             question: question.key(),
             client: client.key(),
@@ -685,3 +693,6 @@ where
             Error::Graph(rejected.error)
         })
 }
+
+#[cfg(test)]
+mod tests;

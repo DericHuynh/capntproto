@@ -5,7 +5,7 @@
 //! Generated clients and servers retain their ordinary API. No executor or clock
 //! is selected: run the application and its systems in a shared [`Runtime`].
 //!
-//! Currently opt-in while default RpcSystem parity is completed. Authenticated
+//! Currently opt-in pending performance qualification. Authenticated
 //! independent-path Join, automatic introductions, and incoming answer handoff
 //! and outgoing third-party tail transfer are integrated, along with bilateral
 //! Join, native tail calls and pipeline-only publication. Live incoming/outgoing

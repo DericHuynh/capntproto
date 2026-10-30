@@ -229,3 +229,233 @@ fn application_completion_does_not_flush_or_implicitly_close_connections() {
         Poll::Ready(Err(_))
     ));
 }
+
+#[derive(Default)]
+struct ReadyState {
+    progress: Cell<usize>,
+    output: Cell<usize>,
+    progress_wake: RefCell<Option<Waker>>,
+    output_wake: RefCell<Option<Waker>>,
+    done: Cell<bool>,
+    self_waking_output: Cell<bool>,
+    self_waking_progress: Cell<bool>,
+}
+struct ReadyDriver(Rc<ReadyState>);
+impl Driver for ReadyDriver {
+    fn progress(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>> {
+        self.0.progress.set(self.0.progress.get() + 1);
+        *self.0.progress_wake.borrow_mut() = Some(cx.waker().clone());
+        if self.0.self_waking_progress.get() {
+            cx.waker().wake_by_ref();
+        }
+        if self.0.done.get() {
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
+    }
+    fn output(&mut self, cx: &mut Context<'_>) {
+        self.0.output.set(self.0.output.get() + 1);
+        *self.0.output_wake.borrow_mut() = Some(cx.waker().clone());
+        if self.0.self_waking_output.get() {
+            cx.waker().wake_by_ref();
+        }
+    }
+}
+fn park(runtime: &mut Runtime) {
+    assert!(poll(pin!(runtime.run(std::future::pending::<()>()))).is_pending());
+}
+#[test]
+fn multiple_systems_keep_phase_wakes_generation_ownership_and_bounded_admission() {
+    let counts: &[usize] = if cfg!(miri) { &[3] } else { &[32, 129, 257] };
+    for &count in counts {
+        let mut runtime = Runtime::new(count.try_into().unwrap());
+        let handle = runtime.handle();
+        let states: Vec<_> = (0..count).map(|_| Rc::new(ReadyState::default())).collect();
+        let completions: Vec<_> = states
+            .iter()
+            .map(|state| {
+                handle
+                    .add_driver(Box::new(ReadyDriver(state.clone())))
+                    .unwrap()
+            })
+            .collect();
+        park(&mut runtime);
+        assert!(states
+            .iter()
+            .all(|state| state.progress.get() == 1 && state.output.get() == 1));
+        let first = states[0].progress_wake.borrow().as_ref().unwrap().clone();
+        first.wake_by_ref();
+        park(&mut runtime);
+        assert_eq!(states[0].progress.get(), 2);
+        assert!(states[1..].iter().all(|state| state.progress.get() == 1));
+        assert!(states.iter().all(|state| state.output.get() == 1));
+        states[count - 1]
+            .output_wake
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .wake_by_ref();
+        park(&mut runtime);
+        assert_eq!(states[count - 1].output.get(), 2);
+        assert_eq!(states[0].progress.get(), 2, "output woke unrelated input");
+        assert_eq!(
+            handle.add_driver(Box::new(probe())).err().unwrap().kind,
+            capnp::ErrorKind::Overloaded
+        );
+        let old_output = states[0].output_wake.borrow().as_ref().unwrap().clone();
+        states[0].done.set(true);
+        first.wake_by_ref();
+        park(&mut runtime);
+        let replacement = Rc::new(ReadyState::default());
+        let completion = handle
+            .add_driver(Box::new(ReadyDriver(replacement.clone())))
+            .unwrap();
+        // Completion interest does not own the driver or its capacity.
+        drop(completion);
+        park(&mut runtime);
+        assert_eq!(replacement.progress.get(), 1);
+        assert_eq!(replacement.output.get(), 1);
+        first.wake_by_ref();
+        old_output.wake_by_ref();
+        park(&mut runtime);
+        assert_eq!(
+            replacement.progress.get(),
+            1,
+            "old input wake reached replacement"
+        );
+        assert_eq!(
+            replacement.output.get(),
+            1,
+            "old output wake reached replacement"
+        );
+        drop(runtime);
+        first.wake();
+        old_output.wake();
+        assert_eq!(
+            handle.add_driver(Box::new(probe())).err().unwrap().kind,
+            capnp::ErrorKind::Disconnected
+        );
+        drop(completions);
+    }
+}
+
+#[test]
+fn multiple_system_completion_reclaims_slot_before_reentrant_destructor_admission() {
+    let mut runtime = Runtime::new(2.try_into().unwrap());
+    let handle = runtime.handle();
+    let observer = handle.clone();
+    let dropped = Rc::new(Cell::new(false));
+    let flag = dropped.clone();
+    let mut first = probe();
+    first.done.set(true);
+    first.on_drop = Some(Box::new(move || {
+        flag.set(true);
+        let closing = observer.clone();
+        let mut replacement = probe();
+        replacement.on_drop = Some(Box::new(move || {
+            assert_eq!(
+                closing.add_driver(Box::new(probe())).err().unwrap().kind,
+                capnp::ErrorKind::Disconnected
+            );
+        }));
+        drop(observer.add_driver(Box::new(replacement)).unwrap());
+    }));
+    let first = handle.add_driver(Box::new(first)).unwrap();
+    let _second = handle.add_driver(Box::new(probe())).unwrap();
+    assert!(matches!(
+        poll(pin!(runtime.run(first))),
+        Poll::Ready(Ok(()))
+    ));
+    assert!(dropped.get());
+    assert_eq!(
+        handle.add_driver(Box::new(probe())).err().unwrap().kind,
+        capnp::ErrorKind::Overloaded
+    );
+    park(&mut runtime);
+    drop(runtime);
+}
+
+#[test]
+fn multiple_output_only_self_wakes_are_bounded_and_never_repoll_input() {
+    let mut runtime = Runtime::new(2.try_into().unwrap());
+    let state = Rc::new(ReadyState::default());
+    state.self_waking_output.set(true);
+    let _done = runtime
+        .handle()
+        .add_driver(Box::new(ReadyDriver(state.clone())))
+        .unwrap();
+    let wakes = Arc::new(Wakes::default());
+    let waker = Waker::from(wakes.clone());
+    assert!(pin!(runtime.run(std::future::pending::<()>()))
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    assert_eq!(state.progress.get(), 1);
+    assert_eq!(state.output.get(), 32);
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn retired_self_wake_does_not_keep_other_systems_or_the_executor_busy() {
+    let mut runtime = Runtime::new(2.try_into().unwrap());
+    let state = Rc::new(ReadyState::default());
+    let _first = runtime
+        .handle()
+        .add_driver(Box::new(ReadyDriver(state.clone())))
+        .unwrap();
+    let _second = runtime.handle().add_driver(Box::new(probe())).unwrap();
+    park(&mut runtime);
+    state.done.set(true);
+    state.self_waking_progress.set(true);
+    state.progress_wake.borrow().as_ref().unwrap().wake_by_ref();
+    let wakes = Arc::new(Wakes::default());
+    let waker = Waker::from(wakes.clone());
+    assert!(pin!(runtime.run(std::future::pending::<()>()))
+        .poll(&mut Context::from_waker(&waker))
+        .is_pending());
+    assert_eq!(
+        wakes.0.load(Ordering::SeqCst),
+        0,
+        "a retired bit consumed every rotation"
+    );
+}
+
+fn run_dense_ready_rounds(runtime: &mut Runtime, states: &[Rc<ReadyState>], rounds: usize) {
+    for _ in 0..rounds {
+        for state in states {
+            for wake in [&state.progress_wake, &state.output_wake] {
+                let wake = wake.borrow();
+                let wake = wake.as_ref().unwrap();
+                wake.wake_by_ref();
+                wake.wake_by_ref();
+            }
+        }
+        park(runtime);
+    }
+}
+
+#[test]
+fn dense_ready_systems_coalesce_duplicate_wakes_without_allocating() {
+    let count = if cfg!(miri) { 3 } else { 32 };
+    let mut runtime = Runtime::new(count.try_into().unwrap());
+    let states: Vec<_> = (0..count).map(|_| Rc::new(ReadyState::default())).collect();
+    let completions: Vec<_> = states
+        .iter()
+        .map(|state| {
+            runtime
+                .handle()
+                .add_driver(Box::new(ReadyDriver(state.clone())))
+                .unwrap()
+        })
+        .collect();
+    park(&mut runtime);
+    let rounds = if cfg!(miri) { 2 } else { 128 };
+    let allocations = allocation_counter::measure(|| {
+        run_dense_ready_rounds(&mut runtime, &states, rounds);
+    });
+    assert_eq!(allocations.count_total, 0);
+    assert!(states
+        .iter()
+        .all(|state| state.progress.get() == rounds + 1 && state.output.get() == rounds + 1));
+    drop(completions);
+}

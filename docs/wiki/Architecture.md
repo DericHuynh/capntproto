@@ -50,6 +50,14 @@ out-of-order admission and IDs displaced by retained retired answers keep their
 ordinary lookup. This adds no index allocation, table capacity or trusted wire
 identity; generation and lifetime checks remain authoritative.
 
+Outgoing pipeline observers and reply delivery allocate their slots with the shared
+lowest-free bitmap and caller-backed heap. Failed binding only inspects a slot;
+publication commits it, and exact subscription retirement returns it. This adds
+one heap link per binding, without allocating a separate free-slot index.
+Reply registration follows the question's validated exchange owner directly,
+including when Return precedes registration. Hosted foreign-promise admission
+retains its lowest vacancy instead of repeatedly scanning the occupied prefix.
+
 Portable admission now reuses legacy's lowest-free-index heap algorithm. Its
 heap cells live inside the existing caller-owned answer, import, export, graph,
 operation, invocation and exchange slots. Preflight only inspects an available
@@ -2392,8 +2400,10 @@ has not yet migrated to these ledgers and wire bindings.
    leases retain their original generation. Exceptions, redirects, provisions
    and callee-selected answer IDs keep explicit Finish. This avoids a separate
    cleanup packet for data-only round trips.
-   Remaining integration: bilateral Join (including fences to migrate previously
-   used pipelines) and native tail transfer before switching default `RpcSystem`.
+   Bilateral Join, fences for previously used pipelines and native tail transfer
+   are now integrated and exercised against legacy and mixed-driver fixtures.
+   Switching default `RpcSystem` still requires performance qualification;
+   protocol integration alone does not establish matching instruction counts.
    Caller-supplied endpoint metadata preserves hosted errors and their reasons;
    wire-created broken routes still retain only an ErrorKind. Full wire promise
    diagnostics need a retained error owner. Direct remote call exceptions
