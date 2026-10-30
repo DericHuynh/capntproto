@@ -445,6 +445,19 @@ policy-preserving admission. Imported reflection IDs are copied once from their
 immutable endpoints, while promised-answer transforms stay behind the final
 exclusive publication ticket.
 
+`CapabilityTable::lookup` can return `CapabilityLookup::Deferred` when an entry
+needs ordinary queued binding. Immediate publication then returns `None` after
+releasing its staged grants and output reservation, without consuming a question
+ID. The default implementation uses the table's strict `capability` lookup;
+queued admission and result collection continue to require bound entries. This
+lets native descriptor publication resolve bindings during grant staging rather
+than classifying the entire table first.
+
+Private prepared Calls preserve their immutable header geometry through template
+copies and parameter replacement. Native publication uses that geometry to append
+descriptors without decoding the same header again. Segmented headers retain the
+ordinary codec fallback.
+
 Queued native calls use the same table through `enqueue_dynamic_to_table`,
 retaining each parameter directly into the invocation's final storage. Encoding,
 lookup and dispatch rejection release its complete retained prefix and frame;

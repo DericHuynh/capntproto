@@ -10,7 +10,7 @@ use capnp::{
 use capntproto_rpc_engine::clients::Capabilities;
 mod immediate;
 mod template;
-pub use immediate::{CapabilityTable, ImmediateParams};
+pub use immediate::{CapabilityLookup, CapabilityTable, ImmediateParams};
 pub use template::EncodedCall;
 use template::{EncodedCapabilities, PlainTemplate};
 #[cfg(feature = "alloc")]

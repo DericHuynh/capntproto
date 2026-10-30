@@ -10,6 +10,14 @@ pub enum ImmediateParams<'a> {
     EncodedCall(EncodedCall<'a>),
 }
 
+/// A borrowed binding or a request to use ordinary queued binding.
+pub enum CapabilityLookup<'a, 'id> {
+    /// Existing authority; `None` preserves a null slot in the payload table.
+    Bound(Option<&'a clients::Client<'id>>),
+    /// This entry cannot be borrowed before queued binding runs.
+    Deferred,
+}
+
 /// Borrowed parameter authority in payload index order. The table owns or
 /// borrows each client through publication; reading an entry must preserve its
 /// identity. None denotes a null slot. Lookup failures roll back publication.
@@ -20,6 +28,11 @@ pub trait CapabilityTable<'id> {
         self.len() == 0
     }
     fn capability(&self, index: usize) -> capnp::Result<Option<&clients::Client<'id>>>;
+    /// Immediate publication can defer binding to the ordinary queued path.
+    /// A deferred entry rolls back every earlier grant and output reservation.
+    fn lookup(&self, index: usize) -> capnp::Result<CapabilityLookup<'_, 'id>> {
+        self.capability(index).map(CapabilityLookup::Bound)
+    }
 }
 impl<'id, C: Borrow<clients::Client<'id>>> CapabilityTable<'id> for [Option<C>] {
     fn len(&self) -> usize {
@@ -253,14 +266,15 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         ) -> u8,
     ) -> Result<Option<questions::Key<'id>>, Error> {
         if capabilities.len() == 1 {
-            if let Some(capability) = capabilities
-                .capability(0)
-                .map_err(|e| Error::Input(e.into()))?
-            {
-                return self.try_send_immediate_single(
-                    target, method, prepare, capability, messages, queue, minimum, options,
-                    scratch, resources, attach,
-                );
+            match capabilities.lookup(0).map_err(|e| Error::Input(e.into()))? {
+                CapabilityLookup::Deferred => return Ok(None),
+                CapabilityLookup::Bound(Some(capability)) => {
+                    return self.try_send_immediate_single(
+                        target, method, prepare, capability, messages, queue, minimum, options,
+                        scratch, resources, attach,
+                    );
+                }
+                CapabilityLookup::Bound(None) => (),
             }
         }
         if capabilities.is_empty() {
@@ -343,11 +357,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .ok_or(Error::Input(super::super::super::Error::Capacity))?;
         let mut exports = crate::inbound::full::ParameterExports::single(None);
         for index in 0..count {
-            let Some(capability) = capabilities
-                .capability(index)
+            let capability = match capabilities
+                .lookup(index)
                 .map_err(|e| Error::Input(e.into()))?
-            else {
-                continue;
+            {
+                CapabilityLookup::Bound(Some(capability)) => capability,
+                CapabilityLookup::Bound(None) => continue,
+                CapabilityLookup::Deferred => return Ok(None),
             };
             if let clients::Destination::Endpoint { owner, .. } =
                 self.runtime.inspect(capability).map_err(Error::Graph)?
@@ -427,11 +443,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             ) {
                 continue;
             }
-            let Some(capability) = capabilities
-                .capability(index)
+            let capability = match capabilities
+                .lookup(index)
                 .map_err(|e| Error::Input(e.into()))?
-            else {
-                continue;
+            {
+                CapabilityLookup::Bound(Some(capability)) => capability,
+                CapabilityLookup::Bound(None) => continue,
+                CapabilityLookup::Deferred => return Ok(None),
             };
             let clients::Destination::Endpoint { owner, .. } =
                 ticket.inspect(capability).map_err(Error::Graph)?

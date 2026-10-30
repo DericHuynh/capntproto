@@ -61,6 +61,19 @@ impl<'id> connection::CapabilityTable<'id> for ParameterCapabilities<'_, 'id> {
                 .transpose(),
         }
     }
+    fn lookup(&self, index: usize) -> capnp::Result<connection::CapabilityLookup<'_, 'id>> {
+        use connection::CapabilityLookup;
+        match self {
+            Self::Retained(caps) => Ok(CapabilityLookup::Bound(caps[index].as_ref())),
+            Self::Native(hooks, caps) => match &caps[index] {
+                None => Ok(CapabilityLookup::Bound(None)),
+                Some(hook) => Ok(match hooks.try_borrow_native(&**hook)? {
+                    Some(client) => CapabilityLookup::Bound(Some(client)),
+                    None => CapabilityLookup::Deferred,
+                }),
+            },
+        }
+    }
 }
 
 /// Bulk publication only reuses existing owners. Fresh foreign hooks take the
@@ -1386,7 +1399,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     }
                     Some(caps) if caps.len() > 1 => {
                         let maximum = driver.capability_capacity();
-                        if native_parameters(hooks, caps, maximum) {
+                        // Probe only the first live binding. The descriptor
+                        // transaction resolves the rest once, and rolls back
+                        // to ordinary queued binding if any entry is foreign.
+                        if caps.len() <= maximum
+                            && caps
+                                .iter()
+                                .flatten()
+                                .next()
+                                .is_some_and(|hook| hooks.can_borrow_native(&**hook))
+                        {
                             native = Some(ParameterCapabilities::Native(hooks, caps));
                         } else {
                             multiple = native_bulk_parameters(

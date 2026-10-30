@@ -2436,7 +2436,8 @@ pub use terminated::{Terminating, Termination};
 mod invocation;
 mod tail;
 pub use invocation::{
-    CapabilityTable, EncodedCall, ImmediateParams, Invocation, InvocationParams, SentInvocation,
+    CapabilityLookup, CapabilityTable, EncodedCall, ImmediateParams, Invocation, InvocationParams,
+    SentInvocation,
 };
 #[cfg(feature = "alloc")]
 pub use invocation::{PreparedCall, PreparedCallTemplate};

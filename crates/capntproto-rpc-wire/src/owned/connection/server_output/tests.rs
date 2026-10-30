@@ -498,6 +498,26 @@ fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
             Ok(self.entries[index])
         }
     }
+    struct Deferred<'a, 'b, 'id> {
+        table: &'a Table<'b, 'id>,
+        at: (usize, u8),
+    }
+    impl<'id> CapabilityTable<'id> for Deferred<'_, '_, 'id> {
+        fn len(&self) -> usize {
+            self.table.len()
+        }
+        fn capability(&self, index: usize) -> capnp::Result<Option<&clients::Client<'id>>> {
+            self.table.capability(index)
+        }
+        fn lookup(&self, index: usize) -> capnp::Result<CapabilityLookup<'_, 'id>> {
+            let capability = self.table.capability(index)?;
+            Ok(if self.at == (index, self.table.reads[index].get()) {
+                CapabilityLookup::Deferred
+            } else {
+                CapabilityLookup::Bound(capability)
+            })
+        }
+    }
     let measured = allocation_counter::measure(|| {
         with_driver(|mut driver, messages| {
             let receipt = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
@@ -554,6 +574,47 @@ fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
                 ));
                 assert!(queue.is_empty());
                 assert_eq!(driver.ledgers.questions.len(), 0);
+                for id in 0..8 {
+                    assert!(driver
+                        .ledgers
+                        .exports
+                        .lookup(ExportId::from_wire(id))
+                        .is_none());
+                }
+            }
+            // Deferring is a transactional fallback, not a failed call. Cover
+            // single slots, every staged prefix, and the final inspection.
+            for (length, at) in [
+                (1, (0, 1)),
+                (3, (0, 1)),
+                (3, (1, 1)),
+                (3, (2, 1)),
+                (3, (1, 2)),
+            ] {
+                let table = Table {
+                    entries: &entries[..length],
+                    reads: core::array::from_fn(|_| Cell::new(0)),
+                    fail: None,
+                };
+                let deferred = Deferred { table: &table, at };
+                assert!(driver
+                    .try_send_immediate_with_capability_table(
+                        &remote,
+                        method,
+                        params,
+                        &deferred,
+                        messages,
+                        &mut queue,
+                        512,
+                        Default::default(),
+                        &mut [0; 8],
+                        (),
+                        |_, _, _| u8::MAX,
+                    )
+                    .unwrap()
+                    .is_none());
+                assert!(queue.is_empty());
+                assert!(driver.ledgers.questions.is_empty());
                 for id in 0..8 {
                     assert!(driver
                         .ledgers
