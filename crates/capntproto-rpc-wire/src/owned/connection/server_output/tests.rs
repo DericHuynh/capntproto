@@ -6,6 +6,79 @@ const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
 #[test]
+fn output_release_resumes_a_parked_finish_without_allocating() {
+    let measured = allocation_counter::measure(|| {
+        with_driver(|mut driver, messages| {
+            let mut slots = [None];
+            let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+            let key = driver
+                .send(
+                    messages,
+                    &mut queue,
+                    256,
+                    Default::default(),
+                    calls::bootstrap,
+                )
+                .unwrap();
+            assert!(!driver.output_may_unblock());
+            driver.cancel(key).unwrap();
+            for _ in 0..32 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        256,
+                        Default::default(),
+                        &mut [0; 8],
+                        NonZeroUsize::new(8).unwrap(),
+                    )
+                    .unwrap();
+                if driver.output_may_unblock() {
+                    break;
+                }
+            }
+            assert!(
+                driver.output_may_unblock(),
+                "full output must retain the Finish retry"
+            );
+            drain(&mut queue, messages, |message| {
+                assert!(matches!(
+                    message.which().unwrap(),
+                    rpc_capnp::message::Bootstrap(_)
+                ))
+            });
+            for _ in 0..32 {
+                driver
+                    .poll_maintenance(
+                        messages,
+                        &mut queue,
+                        256,
+                        Default::default(),
+                        &mut [0; 8],
+                        NonZeroUsize::new(8).unwrap(),
+                    )
+                    .unwrap();
+                if !driver.output_may_unblock() {
+                    break;
+                }
+            }
+            assert!(
+                !driver.output_may_unblock(),
+                "published Finish must retire its resource wait"
+            );
+            drain(&mut queue, messages, |message| {
+                let rpc_capnp::message::Finish(finish) = message.which().unwrap() else {
+                    panic!("Finish")
+                };
+                assert_eq!(finish.unwrap().get_question_id(), key.id().to_wire());
+            });
+            close(driver, messages, &mut queue);
+        });
+    });
+    assert_eq!(measured.count_total, 0);
+}
+
+#[test]
 fn serialized_output_survives_protocol_retirement_without_allocating() {
     let measured = allocation_counter::measure(|| {
         with_driver(|mut driver, messages| {

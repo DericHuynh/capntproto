@@ -248,3 +248,144 @@ fn idle_requires_flushed_output_even_without_protocol_references() {
         reclaimed(messages);
     });
 }
+
+#[test]
+fn output_completion_preserves_only_an_explicitly_idle_control_policy() {
+    for preserve in [false, true] {
+        with_peer(|driver, messages| {
+            let mut coordinator = Coordinator::new(
+                driver,
+                ClientHooks::new(8, 8),
+                NonZeroUsize::new(4).unwrap(),
+                None,
+                options(),
+            )
+            .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let output = Rc::new(RefCell::new(Pipe::default()));
+            let mut writer = Writer(output.clone());
+            let mut control = Policy {
+                preserve_plain: preserve,
+                ..Default::default()
+            };
+            let count = Arc::new(WakeCount(AtomicUsize::new(0)));
+            let wake = Waker::from(count.clone());
+            let mut cx = Context::from_waker(&wake);
+            for _ in 0..32 {
+                coordinator
+                    .poll_io_work::<(), _, _>(
+                        messages,
+                        &mut queue,
+                        &mut transport::Writer(&mut writer),
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut control,
+                        &mut cx,
+                    )
+                    .unwrap();
+                if coordinator.schedule.active == WorkSet::NONE && coordinator.control_idle {
+                    break;
+                }
+            }
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+            assert!(coordinator.control_idle);
+            let polls = control.polls;
+            count.0.store(0, Ordering::SeqCst);
+            let buffer = messages.reserve_exact(8).unwrap();
+            let frame = messages.seal(buffer, 8).unwrap();
+            let offer = messages.offer(&frame).unwrap();
+            queue.reserve().unwrap().accept(messages, offer);
+            messages.release(frame);
+            coordinator
+                .poll_io_work::<(), _, _>(
+                    messages,
+                    &mut queue,
+                    &mut transport::Writer(&mut writer),
+                    &mut [0; 32],
+                    &NoResources,
+                    &mut control,
+                    &mut cx,
+                )
+                .unwrap();
+            assert!(queue.is_empty() && coordinator.output.is_clean());
+            assert_eq!(output.borrow().bytes.len(), 8);
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+            assert!(coordinator.control_idle);
+            assert_eq!(control.polls, polls + usize::from(!preserve));
+            assert_eq!(
+                count.0.load(Ordering::SeqCst),
+                0,
+                "output-only progress added an executor turn"
+            );
+            drop(coordinator);
+            reclaimed(messages);
+        });
+    }
+}
+
+#[test]
+fn continuously_publishing_control_charges_each_output_continuation() {
+    struct Sink(usize);
+    impl io::Flush for Sink {
+        type Error = ();
+        fn poll_flush(&mut self, _: &mut Context<'_>) -> Poll<Result<(), io::IoError<()>>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl io::Write for Sink {
+        fn poll_write(
+            &mut self,
+            _: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<Result<usize, io::IoError<()>>> {
+            self.0 += bytes.len();
+            Poll::Ready(Ok(bytes.len()))
+        }
+    }
+    for budget in [1, 7, 64] {
+        with_peer(|driver, messages| {
+            let mut opts = options();
+            opts.budget = NonZeroUsize::new(budget).unwrap();
+            let mut coordinator = Coordinator::new(
+                driver,
+                ClientHooks::new(8, 8),
+                NonZeroUsize::new(4).unwrap(),
+                None,
+                opts,
+            )
+            .unwrap();
+            coordinator.schedule.active = WorkSet::NONE;
+            let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+            let mut writer = Sink(0);
+            let mut control = Policy {
+                publish_repeatedly: true,
+                ..Default::default()
+            };
+            assert!(!coordinator
+                .poll_io_work::<(), _, _>(
+                    messages,
+                    &mut queue,
+                    &mut transport::Writer(&mut writer),
+                    &mut [0; 32],
+                    &NoResources,
+                    &mut control,
+                    &mut Context::from_waker(Waker::noop())
+                )
+                .unwrap());
+            assert_eq!(
+                control.polls, budget,
+                "output production bypassed the cooperative budget"
+            );
+            assert_eq!(writer.0, budget * 8);
+            assert!(queue.is_empty() && coordinator.output.is_clean());
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                messages,
+                &mut queue,
+                &mut control,
+                Ok(()),
+            ))
+            .unwrap();
+            reclaimed(messages);
+        });
+    }
+}

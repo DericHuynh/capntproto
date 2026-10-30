@@ -290,6 +290,8 @@ impl<I, P: Copy + Eq, const C: usize, const H: usize> Drop
 #[non_exhaustive]
 pub enum Activity {
     PlainPublication,
+    /// Physical output freed storage without changing protocol ownership.
+    OutputProgress,
     PlainReturn,
     PlainCall,
     Retirement,

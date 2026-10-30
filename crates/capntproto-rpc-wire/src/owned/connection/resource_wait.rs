@@ -70,7 +70,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             _ => None,
         }
     }
+    #[inline(always)]
     pub(super) fn filter_control_waits(
+        &self,
+        ready: u32,
+        messages: &messages::Messages<'pool, '_, '_>,
+        queue: &messages::Queue<'pool, '_, impl Sized>,
+    ) -> u32 {
+        if ready & self.control_waiting == 0 {
+            return ready;
+        }
+        self.filter_blocked_controls(ready, messages, queue)
+    }
+    // Most turns have no parked control owner. Keep their readiness selection
+    // independent of the retry path's resource snapshots and stack storage.
+    #[inline(never)]
+    fn filter_blocked_controls(
         &self,
         mut ready: u32,
         messages: &messages::Messages<'pool, '_, '_>,

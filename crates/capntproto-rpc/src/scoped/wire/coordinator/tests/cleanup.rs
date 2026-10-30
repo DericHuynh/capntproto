@@ -184,3 +184,93 @@ fn completed_pipeline_cleanup_and_successor_calls_survive_small_budgets_and_back
         }
     }
 }
+
+#[test]
+fn resource_retirement_reconsiders_live_consumers_without_starting_empty_lanes() {
+    use capntproto_rpc_wire::clients::EndpointOwner;
+    for pending in [false, true] {
+        with_peer(|mut driver, messages| {
+            let mut hooks = ClientHooks::new(16, 16);
+            let client = remote(&mut driver, &mut hooks, ImportId::from_wire(7));
+            let mut coordinator = Coordinator::new(
+                driver,
+                hooks,
+                NonZeroUsize::new(4).unwrap(),
+                None,
+                options(),
+            )
+            .unwrap();
+            let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+            let output = Rc::new(RefCell::new(Pipe::default()));
+            let mut writer = Writer(output);
+            let mut control = Policy {
+                preserve_plain: true,
+                ..Default::default()
+            };
+            let mut cx = Context::from_waker(Waker::noop());
+            let response = pending.then(|| {
+                client
+                    .new_call::<any_pointer::Owned, any_pointer::Owned>(7, 0, None)
+                    .send()
+            });
+            for _ in 0..64 {
+                coordinator
+                    .poll_io_work::<(), _, _>(
+                        messages,
+                        &mut queue,
+                        &mut transport::Writer(&mut writer),
+                        &mut [0; 32],
+                        &NoResources,
+                        &mut control,
+                        &mut cx,
+                    )
+                    .unwrap();
+                if coordinator.schedule.active == WorkSet::NONE && coordinator.control_idle {
+                    break;
+                }
+            }
+            assert_eq!(coordinator.schedule.active, WorkSet::NONE);
+            assert_eq!(coordinator.calls.is_empty(), !pending);
+            let released = coordinator
+                .driver
+                .capabilities()
+                .endpoint(
+                    Route::broken(capnp::ErrorKind::Failed),
+                    capntproto_rpc_engine::clients::Location::Broken,
+                )
+                .unwrap_or_else(|error| panic!("{}", error.error));
+            coordinator.driver.capabilities().release(released);
+            coordinator
+                .driver
+                .poll_maintenance(
+                    messages,
+                    &mut queue,
+                    128,
+                    options().reader,
+                    &mut [0; 32],
+                    NonZeroUsize::new(1).unwrap(),
+                )
+                .unwrap();
+            let effects = coordinator.driver.maintenance_effects();
+            assert!(effects.resources());
+            coordinator.maintenance_changed(effects);
+            assert_eq!(
+                coordinator.schedule.active,
+                if pending {
+                    WorkSet::CALLS
+                } else {
+                    WorkSet::NONE
+                }
+            );
+            drop((response, client));
+            futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+                messages,
+                &mut queue,
+                &mut control,
+                Ok(()),
+            ))
+            .unwrap();
+            reclaimed(messages);
+        });
+    }
+}

@@ -157,9 +157,20 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     Poll::Pending => false,
                 }
             };
-            if queue.len() < queued || (output_ready && self.output_blocked) {
-                self.schedule.active |= WorkSet::MAINTENANCE;
-                if !preserves_control {
+            let output_advanced = queue.len() < queued || (output_ready && self.output_blocked);
+            if output_advanced {
+                // Like the legacy writer, wake output consumers rather than
+                // restarting protocol scans after every successful write.
+                // Actual retirement and capacity waits retain their owners.
+                if self.output_blocked
+                    || self.driver.output_may_unblock()
+                    || self.driver.runtime().has_retired()
+                {
+                    self.schedule.active |= WorkSet::MAINTENANCE;
+                }
+                if !preserves_control
+                    && !(self.control_idle && controls.preserves_idle(Activity::OutputProgress))
+                {
                     self.control_idle = false;
                 }
                 if std::mem::take(&mut self.output_blocked) {
@@ -194,8 +205,14 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             {
                 // A control-only self-wake consumes no application lane's
                 // quantum. Yield it explicitly instead of spinning forever.
-                if remaining != 0 && !(self.schedule.active == WorkSet::NONE && !self.control_idle)
-                {
+                if remaining != 0 && (self.schedule.active != WorkSet::NONE || self.control_idle) {
+                    continue;
+                }
+                if output_advanced && remaining > 1 {
+                    // Physical release can resume a control producer now.
+                    // Charge each extra turn; output-producing controls remain
+                    // bounded, while notifications alone still yield below.
+                    remaining -= 1;
                     continue;
                 }
                 cx.waker().wake_by_ref();

@@ -66,6 +66,7 @@ struct Policy {
     wake: Option<Waker>,
     wake_during_poll: bool,
     publish_on_poll: bool,
+    publish_repeatedly: bool,
     preserve_plain: bool,
     direct_returns: bool,
     notify_receive: bool,
@@ -118,7 +119,7 @@ impl<'p, 'id, 's> Control<'p, 'id, 's, (), u8, 8, 8> for Policy {
         }
         self.polls += 1;
         self.wake = Some(cx.waker().clone());
-        if std::mem::take(&mut self.publish_on_poll) {
+        if self.publish_repeatedly || std::mem::take(&mut self.publish_on_poll) {
             let writer = messages.reserve_exact(8).unwrap();
             let frame = messages.seal(writer, 8).unwrap();
             let offer = messages.offer(&frame).unwrap();

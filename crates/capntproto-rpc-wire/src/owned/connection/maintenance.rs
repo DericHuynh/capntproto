@@ -17,6 +17,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     ) -> bool {
         self.disconnected.is_none() && self.ready_work(messages, queue) == 0
     }
+    /// Whether freed output storage can resume protocol maintenance. Control
+    /// publications park their exact owner on exhaustion. Exported promises
+    /// also publish Resolve frames, so retain their normal readiness check.
+    /// Existing ready work and graph retirement must still be driven separately.
+    pub fn output_may_unblock(&self) -> bool {
+        self.control_waiting != 0 || !self.exported.is_empty()
+    }
     fn queued_work(&self) -> u32 {
         let control = match self.runtime.ready_owner() {
             Some(Task::Loopback(_) | Task::Echo(_)) => true,

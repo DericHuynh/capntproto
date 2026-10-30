@@ -90,7 +90,6 @@ impl<'s, 'g, 'e> Bindings<'s, 'g, 'e> {
         self.slots.len()
     }
     /// Occupancy follows observer ownership, independently of retained capacity.
-    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.live == 0
     }

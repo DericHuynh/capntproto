@@ -55,7 +55,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     }
     /// The wire producer reports transition effects even if its final poll
     /// suspends. Keep exact operation queues and the unfinished fair rotation.
-    fn maintenance_changed(&mut self, effects: connection::MaintenanceEffects) {
+    pub(super) fn maintenance_changed(&mut self, effects: connection::MaintenanceEffects) {
         let mut ready = WorkSet::NONE;
         if effects.routes() {
             ready |= WorkSet::FOREIGN | WorkSet::CALLS | WorkSet::WORKER;
@@ -70,7 +70,18 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             ready |= WorkSet::ACCEPT;
         }
         if effects.resources() {
-            ready |= WorkSet::CALLS | WorkSet::FOREIGN | WorkSet::WORKER;
+            // Resource release wakes existing consumers. Empty dispatch lanes
+            // cannot use it; new owners and metadata changes have their own
+            // registered notifications, as in legacy's task queues.
+            if !self.calls.is_empty() || !self.hooks.inbox.queue.borrow().is_empty() {
+                ready |= WorkSet::CALLS;
+            }
+            if !self.foreign.is_empty() || self.hooks.ownership_ready(&self.driver.capabilities()) {
+                ready |= WorkSet::FOREIGN;
+            }
+            if !self.worker.is_empty() || !self.native_tails.is_empty() {
+                ready |= WorkSet::WORKER;
+            }
         }
         // Deferred dispatch can make a third-party call runnable without IO.
         // Its network control must prepare the transfer before worker admission.
