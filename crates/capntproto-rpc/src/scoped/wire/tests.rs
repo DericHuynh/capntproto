@@ -2165,6 +2165,11 @@ fn native_projections_clone_and_reuse_with_one_box_and_retain_pipeline_interest(
     let mut retained = None;
     let counts = allocation_counter::measure(|| retained = Some(first.add_ref()));
     assert_eq!(counts.count_total, 1, "clone the native endpoint inline");
+    assert_eq!(
+        counts.bytes_total,
+        (std::mem::size_of::<Hook>() + std::mem::size_of::<PipelineRef>()) as u64,
+        "a native projection needs no runtime hook discriminant"
+    );
     let mut reused = None;
     let counts = allocation_counter::measure(|| reused = Some(pipeline.get_pipelined_cap(&[])));
     assert_eq!(counts.count_total, 1, "reuse the live projection endpoint");

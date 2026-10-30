@@ -1,6 +1,32 @@
 //! Liveness must not require a second owner or borrow mutable dispatch state.
 use super::*;
 
+#[test]
+fn result_size_hints_preserve_default_root_and_preallocation_limit() {
+    for (hint, expected_words) in [
+        (None, 256),
+        (Some(0), 1),
+        (Some(255), 256),
+        (Some(256), 257),
+        (Some((1 << 20) - 1), 1 << 20),
+        (Some(1 << 20), 1 << 20),
+        (Some(u64::MAX), 1 << 20),
+    ] {
+        let mut message = message::Builder::new(result_allocator(hint.map(|word_count| {
+            capnp::MessageSize {
+                word_count,
+                cap_count: u32::MAX,
+            }
+        })));
+        message.initn_root::<capnp::data::Builder<'_>>(0);
+        assert_eq!(
+            message.retained_segment_bytes(),
+            Some(expected_words * 8),
+            "hint {hint:?}"
+        );
+    }
+}
+
 #[derive(Clone)]
 struct Server(Rc<()>);
 impl capability::Server for Server {

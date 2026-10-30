@@ -786,7 +786,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     let result = result.map(|inner| {
                         if projection.retain_pipeline {
                             Rc::new(Projected {
-                                inner: ProjectionHook::Opaque(inner),
+                                inner,
                                 pipeline: PipelineRef(Some(pipeline.clone()), None),
                             }) as Rc<dyn ClientHook>
                         } else {
@@ -1623,10 +1623,7 @@ impl PipelineHook for WirePipeline {
     fn get_pipelined_cap_move(&self, mut path: Vec<PipelineOp>) -> Box<dyn ClientHook> {
         let cached = self.0.cached.borrow().get(&path).map(|hook| hook.add_ref());
         if let Some(inner) = cached {
-            return Box::new(Projected {
-                inner,
-                pipeline: self.0.clone(),
-            });
+            return inner.project(self.0.clone());
         }
         let variant = match &*self.0.variant.borrow() {
             PipelineVariant::Waiting => PipelineVariant::Waiting,
@@ -1660,7 +1657,7 @@ impl PipelineHook for WirePipeline {
             }
         }) {
             return Box::new(Projected {
-                inner: ProjectionHook::Native(Hook(endpoint, None)),
+                inner: Hook(endpoint, None),
                 pipeline: self.0.clone(),
             });
         }
@@ -1686,7 +1683,7 @@ impl PipelineHook for WirePipeline {
             inbox.notify();
         }
         Box::new(Projected {
-            inner: ProjectionHook::Native(Hook(endpoint, None)),
+            inner: Hook(endpoint, None),
             pipeline: self.0.clone(),
         })
     }
@@ -1711,6 +1708,12 @@ impl ProjectionHook {
             Self::Opaque(hook) => Self::Opaque(hook.add_ref()),
         }
     }
+    fn project(self, pipeline: PipelineRef) -> Box<dyn ClientHook> {
+        match self {
+            Self::Native(inner) => Box::new(Projected { inner, pipeline }),
+            Self::Opaque(inner) => Box::new(Projected { inner, pipeline }),
+        }
+    }
 }
 impl std::ops::Deref for ProjectionHook {
     type Target = dyn ClientHook;
@@ -1721,17 +1724,46 @@ impl std::ops::Deref for ProjectionHook {
         }
     }
 }
-struct Projected {
-    inner: ProjectionHook,
+// Select storage once when a projection is created. Native forwarding can then
+// be monomorphic, while opaque hooks retain their original policy wrapper.
+trait ProjectionInner: 'static {
+    fn hook(&self) -> &dyn ClientHook;
+    fn clone_ref(&self) -> Self;
+    fn native(&self) -> Option<&Hook>;
+}
+impl ProjectionInner for Hook {
+    fn hook(&self) -> &dyn ClientHook {
+        self
+    }
+    fn clone_ref(&self) -> Self {
+        Hook(self.0.clone(), self.1.clone())
+    }
+    fn native(&self) -> Option<&Hook> {
+        Some(self)
+    }
+}
+impl ProjectionInner for Box<dyn ClientHook> {
+    fn hook(&self) -> &dyn ClientHook {
+        &**self
+    }
+    fn clone_ref(&self) -> Self {
+        self.add_ref()
+    }
+    fn native(&self) -> Option<&Hook> {
+        self.as_any()?.downcast_ref()
+    }
+}
+struct Projected<H: ProjectionInner> {
+    inner: H,
     pipeline: PipelineRef,
 }
-impl Projected {
+impl<H: ProjectionInner> Projected<H> {
     fn drive<T: 'static>(
         &self,
         mut promise: impl Future<Output = Result<T, Error>> + Unpin + 'static,
     ) -> Promise<T, Error> {
         use crate::attach::Attach;
-        let endpoint = direct_response_hook(self).map(|hook| hook.0.clone());
+        let endpoint = self.inner.native().map(|hook| hook.0.clone());
         Promise::from_future(
             futures::future::poll_fn(move |cx| {
                 if let Poll::Ready(result) = Pin::new(&mut promise).poll(cx) {
@@ -1806,15 +1838,19 @@ pub(crate) fn native_join_target(client: &dyn ClientHook) -> Option<Box<dyn Clie
 // using one outer RTTI query and no public pointer/brand authority.
 pub(super) fn native_hook(client: &dyn ClientHook) -> Option<&Hook> {
     let any = client.as_any()?;
-    if let Some(hook) = any.downcast_ref::<Hook>() {
-        Some(hook)
+    any.downcast_ref::<Hook>().or_else(|| projected_native(any))
+}
+fn projected_native(any: &dyn std::any::Any) -> Option<&Hook> {
+    if let Some(projected) = any.downcast_ref::<Projected<Hook>>() {
+        Some(&projected.inner)
     } else {
-        any.downcast_ref::<Projected>()?.inner.native()
+        any.downcast_ref::<Projected<Box<dyn ClientHook>>>()?
+            .inner
+            .native()
     }
 }
-
 pub(super) fn direct_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
-    client.as_any()?.downcast_ref::<Projected>()?.inner.native()
+    projected_native(client.as_any()?)
 }
 
 pub(super) fn request_projected(
@@ -1822,16 +1858,37 @@ pub(super) fn request_projected(
     interface: u64,
     method: u16,
     hints: CallHints,
+    params: Box<crate::local::Request>,
+    context: Option<Rc<dyn std::any::Any>>,
+) -> capability::RemotePromise<any_pointer::Owned> {
+    let any = client.as_any().expect("private projected request");
+    if let Some(projected) = any.downcast_ref::<Projected<Hook>>() {
+        return request_projected_on(projected, interface, method, hints, params, context);
+    }
+    request_projected_on(
+        any.downcast_ref::<Projected<Box<dyn ClientHook>>>()
+            .expect("private projected request"),
+        interface,
+        method,
+        hints,
+        params,
+        context,
+    )
+}
+fn request_projected_on<H: ProjectionInner>(
+    projected: &Projected<H>,
+    interface: u64,
+    method: u16,
+    hints: CallHints,
     mut params: Box<crate::local::Request>,
     context: Option<Rc<dyn std::any::Any>>,
 ) -> capability::RemotePromise<any_pointer::Owned> {
-    let projected = client
-        .as_any()
-        .and_then(|client| client.downcast_ref::<Projected>())
-        .expect("private projected request");
     params.retain_pipeline(projected.pipeline.clone());
     let mut response = response::request_scoped(
-        direct_response_hook(client).expect("private projected endpoint"),
+        projected
+            .inner
+            .native()
+            .expect("private projected endpoint"),
         interface,
         method,
         hints,
@@ -1841,29 +1898,29 @@ pub(super) fn request_projected(
     response.promise = capability::ResponsePromise::new(projected.drive(response.promise));
     response
 }
-impl ClientHook for Projected {
+impl<H: ProjectionInner> ClientHook for Projected<H> {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
     fn get_failure(&self) -> Option<Error> {
-        self.inner.get_failure()
+        self.inner.hook().get_failure()
     }
     fn metadata_changes(&self) -> Option<Rc<capnp::private::capability::MetadataChanges>> {
-        self.inner.metadata_changes()
+        self.inner.hook().metadata_changes()
     }
     #[cfg(unix)]
     fn get_fd(&self) -> Option<Rc<std::os::fd::OwnedFd>> {
-        self.inner.get_fd()
+        self.inner.hook().get_fd()
     }
     fn add_ref(&self) -> Box<dyn ClientHook> {
         Box::new(Self {
-            inner: self.inner.add_ref(),
+            inner: self.inner.clone_ref(),
             pipeline: self.pipeline.clone(),
         })
     }
     fn debug_info(&self, info: &mut DebugInfo) {
         info.push("wirePipeline");
-        info.follow(&*self.inner);
+        info.follow(self.inner.hook());
     }
     fn new_call(
         &self,
@@ -1871,13 +1928,13 @@ impl ClientHook for Projected {
         method: u16,
         size: Option<capnp::MessageSize>,
     ) -> capability::Request<any_pointer::Owned, any_pointer::Owned> {
-        capability::Request::new(Box::new(crate::local::Request::prepared(
+        capability::Request::new(crate::local::Request::prepared(
             interface,
             method,
             size,
             self.add_ref(),
             &self.pipeline,
-        )))
+        ))
     }
     fn call(
         &self,
@@ -1896,7 +1953,7 @@ impl ClientHook for Projected {
         results: Box<dyn ResultsHook>,
         hints: CallHints,
     ) -> Promise<(), Error> {
-        if direct_response_hook(self).is_some_and(|hook| {
+        if self.inner.native().is_some_and(|hook| {
             hook.0.remote.get() && (hook.0.index.get().is_some() || hook.0.direct.get().is_some())
         }) {
             // A bound native destination already retains its wire question.
@@ -1904,10 +1961,12 @@ impl ClientHook for Projected {
             // stay alive until this child's unrelated acknowledgement.
             return self
                 .inner
+                .hook()
                 .call_with_hints(interface, method, params, results, hints);
         }
         self.drive(
             self.inner
+                .hook()
                 .call_with_hints(interface, method, params, results, hints),
         )
     }
@@ -1915,29 +1974,29 @@ impl ClientHook for Projected {
         0
     }
     fn get_ptr(&self) -> usize {
-        self.inner.get_ptr()
+        self.inner.hook().get_ptr()
     }
     fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
-        self.inner.get_resolved().map(|inner| {
-            Box::new(Self {
-                inner: ProjectionHook::Opaque(inner),
+        self.inner.hook().get_resolved().map(|inner| {
+            Box::new(Projected {
+                inner,
                 pipeline: self.pipeline.clone(),
             }) as Box<dyn ClientHook>
         })
     }
     fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, Error>> {
-        self.inner.when_more_resolved().map(|promise| {
+        self.inner.hook().when_more_resolved().map(|promise| {
             let pipeline = self.pipeline.clone();
             self.drive(Promise::from_future(async move {
-                Ok(Box::new(Self {
-                    inner: ProjectionHook::Opaque(promise.await?),
+                Ok(Box::new(Projected {
+                    inner: promise.await?,
                     pipeline,
                 }) as Box<dyn ClientHook>)
             }))
         })
     }
     fn when_resolved(&self) -> Promise<(), Error> {
-        self.drive(self.inner.when_resolved())
+        self.drive(self.inner.hook().when_resolved())
     }
 }
 

@@ -9,6 +9,45 @@ use std::sync::{
 type Remote = capability::RemotePromise<any_pointer::Owned>;
 
 #[test]
+fn call_templates_keep_full_method_ids_and_rewrite_overflow_methods() {
+    use crate::rpc_capnp;
+    use capntproto_rpc_wire::owned::connection::PreparedCall;
+
+    let hooks = ClientHooks::new(1, 1);
+    let methods = [(0, 0), (1 << 63, 0), (0, 1 << 15), (u64::MAX, u16::MAX)];
+    let templates = methods.map(|(interface, method)| hooks.inbox.call_template(interface, method));
+    for (index, &(interface, method)) in methods.iter().enumerate().rev() {
+        let template = hooks.inbox.call_template(interface, method);
+        assert!(std::ptr::eq(template, templates[index]));
+        for other in &templates[..index] {
+            assert!(!std::ptr::eq(template, *other));
+        }
+    }
+    // The bounded cache is full. Reusing its first header must still publish
+    // every bit of an uncached method without changing any retained template.
+    for (interface, method) in [(1, 1), (u64::MAX - 1, u16::MAX - 1), (0, 0)] {
+        let template = hooks.inbox.call_template(interface, method);
+        let request = PreparedCall::from_template(
+            template,
+            capnp::message::HeapAllocator::new(),
+            interface,
+            method,
+        )
+        .unwrap();
+        let message = request
+            .message()
+            .get_root_as_reader::<rpc_capnp::message::Reader<'_>>()
+            .unwrap();
+        let rpc_capnp::message::Call(call) = message.which().unwrap() else {
+            panic!("Call header");
+        };
+        let call = call.unwrap();
+        assert_eq!(call.get_interface_id(), interface);
+        assert_eq!(call.get_method_id(), method);
+    }
+}
+
+#[test]
 fn settled_local_authority_waits_for_loopback_and_survives_a_prior_generic_collect() {
     #[derive(Clone)]
     struct Local(Rc<RefCell<Vec<u16>>>);

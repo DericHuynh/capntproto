@@ -119,7 +119,10 @@ impl Inbox {
                     ),
                 })
             });
-            if entry.interface == interface && entry.method == method {
+            // Combine both differences before branching; OR cannot hide a
+            // mismatch in either the interface ID or the method ID.
+            let mismatch = (entry.interface ^ interface) | u64::from(entry.method ^ method);
+            if mismatch == 0 {
                 return &entry.template;
             }
         }

@@ -472,15 +472,11 @@ impl ResultsHook for Results {
 // does; payloads can still grow beyond this bound through ordinary allocation.
 pub(crate) fn result_allocator(size_hint: Option<capnp::MessageSize>) -> message::HeapAllocator {
     let allocator = message::HeapAllocator::new();
-    match size_hint {
-        // Hints describe the payload, excluding its root pointer. Without the
-        // extra word an exact-size copy spills its largest object into a second
-        // segment and retains two nearly payload-sized allocations.
-        Some(size) => {
-            allocator.first_segment_words(size.word_count.saturating_add(1).min(1 << 20) as u32)
-        }
-        None => allocator.first_segment_words(256),
-    }
+    // Hints exclude the root pointer. Clamp before adding it so even a maximal
+    // hint cannot overflow, and keep both the default and hinted sizes on the
+    // same arithmetic path.
+    let payload_words = size_hint.map_or(255, |size| size.word_count.min((1 << 20) - 1));
+    allocator.first_segment_words((payload_words + 1) as u32)
 }
 
 struct ResultsDoneInner {
@@ -636,19 +632,25 @@ impl Request {
         size_hint: Option<capnp::MessageSize>,
         client: Box<dyn ClientHook>,
         pipeline: &crate::scoped::wire::PipelineState,
-    ) -> Self {
+    ) -> Box<Self> {
+        // Construct in the final owner rather than returning a large request
+        // that the projected client must copy into a separate box.
+        let request = Box::<Self>::new_uninit();
         let params = pipeline.prepare_params(interface_id, method_id, size_hint);
-        Self {
-            message: params.request,
-            third_party: None,
-            context: None,
-            cap_table: params.cap_table,
-            interface_id,
-            method_id,
-            client: Some(RequestClient::Hook(client)),
-            hints: CallHints::default(),
-            is_streaming: false,
-        }
+        Box::write(
+            request,
+            Self {
+                message: params.request,
+                third_party: None,
+                context: None,
+                cap_table: params.cap_table,
+                interface_id,
+                method_id,
+                client: Some(RequestClient::Hook(client)),
+                hints: CallHints::default(),
+                is_streaming: false,
+            },
+        )
     }
     pub(crate) fn retain_pipeline(&mut self, parent: crate::scoped::wire::PipelineRef) {
         debug_assert!(self.client.is_none());
