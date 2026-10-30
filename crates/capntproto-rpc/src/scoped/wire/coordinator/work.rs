@@ -730,6 +730,29 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     output.retain_call(&mut bundle, credit)?;
                 }
                 let (direct, native) = match publication {
+                    super::calls::Publication::PreparedCapabilities {
+                        target,
+                        method,
+                        source,
+                        capabilities,
+                    } => {
+                        return driver
+                            .try_send_immediate_prepared_with_capability_table(
+                                target,
+                                method,
+                                source,
+                                capabilities,
+                                messages,
+                                queue,
+                                options.output_bytes.get(),
+                                options.reader,
+                                scratch,
+                                bundle,
+                                |owner, imports, bundle| output.attach(owner, imports, bundle),
+                            )
+                            .map(|key| key.map(super::calls::SendOutcome::Immediate))
+                            .or_else(super::calls::publication_error);
+                    }
                     super::calls::Publication::Immediate {
                         target,
                         method,

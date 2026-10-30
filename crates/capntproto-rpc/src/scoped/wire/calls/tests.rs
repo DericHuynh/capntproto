@@ -95,7 +95,13 @@ fn remote<'p, 'id>(
 fn with_peer(
     f: impl for<'p, 'id, 's, 'm, 'b> FnOnce(TestPeer<'p, 'id, 's>, &mut messages::Messages<'p, 'm, 'b>),
 ) {
-    let mut buffers = messages::GrowingBuffers::new(32, 1 << 20, 4 << 20);
+    with_peer_with_buffer_limit(1 << 20, f)
+}
+fn with_peer_with_buffer_limit(
+    maximum_buffer_bytes: usize,
+    f: impl for<'p, 'id, 's, 'm, 'b> FnOnce(TestPeer<'p, 'id, 's>, &mut messages::Messages<'p, 'm, 'b>),
+) {
+    let mut buffers = messages::GrowingBuffers::new(32, maximum_buffer_bytes, 4 << 20);
     messages::with_growing_messages(
         &mut buffers,
         storage::Growth {
@@ -1741,6 +1747,239 @@ fn native_parameter_tables_borrow_existing_authority_without_allocating() {
 }
 
 #[test]
+fn prepared_capability_publication_rolls_back_and_compacts_replaced_payloads() {
+    use capnp::traits::ImbueMut;
+    for count in [1, 4] {
+        for failure in [
+            "queue", "scratch", "storage", "older", "method", "checked", "compact",
+        ] {
+            with_peer_with_buffer_limit(
+                if failure == "compact" { 512 } else { 1 << 20 },
+                |mut driver, messages| {
+                    if failure != "checked" {
+                        driver.use_native_writer();
+                    }
+                    let mut hooks = ClientHooks::new(24, 24);
+                    let client = remote(&mut driver, &mut hooks);
+                    let value = local(&mut driver, &mut hooks, server(|_, _, _| ok()));
+                    let waiting = driver.capabilities().promise(&mut None).unwrap();
+                    let method = DynamicCall {
+                        interface: 47,
+                        method: 1,
+                        no_promise_pipelining: true,
+                        only_promise_pipeline: false,
+                    };
+                    let template = connection::PreparedCallTemplate::new(47, 1);
+                    let mut source = connection::PreparedCall::from_template(
+                        &template,
+                        capnp::message::HeapAllocator::new(),
+                        47,
+                        1,
+                    )
+                    .unwrap();
+                    if failure == "compact" {
+                        source
+                            .params()
+                            .initn_as::<capnp::data::Builder>(if cfg!(miri) { 4097 } else { 65536 })
+                            .fill(0x5a);
+                    } else {
+                        source
+                            .params()
+                            .initn_as::<capnp::data::Builder>(64)
+                            .fill(0xa5);
+                    }
+                    let mut caps = Vec::new();
+                    let mut root = source.params();
+                    root.imbue_mut(&mut caps);
+                    let mut list = root.initn_as::<capnp::any_pointer_list::Builder>(count);
+                    for index in 0..count {
+                        list.reborrow().get(index).set_as_capability(if index == 2 {
+                            client.hook.add_ref()
+                        } else {
+                            value.hook.add_ref()
+                        });
+                    }
+                    if count == 4 {
+                        list.get(1).clear();
+                    }
+                    let target = hooks.try_borrow_native(&*client.hook).unwrap().unwrap();
+                    let table = ParameterCapabilities::Native(&hooks, &caps);
+                    let mut held = Vec::new();
+                    if failure == "storage" || failure == "compact" {
+                        for _ in 0..32 {
+                            held.push(messages.reserve_exact(512).unwrap());
+                        }
+                        if failure == "compact" {
+                            messages.discard(held.pop().unwrap());
+                        }
+                    }
+                    let older = if failure == "older" {
+                        Some(
+                            driver
+                                .enqueue_dynamic(
+                                    &waiting,
+                                    DynamicCall::default(),
+                                    &[],
+                                    messages,
+                                    128,
+                                    Default::default(),
+                                    |_| Ok(()),
+                                )
+                                .unwrap(),
+                        )
+                    } else {
+                        None
+                    };
+                    let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+                    let mut full = messages::Queue::new_growing(0, 0).unwrap();
+                    let options = if failure == "checked" {
+                        capnp::message::ReaderOptions {
+                            traversal_limit_in_words: Some(0),
+                            ..Default::default()
+                        }
+                    } else {
+                        Default::default()
+                    };
+                    let mut wrong = method;
+                    wrong.method += 1;
+                    let mut scratch = [0; 24];
+                    let result = driver.try_send_immediate_prepared_with_capability_table(
+                        target,
+                        if failure == "method" { wrong } else { method },
+                        &source,
+                        &table,
+                        messages,
+                        if failure == "queue" {
+                            &mut full
+                        } else {
+                            &mut queue
+                        },
+                        128,
+                        options,
+                        if failure == "scratch" {
+                            &mut []
+                        } else {
+                            &mut scratch
+                        },
+                        (),
+                        |_, _, _| 3,
+                    );
+                    let key = if failure == "compact" {
+                        result.unwrap().unwrap()
+                    } else {
+                        if failure == "older" {
+                            assert!(matches!(result, Ok(None)));
+                        } else {
+                            assert!(result.is_err(), "{failure}");
+                        }
+                        assert!(queue.is_empty());
+                        assert!(driver.ledgers().questions.is_empty());
+                        for id in 0..driver.ledgers().exports.capacity() {
+                            assert!(driver
+                                .ledgers()
+                                .exports
+                                .lookup(capntproto_rpc_engine::ids::ExportId::from_wire(id as u32))
+                                .is_none());
+                        }
+                        for writer in held.drain(..) {
+                            messages.discard(writer);
+                        }
+                        if let Some(older) = older {
+                            assert!(driver.cancel_invocation(older, messages));
+                        }
+                        driver
+                            .try_send_immediate_prepared_with_capability_table(
+                                target,
+                                method,
+                                &source,
+                                &table,
+                                messages,
+                                &mut queue,
+                                128,
+                                Default::default(),
+                                &mut [0; 24],
+                                (),
+                                |_, _, _| 3,
+                            )
+                            .unwrap()
+                            .unwrap()
+                    };
+                    let bytes = drain(&mut queue, messages);
+                    let decoded =
+                        capnp::serialize::read_message(&mut bytes.as_slice(), Default::default())
+                            .unwrap();
+                    let rpc_capnp::message::Call(call) = decoded
+                        .get_root::<rpc_capnp::message::Reader>()
+                        .unwrap()
+                        .which()
+                        .unwrap()
+                    else {
+                        panic!("Call")
+                    };
+                    let call = call.unwrap();
+                    assert_eq!(call.get_question_id(), key.id().to_wire());
+                    let payload = call.get_params().unwrap();
+                    let descriptors = payload.get_cap_table().unwrap();
+                    assert_eq!(descriptors.len(), count);
+                    assert_eq!(descriptors.get(0).get_attached_fd(), 3);
+                    assert!(matches!(
+                        descriptors.get(0).which().unwrap(),
+                        rpc_capnp::cap_descriptor::SenderHosted(_)
+                    ));
+                    if count == 4 {
+                        assert!(matches!(
+                            descriptors.get(1).which().unwrap(),
+                            rpc_capnp::cap_descriptor::None(())
+                        ));
+                        assert!(matches!(
+                            descriptors.get(2).which().unwrap(),
+                            rpc_capnp::cap_descriptor::ReceiverHosted(7)
+                        ));
+                        assert!(
+                            matches!((descriptors.get(0).which().unwrap(), descriptors.get(3).which().unwrap()), (rpc_capnp::cap_descriptor::SenderHosted(a), rpc_capnp::cap_descriptor::SenderHosted(b)) if a == b)
+                        );
+                    }
+                    let list = payload
+                        .get_content()
+                        .get_as::<capnp::any_pointer_list::Reader>()
+                        .unwrap();
+                    assert_eq!(list.get(0).capability_index().unwrap(), 0);
+                    if count == 4 {
+                        assert!(list.get(1).is_null());
+                        assert_eq!(list.get(3).capability_index().unwrap(), 3);
+                    }
+                    let segments = decoded.into_segments();
+                    if matches!(failure, "checked" | "compact") {
+                        assert_eq!(capnp::message::ReaderSegments::len(&segments), 1);
+                    } else {
+                        let descriptor_size =
+                            <rpc_capnp::api::CapDescriptor as capnp::field_api::Schema>::SIZE;
+                        let appended = (1 + count as usize
+                            * (usize::from(descriptor_size.data)
+                                + usize::from(descriptor_size.pointers)))
+                            * 8;
+                        assert_eq!(capnp::message::ReaderSegments::get_segment(&segments, 0).unwrap().len(), source.message().get_segments_for_output()[0].len() + appended, "preserve unreachable source words instead of compact-copying, {failure}");
+                    }
+                    for writer in held {
+                        messages.discard(writer);
+                    }
+                    driver.cancel(key).unwrap();
+                    driver.capabilities().release(waiting);
+                    drop((caps, source, value, client));
+                    teardown(
+                        Calls::new(8, None).unwrap(),
+                        hooks,
+                        driver,
+                        messages,
+                        &mut queue,
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
 fn immediate_native_tables_preserve_partial_writes_and_reuse_parameter_storage() {
     fn poll<'p, 'id>(
         calls: &mut TestCalls<'_, '_, 'p, 'id>,
@@ -1849,6 +2088,10 @@ fn immediate_native_tables_preserve_partial_writes_and_reuse_parameter_storage()
                 .all(|value| *value == byte));
             assert!(params.get(2).is_null());
             assert_eq!(params.get(4).capability_index().unwrap(), 3);
+            assert!(
+                capnp::message::ReaderSegments::len(&reader.into_segments()) >= 2,
+                "append descriptors to the original prepared segments"
+            );
         }
         assert!(input.is_empty());
         let mut next = None;

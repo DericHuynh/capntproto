@@ -32,6 +32,74 @@ impl<'id, C: Borrow<clients::Client<'id>>> CapabilityTable<'id> for [Option<C>] 
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn capability_frame<'pool>(
+    messages: &mut messages::Messages<'pool, '_, '_>,
+    params: capnp::any_pointer::Reader<'_>,
+    encoded: Option<&EncodedCapabilities<'_>>,
+    question: capntproto_rpc_engine::ids::QuestionId,
+    target: capntproto_rpc_engine::ids::ImportId,
+    method: calls::DynamicCall,
+    count: usize,
+    minimum: usize,
+    extra: usize,
+    allow_handoff: bool,
+    options: capnp::message::ReaderOptions,
+    mut fill: impl FnMut(capnp::field_api::FixedList<'_, CapDescriptor>) -> capnp::Result<()>,
+) -> Result<Frame<'pool>, super::super::super::Error> {
+    let mut minimum = minimum;
+    if let Some(encoded) = encoded {
+        if let Some(frame) = encoded.copy(
+            messages,
+            question,
+            target,
+            method,
+            count,
+            minimum,
+            extra,
+            allow_handoff,
+            options,
+            &mut fill,
+        )? {
+            return Ok(frame);
+        }
+        let words = params.target_size()?.word_count;
+        let descriptors = (count as u64).checked_mul(
+            u64::from(CapDescriptor::SIZE.data) + u64::from(CapDescriptor::SIZE.pointers),
+        );
+        let compact = words
+            .checked_add(16)
+            .and_then(|n| n.checked_add(descriptors?))
+            .and_then(|n| n.checked_mul(8))
+            .and_then(|n| usize::try_from(n).ok())
+            .and_then(|n| n.checked_add(extra))
+            .ok_or(super::super::super::Error::Capacity)?;
+        minimum = minimum.max(compact);
+    }
+    let count_u32 = u32::try_from(count).map_err(|_| super::super::super::Error::Capacity)?;
+    Frame::build(messages, minimum, options, |builder| {
+        calls::dynamic_call_payload(
+            builder,
+            question,
+            calls::Target::Imported(target),
+            method,
+            allow_handoff,
+            |mut payload| {
+                payload.field(WirePayload::CONTENT).copy_with_capabilities(
+                    params,
+                    capnp::wire_capability::IndexMap::identity(count_u32),
+                )?;
+                fill(payload.field(WirePayload::CAP_TABLE).init(count)?)
+            },
+        )
+    })
+}
+
+type TableParams<'a> = (
+    capnp::any_pointer::Reader<'a>,
+    Option<EncodedCapabilities<'a>>,
+);
+
 impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize>
     Driver<'pool, 'id, 's, I, A, P, S, CAPS, PATH>
 {
@@ -91,6 +159,93 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         options: capnp::message::ReaderOptions,
         scratch: &mut [u32],
         resources: R,
+        attach: impl FnMut(
+            &binding::Route<'id, P, S, PATH>,
+            &imports::Imports<'id, '_, I>,
+            &mut R,
+        ) -> u8,
+    ) -> Result<Option<questions::Key<'id>>, Error> {
+        self.try_send_immediate_table(
+            target,
+            method,
+            || Ok((params, None)),
+            capabilities,
+            messages,
+            queue,
+            minimum,
+            options,
+            scratch,
+            resources,
+            attach,
+        )
+    }
+
+    /// Publish a private prepared Call with a separately retained capability
+    /// table. Native writers preserve its segments and append descriptors;
+    /// Checked writers and oversized layouts keep the ordinary copy path.
+    /// Grants, attachments, ordering and rejection use the same transaction.
+    #[cfg(feature = "alloc")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_send_immediate_prepared_with_capability_table<
+        R,
+        B: capnp::message::Allocator,
+        T: CapabilityTable<'id> + ?Sized,
+    >(
+        &mut self,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        source: &PreparedCall<B>,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
+        resources: R,
+        attach: impl FnMut(
+            &binding::Route<'id, P, S, PATH>,
+            &imports::Imports<'id, '_, I>,
+            &mut R,
+        ) -> u8,
+    ) -> Result<Option<questions::Key<'id>>, Error> {
+        source.check_method(method).map_err(Error::Input)?;
+        let native = self.uses_native_writer() && !capabilities.is_empty();
+        self.try_send_immediate_table(
+            target,
+            method,
+            || {
+                let encoded = if native {
+                    source.capability_layout(method).map_err(Error::Input)?
+                } else {
+                    None
+                };
+                let params = source.params_reader().map_err(|e| Error::Input(e.into()))?;
+                Ok((params, encoded))
+            },
+            capabilities,
+            messages,
+            queue,
+            minimum,
+            options,
+            scratch,
+            resources,
+            attach,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn try_send_immediate_table<'a, R, T: CapabilityTable<'id> + ?Sized>(
+        &mut self,
+        target: &clients::Client<'id>,
+        method: calls::DynamicCall,
+        prepare: impl FnOnce() -> Result<TableParams<'a>, Error>,
+        capabilities: &T,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        queue: &mut messages::Queue<'pool, '_, R>,
+        minimum: usize,
+        options: capnp::message::ReaderOptions,
+        scratch: &mut [u32],
+        resources: R,
         mut attach: impl FnMut(
             &binding::Route<'id, P, S, PATH>,
             &imports::Imports<'id, '_, I>,
@@ -103,12 +258,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 .map_err(|e| Error::Input(e.into()))?
             {
                 return self.try_send_immediate_single(
-                    target, method, params, capability, messages, queue, minimum, options, scratch,
-                    resources, attach,
+                    target, method, prepare, capability, messages, queue, minimum, options,
+                    scratch, resources, attach,
                 );
             }
         }
         if capabilities.is_empty() {
+            let (params, _) = prepare()?;
             return self.try_send_immediate(
                 target, method, params, messages, queue, minimum, options, resources,
             );
@@ -144,16 +300,22 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         }
         let wire_count =
             u32::try_from(count).map_err(|_| Error::Input(super::super::super::Error::Capacity))?;
+        // Ordered fallback must not inspect a private envelope it cannot send.
+        let (params, encoded) = prepare()?;
         let options = self.writer_policy.options(options);
         if self.writer_policy == WriterPolicy::Checked {
             params
                 .validate_capability_indices(wire_count)
                 .map_err(|e| Error::Input(e.into()))?;
         }
-        let words = params
-            .target_size()
-            .map_err(|e| Error::Input(e.into()))?
-            .word_count;
+        let words = if encoded.is_some() {
+            0
+        } else {
+            params
+                .target_size()
+                .map_err(|e| Error::Input(e.into()))?
+                .word_count
+        };
         let descriptor_words = (count as u64).checked_mul(
             u64::from(CapDescriptor::SIZE.data) + u64::from(CapDescriptor::SIZE.pointers),
         );
@@ -164,6 +326,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .and_then(|bytes| usize::try_from(bytes).ok())
             .ok_or(Error::Input(super::super::super::Error::Capacity))?;
         let mut minimum = minimum.max(sized);
+        let base_minimum = minimum;
         let slot_index =
             ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges).ok_or(Error::Busy)?;
         let slot = &mut self.exchanges[slot_index];
@@ -281,40 +444,39 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             *descriptor = reflection::Descriptor::Reflected(reflected);
         }
         let reservation = self.ledgers.questions.reserve().map_err(Error::Question)?;
-        let frame = Frame::build(messages, minimum, options, |builder| {
-            calls::dynamic_call_payload(
-                builder,
-                reservation.id(),
-                calls::Target::Imported(remote),
-                method,
-                self.allow_answer_handoff,
-                |mut payload| {
-                    payload.field(WirePayload::CONTENT).copy_with_capabilities(
-                        params,
-                        capnp::wire_capability::IndexMap::identity(wire_count),
-                    )?;
-                    let mut table = payload.field(WirePayload::CAP_TABLE).init(count)?;
-                    for (index, grant) in staged[..count].iter().enumerate() {
-                        let mut descriptor = table.get_mut(index).unwrap();
-                        if let reflection::Descriptor::Grant(id, promise, attached) = *grant {
-                            descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
-                            let owner = batch.pending_owner(id).and_then(|client| {
-                                match ticket.inspect(client) {
-                                    Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
-                                    _ => None,
-                                }
-                            });
-                            self.descriptors.describe(owner, id, promise, descriptor)?;
-                        } else if let Some(target) = grant.reflected() {
-                            reflection::write(target, descriptor)?;
-                        } else {
-                            descriptor.void(CapDescriptor::NONE).set();
-                        }
+        let frame = capability_frame(
+            messages,
+            params,
+            encoded.as_ref(),
+            reservation.id(),
+            remote,
+            method,
+            count,
+            minimum,
+            minimum - base_minimum,
+            self.allow_answer_handoff,
+            options,
+            |mut table| {
+                for (index, grant) in staged[..count].iter().enumerate() {
+                    let mut descriptor = table.get_mut(index).unwrap();
+                    if let reflection::Descriptor::Grant(id, promise, attached) = *grant {
+                        descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
+                        let owner = batch.pending_owner(id).and_then(|client| {
+                            match ticket.inspect(client) {
+                                Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
+                                _ => None,
+                            }
+                        });
+                        self.descriptors.describe(owner, id, promise, descriptor)?;
+                    } else if let Some(target) = grant.reflected() {
+                        reflection::write(target, descriptor)?;
+                    } else {
+                        descriptor.void(CapDescriptor::NONE).set();
                     }
-                    Ok(())
-                },
-            )
-        })
+                }
+                Ok(())
+            },
+        )
         .map_err(Error::Input)?;
         let question = Question::send_granting_compact(
             reservation,
@@ -369,11 +531,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     /// question. Rejection preserves the request and rolls back the grant.
     /// Pending destinations and older queued work retain the queued path.
     #[allow(clippy::too_many_arguments)]
-    fn try_send_immediate_single<R>(
+    fn try_send_immediate_single<'a, R>(
         &mut self,
         target: &clients::Client<'id>,
         method: calls::DynamicCall,
-        params: capnp::any_pointer::Reader<'_>,
+        prepare: impl FnOnce() -> Result<TableParams<'a>, Error>,
         capability: &clients::Client<'id>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         queue: &mut messages::Queue<'pool, '_, R>,
@@ -429,16 +591,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         } else {
             None
         };
+        let (params, encoded) = prepare()?;
         let options = self.writer_policy.options(options);
         if self.writer_policy == WriterPolicy::Checked {
             params
                 .validate_capability_indices(1)
                 .map_err(|error| Error::Input(error.into()))?;
         }
-        let words = params
-            .target_size()
-            .map_err(|error| Error::Input(error.into()))?
-            .word_count;
+        let words = if encoded.is_some() {
+            0
+        } else {
+            params
+                .target_size()
+                .map_err(|error| Error::Input(error.into()))?
+                .word_count
+        };
         let sized = words
             .checked_add(
                 16 + u64::from(CapDescriptor::SIZE.data) + u64::from(CapDescriptor::SIZE.pointers),
@@ -482,6 +649,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
                 _ => None,
             });
+        let base_minimum = minimum.max(sized);
         let minimum = minimum
             .max(sized)
             .checked_add(
@@ -490,33 +658,32 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     .map_err(|error| Error::Input(error.into()))?,
             )
             .ok_or(Error::Input(super::super::super::Error::Capacity))?;
-        let frame = Frame::build(messages, minimum, options, |builder| {
-            calls::dynamic_call_payload(
-                builder,
-                reservation.id(),
-                calls::Target::Imported(remote),
-                method,
-                self.allow_answer_handoff,
-                |mut payload| {
-                    payload.field(WirePayload::CONTENT).copy_with_capabilities(
-                        params,
-                        capnp::wire_capability::IndexMap::identity(1),
-                    )?;
-                    let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(1)?;
-                    let mut descriptor = descriptors.get_mut(0).unwrap();
-                    descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
-                    match reflected_import {
-                        Some(id) => reflection::write(calls::Target::Imported(id), descriptor),
-                        None => self.descriptors.describe(
-                            owner,
-                            id.expect("staged export"),
-                            promise,
-                            descriptor,
-                        ),
-                    }
-                },
-            )
-        })
+        let frame = capability_frame(
+            messages,
+            params,
+            encoded.as_ref(),
+            reservation.id(),
+            remote,
+            method,
+            1,
+            minimum,
+            minimum - base_minimum,
+            self.allow_answer_handoff,
+            options,
+            |mut descriptors| {
+                let mut descriptor = descriptors.get_mut(0).unwrap();
+                descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
+                match reflected_import {
+                    Some(id) => reflection::write(calls::Target::Imported(id), descriptor),
+                    None => self.descriptors.describe(
+                        owner,
+                        id.expect("staged export"),
+                        promise,
+                        descriptor,
+                    ),
+                }
+            },
+        )
         .map_err(Error::Input)?;
         // Export staging needs the graph, so reacquire its exclusive dispatch
         // ticket before publication. No borrowed ticket crosses a callback.

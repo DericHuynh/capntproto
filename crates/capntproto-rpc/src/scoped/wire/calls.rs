@@ -147,6 +147,12 @@ pub(super) enum Publication<'a, 'id> {
         params: &'a connection::ImmediateParams<'a>,
         capabilities: Option<&'a ParameterCapabilities<'a, 'id>>,
     },
+    PreparedCapabilities {
+        target: &'a Client<'id>,
+        method: DynamicCall,
+        source: &'a connection::PreparedCall<capnp::message::HeapAllocator>,
+        capabilities: &'a ParameterCapabilities<'a, 'id>,
+    },
 }
 pub(super) enum SendOutcome<'id> {
     /// The request remains owned by its caller until output releases capacity.
@@ -514,6 +520,29 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             },
             |invocations, driver, messages, _credit, publication| {
                 let direct = match publication {
+                    Publication::PreparedCapabilities {
+                        target,
+                        method,
+                        source,
+                        capabilities,
+                    } => {
+                        return driver
+                            .try_send_immediate_prepared_with_capability_table(
+                                target,
+                                method,
+                                source,
+                                capabilities,
+                                messages,
+                                queue,
+                                minimum,
+                                options,
+                                scratch,
+                                R::default(),
+                                |_, _, _| u8::MAX,
+                            )
+                            .map(|key| key.map(SendOutcome::Immediate))
+                            .or_else(publication_error);
+                    }
                     Publication::Immediate {
                         target,
                         method,
@@ -616,6 +645,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             },
             |invocations, driver, messages, _credit, publication| {
                 let direct = match publication {
+                    Publication::PreparedCapabilities { .. } => return Ok(None),
                     Publication::Immediate {
                         target,
                         method,
@@ -1384,17 +1414,32 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 native.or_else(|| multiple.as_deref().map(ParameterCapabilities::Retained))
             };
             let published = if immediate {
-                send(
-                    &mut self.invocations,
-                    driver,
-                    messages,
-                    credit.clone(),
-                    Publication::Immediate {
+                // Data-only calls already selected their encoded path above.
+                // Keep the private-hook lookup lazy when no table is present.
+                #[allow(clippy::manual_option_zip)]
+                let publication = match capabilities
+                    .as_ref()
+                    .and_then(|caps| call.params.prepared_envelope().map(|source| (caps, source)))
+                {
+                    Some((capabilities, source)) => Publication::PreparedCapabilities {
+                        target,
+                        method,
+                        source,
+                        capabilities,
+                    },
+                    None => Publication::Immediate {
                         target,
                         method,
                         params: &params,
                         capabilities: capabilities.as_ref(),
                     },
+                };
+                send(
+                    &mut self.invocations,
+                    driver,
+                    messages,
+                    credit.clone(),
+                    publication,
                 )
             } else {
                 Ok(None)

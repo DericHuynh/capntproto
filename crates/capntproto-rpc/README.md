@@ -103,7 +103,12 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   local exceptions retain their reason and details. Independently executed
   protected methods wake the coordinator when they publish an early pipeline.
   Outgoing frames size descriptor tables and promised-answer paths before
-  reservation. Terminate both workers before terminating the portable driver.
+  reservation. Native immediate calls built with `PreparedCall` preserve their
+  payload segments when appending capability descriptors, avoiding a payload
+  sizing walk and rebuild. The prepared-table writer uses the same grant and
+  output-admission transaction as ordinary calls. Checked writers validate and
+  copy the payload; unsupported layouts and pool limits retain the compact-copy
+  fallback. Terminate both workers before terminating the portable driver.
   The caller still drives IO, maintenance and authenticated network operations.
   `wire::foreign::ForeignPromises` supplies the foreign import callback for
   pending owned hooks. Poll it after graph reclamation and before calls and

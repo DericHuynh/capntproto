@@ -1427,6 +1427,26 @@ impl CallParams {
             Self::Published => None,
         }
     }
+    fn prepared_envelope(
+        &self,
+    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<capnp::message::HeapAllocator>>
+    {
+        match self {
+            Self::Request(request) => request.prepared_envelope(),
+            Self::OwnedRequest(request) => request.prepared_envelope(),
+            Self::Hook(hook) => hook.as_any().and_then(|params| {
+                params
+                    .downcast_ref::<crate::local::Request>()
+                    .and_then(crate::local::Request::prepared_envelope)
+                    .or_else(|| {
+                        params
+                            .downcast_ref::<crate::local::Params>()
+                            .and_then(crate::local::Params::prepared_envelope)
+                    })
+            }),
+            Self::Published => None,
+        }
+    }
     fn into_hook(self) -> Box<dyn ParamsHook> {
         match self {
             Self::Request(request) => Box::new(request),

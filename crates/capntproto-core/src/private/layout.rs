@@ -4965,6 +4965,11 @@ impl<'a> StructReader<'a> {
         }
     }
 
+    /// Borrow encoded pointer words without following their targets.
+    pub fn get_pointer_section_as_blob(&self) -> &'a [u8] {
+        self.get_pointer_section_as_list().into_raw_bytes()
+    }
+
     pub fn get_data_section_as_blob(&self) -> &'a [u8] {
         if self.data_size == 0 {
             // Explicitly handle this case to avoid forming a slice to a null pointer,

@@ -157,6 +157,11 @@ impl Params {
         if !self.cap_table.is_empty() {
             return None;
         }
+        self.prepared_envelope()
+    }
+    pub(crate) fn prepared_envelope(
+        &self,
+    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
         match &self.request {
             RequestMessage::Envelope(message) => Some(message),
             RequestMessage::Frozen(message) => Some(message),
@@ -668,6 +673,11 @@ impl Request {
         if !self.cap_table.is_empty() {
             return None;
         }
+        self.prepared_envelope()
+    }
+    pub(crate) fn prepared_envelope(
+        &self,
+    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
         match &self.message {
             RequestMessage::Envelope(message) => Some(message),
             RequestMessage::Frozen(message) => Some(message),

@@ -12,7 +12,7 @@ mod immediate;
 mod template;
 pub use immediate::{CapabilityTable, ImmediateParams};
 pub use template::EncodedCall;
-use template::PlainTemplate;
+use template::{EncodedCapabilities, PlainTemplate};
 #[cfg(feature = "alloc")]
 pub use template::{PreparedCall, PreparedCallTemplate};
 

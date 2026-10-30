@@ -5,6 +5,8 @@
 use super::*;
 use capnp::traits::IntoInternalStructReader;
 use capntproto_rpc_engine::ids::QuestionId;
+mod capabilities;
+pub(super) use capabilities::EncodedCapabilities;
 
 /// Reusable immutable Call header. Each request receives independent storage;
 /// method IDs are set through the generated builder before selecting parameters.
@@ -163,7 +165,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
     }
     /// Return a data-only certificate for one or two segments, or let the general
     /// codec handle more segments. Any capability pointer in the content fails
-    /// validation; callers with a capability table must use the general codec.
+    /// validation; callers with a capability table use the prepared-table writer.
     /// The caller may select the ordinary no-pipelining hint at publication;
     /// the copied private header receives that hint without editing the source.
     #[inline(always)]
@@ -184,17 +186,58 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
     ) -> Result<Option<EncodedCall<'_>>, super::super::super::Error> {
         self.encode_layout(method, None)
     }
+    pub(super) fn capability_layout(
+        &self,
+        method: calls::DynamicCall,
+    ) -> Result<Option<EncodedCapabilities<'_>>, super::super::super::Error> {
+        let Some(call) = self.encoded_for_sending(method)? else {
+            return Ok(None);
+        };
+        // Only this private builder can supply the immutable envelope. Locate
+        // its descriptor pointer once without visiting application content.
+        let root = self
+            .message()
+            .get_root_as_reader::<rpc_capnp::message::Reader>()?;
+        let rpc_capnp::message::Call(header) = root
+            .which()
+            .map_err(|_| super::super::super::Error::WrongMessage)?
+        else {
+            return Err(super::super::super::Error::WrongMessage);
+        };
+        let payload = header?.get_params()?.into_internal_struct_reader();
+        let pointers = payload.get_pointer_section_as_blob();
+        let table = (pointers.as_ptr() as usize)
+            .checked_add(8)
+            .and_then(|offset| offset.checked_sub(call.segment.as_ptr() as usize));
+        let Some(table) = table.filter(|offset| {
+            pointers.len() >= 16
+                && offset
+                    .checked_add(8)
+                    .is_some_and(|end| end <= call.segment.len())
+        }) else {
+            return Ok(None);
+        };
+        Ok(Some(EncodedCapabilities { call, table }))
+    }
+    #[inline(always)]
+    pub(super) fn check_method(
+        &self,
+        method: calls::DynamicCall,
+    ) -> Result<(), super::super::super::Error> {
+        if (self.method.interface, self.method.method) != (method.interface, method.method)
+            || method.only_promise_pipeline
+        {
+            return Err(super::super::super::Error::WrongMessage);
+        }
+        Ok(())
+    }
     #[inline(always)]
     fn encode_layout(
         &self,
         method: calls::DynamicCall,
         options: Option<capnp::message::ReaderOptions>,
     ) -> Result<Option<EncodedCall<'_>>, super::super::super::Error> {
-        if (self.method.interface, self.method.method) != (method.interface, method.method)
-            || method.only_promise_pipeline
-        {
-            return Err(super::super::super::Error::WrongMessage);
-        }
+        self.check_method(method)?;
         let Some((call, target)) = self.offsets else {
             return Ok(None);
         };
@@ -327,6 +370,7 @@ pub struct EncodedCall<'a> {
     #[cfg(feature = "alloc")]
     owner: Option<alloc::rc::Rc<PreparedCall<capnp::message::HeapAllocator>>>,
 }
+
 impl<'a> EncodedCall<'a> {
     #[cfg(feature = "alloc")]
     pub(super) fn retain_parts(
