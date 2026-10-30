@@ -459,6 +459,12 @@ Private prepared Calls preserve their immutable header geometry through template
 copies and parameter replacement. Native publication uses that geometry to append
 descriptors without decoding the same header again. Segmented headers retain the
 ordinary codec fallback.
+Prepared payloads borrow every builder segment without allocating a list of
+segment references. Long promised-answer transforms use space in the output
+buffer rather than rebuilding the payload. Large data-only Call and Return
+output retain all trailing segments through one shared framing owner; fixed
+providers keep the allocation-free copy path. All segments contribute to reader
+limits and retained-capacity accounting, including unused allocator words.
 
 Queued native calls use the same table through `enqueue_dynamic_to_table`,
 retaining each parameter directly into the invocation's final storage. Encoding,

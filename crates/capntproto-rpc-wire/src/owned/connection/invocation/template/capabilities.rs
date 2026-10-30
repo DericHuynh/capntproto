@@ -27,14 +27,8 @@ impl EncodedCapabilities<'_> {
         let template = self
             .call
             .for_publication(method, options, WriterPolicy::Native)?;
-        let first = self.call.segment;
-        let second = self.call.second.unwrap_or(&[]);
-        let header_len = if self.call.second.is_some() { 16 } else { 8 };
         let descriptor_bytes = descriptor_bytes(count, extra)?;
-        let source_end = first
-            .len()
-            .checked_add(second.len())
-            .and_then(|n| n.checked_add(header_len))
+        let (_, source_end) = crate::owned::connection::payload::frame_layout(&self.call)
             .ok_or(EncodeError::Capacity)?;
         let capacity = source_end
             .checked_add(descriptor_bytes)
@@ -91,7 +85,7 @@ impl EncodedCapabilities<'_> {
         };
         write_call(
             payload,
-            self.call.second.into_iter(),
+            self.call.tail(),
             view,
             template,
             question,
@@ -253,7 +247,7 @@ mod tests {
 
     #[test]
     fn retained_header_publishes_without_reopening_its_reader_budget() {
-        for length in [0, 64, 320] {
+        for (length, discarded) in [(0, 0), (64, 0), (320, 0), (640, 1), (640, 2)] {
             let mut call = PreparedCall::new(
                 capnp::message::Builder::new(
                     capnp::message::HeapAllocator::new().first_segment_words(32),
@@ -262,6 +256,11 @@ mod tests {
                 9,
             )
             .unwrap();
+            for _ in 0..discarded {
+                call.params()
+                    .initn_as::<capnp::data::Builder>(320)
+                    .fill(0xaa);
+            }
             let data = alloc::vec![0x5a; length];
             call.params()
                 .set_as::<capnp::data::Owned>(&data[..])

@@ -4,6 +4,64 @@ use crate::owned::Error;
 use crate::rpc_capnp::api::CapDescriptor;
 use capnp::{field_api::Schema, traits::IntoInternalStructReader};
 
+pub(super) fn frame_layout(
+    segments: &impl capnp::message::ReaderSegments,
+) -> Option<(usize, usize)> {
+    let count = segments.len();
+    if count == 0 || count >= capnp::serialize::SEGMENTS_COUNT_LIMIT {
+        return None;
+    }
+    let header = (count / 2 + 1) * 8;
+    let length = (0..count).try_fold(header, |length, index| {
+        let segment = segments.get_segment(index as u32)?;
+        u32::try_from(segment.len() / 8).ok()?;
+        length.checked_add(segment.len())
+    })?;
+    Some((header, length))
+}
+
+/// Copy an immutable segmented message without constructing segment-reference
+/// storage. The caller supplies its already checked framing extent and edits
+/// only privately owned ancestor fields before the lease becomes observable.
+pub(super) fn copy_segments<'pool>(
+    segments: &impl capnp::message::ReaderSegments,
+    header: usize,
+    length: usize,
+    messages: &mut messages::Messages<'pool, '_, '_>,
+    edit: impl FnOnce(&mut [u8]),
+) -> Result<messages::Lease<'pool>, Error> {
+    let mut writer = messages.reserve_exact(length).map_err(Error::Storage)?;
+    let copied = (|| {
+        let mut bytes = messages
+            .write_borrowed(&mut writer)
+            .map_err(Error::Storage)?;
+        bytes[..header].fill(0);
+        bytes[..4].copy_from_slice(&((segments.len() - 1) as u32).to_le_bytes());
+        let mut start = header;
+        for index in 0..segments.len() {
+            let segment = segments.get_segment(index as u32).expect("message segment");
+            let slot = (index + 1) * 4;
+            bytes[slot..slot + 4].copy_from_slice(&((segment.len() / 8) as u32).to_le_bytes());
+            let end = start + segment.len();
+            bytes[start..end].copy_from_slice(segment);
+            start = end;
+        }
+        edit(&mut bytes[..length]);
+        Ok(())
+    })();
+    if let Err(error) = copied {
+        messages.discard(writer);
+        return Err(error);
+    }
+    match messages.seal(writer, length) {
+        Ok(lease) => Ok(lease),
+        Err(rejected) => {
+            messages.discard(rejected.writer);
+            Err(Error::Storage(rejected.error))
+        }
+    }
+}
+
 pub(super) struct PayloadSegments<'a> {
     pub first: &'a [u8],
     pub table: usize,

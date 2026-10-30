@@ -2,7 +2,7 @@
 use super::*;
 use core::borrow::Borrow;
 
-/// Parameters for immediate publication. An encoded Call has one or two unframed
+/// Parameters for immediate publication. An encoded Call borrows its unframed
 /// segments. Checked writers validate its payload before copying. Its method
 /// and hints must match; target/question IDs are assigned by the driver.
 pub enum ImmediateParams<'a> {
