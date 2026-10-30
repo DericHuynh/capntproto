@@ -2,7 +2,7 @@
 <title id="title">Capntproto — benchmark measurements unavailable</title>
 <rect width="1400" height="200" fill="white"/>
 <g font-family="DejaVu Sans, sans-serif">
-<text x="35.00" y="65.00" font-size="25" fill="#1e293b">See exhaustive benchmark tables for measured latency</text>
+<text x="35.00" y="65.00" font-size="25" fill="#1e293b">No validated latency measurement in the latest run</text>
 <text x="35.00" y="120.00" font-size="16" fill="#64748b">See the reports dashboard for the measured commit, status and workflow logs.</text>
 </g>
 </svg>
