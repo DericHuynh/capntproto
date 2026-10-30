@@ -107,7 +107,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<()>> {
         let mut budget = self.options.budget.get();
-        self.poll_work_budget(
+        self.poll_work_budget::<O, false>(
             messages,
             queue,
             scratch,
@@ -115,10 +115,11 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             cx,
             &mut budget,
             &self.notifications.producer(WorkSet::CALLS),
+            |_, _| {},
         )
     }
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn poll_work_budget<O: Output<I>>(
+    pub(super) fn poll_work_budget<O: Output<I>, const OBSERVE_RETIREMENT: bool>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
@@ -127,6 +128,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         cx: &mut Context<'_>,
         remaining: &mut usize,
         waker: &Waker,
+        mut network_completed: impl FnMut(capntproto_rpc_engine::questions::Key<'id>, usize),
     ) -> Poll<capnp::Result<()>> {
         let notified = self.notifications.take(cx.waker());
         if notified & WorkSet::CONTROL != WorkSet::NONE {
@@ -196,11 +198,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
                 return Poll::Ready(Err(wire_error(error)));
             }
-            let result = self.poll_calls(
+            let result = self.poll_calls::<O, OBSERVE_RETIREMENT>(
                 messages,
                 queue,
                 scratch,
                 output,
+                &mut network_completed,
                 &mut Context::from_waker(waker),
                 &mut quantum,
                 false,
@@ -323,12 +326,21 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 }
             };
         }
-        self.poll_active_work(messages, queue, scratch, output, cx, remaining, waker)
+        self.poll_active_work::<O, OBSERVE_RETIREMENT>(
+            messages,
+            queue,
+            scratch,
+            output,
+            cx,
+            remaining,
+            waker,
+            network_completed,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
     #[inline(never)]
-    pub(super) fn poll_active_work<O: Output<I>>(
+    pub(super) fn poll_active_work<O: Output<I>, const OBSERVE_RETIREMENT: bool>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
@@ -337,6 +349,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         cx: &mut Context<'_>,
         remaining: &mut usize,
         waker: &Waker,
+        mut network_completed: impl FnMut(capntproto_rpc_engine::questions::Key<'id>, usize),
     ) -> Poll<capnp::Result<()>> {
         let mut application_cx = Context::from_waker(waker);
         let mut advanced = false;
@@ -355,7 +368,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 // in the hook inbox needs the same quantum as an admitted
                 // invocation; otherwise it takes an extra scheduler rotation
                 // just to publish its already-ready frame.
-                Lane::Calls => self.hooks.inbox.queue.borrow().is_empty() && self.calls.is_empty(),
+                Lane::Calls => {
+                    self.hooks.inbox.queue.borrow().is_empty()
+                        && self.calls.is_empty()
+                        && !self.driver.has_ready_completions()
+                        && !self.driver.has_changed_invocations()
+                }
                 Lane::Worker => self.worker.is_empty() && self.native_tails.is_empty(),
                 // Maintenance owns its bounded readiness selection and charges
                 // one step when idle. Probing here builds the same sixteen-class
@@ -444,11 +462,12 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                     },
                     Lane::Calls => {
                         let mut unused = quantum.get();
-                        let result = self.poll_calls(
+                        let result = self.poll_calls::<O, OBSERVE_RETIREMENT>(
                             messages,
                             queue,
                             scratch,
                             output,
+                            &mut network_completed,
                             &mut application_cx,
                             &mut unused,
                             true,
@@ -715,18 +734,19 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
     // share borrows and eliminate intermediate publication moves.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(super) fn poll_calls<O: Output<I>>(
+    pub(super) fn poll_calls<O: Output<I>, const OBSERVE_RETIREMENT: bool>(
         &mut self,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, O::Bundle>,
         scratch: &mut [u32],
         output: &O,
+        completed: &mut impl FnMut(capntproto_rpc_engine::questions::Key<'id>, usize),
         cx: &mut Context<'_>,
         quantum: &mut usize,
         refresh: bool,
     ) -> Poll<Result<Progress, Box<Error>>> {
         let options = self.options;
-        let result = self.calls.poll_using(
+        let result = self.calls.poll_using::<_, _, OBSERVE_RETIREMENT>(
             &mut self.hooks,
             &mut self.driver,
             messages,
@@ -734,6 +754,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             cx,
             quantum,
             |runtime, hook| self.foreign.import(runtime, hook),
+            completed,
             Self::hook_refresh(output, refresh),
             |invocations, driver, messages, credit, publication| {
                 let mut bundle = output.bundle();

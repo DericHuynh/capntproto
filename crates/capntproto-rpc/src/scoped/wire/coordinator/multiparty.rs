@@ -35,6 +35,9 @@ struct Request {
 }
 pub(crate) struct Commands {
     pub(crate) bilateral: Cell<bool>,
+    // Only a full control poll certifies quiescence; every external command
+    // invalidates it before waking the control owner.
+    quiescent: Cell<bool>,
     join_ids: RefCell<bilateral::Ids>,
     pub(crate) network: RefCell<Option<Rc<dyn introduction::Network>>>,
     provisions: RefCell<VecDeque<Rc<introduction::Provision>>>,
@@ -51,6 +54,7 @@ impl Commands {
     pub(crate) fn new(maximum: usize, bytes: usize) -> Rc<Self> {
         Rc::new(Self {
             bilateral: Cell::new(false),
+            quiescent: Cell::new(true),
             join_ids: RefCell::default(),
             network: RefCell::default(),
             provisions: RefCell::default(),
@@ -67,6 +71,7 @@ impl Commands {
         })
     }
     fn notify(&self) {
+        self.quiescent.set(false);
         let wake = self.wake.borrow_mut().take();
         if let Some(wake) = wake {
             wake.wake();
@@ -102,11 +107,19 @@ impl Drop for Commands {
 }
 #[derive(Clone)]
 pub(crate) struct Handle(Weak<Commands>);
-struct Notify(Weak<Commands>);
+enum Notify {
+    Control(Weak<Commands>),
+    Operation(Waker),
+}
 impl Drop for Notify {
     fn drop(&mut self) {
-        if let Some(commands) = self.0.upgrade() {
-            commands.notify();
+        match self {
+            Self::Control(commands) => {
+                if let Some(commands) = commands.upgrade() {
+                    commands.notify();
+                }
+            }
+            Self::Operation(wake) => wake.wake_by_ref(),
         }
     }
 }
@@ -190,11 +203,7 @@ impl Handle {
         match prepare() {
             Err(error) => Promise::err(error),
             Ok(receiver) => {
-                let notify = Notify(self.0.clone());
-                Promise::from_future(async move {
-                    let _notify = notify;
-                    receiver.await.map_err(|_| closed())?
-                })
+                Promise::from_future(async move { receiver.await.map_err(|_| closed())? })
             }
         }
     }
@@ -205,6 +214,12 @@ enum Completion {
     Join(Box<dyn ResponseHook>),
     Bilateral(Box<dyn ResponseHook>),
 }
+fn tracked(
+    sender: Sender,
+) -> capntproto_rpc_engine::completion::Delivery<'static, capnp::Result<Box<dyn ResponseHook>>> {
+    let sender: capntproto_rpc_engine::completion::Sender<'static, _> = sender.into();
+    sender.track()
+}
 struct Incoming<'p, 'id, const H: usize> {
     request: connection::NetworkRequest<'p, 'id, H>,
     future: Option<Promise<Completion, Error>>,
@@ -212,7 +227,9 @@ struct Incoming<'p, 'id, const H: usize> {
 }
 struct Sent<'p, 'id, const C: usize> {
     key: questions::Key<'id>,
-    sender: Option<Sender>,
+    sender: Option<
+        capntproto_rpc_engine::completion::Delivery<'static, capnp::Result<Box<dyn ResponseHook>>>,
+    >,
     permit: Option<capntproto_rpc_engine::flow_control::outgoing::OwnedPermit>,
     response: Option<connection::Response<'p, 'id, resources::Import, C>>,
     observer: Weak<Lease>,
@@ -312,13 +329,13 @@ pub(crate) struct NetworkControl<'p, 'id, V: 'static, F, const C: usize, const H
     joins: Option<Rc<dyn JoinNetwork<V>>>,
     commands: Rc<Commands>,
     pending: pending::Pending<'p, 'id, H>,
-    sent: Vec<Sent<'p, 'id, C>>,
+    sent: crate::scoped::wire::ready::Owners<Sent<'p, 'id, C>>,
     local: LocalTasks,
-    handoffs: Vec<handoff::Job<'p, 'id>>,
-    provided: Vec<introduction::Provided<'id>>,
-    accepting_vines: Vec<introduction::AcceptedVine<'id>>,
+    handoffs: handoff::Jobs<'p, 'id>,
+    provided: crate::scoped::wire::ready::Owners<introduction::Provided<'id>>,
+    accepting_vines: crate::scoped::wire::ready::Owners<introduction::AcceptedVine<'id>>,
     barriers: VecDeque<connection::VineBarrier<'p, 'id>>,
-    produced: VecDeque<tail::Produced<'id>>,
+    produced: crate::scoped::wire::ready::Owners<tail::Produced<'id>>,
     maximum: usize,
     lane: usize,
     tail_lane: usize,
@@ -348,17 +365,32 @@ impl<
             joins,
             commands,
             pending: pending::Pending::default(),
-            sent: Vec::new(),
+            sent: Default::default(),
             local: LocalTasks::default(),
-            handoffs: Vec::new(),
-            provided: Vec::new(),
-            accepting_vines: Vec::new(),
+            handoffs: Default::default(),
+            provided: Default::default(),
+            accepting_vines: Default::default(),
             barriers: VecDeque::new(),
-            produced: VecDeque::new(),
+            produced: Default::default(),
             maximum,
             lane: 0,
             tail_lane: 0,
         }
+    }
+    fn network_quiescent(&self) -> bool {
+        self.pending.is_empty()
+            && self.sent.is_empty()
+            && self.local.is_empty()
+            && self.handoffs.is_empty()
+            && self.provided.is_empty()
+            && self.accepting_vines.is_empty()
+            && self.barriers.is_empty()
+            && self.produced.is_empty()
+            && self.commands.queue.borrow().is_empty()
+            && self.commands.markers.borrow().is_empty()
+            && self.commands.adoptions.borrow().is_empty()
+            && self.commands.provisions.borrow().is_empty()
+            && self.commands.forwarding.borrow().is_empty()
     }
     fn target<'s>(
         coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
@@ -702,7 +734,7 @@ impl<
             && coordinator.hooks.inbox.queue.borrow().is_empty()
             && !coordinator.calls.has_unpublished()
             && !coordinator.worker.has_undispatched()
-            && self.poll_provisions(coordinator, messages, queue)?
+            && self.poll_provisions(coordinator, messages, queue, cx)?
         {
             return Poll::Ready(Ok(true));
         }
@@ -728,7 +760,7 @@ impl<
                                 inner,
                                 _lease: Lease {
                                     _permit: local.permit,
-                                    _notify: Notify(Rc::downgrade(&self.commands)),
+                                    _notify: Notify::Control(Rc::downgrade(&self.commands)),
                                 },
                             }) as Box<dyn ResponseHook>
                         });
@@ -739,71 +771,8 @@ impl<
                     _ => (),
                 },
                 2 => {
-                    for index in (0..self.sent.len()).rev() {
-                        let sent = &mut self.sent[index];
-                        if let Some(pipeline) = &sent.pipeline {
-                            if handoff::project(sent.key, pipeline, coordinator)? {
-                                return Poll::Ready(Ok(true));
-                            }
-                        }
-                        if let Some(response) = sent.response.as_ref() {
-                            let _ = response;
-                            if sent.observer.upgrade().is_none() {
-                                let sent = self.sent.swap_remove(index);
-                                coordinator.driver.release_output(
-                                    CallOutput::Remote(sent.response.unwrap()),
-                                    messages,
-                                );
-                                return Poll::Ready(Ok(true));
-                            }
-                        } else if sent.sender.as_ref().is_some_and(Sender::is_closed)
-                            && sent
-                                .pipeline
-                                .as_ref()
-                                .is_none_or(|pipeline| Rc::strong_count(pipeline) == 1)
-                        {
-                            let sent = self.sent.swap_remove(index);
-                            return Poll::Ready(
-                                coordinator
-                                    .driver
-                                    .cancel(sent.key)
-                                    .map(|()| true)
-                                    .map_err(wire_error),
-                            );
-                        } else {
-                            match coordinator.driver.take_response(sent.key) {
-                                Err(connection::Error::PendingResponse) => (),
-                                Err(error) => return Poll::Ready(Err(wire_error(error))),
-                                Ok(response) => {
-                                    let result =
-                                        Self::retain_response(&response, coordinator, messages)
-                                            .map(Rc::new);
-                                    if let Some(pipeline) = sent.pipeline.take() {
-                                        match &result {
-                                            Ok(payload) => pipeline.finish_payload(payload.clone()),
-                                            Err(error) => pipeline.finish(Box::new(
-                                                crate::broken::Pipeline::new(error.clone()),
-                                            )),
-                                        }
-                                    }
-                                    let lease = Rc::new(Lease {
-                                        _permit: sent.permit.take().unwrap(),
-                                        _notify: Notify(Rc::downgrade(&self.commands)),
-                                    });
-                                    sent.observer = Rc::downgrade(&lease);
-                                    sent.response = Some(response);
-                                    let _ =
-                                        sent.sender.take().unwrap().send(result.map(|payload| {
-                                            Box::new(Reply {
-                                                payload,
-                                                _lease: lease,
-                                            })
-                                                as Box<dyn ResponseHook>
-                                        }));
-                                    return Poll::Ready(Ok(true));
-                                }
-                            }
-                        }
+                    if let Poll::Ready(result) = self.poll_sent(coordinator, messages, cx) {
+                        return Poll::Ready(result);
                     }
                 }
                 3 => {
@@ -987,14 +956,17 @@ impl<
             }
         })();
         match result {
-            Ok(Ok(key)) => self.sent.push(Sent {
-                key,
-                sender: Some(request.sender),
-                permit: Some(request.permit),
-                response: None,
-                observer: Weak::new(),
-                pipeline: None,
-            }),
+            Ok(Ok(key)) => self.register_sent(
+                Sent {
+                    key,
+                    sender: Some(tracked(request.sender)),
+                    permit: Some(request.permit),
+                    response: None,
+                    observer: Weak::new(),
+                    pipeline: None,
+                },
+                coordinator,
+            )?,
             Ok(Err(future)) => self
                 .local
                 .push(Local::new(request.sender, future, request.permit)),
@@ -1002,6 +974,107 @@ impl<
                 let _ = request.sender.send(Err(error));
             }
         }
+        Ok(())
+    }
+    #[inline(never)]
+    fn poll_sent<'s>(
+        &mut self,
+        coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
+        messages: &mut messages::Messages<'p, '_, '_>,
+        cx: &mut Context<'_>,
+    ) -> Poll<capnp::Result<bool>> {
+        for _ in 0..self.sent.len() {
+            let Some(ready) = self.sent.next(cx) else {
+                break;
+            };
+            let index = ready.index();
+            let (sent, wake) = self.sent.get_mut(index);
+            if let Some(pipeline) = &sent.pipeline {
+                if handoff::project(sent.key, pipeline, coordinator)? {
+                    self.sent.schedule(index);
+                    return Poll::Ready(Ok(true));
+                }
+            }
+            if let Some(response) = sent.response.as_ref() {
+                let _ = response;
+                if sent.observer.upgrade().is_none() {
+                    let sent = self.sent.take(index);
+                    coordinator
+                        .driver
+                        .release_output(CallOutput::Remote(sent.response.unwrap()), messages);
+                    return Poll::Ready(Ok(true));
+                }
+            } else if sent
+                .sender
+                .as_ref()
+                .is_some_and(|sender| sender.is_observed())
+                && sent
+                    .pipeline
+                    .as_ref()
+                    .is_none_or(|pipeline| Rc::strong_count(pipeline) == 1)
+            {
+                let sent = self.sent.take(index);
+                return Poll::Ready(
+                    coordinator
+                        .driver
+                        .cancel(sent.key)
+                        .map(|()| true)
+                        .map_err(wire_error),
+                );
+            } else {
+                match coordinator.driver.take_response(sent.key) {
+                    Err(connection::Error::PendingResponse) => (),
+                    Err(error) => return Poll::Ready(Err(wire_error(error))),
+                    Ok(response) => {
+                        let result =
+                            Self::retain_response(&response, coordinator, messages).map(Rc::new);
+                        if let Some(pipeline) = sent.pipeline.take() {
+                            match &result {
+                                Ok(payload) => pipeline.finish_payload(payload.clone()),
+                                Err(error) => pipeline
+                                    .finish(Box::new(crate::broken::Pipeline::new(error.clone()))),
+                            }
+                        }
+                        let lease = Rc::new(Lease {
+                            _permit: sent.permit.take().unwrap(),
+                            _notify: Notify::Operation(wake.clone()),
+                        });
+                        sent.observer = Rc::downgrade(&lease);
+                        sent.response = Some(response);
+                        let _ = sent.sender.take().unwrap().try_send(result.map(|payload| {
+                            Box::new(Reply {
+                                payload,
+                                _lease: lease,
+                            }) as Box<dyn ResponseHook>
+                        }));
+                        return Poll::Ready(Ok(true));
+                    }
+                }
+            }
+        }
+        Poll::Pending
+    }
+    fn register_sent<'s>(
+        &mut self,
+        sent: Sent<'p, 'id, C>,
+        coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
+    ) -> capnp::Result<()> {
+        let key = sent.key;
+        let index = self.sent.insert(sent, true);
+        if let Err(error) = coordinator.driver.bind_completion_owner(key, index) {
+            drop(self.sent.take(index));
+            let _ = coordinator.driver.cancel(key);
+            return Err(wire_error(error));
+        }
+        let (sent, wake) = self.sent.get_mut(index);
+        if let Some(pipeline) = &sent.pipeline {
+            pipeline.bind_owner(wake.clone());
+        }
+        let _ = sent
+            .sender
+            .as_mut()
+            .unwrap()
+            .poll_observed(&mut Context::from_waker(wake));
         Ok(())
     }
     fn retain_response<'s>(
@@ -1306,8 +1379,8 @@ impl<
     ) -> Poll<capnp::Result<bool>> {
         // Acceptance completion/cancellation releases its original vine even
         // under output pressure. Its weak interest notifies this exact control.
-        if let Some(index) = self.accepting_vines.iter().position(|vine| !vine.is_live()) {
-            let vine = self.accepting_vines.swap_remove(index);
+        if let Some(ready) = self.accepting_vines.next(cx) {
+            let vine = self.accepting_vines.take(ready.index());
             coordinator.driver.capabilities().release(vine.target);
             return Poll::Ready(Ok(true));
         }
@@ -1411,21 +1484,7 @@ impl<
         // The restricted path certifies absence of authenticated network work.
         // Active authenticated handoffs affect several protocol owners; their
         // private operation records those effects even when a future suspends.
-        if context.network_idle()
-            && self.pending.is_empty()
-            && self.sent.is_empty()
-            && self.local.is_empty()
-            && self.handoffs.is_empty()
-            && self.provided.is_empty()
-            && self.accepting_vines.is_empty()
-            && self.barriers.is_empty()
-            && self.produced.is_empty()
-            && self.commands.queue.borrow().is_empty()
-            && self.commands.markers.borrow().is_empty()
-            && self.commands.adoptions.borrow().is_empty()
-            && self.commands.provisions.borrow().is_empty()
-            && self.commands.forwarding.borrow().is_empty()
-        {
+        if context.network_idle() && self.commands.quiescent.get() {
             context.allow_answer_handoff(self.connection.borrow().supports_third_party_answers());
             if self
                 .commands
@@ -1440,7 +1499,10 @@ impl<
             self.bootstrap
                 .poll_bootstrap(context, messages, queue, scratch, output)
         } else {
-            self.poll_network(context.network(), messages, queue, scratch, output, cx)
+            let progress =
+                self.poll_network(context.network(), messages, queue, scratch, output, cx);
+            self.commands.quiescent.set(self.network_quiescent());
+            progress
         }
     }
     fn observes_hooks(&self, event: &connection::Received<'id, server::Producer>) -> bool {
@@ -1458,36 +1520,27 @@ impl<
     #[inline(always)]
     fn preserves_idle(&self, activity: Activity) -> bool {
         <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::preserves_idle(&self.bootstrap, activity)
-            && self.pending.is_empty()
-            && self.sent.is_empty()
-            && self.local.is_empty()
-            && self.handoffs.is_empty()
-            && self.provided.is_empty()
-            && self.accepting_vines.is_empty()
-            && self.barriers.is_empty()
-            && self.produced.is_empty()
-            && self.commands.adoptions.borrow().is_empty()
-            && self.commands.queue.borrow().is_empty()
-            && self.commands.provisions.borrow().is_empty()
-            && self.commands.forwarding.borrow().is_empty()
-            && self.commands.markers.borrow().is_empty()
+            && self.commands.quiescent.get()
     }
     fn set_idle(&mut self, idle: bool) {
-        let idle = idle
-            && self.pending.is_empty()
-            && self.sent.is_empty()
-            && self.local.is_empty()
-            && self.handoffs.is_empty()
-            && self.provided.is_empty()
-            && self.accepting_vines.is_empty()
-            && self.barriers.is_empty()
-            && self.produced.is_empty()
-            && self.commands.adoptions.borrow().is_empty()
-            && self.commands.queue.borrow().is_empty()
-            && self.commands.provisions.borrow().is_empty()
-            && self.commands.forwarding.borrow().is_empty()
-            && self.commands.markers.borrow().is_empty();
+        let idle = idle && self.commands.quiescent.get();
         <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::set_idle(&mut self.bootstrap, idle);
+    }
+    fn has_question_observers(&self) -> bool {
+        !self.commands.quiescent.get() && (!self.sent.is_empty() || !self.handoffs.is_empty())
+    }
+    fn completed(&mut self, question: questions::Key<'id>, owner: usize) -> bool {
+        let handoff = self.handoffs.notify(question);
+        if self
+            .sent
+            .get(owner)
+            .is_some_and(|sent| sent.key == question && sent.response.is_none())
+        {
+            self.sent.notify(owner);
+            true
+        } else {
+            handoff
+        }
     }
     fn received(
         &mut self,
@@ -1497,7 +1550,9 @@ impl<
         queue: &mut messages::Queue<'p, '_, vat::Bundle>,
     ) -> capnp::Result<()> {
         let event = match event {
-            connection::Received::Finished { question, producer } if !self.pending.is_empty() => {
+            connection::Received::Finished { question, producer }
+                if !self.pending.is_empty() || !self.produced.is_empty() =>
+            {
                 context.notify_finished(question, producer);
                 return Ok(());
             }
@@ -1507,6 +1562,7 @@ impl<
             event,
             connection::Received::Network | connection::Received::QueuedNetwork
         ) {
+            self.commands.quiescent.set(false);
             return Ok(());
         }
         <TwoParty<'id, F> as Control<'p, 'id, 's, resources::Import, (), C, H, vat::Resources>>::received(&mut self.bootstrap, event, context, messages, queue)
@@ -1520,23 +1576,25 @@ impl<
         let coordinator = context.network();
         self.commands.close(closed());
         self.local.clear();
-        self.produced.clear();
+        for job in self.produced.drain() {
+            drop(job);
+        }
         for barrier in self.barriers.drain(..) {
             coordinator.driver.release_network(
                 connection::NetworkRequest::ForwardEmbargo(barrier),
                 messages,
             );
         }
-        for vine in self.accepting_vines.drain(..) {
+        for vine in self.accepting_vines.drain() {
             coordinator.driver.capabilities().release(vine.target);
         }
-        for provision in self.provided.drain(..) {
+        for provision in self.provided.drain() {
             coordinator.driver.release_provision(provision.wire);
         }
-        for job in self.handoffs.drain(..) {
+        for job in self.handoffs.drain() {
             job.release(&mut coordinator.driver, messages);
         }
-        for sent in self.sent.drain(..) {
+        for sent in self.sent.drain() {
             if let Some(response) = sent.response {
                 coordinator
                     .driver
@@ -1635,6 +1693,20 @@ mod tests {
             }
             assert!(matches!(tasks.poll(&mut cx), Poll::Ready(None)));
         }
+    }
+    #[test]
+    fn queued_network_command_invalidates_quiescence_without_a_registered_waker() {
+        let commands = Commands::new(1, 1024);
+        assert!(commands.quiescent.get());
+        let mut body = Body::new_default();
+        let metadata = body.init_root::<any_pointer::Builder>();
+        let response = commands.handle().accept(metadata.into_reader());
+        assert!(!commands.quiescent.get());
+        assert_eq!(commands.queue.borrow().len(), 1);
+        drop(response);
+        commands.close(closed());
+        assert!(commands.queue.borrow().is_empty());
+        assert_eq!(commands.capacity.used(), 0);
     }
     #[test]
     fn unused_local_callback_scheduler_requires_no_allocation() {
@@ -1760,7 +1832,7 @@ mod tests {
                             payload,
                             _lease: Rc::new(Lease {
                                 _permit: commands.capacity.reserve_owned().unwrap(),
-                                _notify: Notify(Rc::downgrade(&commands)),
+                                _notify: Notify::Control(Rc::downgrade(&commands)),
                             }),
                         };
                         coordinator

@@ -1,5 +1,8 @@
 //! Bounded FIFO of operation identities. Wakers carry no driver references.
 //! Slot generations reject notifications retained by an earlier operation.
+mod owners;
+pub(crate) use owners::Owners;
+
 use crate::task_set::ready_queue::{ReadyQueue, CAPACITY};
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;

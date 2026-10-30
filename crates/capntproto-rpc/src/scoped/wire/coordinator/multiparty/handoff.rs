@@ -2,6 +2,7 @@
 //! no completion can claim another connection's question by numeric ID.
 use super::*;
 use crate::third_party::{Answer, ThirdPartyExchange};
+use capntproto_rpc_engine::ids::WireId;
 
 pub(super) enum Job<'p, 'id> {
     Await {
@@ -30,6 +31,95 @@ impl<'p, 'id> Job<'p, 'id> {
             },
             messages,
         );
+    }
+}
+
+// Every authentication/response future owns its wake. The compact question
+// index observes exact final-interest changes without scanning parked jobs.
+#[derive(Default)]
+pub(super) struct Jobs<'p, 'id> {
+    owners: crate::scoped::wire::ready::Owners<Job<'p, 'id>>,
+    // Keep the optional index pointer-sized in ordinary RPC async frames.
+    #[allow(clippy::box_collection)]
+    questions: Option<Box<Vec<(questions::Key<'id>, usize)>>>,
+}
+impl<'id> Job<'_, 'id> {
+    fn question(&self) -> Option<questions::Key<'id>> {
+        match self {
+            Self::Await { token, .. } => Some(token.key()),
+            Self::Adopt { .. } => None,
+        }
+    }
+}
+impl<'p, 'id> Jobs<'p, 'id> {
+    pub(super) fn len(&self) -> usize {
+        self.owners.len()
+    }
+    pub(super) fn is_empty(&self) -> bool {
+        self.owners.is_empty()
+    }
+    pub(super) fn try_reserve(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), std::collections::TryReserveError> {
+        self.owners.try_reserve(additional)
+    }
+    // Failure returns the affine token for explicit release without allocating.
+    #[allow(clippy::result_large_err)]
+    fn push(&mut self, job: Job<'p, 'id>) -> Result<(), Job<'p, 'id>> {
+        let position = if let Some(key) = job.question() {
+            let questions = self.questions.get_or_insert_with(Default::default);
+            if questions.try_reserve(1).is_err() {
+                return Err(job);
+            }
+            match questions.binary_search_by_key(&key.id().to_wire(), |(key, _)| key.id().to_wire())
+            {
+                Ok(_) => return Err(job),
+                Err(position) => Some((key, position)),
+            }
+        } else {
+            None
+        };
+        let index = self.owners.insert(job, true);
+        if let Some((key, position)) = position {
+            self.questions
+                .as_mut()
+                .unwrap()
+                .insert(position, (key, index));
+        }
+        Ok(())
+    }
+    pub(super) fn notify(&self, key: questions::Key<'id>) -> bool {
+        let Some(questions) = &self.questions else {
+            return false;
+        };
+        let Ok(position) =
+            questions.binary_search_by_key(&key.id().to_wire(), |(key, _)| key.id().to_wire())
+        else {
+            return false;
+        };
+        let (current, index) = questions[position];
+        if current != key {
+            return false;
+        }
+        self.owners.notify(index);
+        true
+    }
+    fn take(&mut self, index: usize) -> Job<'p, 'id> {
+        let job = self.owners.take(index);
+        if let Some(key) = job.question() {
+            let questions = self.questions.as_mut().unwrap();
+            let position = questions
+                .binary_search_by_key(&key.id().to_wire(), |(key, _)| key.id().to_wire())
+                .expect("indexed handoff");
+            assert_eq!(questions[position], (key, index));
+            questions.remove(position);
+        }
+        job
+    }
+    pub(super) fn drain(&mut self) -> impl Iterator<Item = Job<'p, 'id>> {
+        self.questions = None;
+        self.owners.drain()
     }
 }
 
@@ -96,7 +186,12 @@ impl<
                     let answer = received.await?;
                     Ok((answer, registration))
                 }));
-                self.handoffs.push(Job::Await { token, result });
+                if let Err(job) = self.handoffs.push(Job::Await { token, result }) {
+                    job.release(&mut coordinator.driver, messages);
+                    return Err(Error::overloaded(
+                        "answer rendezvous index exhausted".into(),
+                    ));
+                }
             }
             connection::NetworkRequest::Adopt(token) => {
                 let completing = match token.with_completion(messages, |completion| {
@@ -116,7 +211,12 @@ impl<
                     completing,
                     self.connection.borrow().third_party_answer_timeout(),
                 );
-                self.handoffs.push(Job::Adopt { token, exchange });
+                if let Err(job) = self.handoffs.push(Job::Adopt { token, exchange }) {
+                    job.release(&mut coordinator.driver, messages);
+                    return Err(Error::overloaded(
+                        "answer rendezvous index exhausted".into(),
+                    ));
+                }
             }
             _ => unreachable!("answer rendezvous"),
         }
@@ -129,17 +229,23 @@ impl<
         messages: &mut messages::Messages<'p, '_, '_>,
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<()>> {
-        for index in (0..self.handoffs.len()).rev() {
-            match &mut self.handoffs[index] {
+        for _ in 0..self.handoffs.len() {
+            let Some(ready) = self.handoffs.owners.next(cx) else {
+                break;
+            };
+            let index = ready.index();
+            let (job, wake) = self.handoffs.owners.get_mut(index);
+            let mut job_cx = Context::from_waker(wake);
+            match job {
                 Job::Await { token, result } => {
                     let Some(method) = coordinator.driver.awaiting_method(token) else {
                         self.handoffs
-                            .swap_remove(index)
+                            .take(index)
                             .release(&mut coordinator.driver, messages);
                         return Poll::Ready(Ok(()));
                     };
                     if let AwaitStage::Authenticate(future) = result {
-                        let Poll::Ready(ready) = Pin::new(future).poll(cx) else {
+                        let Poll::Ready(ready) = Pin::new(future).poll(&mut job_cx) else {
                             continue;
                         };
                         *result = AwaitStage::Response(match ready {
@@ -178,6 +284,7 @@ impl<
                             }
                             Err(error) => Promise::err(error),
                         });
+                        self.handoffs.owners.schedule(index);
                         // Authentication can install a pipeline before its
                         // response is ready. Report the transition so the
                         // coordinator revisits previously idle protocol lanes.
@@ -186,10 +293,10 @@ impl<
                     let AwaitStage::Response(future) = result else {
                         unreachable!()
                     };
-                    let Poll::Ready(result) = Pin::new(future).poll(cx) else {
+                    let Poll::Ready(result) = Pin::new(future).poll(&mut job_cx) else {
                         continue;
                     };
-                    let Job::Await { token, .. } = self.handoffs.swap_remove(index) else {
+                    let Job::Await { token, .. } = self.handoffs.take(index) else {
                         unreachable!()
                     };
                     let result =
@@ -216,10 +323,10 @@ impl<
                     return Poll::Ready(Ok(()));
                 }
                 Job::Adopt { token: _, exchange } => {
-                    let Poll::Ready(result) = Pin::new(exchange).poll(cx) else {
+                    let Poll::Ready(result) = Pin::new(exchange).poll(&mut job_cx) else {
                         continue;
                     };
-                    let Job::Adopt { token, .. } = self.handoffs.swap_remove(index) else {
+                    let Job::Adopt { token, .. } = self.handoffs.take(index) else {
                         unreachable!()
                     };
                     let exchange = match result {
@@ -253,7 +360,7 @@ impl<
                         used: Cell::new(false),
                         // Projections and final-interest drops belong to this
                         // network control, not the ordinary outgoing-call lane.
-                        owner_wake: RefCell::new(Some(cx.waker().clone())),
+                        owner_wake: RefCell::new(None),
                         operation: Cell::new(None),
                         materialize: Cell::new(false),
                         variant: RefCell::new(PipelineVariant::Waiting),
@@ -273,14 +380,17 @@ impl<
                         .driver
                         .authorize_adoption(token, messages, |_| exchange.adopt(answer))
                     {
-                        Ok(key) => self.sent.push(Sent {
-                            key,
-                            sender: Some(sender),
-                            permit: Some(permit),
-                            response: None,
-                            observer: Weak::new(),
-                            pipeline: Some(pipeline),
-                        }),
+                        Ok(key) => self.register_sent(
+                            Sent {
+                                key,
+                                sender: Some(tracked(sender)),
+                                permit: Some(permit),
+                                response: None,
+                                observer: Weak::new(),
+                                pipeline: Some(pipeline),
+                            },
+                            coordinator,
+                        )?,
                         Err(rejected) => {
                             coordinator.driver.release_network(
                                 connection::NetworkRequest::Adopt(rejected.adoption),

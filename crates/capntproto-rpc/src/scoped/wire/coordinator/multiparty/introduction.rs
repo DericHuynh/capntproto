@@ -29,11 +29,11 @@ pub(super) struct Marker {
     interest: Weak<Acceptance>,
     _permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
 }
-struct Acceptance(Weak<Commands>);
+struct Acceptance(RefCell<Option<Waker>>);
 impl Drop for Acceptance {
     fn drop(&mut self) {
-        if let Some(commands) = self.0.upgrade() {
-            commands.notify();
+        if let Some(wake) = self.0.get_mut().take() {
+            wake.wake();
         }
     }
 }
@@ -43,13 +43,7 @@ impl Drop for Acceptance {
 // generation's weakly observed interest, as with legacy's separate vine owner.
 pub(super) struct AcceptedVine<'id> {
     pub(super) target: capntproto_rpc_engine::clients::Client<'id>,
-    interest: Weak<Acceptance>,
     _permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
-}
-impl AcceptedVine<'_> {
-    pub(super) fn is_live(&self) -> bool {
-        self.interest.strong_count() != 0
-    }
 }
 impl Handle {
     pub(crate) fn introduced(
@@ -75,7 +69,7 @@ impl Handle {
         // The marker's FIFO publication is not the remote acceptance fence.
         // Keep the forwarding vine until Accept completes, so its Provide
         // cannot finish while the destination is still dispatching the marker.
-        let accepting = Rc::new(Acceptance(Rc::downgrade(&commands)));
+        let accepting = Rc::new(Acceptance(RefCell::default()));
         commands.markers.borrow_mut().push_back(Marker {
             target,
             id,
@@ -93,6 +87,7 @@ impl Handle {
 }
 
 pub(super) struct Provision {
+    wake: RefCell<Option<Waker>>,
     target: Box<dyn ClientHook>,
     recipient: Body,
     markers: RefCell<VecDeque<Vec<u8>>>,
@@ -101,8 +96,8 @@ pub(super) struct Provision {
 }
 impl Drop for Provision {
     fn drop(&mut self) {
-        if let Some(commands) = self.commands.upgrade() {
-            commands.notify();
+        if let Some(wake) = self.wake.get_mut().take() {
+            wake.wake();
         }
     }
 }
@@ -144,6 +139,10 @@ impl Vine {
         }
         markers.push_back(id.to_vec());
         drop(markers);
+        let wake = self.provision.wake.borrow().clone();
+        if let Some(wake) = wake {
+            wake.wake();
+        }
         commands.notify();
         Ok(())
     }
@@ -251,6 +250,7 @@ pub(crate) fn policy(handle: Handle) -> Policy {
         }
         let permit = source.capacity.reserve_owned().ok()?;
         let provision = Rc::new(Provision {
+            wake: RefCell::default(),
             target: hook.add_ref(),
             recipient,
             markers: RefCell::default(),
@@ -319,6 +319,7 @@ impl<
         coordinator: &mut Coordinator<'p, 'id, 's, resources::Import, (), C, H>,
         messages: &mut messages::Messages<'p, '_, '_>,
         queue: &mut messages::Queue<'p, '_, vat::Bundle>,
+        cx: &mut Context<'_>,
     ) -> capnp::Result<bool> {
         let marker = self.commands.markers.borrow_mut().pop_front();
         if let Some(marker) = marker {
@@ -345,18 +346,33 @@ impl<
                 coordinator.driver.capabilities().release(target);
                 return Err(wire_error(error));
             }
-            self.accepting_vines.push(AcceptedVine {
-                target,
-                interest: marker.interest,
-                _permit: marker._permit,
-            });
+            let index = self.accepting_vines.insert(
+                AcceptedVine {
+                    target,
+                    _permit: marker._permit,
+                },
+                false,
+            );
+            if let Some(interest) = marker.interest.upgrade() {
+                let previous = interest
+                    .0
+                    .borrow_mut()
+                    .replace(self.accepting_vines.waker(index).clone());
+                assert!(previous.is_none(), "acceptance already has a vine owner");
+            } else {
+                self.accepting_vines.schedule(index);
+            }
             return Ok(true);
         }
-        for index in (0..self.provided.len()).rev() {
-            let Some(owner) = self.provided[index].owner.upgrade() else {
+        for _ in 0..self.provided.len() {
+            let Some(ready) = self.provided.next(cx) else {
+                break;
+            };
+            let index = ready.index();
+            let Some(owner) = self.provided.get(index).unwrap().owner.upgrade() else {
                 coordinator
                     .driver
-                    .release_provision(self.provided.swap_remove(index).wire);
+                    .release_provision(self.provided.take(index).wire);
                 return Ok(true);
             };
             let id = owner.markers.borrow().front().cloned();
@@ -364,7 +380,7 @@ impl<
                 coordinator
                     .driver
                     .send_provision_embargo(
-                        &self.provided[index].wire,
+                        &self.provided.get(index).unwrap().wire,
                         &id,
                         messages,
                         queue,
@@ -382,6 +398,8 @@ impl<
                             .and_then(|index| forwarding.remove(index))
                     };
                     drop(retained);
+                } else {
+                    self.provided.schedule(index);
                 }
                 return Ok(true);
             }
@@ -412,10 +430,18 @@ impl<
                 },
             )
             .map_err(wire_error)?;
-        self.provided.push(Provided {
-            owner: Rc::downgrade(&provision),
-            wire,
-        });
+        let index = self.provided.insert(
+            Provided {
+                owner: Rc::downgrade(&provision),
+                wire,
+            },
+            true,
+        );
+        let previous = provision
+            .wake
+            .borrow_mut()
+            .replace(self.provided.waker(index).clone());
+        assert!(previous.is_none(), "provision already has a wire owner");
         Ok(true)
     }
 }
@@ -465,6 +491,7 @@ mod tests {
     fn queued_markers_retain_the_provision_after_the_last_vine_is_released() {
         let commands = Commands::new(2, 1024);
         let provision = Rc::new(Provision {
+            wake: RefCell::default(),
             target: crate::broken::new_cap(closed()),
             recipient: Body::new_default(),
             markers: RefCell::default(),

@@ -137,6 +137,7 @@ impl CompletedPayload {
 // state separate without changing the lifetime of any transfer or guard.
 #[derive(Default)]
 struct NetworkState {
+    adopted_wake: Option<Waker>,
     native: Option<Rc<NativeTail>>,
     redirect: Option<Rc<tail::Redirect>>,
     destination: Option<tail::Destination>,
@@ -211,7 +212,20 @@ impl State {
             .as_ref()
             .filter(|owner| current.is_none_or(|current| !owner.will_wake(current)))
             .cloned();
+        let adopted = if self.transferred.get() {
+            self.network
+                .borrow()
+                .as_ref()
+                .and_then(|state| state.adopted_wake.as_ref())
+                .filter(|owner| current.is_none_or(|current| !owner.will_wake(current)))
+                .cloned()
+        } else {
+            None
+        };
         let wakes = std::mem::take(&mut *self.wake.borrow_mut());
+        if let Some(adopted) = adopted {
+            adopted.wake();
+        }
         // Both owner and observer callbacks run outside all state borrows.
         if let Some(owner) = owner {
             owner.wake();
@@ -485,10 +499,48 @@ impl Results {
     pub(in crate::scoped::wire) fn unbind_protocol_waker(&self) {
         drop(self.0.protocol_wake.borrow_mut().take());
     }
+    pub(in crate::scoped::wire) fn bind_adopted_waker(&self, wake: Waker) {
+        assert!(
+            self.0.transferred.get(),
+            "only transferred work has an adopted owner"
+        );
+        let previous = self
+            .0
+            .network
+            .borrow_mut()
+            .get_or_insert_with(Default::default)
+            .adopted_wake
+            .replace(wake);
+        assert!(
+            previous.is_none(),
+            "adopted answer already has an execution owner"
+        );
+    }
+    pub(in crate::scoped::wire) fn unbind_adopted_waker(&self) {
+        let previous = self
+            .0
+            .network
+            .borrow_mut()
+            .as_mut()
+            .and_then(|state| state.adopted_wake.take());
+        drop(previous);
+    }
     pub(in crate::scoped::wire) fn protocol_changed(&self) {
         let wake = self.0.protocol_wake.borrow().clone();
+        let adopted = if self.0.transferred.get() {
+            self.0
+                .network
+                .borrow()
+                .as_ref()
+                .and_then(|state| state.adopted_wake.clone())
+        } else {
+            None
+        };
         if let Some(wake) = wake {
             wake.wake();
+        }
+        if let Some(adopted) = adopted {
+            adopted.wake();
         }
     }
     pub(in crate::scoped::wire) fn revision(&self) -> u64 {

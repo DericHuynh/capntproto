@@ -352,6 +352,21 @@ pub trait Control<
     /// Independent commands and destructor callbacks must notify the waker from
     /// `poll`. Return false whenever the activity may enable control work.
     fn preserves_idle(&self, activity: Activity) -> bool;
+    /// Opt in while owning external questions or observing authenticated handoffs.
+    /// With no observers, the coordinator compiles away the completion callback.
+    fn has_question_observers(&self) -> bool {
+        false
+    }
+    /// An external question is ready, or a hosted call relinquished response
+    /// interest. Validate the complete key against the local slot before waking
+    /// it. This grants no authority; true invalidates policy idleness.
+    fn completed(
+        &mut self,
+        _question: capntproto_rpc_engine::questions::Key<'id>,
+        _owner: usize,
+    ) -> bool {
+        false
+    }
     fn received(
         &mut self,
         event: connection::Received<'id, server::Producer>,

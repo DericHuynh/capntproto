@@ -532,7 +532,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
-        let result = self.poll_using(
+        let result = self.poll_using::<_, _, false>(
             hooks,
             driver,
             messages,
@@ -540,6 +540,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             cx,
             &mut budget.get(),
             import,
+            |_, _| {},
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
             },
@@ -657,7 +658,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
     ) -> Poll<capnp::Result<Progress>> {
-        let result = self.poll_using(
+        let result = self.poll_using::<_, _, false>(
             hooks,
             driver,
             messages,
@@ -665,6 +666,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             cx,
             &mut budget.get(),
             import,
+            |_, _| {},
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
             },
@@ -734,7 +736,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
     }
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(super) fn poll_using<A, P: Copy + Eq>(
+    pub(super) fn poll_using<A, P: Copy + Eq, const OBSERVE_RETIREMENT: bool>(
         &mut self,
         hooks: &mut ClientHooks<'id>,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
@@ -756,6 +758,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             >,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
+        mut completed: impl FnMut(capntproto_rpc_engine::questions::Key<'id>, usize),
         mut refresh: impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
         mut send: impl FnMut(
             &mut connection::Invocations<'s, 'wait, 'p, 'id, I, C>,
@@ -808,106 +811,114 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 };
             };
             self.lane = (lane + 1) % 3;
-            let result = match lane {
-                0 => {
-                    refresh(hooks, driver);
-                    self.admit(
-                        hooks,
-                        driver,
-                        messages,
-                        options,
-                        cx,
-                        &mut import,
-                        &mut send,
-                        &mut refresh,
-                    )
-                    .map_err(|e| *e)
-                }
-                1 => {
-                    if driver
-                        .capabilities()
-                        .advance_dispatch_one()
-                        .map_err(wire_error)?
-                    {
-                        Ok(Some(Progress::Advanced))
-                    } else {
-                        // A route transition selects its exact operation even
-                        // when it became broken instead of locally callable.
-                        let task =
-                            driver
-                                .capabilities()
-                                .ready()
-                                .map_err(wire_error)?
-                                .and_then(|ready| match ready.owner() {
+            let result =
+                match lane {
+                    0 => {
+                        refresh(hooks, driver);
+                        self.admit(
+                            hooks,
+                            driver,
+                            messages,
+                            options,
+                            cx,
+                            &mut import,
+                            &mut send,
+                            &mut refresh,
+                        )
+                        .map_err(|e| *e)
+                    }
+                    1 => {
+                        if driver
+                            .capabilities()
+                            .advance_dispatch_one()
+                            .map_err(wire_error)?
+                        {
+                            Ok(Some(Progress::Advanced))
+                        } else {
+                            // A route transition selects its exact operation even
+                            // when it became broken instead of locally callable.
+                            let task = driver.capabilities().ready().map_err(wire_error)?.and_then(
+                                |ready| match ready.owner() {
                                     connection::Task::Invoke(invocation) => Some(invocation.key()),
                                     _ => None,
-                                });
-                        if let Some(task) = task {
-                            if let Some(index) = driver.invocation_completion_owner(task) {
+                                },
+                            );
+                            if let Some(task) = task {
+                                if let Some(index) = driver.invocation_completion_owner(task) {
+                                    if self
+                                        .entries
+                                        .get(index)
+                                        .and_then(Option::as_ref)
+                                        .is_some_and(|entry| entry.wire.task() == Some(task))
+                                    {
+                                        self.ready.push(index);
+                                    }
+                                }
+                            }
+                            match self.accept_local(driver, messages)? {
+                                Some(progress) => Ok(Some(progress)),
+                                None => self.send_next(driver, messages, &mut send),
+                            }
+                        }
+                    }
+                    _ => {
+                        // Notifications and execution alternate, preserving budget
+                        // one fairness even under continuous incoming replies.
+                        if (self.notification_turn || self.ready.is_empty())
+                            && (driver.has_ready_completions() || driver.has_changed_invocations())
+                        {
+                            self.notification_turn = false;
+                            if (self.question_turn || !driver.has_changed_invocations())
+                                && driver.has_ready_completions()
+                            {
+                                self.question_turn = false;
+                                let (key, index) = driver.take_ready_completion().unwrap();
                                 if self
                                     .entries
                                     .get(index)
                                     .and_then(Option::as_ref)
-                                    .is_some_and(|entry| entry.wire.task() == Some(task))
+                                    .is_some_and(|entry| {
+                                        entry.wire.question() == Some(key)
+                                            || entry
+                                                .wire
+                                                .task()
+                                                .and_then(|task| driver.invocation_question(task))
+                                                == Some(key)
+                                    })
+                                {
+                                    self.ready.push(index);
+                                } else {
+                                    completed(key, index);
+                                }
+                            } else if let Some((task, index)) = driver.take_changed_invocation() {
+                                self.question_turn = true;
+                                if self
+                                    .entries
+                                    .get(index)
+                                    .and_then(Option::as_ref)
+                                    .is_some_and(|entry| {
+                                        entry.wire.task() == Some(task)
+                                            || entry.completion == Some(task)
+                                    })
                                 {
                                     self.ready.push(index);
                                 }
                             }
-                        }
-                        match self.accept_local(driver, messages)? {
-                            Some(progress) => Ok(Some(progress)),
-                            None => self.send_next(driver, messages, &mut send),
+                            Ok(Some(Progress::Advanced))
+                        } else {
+                            self.notification_turn = true;
+                            self.poll_ready::<_, _, OBSERVE_RETIREMENT>(
+                                hooks,
+                                driver,
+                                messages,
+                                options,
+                                &mut import,
+                                &mut refresh,
+                                &mut completed,
+                            )
                         }
                     }
-                }
-                _ => {
-                    // Notifications and execution alternate, preserving budget
-                    // one fairness even under continuous incoming replies.
-                    if (self.notification_turn || self.ready.is_empty())
-                        && (driver.has_ready_completions() || driver.has_changed_invocations())
-                    {
-                        self.notification_turn = false;
-                        if (self.question_turn || !driver.has_changed_invocations())
-                            && driver.has_ready_completions()
-                        {
-                            self.question_turn = false;
-                            let (key, index) = driver.take_ready_completion().unwrap();
-                            if self
-                                .entries
-                                .get(index)
-                                .and_then(Option::as_ref)
-                                .is_some_and(|entry| {
-                                    entry.wire.question() == Some(key)
-                                        || entry
-                                            .wire
-                                            .task()
-                                            .and_then(|task| driver.invocation_question(task))
-                                            == Some(key)
-                                })
-                            {
-                                self.ready.push(index);
-                            }
-                        } else if let Some((task, index)) = driver.take_changed_invocation() {
-                            self.question_turn = true;
-                            if self
-                                .entries
-                                .get(index)
-                                .and_then(Option::as_ref)
-                                .is_some_and(|entry| {
-                                    entry.wire.task() == Some(task)
-                                        || entry.completion == Some(task)
-                                })
-                            {
-                                self.ready.push(index);
-                            }
-                        }
-                        Ok(Some(Progress::Advanced))
-                    } else {
-                        self.notification_turn = true;
-                        self.poll_ready(hooks, driver, messages, options, &mut import, &mut refresh)
-                    }
-                }
-            };
+                };
             match result {
                 Err(error) => return Poll::Ready(Err(Box::new(error))),
                 Ok(Some(progress @ (Progress::Completed | Progress::Published { .. }))) => {
@@ -924,7 +935,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         }))
     }
     #[allow(clippy::too_many_arguments)]
-    fn poll_ready<A, P: Copy + Eq>(
+    fn poll_ready<A, P: Copy + Eq, const OBSERVE_RETIREMENT: bool>(
         &mut self,
         hooks: &mut ClientHooks<'id>,
         driver: &mut Peer<'p, 'id, '_, I, A, P, C, H>,
@@ -945,6 +956,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &dyn ClientHook,
         ) -> capnp::Result<Client<'id>>,
         refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
+        completed: &mut impl FnMut(capntproto_rpc_engine::questions::Key<'id>, usize),
     ) -> capnp::Result<Option<Progress>> {
         let Some(ready) = self.ready.pop() else {
             return Ok(None);
@@ -955,6 +967,16 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
         {
             entry.polls += 1;
         }
+        let question = if OBSERVE_RETIREMENT {
+            entry.wire.question().or_else(|| {
+                entry
+                    .wire
+                    .task()
+                    .and_then(|task| driver.invocation_question(task))
+            })
+        } else {
+            None
+        };
         let waker = entry.waker.clone();
         let mut cx = Context::from_waker(&waker);
         let result = if entry.binding_turn || entry.closing {
@@ -994,6 +1016,11 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                 refresh,
             )
         };
+        if entry.wire.call.is_none() {
+            if let Some(question) = question {
+                completed(question, index);
+            }
+        }
         if entry.unpublished
             && (entry.published
                 || entry

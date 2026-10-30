@@ -2179,7 +2179,7 @@ fn plain_burst_preserves_idle_lanes_and_stays_within_actual_work_budget() {
             };
             for &(budget, published) in visits {
                 let mut remaining = budget;
-                let Poll::Ready(result) = coordinator.poll_work_budget(
+                let Poll::Ready(result) = coordinator.poll_work_budget::<_, false>(
                     messages,
                     &mut queue,
                     &mut [0; 32],
@@ -2187,6 +2187,7 @@ fn plain_burst_preserves_idle_lanes_and_stays_within_actual_work_budget() {
                     &mut cx,
                     &mut remaining,
                     &wake,
+                    |_, _| {},
                 ) else {
                     panic!("ready requests must publish within the available budget")
                 };
@@ -2611,4 +2612,81 @@ fn retirement_preserves_parked_calls_and_delivers_exact_cancellation() {
             });
         }
     }
+}
+
+#[test]
+fn external_question_completion_runs_without_any_hosted_application_call() {
+    with_peer(|mut driver, messages| {
+        let mut queue = messages::Queue::new_growing(0, 4).unwrap();
+        let question = driver
+            .send(
+                messages,
+                &mut queue,
+                128,
+                Default::default(),
+                calls::bootstrap,
+            )
+            .unwrap();
+        driver.bind_completion_owner(question, 7).unwrap();
+        let response = Frame::build(messages, 128, Default::default(), |builder| {
+            calls::exception(
+                builder,
+                capntproto_rpc_engine::ids::AnswerId::from_wire(question.id().to_wire()),
+                capnp::ErrorKind::Failed,
+                "network reply",
+            )
+        })
+        .unwrap();
+        assert!(matches!(
+            driver
+                .receive(
+                    response,
+                    messages,
+                    &mut [0; 32],
+                    |_| (),
+                    server::Producer::new
+                )
+                .unwrap_or_else(|error| panic!("{}", error.error)),
+            connection::Received::Returned(_, Some(7))
+        ));
+        let mut coordinator = Coordinator::new(
+            driver,
+            ClientHooks::new(4, 4),
+            4.try_into().unwrap(),
+            None,
+            options(),
+        )
+        .unwrap();
+        assert!(coordinator.calls.is_empty());
+        let mut cx = Context::from_waker(Waker::noop());
+        coordinator.notifications.take(cx.waker());
+        coordinator.schedule.active = WorkSet::CALLS;
+        coordinator.schedule.cursor = Lane::Calls;
+        let mut completions = Vec::new();
+        for _ in 0..8 {
+            let _ = coordinator.poll_work_budget::<_, false>(
+                messages,
+                &mut queue,
+                &mut [0; 32],
+                &NoResources,
+                &mut cx,
+                &mut 7,
+                Waker::noop(),
+                |key, owner| completions.push((key, owner)),
+            );
+        }
+        assert_eq!(completions, vec![(question, 7)]);
+        let response = coordinator.driver.take_response(question).unwrap();
+        coordinator
+            .driver
+            .release_output(CallOutput::Remote(response), messages);
+        futures::executor::block_on(coordinator.terminate::<NoResources, (), ()>(
+            messages,
+            &mut queue,
+            &mut Policy::default(),
+            Ok(()),
+        ))
+        .unwrap();
+        reclaimed(messages);
+    });
 }

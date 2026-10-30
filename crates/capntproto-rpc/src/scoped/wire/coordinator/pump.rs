@@ -119,12 +119,40 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             }
             let control_was_idle = self.control_idle;
             self.direct_publication = false;
-            if let Poll::Ready(result) =
-                self.poll_work_budget(messages, queue, scratch, output, cx, &mut remaining, waker)
-            {
+            let mut control_ready = false;
+            let work = if controls.has_question_observers() {
+                self.poll_work_budget::<O, true>(
+                    messages,
+                    queue,
+                    scratch,
+                    output,
+                    cx,
+                    &mut remaining,
+                    waker,
+                    |key, owner| control_ready |= controls.completed(key, owner),
+                )
+            } else {
+                // A zero-sized callback preserves the ordinary scheduler's
+                // generated code rather than capturing authenticated controls.
+                self.poll_work_budget::<O, false>(
+                    messages,
+                    queue,
+                    scratch,
+                    output,
+                    cx,
+                    &mut remaining,
+                    waker,
+                    |_, _| {},
+                )
+            };
+            if let Poll::Ready(result) = work {
                 result.map_err(|error| Box::new(Cause::Protocol(error)))?;
             }
-            let preserves_control = control_was_idle
+            if control_ready {
+                self.control_idle = false;
+            }
+            let preserves_control = !control_ready
+                && control_was_idle
                 && self.direct_publication
                 && controls.preserves_idle(Activity::PlainPublication);
             if preserves_control {

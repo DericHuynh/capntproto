@@ -1863,3 +1863,38 @@ fn native_tail_context_accepts_only_its_live_inbox_and_does_not_retain_owners() 
     assert!(!tail.accepts(&tail.origin));
     assert!(!tail.accepts(&Rc::downgrade(&b.inbox)));
 }
+
+#[test]
+fn adopted_answer_keeps_independent_finish_and_pipeline_wakes_until_its_retirement() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl futures::task::ArcWake for Count {
+        fn wake_by_ref(this: &Arc<Self>) {
+            this.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let original = Arc::new(Count::default());
+    let adopted = Arc::new(Count::default());
+    let results = Results::new();
+    results.0.transferred.set(true);
+    results.bind_protocol_waker(futures::task::waker(original.clone()));
+    results.bind_adopted_waker(futures::task::waker(adopted.clone()));
+    // Finish is a protocol-only wake: it must reach the new answer even while
+    // shared service execution and its original answer remain pending.
+    results.protocol_changed();
+    assert_eq!(original.0.load(Ordering::SeqCst), 1);
+    assert_eq!(adopted.0.load(Ordering::SeqCst), 1);
+    results.0.notify(None);
+    assert_eq!(original.0.load(Ordering::SeqCst), 2);
+    assert_eq!(adopted.0.load(Ordering::SeqCst), 2);
+    results.unbind_adopted_waker();
+    results.protocol_changed();
+    results.0.notify(None);
+    assert_eq!(original.0.load(Ordering::SeqCst), 4);
+    assert_eq!(adopted.0.load(Ordering::SeqCst), 2);
+    results.unbind_protocol_waker();
+}

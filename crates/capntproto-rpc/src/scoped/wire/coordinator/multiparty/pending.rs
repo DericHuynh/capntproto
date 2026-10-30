@@ -5,71 +5,29 @@ use crate::scoped::wire::ready;
 
 struct Entry<'p, 'id, const H: usize> {
     job: Incoming<'p, 'id, H>,
-    waker: Waker,
     producer: server::Results,
 }
 #[derive(Default)]
 pub(super) struct Pending<'p, 'id, const H: usize> {
-    // Keep the optional scheduler out of ordinary RPC async frame geometry.
-    storage: Option<Box<State<'p, 'id, H>>>,
-}
-struct State<'p, 'id, const H: usize> {
-    entries: Vec<Option<Entry<'p, 'id, H>>>,
-    live: usize,
-    first_free: usize,
-    ready: ready::Queue,
-}
-impl<const H: usize> Default for State<'_, '_, H> {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            live: 0,
-            first_free: 0,
-            ready: Default::default(),
-        }
-    }
+    owners: ready::Owners<Entry<'p, 'id, H>>,
 }
 impl<'p, 'id, const H: usize> Pending<'p, 'id, H> {
     pub(super) fn len(&self) -> usize {
-        self.storage.as_ref().map_or(0, |state| state.live)
+        self.owners.len()
     }
     pub(super) fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.owners.is_empty()
     }
     pub(super) fn try_reserve(
         &mut self,
         additional: usize,
     ) -> Result<(), std::collections::TryReserveError> {
-        let state = self.storage.get_or_insert_with(Default::default);
-        if state.first_free == state.entries.len() {
-            state.entries.try_reserve(additional)
-        } else {
-            Ok(())
-        }
+        self.owners.try_reserve(additional)
     }
     pub(super) fn push_back(&mut self, job: Incoming<'p, 'id, H>, producer: server::Results) {
-        let state = self
-            .storage
-            .as_mut()
-            .expect("reserved network callback slot");
-        let index = state.first_free;
-        let waker = state.ready.insert(index, true);
-        producer.bind_protocol_waker(waker.clone());
-        let entry = Some(Entry {
-            job,
-            waker,
-            producer,
-        });
-        if index == state.entries.len() {
-            state.entries.push(entry);
-        } else {
-            state.entries[index] = entry;
-        }
-        state.live += 1;
-        state.first_free = state.entries[index + 1..]
-            .iter()
-            .position(Option::is_none)
-            .map_or(state.entries.len(), |offset| index + 1 + offset);
+        let index = self.owners.insert(Entry { job, producer }, true);
+        let (entry, waker) = self.owners.get_mut(index);
+        entry.producer.bind_protocol_waker(waker.clone());
     }
     pub(super) fn poll(
         &mut self,
@@ -77,68 +35,53 @@ impl<'p, 'id, const H: usize> Pending<'p, 'id, H> {
         available: bool,
         canceled: impl FnMut(capntproto_rpc_engine::answers::Key<'id>) -> bool,
     ) -> Poll<Incoming<'p, 'id, H>> {
-        self.storage
-            .as_mut()
-            .map_or(Poll::Pending, |state| state.poll(cx, available, canceled))
+        if self.is_empty() {
+            Poll::Pending
+        } else {
+            self.poll_active(cx, available, canceled)
+        }
     }
     pub(super) fn drain(&mut self) -> impl Iterator<Item = Incoming<'p, 'id, H>> {
-        let entries = self
-            .storage
-            .take()
-            .map(|mut state| {
-                let entries = std::mem::take(&mut state.entries);
-                // Disconnect readiness before arbitrary future/request destruction.
-                drop(state);
-                entries
-            })
-            .unwrap_or_default();
-        entries.into_iter().flatten().map(|entry| {
+        self.owners.drain().map(|entry| {
             entry.producer.unbind_protocol_waker();
             entry.job
         })
     }
-}
-impl<'p, 'id, const H: usize> State<'p, 'id, H> {
     #[inline(never)]
-    fn poll(
+    fn poll_active(
         &mut self,
         cx: &mut Context<'_>,
         available: bool,
         mut canceled: impl FnMut(capntproto_rpc_engine::answers::Key<'id>) -> bool,
     ) -> Poll<Incoming<'p, 'id, H>> {
-        let ready_queue = &self.ready;
-        ready_queue.register(cx.waker());
         let mut visited = 0u128;
-        // A complete turn is bounded by the owned operations, including beyond
-        // the reusable FIFO's fast range. Self-wakes in that range receive one
-        // visit per rotation, as in legacy. Output-only retries wait for IO.
-        for _ in 0..self.live {
-            let Some(ready) = ready_queue.pop() else {
+        // Bound a turn, including overflow. Coalesced self-wakes receive one
+        // visit per rotation; completed output waits for IO without spinning.
+        for _ in 0..self.len() {
+            let Some(ready) = self.owners.next(cx) else {
                 break;
             };
             let index = ready.index();
             if index < 128 {
                 let bit = 1u128 << index;
                 if visited & bit != 0 {
-                    ready_queue.push(index);
                     if available {
-                        ready_queue.notify_parent();
+                        self.owners.notify(index);
+                    } else {
+                        self.owners.schedule(index);
                     }
                     break;
                 }
                 visited |= bit;
             }
-            let entry = self.entries[index]
-                .as_mut()
-                .expect("ready network callback");
+            let (entry, waker) = self.owners.get_mut(index);
             let key = entry.job.request.answer_key().expect("answer control");
             if canceled(key) && entry.job.future.is_some() {
                 entry.job.future = None;
                 entry.job.completed = Some(Err(closed()));
             }
             if let Some(future) = &mut entry.job.future {
-                if let Poll::Ready(result) =
-                    Pin::new(future).poll(&mut Context::from_waker(&entry.waker))
+                if let Poll::Ready(result) = Pin::new(future).poll(&mut Context::from_waker(waker))
                 {
                     entry.job.future = None;
                     entry.job.completed = Some(result);
@@ -146,22 +89,14 @@ impl<'p, 'id, const H: usize> State<'p, 'id, H> {
             }
             if entry.job.completed.is_some() {
                 if available {
-                    let job = self.take(index);
-                    drop(ready);
-                    return Poll::Ready(job);
+                    let entry = self.owners.take(index);
+                    entry.producer.unbind_protocol_waker();
+                    return Poll::Ready(entry.job);
                 }
-                ready_queue.push(index);
+                self.owners.schedule(index);
             }
         }
         Poll::Pending
-    }
-    fn take(&mut self, index: usize) -> Incoming<'p, 'id, H> {
-        self.ready.remove(index);
-        let entry = self.entries[index].take().expect("live network callback");
-        entry.producer.unbind_protocol_waker();
-        self.live -= 1;
-        self.first_free = self.first_free.min(index);
-        entry.job
     }
 }
 

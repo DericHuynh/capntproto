@@ -31,6 +31,19 @@ portable protocol and storage contracts. Owned `ClientHook` and server-future
 adapters still require allocation; their lifetimes must be preserved as further
 legacy paths move into caller-backed engine components.
 
+Hosted network callbacks also use exact readiness ownership: local callbacks,
+incoming Accept/Join work, outgoing network replies, authenticated answer
+handoffs, adopted service work, provisions and accepting vines park independently.
+They share the generation-safe notification FIFO and reusable ownership slots;
+ordinary two-party traffic allocates none of those optional schedulers. A full
+control poll certifies network quiescence; queued commands invalidate it before
+waking the owner, avoiding repeated work-list walks on plain Call/Return. Finish
+retains its accepted answer generation through cancellation dispatch, and outgoing
+network completions remain runnable even without an ordinary hosted call.
+Shutdown disconnects notifiers before returning affine owners for explicit release.
+The hosted waker adapters still require `std` and allocation; the bounded wire
+and engine profiles remain caller-backed `no_std` / no-alloc implementations.
+
 The answer and import ledgers also use legacy's direct-index lookup technique
 for dense wire IDs, validating the candidate slot before using it. Sparse IDs,
 out-of-order admission and IDs displaced by retained retired answers keep their

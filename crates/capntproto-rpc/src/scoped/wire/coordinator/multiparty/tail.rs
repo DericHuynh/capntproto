@@ -31,6 +31,11 @@ pub(super) struct Produced<'id> {
     collected: bool,
     _permit: capntproto_rpc_engine::flow_control::outgoing::OwnedPermit,
 }
+impl Drop for Produced<'_> {
+    fn drop(&mut self) {
+        self.task.results.unbind_adopted_waker();
+    }
+}
 impl Handle {
     pub(crate) fn tail_target(&self) -> Option<Box<dyn std::any::Any>> {
         let commands = self.0.upgrade()?;
@@ -284,14 +289,21 @@ impl<
                     job.task.results.clone().into_producer(),
                     |field| field.copy_from(completion),
                 ) {
-                    Ok(key) => self.produced.push_back(Produced {
-                        key,
-                        task: job.task,
-                        work_done: false,
-                        result_revision: 0,
-                        collected: false,
-                        _permit: job._permit,
-                    }),
+                    Ok(key) => {
+                        let index = self.produced.insert(
+                            Produced {
+                                key,
+                                task: job.task,
+                                work_done: false,
+                                result_revision: 0,
+                                collected: false,
+                                _permit: job._permit,
+                            },
+                            true,
+                        );
+                        let (job, wake) = self.produced.get_mut(index);
+                        job.task.results.bind_adopted_waker(wake.clone());
+                    }
                     Err(rejected) => {
                         self.commands.adoptions.borrow_mut().push_front(job);
                         return Poll::Ready(Err(wire_error(rejected.error)));
@@ -312,7 +324,12 @@ impl<
         cx: &mut Context<'_>,
     ) -> Poll<capnp::Result<bool>> {
         for _ in 0..self.produced.len() {
-            let mut job = self.produced.pop_front().expect("retained adoption");
+            let Some(ready) = self.produced.next(cx) else {
+                break;
+            };
+            let index = ready.index();
+            let (job, wake) = self.produced.get_mut(index);
+            let mut job_cx = Context::from_waker(wake);
             if !job.collected {
                 let canceled = coordinator
                     .driver
@@ -323,14 +340,14 @@ impl<
                 let result = if canceled {
                     Err(capnp::ErrorKind::Disconnected)
                 } else {
-                    let _ = job.task.results.poll_completed(cx);
+                    let _ = job.task.results.poll_completed(&mut job_cx);
                     if !job.work_done {
-                        job.work_done = Pin::new(&mut job.task.work).poll(cx).is_ready();
+                        job.work_done = Pin::new(&mut job.task.work).poll(&mut job_cx).is_ready();
                     }
                     let revision = job.task.results.revision();
                     let changed = job.result_revision != revision;
                     job.result_revision = revision;
-                    if !job.work_done || job.task.results.poll_completed(cx).is_pending() {
+                    if !job.work_done || job.task.results.poll_completed(&mut job_cx).is_pending() {
                         // The original worker observes a different answer on
                         // another connection. Publish early pipeline changes to
                         // this adopted answer too, even while work is pending.
@@ -341,7 +358,6 @@ impl<
                                 .notify_pipeline(job.key)
                                 .map_err(wire_error)?;
                         }
-                        self.produced.push_back(job);
                         if changed {
                             return Poll::Ready(Ok(true));
                         }
@@ -391,6 +407,7 @@ impl<
                     server::Producer::write_exception,
                 )
                 .map_err(wire_error)?;
+            drop(self.produced.take(index));
             return Poll::Ready(Ok(true));
         }
         Poll::Pending
