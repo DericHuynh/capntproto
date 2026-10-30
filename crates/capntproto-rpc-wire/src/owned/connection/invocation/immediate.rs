@@ -10,7 +10,7 @@ pub enum ImmediateParams<'a> {
     EncodedCall(EncodedCall<'a>),
 }
 
-/// A borrowed binding or a request to use ordinary queued binding.
+/// A borrowed binding or a request to run ordinary capability binding.
 pub enum CapabilityLookup<'a, 'id> {
     /// Existing authority; `None` preserves a null slot in the payload table.
     Bound(Option<&'a clients::Client<'id>>),
@@ -28,8 +28,10 @@ pub trait CapabilityTable<'id> {
         self.len() == 0
     }
     fn capability(&self, index: usize) -> capnp::Result<Option<&clients::Client<'id>>>;
-    /// Immediate publication can defer binding to the ordinary queued path.
-    /// A deferred entry rolls back every earlier grant and output reservation.
+    /// Resolve authority during the operation instead of pre-scanning the table.
+    /// Immediate publication and prepared enqueue return `None` on deferral;
+    /// local result construction returns `Error::UnboundCapability`. Each path
+    /// releases its tentative frame, grants and retained prefix before returning.
     fn lookup(&self, index: usize) -> capnp::Result<CapabilityLookup<'_, 'id>> {
         self.capability(index).map(CapabilityLookup::Bound)
     }

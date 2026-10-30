@@ -6,7 +6,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
 {
     /// Queue a private capability-bearing Call without rebuilding its payload.
     /// The invocation retains its own bounded frame and graph references. None
-    /// requests the ordinary codec for checked writers or unsupported layouts;
+    /// requests ordinary binding or the codec for checked/unsupported layouts;
     /// storage rejection also permits compaction of unreachable source words.
     /// This preserves the prepared envelope's ordinary Caller destination.
     #[allow(clippy::too_many_arguments)]
@@ -33,7 +33,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(Error::Input)?;
         let result = self.enqueue_frame(
             target,
-            (0..capabilities.len()).map(|index| capabilities.capability(index)),
+            (0..capabilities.len()).map(|index| capabilities.lookup(index)),
             messages,
             options,
             |messages, options| {
@@ -50,7 +50,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             },
         );
         match result {
-            Ok(key) => Ok(Some(key)),
+            Ok(key) => Ok(key),
             Err(Error::Input(super::super::super::Error::Storage(messages::Error::NoBuffer))) => {
                 Ok(None)
             }

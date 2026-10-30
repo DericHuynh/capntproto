@@ -292,9 +292,17 @@ impl<'id> ClientHooks<'id> {
                     call.params.capability_table(),
                 ) {
                     if !caps.is_empty() && caps.len() <= driver.capability_capacity() {
-                        let native =
-                            calls::native_parameters(self, caps, driver.capability_capacity());
-                        original_native = Some(native);
+                        let native = caps
+                            .iter()
+                            .flatten()
+                            .next()
+                            .is_some_and(|hook| self.can_borrow_native(&**hook));
+                        // This is only a hint. A later deferred binding rolls
+                        // back the prepared transaction; the ordinary path then
+                        // classifies the original table before importing it.
+                        if !native {
+                            original_native = Some(false);
+                        }
                         if native {
                             let method = DynamicCall {
                                 interface: call.interface,

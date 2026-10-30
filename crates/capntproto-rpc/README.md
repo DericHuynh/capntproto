@@ -446,12 +446,14 @@ immutable endpoints, while promised-answer transforms stay behind the final
 exclusive publication ticket.
 
 `CapabilityTable::lookup` can return `CapabilityLookup::Deferred` when an entry
-needs ordinary queued binding. Immediate publication then returns `None` after
-releasing its staged grants and output reservation, without consuming a question
-ID. The default implementation uses the table's strict `capability` lookup;
-queued admission and result collection continue to require bound entries. This
-lets native descriptor publication resolve bindings during grant staging rather
-than classifying the entire table first.
+needs ordinary binding. Immediate publication and prepared enqueue return `None`;
+local result construction returns `Error::UnboundCapability`. Each releases its
+tentative frame, grants and retained prefix without consuming a question or
+dispatch position. The default implementation uses the strict `capability`
+lookup. Hosted native calls and results probe their first binding, then borrow
+the rest during the transaction rather than classifying the entire table first.
+If a later hook needs normalization, the transaction releases its temporary
+owners before the bridge binds the original foreign hooks and retries.
 
 Private prepared Calls preserve their immutable header geometry through template
 copies and parameter replacement. Native publication uses that geometry to append
@@ -464,6 +466,9 @@ lookup and dispatch rejection release its complete retained prefix and frame;
 tracked admission also preserves the caller's completion sender. Native
 eligibility is only a hint: the actual borrow checks the current registry entry
 against the private endpoint identity, including after slot removal or reuse.
+Native capability-bearing frames come from private writers, so admission does
+not decode their headers again. Checked writers retain their outgoing payload
+validation, and inbound readers keep their ordinary bounds and capability checks.
 
 Native pipeline projections retain their endpoint inline, including clones and
 cached direct routes. Opaque projection hooks preserve their original wrapper.

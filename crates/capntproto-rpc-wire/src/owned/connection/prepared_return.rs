@@ -582,7 +582,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             interface,
             method,
             source,
-            capabilities.map(Ok),
+            capabilities.map(|entry| Ok(CapabilityLookup::Bound(entry))),
             messages,
             options,
         )
@@ -609,7 +609,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             interface,
             method,
             source,
-            (0..capabilities.len()).map(|index| capabilities.capability(index)),
+            (0..capabilities.len()).map(|index| capabilities.lookup(index)),
             messages,
             options,
         )
@@ -622,7 +622,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         interface: u64,
         method: u16,
         source: &FrozenReturn<B>,
-        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<CapabilityLookup<'c, 'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
     ) -> Result<Option<LocalResult<'pool, 'id, CAPS>>, Error>

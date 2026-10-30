@@ -225,7 +225,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             None,
             interface,
             method,
-            capabilities.map(Ok),
+            capabilities.map(|entry| Ok(CapabilityLookup::Bound(entry))),
             messages,
             minimum,
             options,
@@ -265,7 +265,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Some((answer.id(), no_finish)),
             interface,
             method,
-            capabilities.map(Ok),
+            capabilities.map(|entry| Ok(CapabilityLookup::Bound(entry))),
             messages,
             minimum,
             options,
@@ -292,7 +292,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             None,
             interface,
             method,
-            (0..capabilities.len()).map(|index| capabilities.capability(index)),
+            (0..capabilities.len()).map(|index| capabilities.lookup(index)),
             messages,
             minimum,
             options,
@@ -327,7 +327,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             Some((answer.id(), no_finish)),
             interface,
             method,
-            (0..capabilities.len()).map(|index| capabilities.capability(index)),
+            (0..capabilities.len()).map(|index| capabilities.lookup(index)),
             messages,
             minimum,
             options,
@@ -341,7 +341,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         envelope: Option<(capntproto_rpc_engine::ids::AnswerId, bool)>,
         interface: u64,
         method: u16,
-        capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        capabilities: impl ExactSizeIterator<Item = capnp::Result<CapabilityLookup<'c, 'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
@@ -415,7 +415,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     pub(super) fn retain_local_result<'c>(
         &mut self,
         mut result: LocalResult<'pool, 'id, CAPS>,
-        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<CapabilityLookup<'c, 'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
     ) -> Result<LocalResult<'pool, 'id, CAPS>, Error>
     where
@@ -423,7 +423,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     {
         for index in 0..result.count {
             let client = match capabilities.next() {
-                Some(Ok(client)) => client,
+                Some(Ok(CapabilityLookup::Bound(client))) => client,
+                Some(Ok(CapabilityLookup::Deferred)) => {
+                    result.release(messages, &mut self.runtime);
+                    return Err(Error::UnboundCapability);
+                }
                 Some(Err(error)) => {
                     result.release(messages, &mut self.runtime);
                     return Err(Error::Input(error.into()));

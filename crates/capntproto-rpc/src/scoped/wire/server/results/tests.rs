@@ -898,6 +898,105 @@ fn close<'p>(
 }
 
 #[test]
+fn mixed_native_results_defer_then_bind_foreign_hooks_once() {
+    for native in [false, true] {
+        for prepared in [false, true] {
+            with_driver(|mut driver, messages| {
+                if native {
+                    driver.use_native_writer();
+                }
+                let results = Results::new();
+                let (call, target) = request(&mut driver, messages, results.clone());
+                let value = driver
+                    .capabilities()
+                    .endpoint(Route::local(73), clients::Location::Local)
+                    .unwrap();
+                let foreign = driver
+                    .capabilities()
+                    .endpoint(Route::local(99), clients::Location::Local)
+                    .unwrap();
+                let mut hooks = ClientHooks::new(16, 16);
+                let cap = hooks
+                    .export_client(&mut driver.capabilities(), &value)
+                    .unwrap();
+                let opaque =
+                    crate::broken::new_cap(Error::overloaded("original opaque result".into()));
+                let service = server(move |mut output| {
+                    let mut list = output.get().initn_as::<capnp::any_pointer_list::Builder>(4);
+                    for index in [0, 2, 3] {
+                        list.reborrow()
+                            .get(index)
+                            .set_as_capability(cap.hook.add_ref());
+                    }
+                    list.reborrow().get(1).set_as_capability(opaque.add_ref());
+                    list.reborrow().get(2).clear();
+                    capability::DispatchCallResult::new(Promise::ok(()), false)
+                });
+                let mut execution = hooks
+                    .prepare_received_server(&call, &mut driver, messages)
+                    .unwrap()
+                    .execute(&*service.hook, &results, None)
+                    .unwrap();
+                assert!(matches!(poll(&mut execution), Poll::Ready(Ok(()))));
+                let mut imports = 0;
+                let output = hooks
+                    .collect_server_output(
+                        &results,
+                        &mut driver,
+                        messages,
+                        Default::default(),
+                        prepared.then_some(call.answer()),
+                        |graph, hook| {
+                            imports += 1;
+                            assert_eq!(hook.get_failure().unwrap().extra, "original opaque result");
+                            graph.retain(&foreign).map_err(wire_error)
+                        },
+                    )
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    imports, 1,
+                    "fallback normalizes the original foreign hook once"
+                );
+                output
+                    .with(messages, |payload| {
+                        let caps = payload.capabilities();
+                        assert_eq!(caps.len(), 4);
+                        assert_eq!(caps[0].as_ref().unwrap().key(), value.key());
+                        assert!(caps[1].is_none());
+                        assert_eq!(caps[2].as_ref().unwrap().key(), value.key());
+                        assert_eq!(caps[3].as_ref().unwrap().key(), foreign.key());
+                        let list = payload
+                            .content()
+                            .get_as::<capnp::any_pointer_list::Reader>()
+                            .unwrap();
+                        assert_eq!(list.get(0).capability_index().unwrap(), 0);
+                        assert_eq!(list.get(1).capability_index().unwrap(), 3);
+                        assert!(list.get(2).is_null());
+                        assert_eq!(list.get(3).capability_index().unwrap(), 2);
+                    })
+                    .unwrap();
+                output.release(messages, &mut driver.capabilities());
+                driver.release_call(call, messages);
+                driver.capabilities().release(value);
+                driver.capabilities().release(foreign);
+                driver.capabilities().release(target);
+                drop((results, execution, service));
+                hooks.close(
+                    &mut driver.capabilities(),
+                    Error::disconnected("done".into()),
+                );
+                close(
+                    driver,
+                    messages,
+                    &mut messages::Queue::new_growing(0, 2).unwrap(),
+                );
+            });
+        }
+    }
+}
+
+#[test]
 fn hosted_reply_preserves_early_pipeline_and_retries_portable_publication() {
     check_hosted_reply(false);
     check_hosted_reply(true);

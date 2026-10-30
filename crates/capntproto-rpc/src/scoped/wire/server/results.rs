@@ -1310,42 +1310,47 @@ impl<'id> ClientHooks<'id> {
         }
         // As for native parameters, borrow existing authority until the final
         // result table owns it. Only foreign normalization needs staging refs.
-        let native = payload.caps.is_empty()
-            || calls::native_parameters(self, &payload.caps, driver.capability_capacity());
+        let mut native = payload.caps.is_empty()
+            || payload
+                .caps
+                .iter()
+                .flatten()
+                .next()
+                .is_some_and(|hook| self.can_borrow_native(&**hook));
         let mut inline = [None];
         let mut overflow = Vec::new();
-        let retained = if native {
-            &mut [][..]
-        } else if payload.caps.len() <= inline.len() {
-            &mut inline[..payload.caps.len()]
-        } else {
-            overflow
-                .try_reserve_exact(payload.caps.len())
-                .map_err(wire_error)?;
-            overflow.resize_with(payload.caps.len(), || None);
-            &mut overflow[..]
-        };
-        let result = (|| {
-            for (slot, cap) in retained.iter_mut().zip(&payload.caps) {
-                let client = match cap {
-                    None => None,
-                    Some(hook) => Some(
-                        match self.try_retain(&mut driver.capabilities(), &**hook)? {
-                            Some(client) => client,
-                            None => import(&mut driver.capabilities(), &**hook)?,
-                        },
-                    ),
-                };
-                *slot = client;
-            }
-            let table = if native {
-                calls::ParameterCapabilities::Native(self, &payload.caps)
+        loop {
+            let retained = if native {
+                &mut [][..]
+            } else if payload.caps.len() <= inline.len() {
+                &mut inline[..payload.caps.len()]
             } else {
-                calls::ParameterCapabilities::Retained(retained)
+                overflow
+                    .try_reserve_exact(payload.caps.len())
+                    .map_err(wire_error)?;
+                overflow.resize_with(payload.caps.len(), || None);
+                &mut overflow[..]
             };
-            if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
-                if let Some(result) = driver
-                    .local_answer_prepared_table(
+            let result = (|| -> capnp::Result<_> {
+                for (slot, cap) in retained.iter_mut().zip(&payload.caps) {
+                    let client = match cap {
+                        None => None,
+                        Some(hook) => Some(
+                            match self.try_retain(&mut driver.capabilities(), &**hook)? {
+                                Some(client) => client,
+                                None => import(&mut driver.capabilities(), &**hook)?,
+                            },
+                        ),
+                    };
+                    *slot = client;
+                }
+                let table = if native {
+                    calls::ParameterCapabilities::Native(self, &payload.caps)
+                } else {
+                    calls::ParameterCapabilities::Retained(retained)
+                };
+                if let (Some(answer), Some(source)) = (answer, payload.prepared_return()) {
+                    match driver.local_answer_prepared_table(
                         answer,
                         method.interface,
                         method.method,
@@ -1353,56 +1358,64 @@ impl<'id> ClientHooks<'id> {
                         &table,
                         messages,
                         options,
-                    )
-                    .map_err(wire_error)?
-                {
-                    return Ok(result);
+                    ) {
+                        Ok(Some(result)) => return Ok(Ok(result)),
+                        Ok(None) => (),
+                        Err(error) => return Ok(Err(error)),
+                    }
                 }
+                let content = payload.reader()?;
+                let minimum = content
+                    .target_size()?
+                    .word_count
+                    .checked_add(16)
+                    .and_then(|words| words.checked_mul(8))
+                    .and_then(|bytes| usize::try_from(bytes).ok())
+                    .ok_or_else(|| Error::failed("server result size overflow".into()))?;
+                let fill = |field: capnp::field_api::FixedField<
+                    '_,
+                    capnp::field_api::Generic<any_pointer::Owned>,
+                >| {
+                    field.copy_with_capabilities(
+                        content,
+                        capnp::wire_capability::IndexMap::identity(payload.caps.len() as u32),
+                    )
+                };
+                let result = if let Some(answer) = answer {
+                    driver.local_answer_dynamic_table(
+                        answer,
+                        method.interface,
+                        method.method,
+                        &table,
+                        messages,
+                        minimum,
+                        options,
+                        fill,
+                    )
+                } else {
+                    driver.local_result_dynamic_table(
+                        method.interface,
+                        method.method,
+                        &table,
+                        messages,
+                        minimum,
+                        options,
+                        fill,
+                    )
+                };
+                Ok(result)
+            })();
+            for client in retained.iter_mut().filter_map(Option::take) {
+                driver.capabilities().release(client);
             }
-            let content = payload.reader()?;
-            let minimum = content
-                .target_size()?
-                .word_count
-                .checked_add(16)
-                .and_then(|words| words.checked_mul(8))
-                .and_then(|bytes| usize::try_from(bytes).ok())
-                .ok_or_else(|| Error::failed("server result size overflow".into()))?;
-            let fill = |field: capnp::field_api::FixedField<
-                '_,
-                capnp::field_api::Generic<any_pointer::Owned>,
-            >| {
-                field.copy_with_capabilities(
-                    content,
-                    capnp::wire_capability::IndexMap::identity(payload.caps.len() as u32),
-                )
-            };
-            let result = if let Some(answer) = answer {
-                driver.local_answer_dynamic_table(
-                    answer,
-                    method.interface,
-                    method.method,
-                    &table,
-                    messages,
-                    minimum,
-                    options,
-                    fill,
-                )
-            } else {
-                driver.local_result_dynamic_table(
-                    method.interface,
-                    method.method,
-                    &table,
-                    messages,
-                    minimum,
-                    options,
-                    fill,
-                )
-            };
-            result.map_err(wire_error)
-        })();
-        for client in retained.iter_mut().filter_map(Option::take) {
-            driver.capabilities().release(client);
+            match result {
+                Ok(Err(connection::Error::UnboundCapability)) if native => {
+                    // The bounded transaction released its tentative frame and
+                    // retained prefix. Normalize foreign hooks once, then retry.
+                    native = false;
+                }
+                result => return result.and_then(|result| result.map_err(wire_error)).map(Ok),
+            }
         }
-        result.map(Ok)
     }
 }

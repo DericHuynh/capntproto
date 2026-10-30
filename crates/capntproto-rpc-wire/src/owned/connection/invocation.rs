@@ -301,26 +301,27 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     {
         self.enqueue_frame(
             target,
-            capabilities,
+            capabilities.map(|entry| entry.map(CapabilityLookup::Bound)),
             messages,
             options,
             |messages, options| {
                 Frame::build(messages, minimum, options, encode).map_err(Error::Input)
             },
         )
+        .map(|key| key.expect("strict capability iterator cannot defer"))
     }
 
     fn enqueue_frame<'c>(
         &mut self,
         target: &clients::Client<'id>,
-        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<CapabilityLookup<'c, 'id>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         options: capnp::message::ReaderOptions,
         build: impl FnOnce(
             &mut messages::Messages<'pool, '_, '_>,
             capnp::message::ReaderOptions,
         ) -> Result<Frame<'pool>, Error>,
-    ) -> Result<InvocationKey<'id>, Error>
+    ) -> Result<Option<InvocationKey<'id>>, Error>
     where
         'id: 'c,
     {
@@ -343,24 +344,31 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             u32::try_from(count).map_err(|_| Error::Input(super::super::Error::Capacity))?;
         let operation = self.operations.reserve()?;
         let frame = build(messages, options)?;
-        let validation = frame
-            .with(messages, |root| -> capnp::Result<Option<PlainTemplate>> {
-                let rpc_capnp::message::Call(call) = root.which()? else {
-                    unreachable!()
-                };
-                let call = call?;
-                if self.writer_policy == WriterPolicy::Checked {
-                    call.get_params()?
-                        .get_content()
-                        .validate_capability_indices(wire_count)?;
-                }
-                Ok(if count == 0 {
-                    PlainTemplate::new(call, &messages.read(&frame.lease))
-                } else {
-                    None
+        // A native capability-bearing frame was built by our private Call
+        // writer. Only checked content and data-only template extraction need
+        // a reader; legacy likewise leaves outgoing payload checks to reads.
+        let validation = if self.writer_policy == WriterPolicy::Native && count != 0 {
+            Ok(None)
+        } else {
+            frame
+                .with(messages, |root| -> capnp::Result<Option<PlainTemplate>> {
+                    let rpc_capnp::message::Call(call) = root.which()? else {
+                        unreachable!()
+                    };
+                    let call = call?;
+                    if self.writer_policy == WriterPolicy::Checked {
+                        call.get_params()?
+                            .get_content()
+                            .validate_capability_indices(wire_count)?;
+                    }
+                    Ok(if count == 0 {
+                        PlainTemplate::new(call, &messages.read(&frame.lease))
+                    } else {
+                        None
+                    })
                 })
-            })
-            .and_then(|result| result.map_err(super::super::Error::from));
+                .and_then(|result| result.map_err(super::super::Error::from))
+        };
         let template = match validation {
             Ok(template) => template,
             Err(error) => {
@@ -377,7 +385,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         };
         for index in 0..invocation.count {
             let client = match capabilities.next() {
-                Some(Ok(client)) => client,
+                Some(Ok(CapabilityLookup::Bound(client))) => client,
+                Some(Ok(CapabilityLookup::Deferred)) => {
+                    invocation.release(messages, &mut self.runtime);
+                    return Ok(None);
+                }
                 Some(Err(error)) => {
                     invocation.release(messages, &mut self.runtime);
                     return Err(Error::Input(error.into()));
@@ -408,7 +420,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         {
             Ok(key) => {
                 self.operations.insert(operation, key);
-                Ok(operation)
+                Ok(Some(operation))
             }
             Err(error) => {
                 let Some(Task::Invoke(invocation)) = owner else {

@@ -11,6 +11,7 @@ fn prepared_queued_parameters_preserve_ownership_and_reclaim_every_failed_prefix
     struct Table<'a, 'id> {
         entries: &'a [Option<&'a clients::Client<'id>>],
         fail: Option<usize>,
+        defer: Option<usize>,
     }
     impl<'id> CapabilityTable<'id> for Table<'_, 'id> {
         fn len(&self) -> usize {
@@ -21,6 +22,13 @@ fn prepared_queued_parameters_preserve_ownership_and_reclaim_every_failed_prefix
                 return Err(capnp::Error::from_kind(capnp::ErrorKind::Overloaded));
             }
             Ok(self.entries[index])
+        }
+        fn lookup(&self, index: usize) -> capnp::Result<CapabilityLookup<'_, 'id>> {
+            if self.defer == Some(index) {
+                Ok(CapabilityLookup::Deferred)
+            } else {
+                self.capability(index).map(CapabilityLookup::Bound)
+            }
         }
     }
     with_driver(|mut driver, messages| {
@@ -33,6 +41,7 @@ fn prepared_queued_parameters_preserve_ownership_and_reclaim_every_failed_prefix
         let mut table = Table {
             entries: &entries,
             fail: None,
+            defer: None,
         };
         let method = calls::DynamicCall {
             interface: 47,
@@ -61,6 +70,40 @@ fn prepared_queued_parameters_preserve_ownership_and_reclaim_every_failed_prefix
             .unwrap()
             .is_none());
         driver.use_native_writer();
+        for deferred in 0..entries.len() {
+            let owner = 80 + deferred as u32;
+            let prefix = driver
+                .runtime
+                .endpoint(binding::Route::local(owner), clients::Location::Local)
+                .unwrap();
+            let entries = [Some(&prefix), None, Some(&prefix)];
+            let table = Table {
+                entries: &entries,
+                fail: None,
+                defer: Some(deferred),
+            };
+            let measured = allocation_counter::measure(|| {
+                assert!(driver
+                    .try_enqueue_prepared_with_capability_table(
+                        &waiting,
+                        method,
+                        &source,
+                        &table,
+                        messages,
+                        Default::default(),
+                    )
+                    .unwrap()
+                    .is_none());
+            });
+            assert_eq!(measured.count_total, 0);
+            assert_eq!(driver.runtime.queued(), 0);
+            assert!(driver.ledgers.questions.is_empty());
+            driver.runtime.release(prefix);
+            assert!(
+                matches!(driver.runtime.take_retired(), Some(binding::Route::Capability(binding::Endpoint::Local(retired))) if retired == owner),
+                "deferred admission must release its retained prefix"
+            );
+        }
         for failure in 0..entries.len() {
             table.fail = Some(failure);
             assert!(matches!(
@@ -518,6 +561,12 @@ fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
             })
         }
     }
+    #[cfg(feature = "alloc")]
+    let prepared = PreparedReturn::from_template(
+        &PreparedReturnTemplate::default(),
+        capnp::message::HeapAllocator::new(),
+    )
+    .freeze();
     let measured = allocation_counter::measure(|| {
         with_driver(|mut driver, messages| {
             let receipt = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
@@ -714,6 +763,74 @@ fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
                     assert!(
                         matches!(driver.runtime.take_retired(), Some(binding::Route::Capability(binding::Endpoint::Local(owner))) if owner == 201 + fail_index as u32),
                         "failed result retention cannot retain its prefix"
+                    );
+                }
+                for deferred in 0..3 {
+                    let owner = 301 + deferred as u32;
+                    let prefix = driver
+                        .runtime
+                        .endpoint(binding::Route::local(owner), clients::Location::Local)
+                        .unwrap();
+                    let entries = [Some(&prefix), None, Some(&remote)];
+                    let table = Table {
+                        entries: &entries,
+                        reads: core::array::from_fn(|_| Cell::new(0)),
+                        fail: None,
+                    };
+                    let deferred = Deferred {
+                        table: &table,
+                        at: (deferred, 1),
+                    };
+                    let fill = |field: capnp::field_api::FixedField<
+                        '_,
+                        capnp::field_api::Generic<capnp::any_pointer::Owned>,
+                    >| field.set_capability_index(2);
+                    let result = if answer {
+                        driver.local_answer_dynamic_table(
+                            call.answer(),
+                            7,
+                            9,
+                            &deferred,
+                            messages,
+                            512,
+                            Default::default(),
+                            fill,
+                        )
+                    } else {
+                        driver.local_result_dynamic_table(
+                            7,
+                            9,
+                            &deferred,
+                            messages,
+                            512,
+                            Default::default(),
+                            fill,
+                        )
+                    };
+                    assert!(matches!(result, Err(Error::UnboundCapability)));
+                    #[cfg(feature = "alloc")]
+                    {
+                        for read in &table.reads {
+                            read.set(0);
+                        }
+                        assert!(matches!(
+                            driver.local_answer_prepared_table(
+                                call.answer(),
+                                7,
+                                9,
+                                &prepared,
+                                &deferred,
+                                messages,
+                                Default::default()
+                            ),
+                            Err(Error::UnboundCapability)
+                        ));
+                    }
+                    assert!(driver.ledgers.answers.prepare_return(call.answer()).is_ok());
+                    driver.runtime.release(prefix);
+                    assert!(
+                        matches!(driver.runtime.take_retired(), Some(binding::Route::Capability(binding::Endpoint::Local(retired))) if retired == owner),
+                        "deferred result retention must release its prefix"
                     );
                 }
                 let table = Table {

@@ -297,6 +297,9 @@ pub enum Error {
     RedirectedResponse,
     TailAlreadyUsed,
     InvalidInvocationTarget,
+    /// A table entry needs binding. Its tentative frame and retained prefix
+    /// have been released; the caller may bind the original table and retry.
+    UnboundCapability,
     UnknownInvocation,
 }
 
