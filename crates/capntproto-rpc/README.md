@@ -479,6 +479,10 @@ result marker, including capability-bearing replies. Native publication appends
 descriptors and patches the live answer ID without decoding those ancestors
 again. Data-only reuse still requires a matching answer and Finish policy;
 generic result frames keep the ordinary decoder.
+Queued Calls and Returns also keep staged grants and copied import IDs through
+descriptor publication, matching immediate Calls. Their final classification
+pass only revisits promised transforms whose paths borrow graph storage; it
+does not inspect every granted or imported capability again.
 
 Native pipeline projections retain their endpoint inline, including clones and
 cached direct routes. Opaque projection hooks preserve their original wrapper.

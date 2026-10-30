@@ -386,6 +386,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                             reflection::target(owner, self.imports.peer(), &self.ledgers.questions)
                                 .map_err(Error::Question)?
                         {
+                            // Imported IDs cannot move during export staging.
+                            // Preserve this classification like immediate Calls.
+                            if let calls::Target::Imported(id) = target {
+                                staged[index] =
+                                    reflection::Descriptor::Reflected(calls::Target::Imported(id));
+                            }
                             if let calls::Target::Promised { path, .. } = target {
                                 minimum = minimum
                                     .checked_add(32)
@@ -433,6 +439,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         )))?;
                 }
                 for (index, client) in result.clients[..result.count].iter().enumerate() {
+                    if matches!(
+                        staged[index],
+                        reflection::Descriptor::Grant(..) | reflection::Descriptor::Reflected(..)
+                    ) {
+                        continue;
+                    }
                     if let Some(client) = client {
                         if let Ok(clients::Destination::Endpoint { owner, .. }) =
                             self.runtime.inspect(client)

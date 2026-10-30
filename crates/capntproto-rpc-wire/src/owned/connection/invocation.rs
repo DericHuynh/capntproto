@@ -938,6 +938,13 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
             match reflect {
                 Ok(Some(target)) => {
+                    // Import IDs are immutable. Retain their classification as
+                    // on the immediate path; only promised transforms borrow
+                    // graph storage which staging can move.
+                    if let calls::Target::Imported(id) = target {
+                        staged[index] =
+                            reflection::Descriptor::Reflected(calls::Target::Imported(id));
+                    }
                     let extra = match target {
                         calls::Target::Imported(_) => Some(0),
                         calls::Target::Promised { path, .. } => path
@@ -999,6 +1006,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             unreachable!()
         };
         for (index, client) in invocation.capabilities[..count].iter().enumerate() {
+            if matches!(
+                staged[index],
+                reflection::Descriptor::Grant(..) | reflection::Descriptor::Reflected(..)
+            ) {
+                continue;
+            }
             if let Some(client) = client {
                 if let clients::Destination::Endpoint { owner, .. } =
                     self.runtime.inspect(client).map_err(Error::Graph)?

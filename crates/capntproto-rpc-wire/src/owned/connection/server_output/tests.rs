@@ -1558,7 +1558,7 @@ fn generic_calls_keep_exact_grant_metadata_without_allocating_or_pinning_frames(
 fn mixed_reflected_descriptors_preserve_routes_and_retry_without_allocating() {
     let measured = allocation_counter::measure(|| {
         for native in [false, true] {
-            for reply in [false, true] {
+            for (reply, reversed) in [(false, false), (false, true), (true, false), (true, true)] {
                 with_driver(|mut driver, messages| {
                     if native {
                         driver.use_native_writer();
@@ -1582,7 +1582,10 @@ fn mixed_reflected_descriptors_preserve_routes_and_retry_without_allocating() {
                     let projected = driver
                         .pipeline(parent, pipeline::Path::new(&[0, 2]))
                         .unwrap();
-                    let caps = [Some(&local), Some(&remote), Some(&projected), None];
+                    let mut caps = [Some(&local), Some(&remote), Some(&projected), None];
+                    if reversed {
+                        caps.reverse();
+                    }
                     let mut blocked = messages::Queue::<()>::new(&mut []).unwrap();
                     if reply {
                         let result = driver
@@ -1673,16 +1676,17 @@ fn mixed_reflected_descriptors_preserve_routes_and_retry_without_allocating() {
                         };
                         let caps = payload.get_cap_table().unwrap();
                         assert_eq!(caps.len(), 4);
+                        let slot = |index| if reversed { 3 - index } else { index };
                         assert!(matches!(
-                            caps.get(0).which().unwrap(),
+                            caps.get(slot(0)).which().unwrap(),
                             rpc_capnp::cap_descriptor::SenderHosted(_)
                         ));
                         assert!(matches!(
-                            caps.get(1).which().unwrap(),
+                            caps.get(slot(1)).which().unwrap(),
                             rpc_capnp::cap_descriptor::ReceiverHosted(42)
                         ));
                         let rpc_capnp::cap_descriptor::ReceiverAnswer(answer) =
-                            caps.get(2).which().unwrap()
+                            caps.get(slot(2)).which().unwrap()
                         else {
                             panic!("ReceiverAnswer")
                         };
@@ -1696,7 +1700,7 @@ fn mixed_reflected_descriptors_preserve_routes_and_retry_without_allocating() {
                             &[0, 2]
                         );
                         assert!(matches!(
-                            caps.get(3).which().unwrap(),
+                            caps.get(slot(3)).which().unwrap(),
                             rpc_capnp::cap_descriptor::None(())
                         ));
                     });
