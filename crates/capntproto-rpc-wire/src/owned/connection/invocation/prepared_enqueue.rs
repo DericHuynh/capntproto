@@ -46,6 +46,10 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         false,
                         options,
                     )
+                    .map(|frame| {
+                        let length = messages.read(&frame.lease).len();
+                        (frame, Some(encoded.framed_template(template, length)))
+                    })
                     .map_err(Error::Input)
             },
         );

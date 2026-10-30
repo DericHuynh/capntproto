@@ -22,6 +22,8 @@ pub use template::{PreparedCall, PreparedCallTemplate};
 pub struct Invocation<'pool, 'id, const CAPS: usize> {
     pub(super) key: InvocationKey<'id>,
     frame: Frame<'pool>,
+    // Framed header geometry. With capabilities this is supplied only by a
+    // private prepared Call; count distinguishes it from a data-only template.
     template: Option<PlainTemplate>,
     capabilities: Buffer<Option<clients::Client<'id>>, CAPS>,
     count: usize,
@@ -305,7 +307,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             messages,
             options,
             |messages, options| {
-                Frame::build(messages, minimum, options, encode).map_err(Error::Input)
+                Frame::build(messages, minimum, options, encode)
+                    .map(|frame| (frame, None))
+                    .map_err(Error::Input)
             },
         )
         .map(|key| key.expect("strict capability iterator cannot defer"))
@@ -320,7 +324,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         build: impl FnOnce(
             &mut messages::Messages<'pool, '_, '_>,
             capnp::message::ReaderOptions,
-        ) -> Result<Frame<'pool>, Error>,
+        ) -> Result<(Frame<'pool>, Option<PlainTemplate>), Error>,
     ) -> Result<Option<InvocationKey<'id>>, Error>
     where
         'id: 'c,
@@ -343,12 +347,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let wire_count =
             u32::try_from(count).map_err(|_| Error::Input(super::super::Error::Capacity))?;
         let operation = self.operations.reserve()?;
-        let frame = build(messages, options)?;
+        let (frame, prepared) = build(messages, options)?;
         // A native capability-bearing frame was built by our private Call
         // writer. Only checked content and data-only template extraction need
         // a reader; legacy likewise leaves outgoing payload checks to reads.
         let validation = if self.writer_policy == WriterPolicy::Native && count != 0 {
-            Ok(None)
+            Ok(prepared)
         } else {
             frame
                 .with(messages, |root| -> capnp::Result<Option<PlainTemplate>> {
@@ -745,7 +749,8 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let task = invocation.key;
         let completion_owner = self.operations.get(task)?.completion_owner;
         let count = invocation.count;
-        let template = invocation.template.filter(|_| import.is_some());
+        let header = invocation.template;
+        let template = header.filter(|_| import.is_some() && count == 0);
         if let Some(template) = template {
             let slot_index = ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges)
                 .ok_or(Error::Busy)?;
@@ -840,24 +845,30 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 question: key,
             }));
         }
-        let destination = invocation
-            .frame
-            .with(messages, |source| {
-                let rpc_capnp::message::Call(source) = source.which()? else {
-                    unreachable!()
-                };
-                Ok::<_, capnp::Error>(match source?.get_send_results_to().which()? {
-                    rpc_capnp::call::send_results_to::Caller(()) => questions::ResultsTo::Caller,
-                    rpc_capnp::call::send_results_to::Yourself(()) => {
-                        questions::ResultsTo::Yourself
-                    }
-                    rpc_capnp::call::send_results_to::ThirdParty(_) => {
-                        questions::ResultsTo::ThirdParty
-                    }
+        let destination = if header.is_some() {
+            questions::ResultsTo::Caller
+        } else {
+            invocation
+                .frame
+                .with(messages, |source| {
+                    let rpc_capnp::message::Call(source) = source.which()? else {
+                        unreachable!()
+                    };
+                    Ok::<_, capnp::Error>(match source?.get_send_results_to().which()? {
+                        rpc_capnp::call::send_results_to::Caller(()) => {
+                            questions::ResultsTo::Caller
+                        }
+                        rpc_capnp::call::send_results_to::Yourself(()) => {
+                            questions::ResultsTo::Yourself
+                        }
+                        rpc_capnp::call::send_results_to::ThirdParty(_) => {
+                            questions::ResultsTo::ThirdParty
+                        }
+                    })
                 })
-            })
-            .map_err(Error::Input)?
-            .map_err(|error| Error::Input(error.into()))?;
+                .map_err(Error::Input)?
+                .map_err(|error| Error::Input(error.into()))?
+        };
         let third_party = destination == questions::ResultsTo::ThirdParty;
         let redirected = destination != questions::ResultsTo::Caller;
         // Native imported calls can append descriptors to their owned bytes.
@@ -877,16 +888,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let pipeline_only = !redirected
             && count == 0
             && self.pipeline_only_enabled
-            && invocation
-                .frame
-                .with(messages, |source| {
-                    let rpc_capnp::message::Call(call) = source.which()? else {
-                        unreachable!()
-                    };
-                    Ok::<_, capnp::Error>(call?.get_only_promise_pipeline())
-                })
-                .map_err(Error::Input)?
-                .map_err(|error| Error::Input(error.into()))?;
+            && if let Some(header) = header {
+                header.only_promise_pipeline
+            } else {
+                invocation
+                    .frame
+                    .with(messages, |source| {
+                        let rpc_capnp::message::Call(call) = source.which()? else {
+                            unreachable!()
+                        };
+                        Ok::<_, capnp::Error>(call?.get_only_promise_pipeline())
+                    })
+                    .map_err(Error::Input)?
+                    .map_err(|error| Error::Input(error.into()))?
+            };
         drop(ready);
         let slot_index =
             ExchangeSlot::vacant(&mut self.exchanges, &self.free_exchanges).ok_or(Error::Busy)?;
@@ -1046,6 +1061,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             match target {
                 calls::Target::Imported(import) => template::copy_capability_frame(
                     &invocation.frame,
+                    header,
                     messages,
                     reservation.id(),
                     import,

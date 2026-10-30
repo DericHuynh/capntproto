@@ -469,6 +469,11 @@ against the private endpoint identity, including after slot removal or reuse.
 Native capability-bearing frames come from private writers, so admission does
 not decode their headers again. Checked writers retain their outgoing payload
 validation, and inbound readers keep their ordinary bounds and capability checks.
+Prepared queued calls also retain their header geometry in the invocation's
+existing template field. Final native publication uses it to select the Caller
+destination and append descriptors without reopening the source reader. This
+needs no additional per-invocation storage; general frames keep their checked
+header decoder. Final grant and reflected-descriptor validation still runs.
 
 Native pipeline projections retain their endpoint inline, including clones and
 cached direct routes. Opaque projection hooks preserve their original wrapper.

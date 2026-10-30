@@ -58,7 +58,6 @@ pub struct PreparedCall<A: capnp::message::Allocator> {
     owner: Option<alloc::rc::Weak<PreparedCall<capnp::message::HeapAllocator>>>,
     validation: core::cell::Cell<Option<Validation>>,
 }
-#[cfg(feature = "alloc")]
 fn descriptor_pointer_offset(target: usize) -> usize {
     use capnp::field_api::Schema;
     let size = rpc_capnp::api::MessageTarget::SIZE;
@@ -376,6 +375,10 @@ pub struct EncodedCall<'a> {
 }
 
 impl<'a> EncodedCall<'a> {
+    #[cfg(feature = "alloc")]
+    pub(super) fn framed_template(&self, template: PlainTemplate, length: usize) -> PlainTemplate {
+        template.in_frame(if self.second.is_some() { 16 } else { 8 }, length)
+    }
     #[cfg(feature = "alloc")]
     pub(super) fn retain_parts(
         &self,
@@ -775,6 +778,19 @@ pub(super) struct PlainTemplate {
 }
 
 impl PlainTemplate {
+    #[cfg(feature = "alloc")]
+    fn in_frame(mut self, header: usize, length: usize) -> Self {
+        self.call += header;
+        self.target += header;
+        self.length = length;
+        self
+    }
+    fn in_segment(mut self, header: usize, length: usize) -> Option<Self> {
+        self.call = self.call.checked_sub(header)?;
+        self.target = self.target.checked_sub(header)?;
+        self.length = length;
+        Some(self)
+    }
     fn read_segment(
         segment: &[u8],
         method: calls::DynamicCall,
