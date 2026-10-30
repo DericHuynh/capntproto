@@ -13,6 +13,7 @@ use capntproto_rpc_engine::{
 
 mod exchange_work;
 mod operations;
+mod payload;
 pub(crate) mod reflection;
 mod resource_wait;
 use capntproto_rpc_engine::work_queue;

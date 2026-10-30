@@ -158,6 +158,325 @@ fn prepared_queued_parameters_preserve_ownership_and_reclaim_every_failed_prefix
     });
 }
 
+#[cfg(feature = "alloc")]
+#[test]
+fn native_queued_publication_appends_descriptors_and_retries_without_rebuilding_payloads() {
+    for mode in 0..3 {
+        let large = mode == 1;
+        let compact = mode == 2;
+        with_driver(|mut driver, messages| {
+            driver.use_native_writer();
+            let receipt = driver.admit_import(ImportId::from_wire(42), ()).unwrap();
+            let remote = driver.bind_import(&receipt).unwrap();
+            driver.release_import(receipt);
+            let local = driver
+                .runtime
+                .endpoint(binding::Route::local(73), clients::Location::Local)
+                .unwrap();
+            let caps = [Some(&local), None, Some(&local)];
+            let method = calls::DynamicCall {
+                interface: 47,
+                method: 1,
+                no_promise_pipelining: true,
+                only_promise_pipeline: false,
+            };
+            let large_bytes = [0xa5; 320];
+            let expected: &[u8] = if large { &large_bytes } else { b"retained" };
+            let mut source = PreparedCall::new(
+                capnp::message::Builder::new(
+                    capnp::message::HeapAllocator::new().first_segment_words(if compact {
+                        1024
+                    } else {
+                        32
+                    }),
+                ),
+                47,
+                1,
+            )
+            .unwrap();
+            let envelope_bytes = capnp::serialize::write_message_to_words(source.message()).len();
+            let unused = if compact {
+                1024 - envelope_bytes - 8
+            } else {
+                64
+            };
+            source
+                .params()
+                .initn_as::<capnp::data::Builder>(unused as u32)
+                .fill(0x5a);
+            source
+                .params()
+                .set_as::<capnp::data::Owned>(expected)
+                .unwrap();
+            assert_eq!(
+                capnp::message::ReaderSegments::len(source.message()),
+                if large { 2 } else { 1 }
+            );
+            let original_bytes = capnp::serialize::write_message_to_words(source.message()).len();
+            let task = driver
+                .try_enqueue_prepared_with_capability_table(
+                    &remote,
+                    method,
+                    &source,
+                    &caps[..],
+                    messages,
+                    Default::default(),
+                )
+                .unwrap()
+                .unwrap();
+            let mut slots = [None];
+            let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+            let mut held = alloc::vec::Vec::new();
+            for _ in 0..5 {
+                held.push(messages.reserve(1024).unwrap());
+            }
+            assert!(driver
+                .send_invocation(messages, &mut queue, 128, Default::default(), &mut [0; 8])
+                .is_err());
+            assert!(queue.is_empty());
+            assert!(driver.ledgers.questions.is_empty());
+            for writer in held {
+                messages.discard(writer);
+            }
+            assert!(driver
+                .send_invocation(messages, &mut queue, 128, Default::default(), &mut [])
+                .is_err());
+            assert!(queue.is_empty());
+            assert!(driver.ledgers.questions.is_empty());
+            let mut sent = None;
+            let measured = allocation_counter::measure(|| {
+                sent = driver
+                    .send_invocation(messages, &mut queue, 128, Default::default(), &mut [0; 8])
+                    .unwrap();
+            });
+            assert_eq!(measured.count_total, 0);
+            let sent = sent.unwrap();
+            assert_eq!(sent.task, task);
+            let size = <CapDescriptor as capnp::field_api::Schema>::SIZE;
+            let appended =
+                (1 + caps.len() * (usize::from(size.data) + usize::from(size.pointers))) * 8;
+            let published_bytes = queue.window(messages).unwrap().unwrap().bytes().len();
+            if compact {
+                assert_eq!(original_bytes, 1024);
+                assert!(
+                    published_bytes < original_bytes,
+                    "compact when appending descriptors exceeds the pool"
+                );
+            } else {
+                assert_eq!(
+                    published_bytes,
+                    original_bytes + appended,
+                    "keep the original unreachable words instead of compact-copying the payload"
+                );
+            }
+            drain_by(&mut queue, messages, 3, |root| {
+                let rpc_capnp::message::Call(call) = root.which().unwrap() else {
+                    panic!("Call")
+                };
+                let call = call.unwrap();
+                assert_eq!(call.get_question_id(), sent.question.id().to_wire());
+                assert_eq!((call.get_interface_id(), call.get_method_id()), (47, 1));
+                assert!(call.get_no_promise_pipelining());
+                assert!(!call.get_only_promise_pipeline());
+                assert!(matches!(
+                    call.get_target().unwrap().which().unwrap(),
+                    rpc_capnp::message_target::ImportedCap(42)
+                ));
+                let payload = call.get_params().unwrap();
+                assert_eq!(
+                    payload
+                        .get_content()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap(),
+                    expected
+                );
+                let descriptors = payload.get_cap_table().unwrap();
+                assert_eq!(descriptors.len(), 3);
+                assert!(matches!(
+                    descriptors.get(1).which().unwrap(),
+                    rpc_capnp::cap_descriptor::None(())
+                ));
+                assert!(
+                    matches!((descriptors.get(0).which().unwrap(), descriptors.get(2).which().unwrap()), (rpc_capnp::cap_descriptor::SenderHosted(a), rpc_capnp::cap_descriptor::SenderHosted(b)) if a == b)
+                );
+            });
+            driver.cancel(sent.question).unwrap();
+            driver.runtime.release(remote);
+            driver.runtime.release(local);
+            close(driver, messages, &mut queue);
+        });
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn native_returns_preserve_payload_segments_and_compact_only_when_required() {
+    for mode in 0..3 {
+        with_driver(|mut driver, messages| {
+            driver.use_native_writer();
+            let (call, target) = request(&mut driver, messages, false);
+            let caps = [Some(&target), None, Some(&target)];
+            let large = [0xa5; 320];
+            let expected: &[u8] = if mode == 1 { &large } else { b"retained" };
+            let template = PreparedReturnTemplate::default();
+            let empty = PreparedReturn::from_template(
+                &template,
+                capnp::message::HeapAllocator::new().first_segment_words(if mode == 2 {
+                    1024
+                } else {
+                    32
+                }),
+            )
+            .freeze();
+            let envelope_bytes = empty.framed_len().unwrap();
+            let mut source = empty.into_builder();
+            source
+                .results()
+                .initn_as::<capnp::data::Builder>(if mode == 2 {
+                    (1024 - envelope_bytes - 8) as u32
+                } else {
+                    64
+                })
+                .fill(0x5a);
+            source
+                .results()
+                .set_as::<capnp::data::Owned>(expected)
+                .unwrap();
+            let source = source.freeze();
+            assert_eq!(source.segment_count(), if mode == 1 { 2 } else { 1 });
+            let original_bytes = source.framed_len().unwrap();
+            let result = driver
+                .local_answer_prepared_with_capabilities(
+                    call.answer(),
+                    7,
+                    9,
+                    &source,
+                    caps.iter().copied(),
+                    messages,
+                    Default::default(),
+                )
+                .unwrap()
+                .unwrap();
+            driver
+                .complete_answer(&call, Ok(result), messages)
+                .unwrap_or_else(|_| panic!("completion"));
+            let mut slots = [None];
+            let mut queue = messages::Queue::<()>::new(&mut slots).unwrap();
+            let mut held = alloc::vec::Vec::new();
+            while let Ok(writer) = messages.reserve(1024) {
+                held.push(writer);
+            }
+            assert!(driver
+                .send_answer(
+                    call.answer(),
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [0; 8],
+                    |_, _| Ok(())
+                )
+                .is_err());
+            assert!(queue.is_empty());
+            for writer in held {
+                messages.discard(writer);
+            }
+            assert!(driver
+                .send_answer(
+                    call.answer(),
+                    messages,
+                    &mut queue,
+                    128,
+                    Default::default(),
+                    &mut [],
+                    |_, _| Ok(())
+                )
+                .is_err());
+            assert!(queue.is_empty());
+            let measured = allocation_counter::measure(|| {
+                driver
+                    .send_answer(
+                        call.answer(),
+                        messages,
+                        &mut queue,
+                        128,
+                        Default::default(),
+                        &mut [0; 8],
+                        |_, _| Ok(()),
+                    )
+                    .unwrap();
+            });
+            assert_eq!(
+                measured.count_total, 0,
+                "fixed Return publication stays allocation-free"
+            );
+            let size = <CapDescriptor as capnp::field_api::Schema>::SIZE;
+            let appended =
+                (1 + caps.len() * (usize::from(size.data) + usize::from(size.pointers))) * 8;
+            let published_bytes = queue.window(messages).unwrap().unwrap().bytes().len();
+            if mode == 2 {
+                assert_eq!(original_bytes, 1024);
+                assert!(published_bytes < original_bytes);
+            } else {
+                assert_eq!(published_bytes, original_bytes + appended);
+            }
+            drain_by(&mut queue, messages, 3, |root| {
+                let rpc_capnp::message::Return(returned) = root.which().unwrap() else {
+                    panic!("Return")
+                };
+                let returned = returned.unwrap();
+                assert_eq!(returned.get_answer_id(), call.answer().id().to_wire());
+                assert!(!returned.get_release_param_caps());
+                assert!(!returned.get_no_finish_needed());
+                let rpc_capnp::return_::Results(payload) = returned.which().unwrap() else {
+                    panic!("Results")
+                };
+                let payload = payload.unwrap();
+                assert_eq!(
+                    payload
+                        .get_content()
+                        .get_as::<capnp::data::Reader>()
+                        .unwrap(),
+                    expected
+                );
+                let descriptors = payload.get_cap_table().unwrap();
+                assert_eq!(descriptors.len(), 3);
+                assert!(matches!(
+                    descriptors.get(1).which().unwrap(),
+                    rpc_capnp::cap_descriptor::None(())
+                ));
+                assert!(
+                    matches!((descriptors.get(0).which().unwrap(), descriptors.get(2).which().unwrap()), (rpc_capnp::cap_descriptor::SenderHosted(a), rpc_capnp::cap_descriptor::SenderHosted(b)) if a == b)
+                );
+            });
+            let answer = call.answer();
+            driver.release_call(call, messages);
+            let finish = Frame::build(messages, 128, Default::default(), |builder| {
+                use crate::rpc_capnp::api::Finish;
+                let mut finish = builder
+                    .try_init_root::<Message>()?
+                    .into_field(Message::FINISH)
+                    .init()?;
+                finish
+                    .scalar(Finish::QUESTION_ID)
+                    .set(answer.id().to_wire());
+                finish.scalar(Finish::RELEASE_RESULT_CAPS).set(true);
+                Ok(())
+            })
+            .unwrap();
+            assert!(matches!(
+                driver
+                    .receive(finish, messages, &mut [0; 8], |_| (), || 0)
+                    .unwrap_or_else(|r| panic!("{:?}", r.error)),
+                Received::Finished(_)
+            ));
+            assert!(driver.ledgers.answers.is_empty());
+            driver.runtime.release(target);
+            close(driver, messages, &mut queue);
+        });
+    }
+}
+
 #[test]
 fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
     use core::cell::Cell;

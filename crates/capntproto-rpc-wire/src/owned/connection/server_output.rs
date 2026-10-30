@@ -302,6 +302,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(|e| Error::Input(super::super::Error::Storage(e)))?;
         let mut batch = self.ledgers.exports.batch();
         let mut minimum = minimum;
+        let base_minimum = minimum;
         let mut prepared = false;
         let mut staged = self
             .message_capabilities
@@ -448,55 +449,75 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         }
                     }
                 }
-                result
-                    .frame
-                    .build_from(messages, minimum, options, |source, builder| {
-                        let rpc_capnp::message::Return(source) = source.which()? else {
-                            unreachable!()
-                        };
-                        let rpc_capnp::return_::Results(payload) = source?.which()? else {
-                            unreachable!()
-                        };
-                        let mut returned = builder
-                            .try_init_root::<Message>()?
-                            .into_field(Message::RETURN)
-                            .init()?;
-                        returned.scalar(Return::ANSWER_ID).set(key.id().to_wire());
-                        returned.scalar(Return::RELEASE_PARAM_CAPS).set(false);
-                        returned
-                            .scalar(Return::NO_FINISH_NEEDED)
-                            .set(can_omit_finish && result.count == 0);
-                        let mut destination = returned.into_field(Return::RESULTS).init()?;
-                        let mut descriptors =
-                            destination.field(Payload::CAP_TABLE).init(result.count)?;
-                        for (index, grant) in staged[..result.count].iter().enumerate() {
-                            let mut descriptor = descriptors.get_mut(index).unwrap();
-                            if let Some(target) = grant.reflected() {
-                                reflection::write(target, descriptor)?;
-                                continue;
-                            }
-                            let reflection::Descriptor::Grant(id, promise, attached) = *grant
-                            else {
-                                descriptor.void(CapDescriptor::NONE).set();
-                                continue;
-                            };
-                            descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
-                            let owner = batch.pending_owner(id).and_then(|client| {
-                                match self.runtime.inspect(client) {
-                                    Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
-                                    _ => None,
-                                }
-                            });
-                            self.descriptors.describe(owner, id, promise, descriptor)?;
+                let mut fill = |mut descriptors: capnp::field_api::FixedList<'_, CapDescriptor>| {
+                    for (index, grant) in staged[..result.count].iter().enumerate() {
+                        let mut descriptor = descriptors.get_mut(index).unwrap();
+                        if let Some(target) = grant.reflected() {
+                            reflection::write(target, descriptor)?;
+                            continue;
                         }
-                        destination
-                            .into_field(Payload::CONTENT)
-                            .copy_with_capabilities(
-                                payload?.get_content(),
-                                capnp::wire_capability::IndexMap::identity(result.count as u32),
-                            )
-                    })
+                        let reflection::Descriptor::Grant(id, promise, attached) = *grant else {
+                            descriptor.void(CapDescriptor::NONE).set();
+                            continue;
+                        };
+                        descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
+                        let owner = batch.pending_owner(id).and_then(|client| {
+                            match self.runtime.inspect(client) {
+                                Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
+                                _ => None,
+                            }
+                        });
+                        self.descriptors.describe(owner, id, promise, descriptor)?;
+                    }
+                    Ok(())
+                };
+                let copied = if self.writer_policy == WriterPolicy::Native && result.count != 0 {
+                    super::payload::copy_return_frame(
+                        &result.frame,
+                        messages,
+                        key.id(),
+                        result.count,
+                        minimum,
+                        minimum - base_minimum,
+                        options,
+                        &mut fill,
+                    )
                     .map_err(Error::Input)?
+                } else {
+                    None
+                };
+                if let Some(frame) = copied {
+                    frame
+                } else {
+                    result
+                        .frame
+                        .build_from(messages, minimum, options, |source, builder| {
+                            let rpc_capnp::message::Return(source) = source.which()? else {
+                                unreachable!()
+                            };
+                            let rpc_capnp::return_::Results(payload) = source?.which()? else {
+                                unreachable!()
+                            };
+                            let mut returned = builder
+                                .try_init_root::<Message>()?
+                                .into_field(Message::RETURN)
+                                .init()?;
+                            returned.scalar(Return::ANSWER_ID).set(key.id().to_wire());
+                            returned.scalar(Return::RELEASE_PARAM_CAPS).set(false);
+                            returned
+                                .scalar(Return::NO_FINISH_NEEDED)
+                                .set(can_omit_finish && result.count == 0);
+                            let mut destination = returned.into_field(Return::RESULTS).init()?;
+                            fill(destination.field(Payload::CAP_TABLE).init(result.count)?)?;
+                            destination
+                                .into_field(Payload::CONTENT)
+                                .copy_with_capabilities(
+                                    payload?.get_content(),
+                                    capnp::wire_capability::IndexMap::identity(result.count as u32),
+                                )
+                        })
+                        .map_err(Error::Input)?
+                }
             }
         };
         let retired = if prepared {

@@ -6,7 +6,7 @@ use super::*;
 use capnp::traits::IntoInternalStructReader;
 use capntproto_rpc_engine::ids::QuestionId;
 mod capabilities;
-pub(super) use capabilities::EncodedCapabilities;
+pub(super) use capabilities::{copy_frame as copy_capability_frame, EncodedCapabilities};
 
 /// Reusable immutable Call header. Each request receives independent storage;
 /// method IDs are set through the generated builder before selecting parameters.
@@ -204,20 +204,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         else {
             return Err(super::super::super::Error::WrongMessage);
         };
-        let payload = header?.get_params()?.into_internal_struct_reader();
-        let pointers = payload.get_pointer_section_as_blob();
-        let table = (pointers.as_ptr() as usize)
-            .checked_add(8)
-            .and_then(|offset| offset.checked_sub(call.segment.as_ptr() as usize));
-        let Some(table) = table.filter(|offset| {
-            pointers.len() >= 16
-                && offset
-                    .checked_add(8)
-                    .is_some_and(|end| end <= call.segment.len())
-        }) else {
-            return Ok(None);
-        };
-        Ok(Some(EncodedCapabilities { call, table }))
+        EncodedCapabilities::new(call, header?.get_params()?)
     }
     #[inline(always)]
     pub(super) fn check_method(

@@ -848,34 +848,20 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .map_err(|error| Error::Input(error.into()))?;
         let third_party = destination == questions::ResultsTo::ThirdParty;
         let redirected = destination != questions::ResultsTo::Caller;
-        // A queued template has no descriptor table or promised-answer path.
-        // Size its final contiguous frame before reserving output. This works
-        // for fixed providers too: insufficient buffers reject without consuming
-        // the invocation, rather than relying on a hosted retry size guess.
-        let sized = invocation
-            .frame
-            .with(messages, |source| -> capnp::Result<usize> {
-                use crate::rpc_capnp::api::{promised_answer::Op, PromisedAnswer};
-                let words = |size: capnp::private::layout::StructSize| {
-                    u64::from(size.data) + u64::from(size.pointers)
-                };
-                let path_words = (length as u64).checked_mul(words(Op::SIZE));
-                let descriptors = (count as u64).checked_mul(words(CapDescriptor::SIZE));
-                source
-                    .total_size()?
-                    .word_count
-                    // Third-party metadata has its own transactional copy
-                    // staging pointer, separate from the parameter payload.
-                    .checked_add(5 + u64::from(third_party) + words(PromisedAnswer::SIZE))
-                    .and_then(|n| n.checked_add(path_words?))
-                    .and_then(|n| n.checked_add(descriptors?))
-                    .and_then(|n| n.checked_mul(8))
-                    .and_then(|n| usize::try_from(n).ok())
-                    .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::MessageSizeOverflow))
-            })
-            .map_err(Error::Input)?
-            .map_err(|error| Error::Input(error.into()))?;
+        // Native imported calls can append descriptors to their owned bytes.
+        // Only the rebuilding codec needs to walk the parameter graph for size.
+        let native_copy = self.writer_policy == WriterPolicy::Native
+            && !redirected
+            && import.is_some()
+            && count != 0;
+        let sized = if native_copy {
+            0
+        } else {
+            call_output_size(&invocation.frame, messages, count, length, third_party)
+                .map_err(Error::Input)?
+        };
         let mut minimum = minimum.max(sized);
+        let base_minimum = minimum;
         let pipeline_only = !redirected
             && count == 0
             && self.pipeline_only_enabled
@@ -1021,71 +1007,112 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 path: pipeline::Path::new(&fields[..length]),
             },
         };
-        let mut method = (0, 0);
-        let frame = invocation
-            .frame
-            .build_from(messages, minimum, options, |source, builder| {
-                let rpc_capnp::message::Call(source) = source.which()? else {
-                    unreachable!()
-                };
-                let source = source?;
-                method = (source.get_interface_id(), source.get_method_id());
-                let root = builder.try_init_root::<Message>()?;
-                let mut call = root.into_field(Message::CALL).init()?;
-                call.scalar(WireCall::QUESTION_ID)
-                    .set(reservation.id().to_wire());
-                call.scalar(WireCall::INTERFACE_ID).set(method.0);
-                call.scalar(WireCall::METHOD_ID).set(method.1);
-                call.scalar(WireCall::NO_PROMISE_PIPELINING)
-                    .set(source.get_no_promise_pipelining() && !pipeline_only);
-                call.scalar(WireCall::ONLY_PROMISE_PIPELINE)
-                    .set(pipeline_only);
-                call.scalar(WireCall::ALLOW_THIRD_PARTY_TAIL_CALL)
-                    .set(self.allow_answer_handoff && !redirected && !pipeline_only);
-                use crate::rpc_capnp::api::call::SendResultsTo;
-                match source.get_send_results_to().which()? {
-                    rpc_capnp::call::send_results_to::Caller(()) => (),
-                    rpc_capnp::call::send_results_to::Yourself(()) => {
-                        call.group(WireCall::SEND_RESULTS_TO)
-                            .select()
-                            .void(SendResultsTo::YOURSELF)
-                            .set();
-                    }
-                    rpc_capnp::call::send_results_to::ThirdParty(destination) => {
-                        call.group(WireCall::SEND_RESULTS_TO)
-                            .select()
-                            .field(SendResultsTo::THIRD_PARTY)
-                            .copy_from(destination)?;
-                    }
+        let mut fill = |mut descriptors: capnp::field_api::FixedList<'_, CapDescriptor>| {
+            for (index, grant) in staged[..count].iter().enumerate() {
+                let mut descriptor = descriptors.get_mut(index).unwrap();
+                if let Some(target) = grant.reflected() {
+                    reflection::write(target, descriptor)?;
+                    continue;
                 }
-                calls::write_target(call.field(WireCall::TARGET).init()?, target)?;
-                let mut payload = call.field(WireCall::PARAMS).init()?;
-                let mut descriptors = payload.field(WirePayload::CAP_TABLE).init(count)?;
-                for (index, grant) in staged[..count].iter().enumerate() {
-                    let mut descriptor = descriptors.get_mut(index).unwrap();
-                    if let Some(target) = grant.reflected() {
-                        reflection::write(target, descriptor)?;
-                        continue;
-                    }
-                    let reflection::Descriptor::Grant(id, promise, attached) = *grant else {
-                        descriptor.void(CapDescriptor::NONE).set();
-                        continue;
-                    };
-                    descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
-                    let owner = batch.pending_owner(id).and_then(|client| {
-                        match self.runtime.inspect(client) {
+                let reflection::Descriptor::Grant(id, promise, attached) = *grant else {
+                    descriptor.void(CapDescriptor::NONE).set();
+                    continue;
+                };
+                descriptor.scalar(CapDescriptor::ATTACHED_FD).set(attached);
+                let owner =
+                    batch
+                        .pending_owner(id)
+                        .and_then(|client| match self.runtime.inspect(client) {
                             Ok(clients::Destination::Endpoint { owner, .. }) => Some(owner),
                             _ => None,
+                        });
+                self.descriptors.describe(owner, id, promise, descriptor)?;
+            }
+            Ok(())
+        };
+        let copied = if native_copy {
+            match target {
+                calls::Target::Imported(import) => template::copy_capability_frame(
+                    &invocation.frame,
+                    messages,
+                    reservation.id(),
+                    import,
+                    count,
+                    minimum,
+                    minimum - base_minimum,
+                    self.allow_answer_handoff,
+                    options,
+                    &mut fill,
+                )
+                .map_err(Error::Input)?,
+                calls::Target::Promised { .. } => None,
+            }
+        } else {
+            None
+        };
+        let mut method = (0, 0);
+        let frame = if let Some((frame, retained_method)) = copied {
+            method = retained_method;
+            frame
+        } else {
+            if native_copy {
+                // Unreachable source words can exceed the pool although a
+                // compact payload fits. Size that fallback only when needed.
+                let compact =
+                    call_output_size(&invocation.frame, messages, count, length, third_party)
+                        .map_err(Error::Input)?;
+                minimum = minimum.max(
+                    compact
+                        .checked_add(minimum - base_minimum)
+                        .ok_or(Error::Input(super::super::Error::Capacity))?,
+                );
+            }
+            invocation
+                .frame
+                .build_from(messages, minimum, options, |source, builder| {
+                    let rpc_capnp::message::Call(source) = source.which()? else {
+                        unreachable!()
+                    };
+                    let source = source?;
+                    method = (source.get_interface_id(), source.get_method_id());
+                    let root = builder.try_init_root::<Message>()?;
+                    let mut call = root.into_field(Message::CALL).init()?;
+                    call.scalar(WireCall::QUESTION_ID)
+                        .set(reservation.id().to_wire());
+                    call.scalar(WireCall::INTERFACE_ID).set(method.0);
+                    call.scalar(WireCall::METHOD_ID).set(method.1);
+                    call.scalar(WireCall::NO_PROMISE_PIPELINING)
+                        .set(source.get_no_promise_pipelining() && !pipeline_only);
+                    call.scalar(WireCall::ONLY_PROMISE_PIPELINE)
+                        .set(pipeline_only);
+                    call.scalar(WireCall::ALLOW_THIRD_PARTY_TAIL_CALL)
+                        .set(self.allow_answer_handoff && !redirected && !pipeline_only);
+                    use crate::rpc_capnp::api::call::SendResultsTo;
+                    match source.get_send_results_to().which()? {
+                        rpc_capnp::call::send_results_to::Caller(()) => (),
+                        rpc_capnp::call::send_results_to::Yourself(()) => {
+                            call.group(WireCall::SEND_RESULTS_TO)
+                                .select()
+                                .void(SendResultsTo::YOURSELF)
+                                .set();
                         }
-                    });
-                    self.descriptors.describe(owner, id, promise, descriptor)?;
-                }
-                let mapping = capnp::wire_capability::IndexMap::identity(count as u32);
-                payload
-                    .field(WirePayload::CONTENT)
-                    .copy_with_capabilities(source.get_params()?.get_content(), mapping)
-            })
-            .map_err(Error::Input)?;
+                        rpc_capnp::call::send_results_to::ThirdParty(destination) => {
+                            call.group(WireCall::SEND_RESULTS_TO)
+                                .select()
+                                .field(SendResultsTo::THIRD_PARTY)
+                                .copy_from(destination)?;
+                        }
+                    }
+                    calls::write_target(call.field(WireCall::TARGET).init()?, target)?;
+                    let mut payload = call.field(WireCall::PARAMS).init()?;
+                    fill(payload.field(WirePayload::CAP_TABLE).init(count)?)?;
+                    let mapping = capnp::wire_capability::IndexMap::identity(count as u32);
+                    payload
+                        .field(WirePayload::CONTENT)
+                        .copy_with_capabilities(source.get_params()?.get_content(), mapping)
+                })
+                .map_err(Error::Input)?
+        };
         let question = Question::send_granting_compact(
             reservation,
             batch,
@@ -1151,4 +1178,35 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             question: key,
         }))
     }
+}
+
+// Compact sizing is needed only when the ordinary codec rebuilds the Call.
+fn call_output_size<'pool>(
+    frame: &Frame<'pool>,
+    messages: &messages::Messages<'pool, '_, '_>,
+    count: usize,
+    length: usize,
+    third_party: bool,
+) -> Result<usize, super::super::Error> {
+    frame
+        .with(messages, |source| -> capnp::Result<usize> {
+            use crate::rpc_capnp::api::{promised_answer::Op, PromisedAnswer};
+            let words = |size: capnp::private::layout::StructSize| {
+                u64::from(size.data) + u64::from(size.pointers)
+            };
+            let path_words = (length as u64).checked_mul(words(Op::SIZE));
+            let descriptors = (count as u64).checked_mul(words(CapDescriptor::SIZE));
+            source
+                .total_size()?
+                .word_count
+                // Third-party metadata has its own transactional copy
+                // staging pointer, separate from the parameter payload.
+                .checked_add(5 + u64::from(third_party) + words(PromisedAnswer::SIZE))
+                .and_then(|n| n.checked_add(path_words?))
+                .and_then(|n| n.checked_add(descriptors?))
+                .and_then(|n| n.checked_mul(8))
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| capnp::Error::from_kind(capnp::ErrorKind::MessageSizeOverflow))
+        })
+        .and_then(|result| result.map_err(super::super::Error::from))
 }

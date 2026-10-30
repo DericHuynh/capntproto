@@ -111,8 +111,11 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   fallback. Native queued calls likewise retain their parameter table directly
   and copy a prepared envelope into bounded invocation storage without walking
   its payload. Fixed invocation admission remains allocation-free; queueing does
-  not publish descriptors or consume a wire question ID. Terminate both workers
-  before terminating the portable driver.
+  not publish descriptors or consume a wire question ID. Native publication of
+  imported queued Calls and capability-bearing Returns appends descriptors to
+  those retained segments. Both keep ordinary grant admission; unsupported
+  layouts and pool limits use the compact codec. Terminate both workers before
+  terminating the portable driver.
   The caller still drives IO, maintenance and authenticated network operations.
   `wire::foreign::ForeignPromises` supplies the foreign import callback for
   pending owned hooks. Poll it after graph reclamation and before calls and
