@@ -40,6 +40,7 @@ impl Default for PreparedReturnTemplate {
             unreachable!("empty Return fits its first segment")
         };
         returned -= segment.as_ptr() as usize;
+        debug_assert_eq!(returned, super::payload::return_header_offsets().0);
         Self {
             message: message.into_template().expect("data-only Return header"),
             returned,
@@ -672,7 +673,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             count: capabilities.len(),
             interface,
             method,
-            prepared_return: None,
+            prepared_return: Some((answer.id(), false)),
         };
         self.retain_local_result(result, capabilities, messages)
             .map(Some)
@@ -684,6 +685,43 @@ mod tests {
     use super::*;
     use capnp::{word, Word};
     use capntproto_rpc_engine::ids::WireId;
+
+    #[test]
+    fn prepared_capability_returns_keep_their_header_across_segments() {
+        for length in [0, 64, 320] {
+            let mut source = PreparedReturn::from_template(
+                &PreparedReturnTemplate::default(),
+                capnp::message::HeapAllocator::new().first_segment_words(32),
+            );
+            let data = alloc::vec![0x5a; length];
+            source
+                .results()
+                .set_as::<capnp::data::Owned>(&data[..])
+                .unwrap();
+            let source = source.freeze();
+            let mut a = [word(0, 0, 0, 0, 0, 0, 0, 0); 256];
+            let mut b = a;
+            let mut buffers = [
+                messages::Buffer::new(Word::words_to_bytes_mut(&mut a)),
+                messages::Buffer::new(Word::words_to_bytes_mut(&mut b)),
+            ];
+            messages::with_messages(&mut buffers, &mut [], |messages| {
+                let source = source
+                    .copy_with_capabilities(
+                        AnswerId::from_wire(0),
+                        true,
+                        3,
+                        messages,
+                        Default::default(),
+                        WriterPolicy::Native,
+                    )
+                    .unwrap()
+                    .unwrap();
+                super::super::payload::tests::check_retained_return(source, messages, &data);
+            })
+            .unwrap();
+        }
+    }
     #[test]
     fn frozen_return_revalidates_policy_and_thaw_discards_proofs() {
         let mut source = PreparedReturn::from_template(

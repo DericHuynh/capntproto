@@ -14,8 +14,9 @@ pub struct LocalResult<'pool, 'id, const CAPS: usize> {
     pub(crate) count: usize,
     pub(crate) interface: u64,
     pub(crate) method: u16,
-    // Only a privately built Return with an empty capability table can carry
-    // this header certificate. Payload validation follows the writer policy.
+    // A privately built Results Return with separately retained capabilities.
+    // Its wire descriptor table is empty; count distinguishes data-only reuse
+    // from descriptor append. Payload validation follows the writer policy.
     // The frame is immutable for its entire retained lifetime.
     pub(crate) prepared_return: Option<(AnswerId, bool)>,
 }
@@ -401,7 +402,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             return Err(Error::Input(error));
         }
         let result = LocalResult {
-            prepared_return: envelope.filter(|_| capabilities.len() == 0),
+            prepared_return: Some(envelope.unwrap_or((AnswerId::from_wire(0), false))),
             capacity: self.message_capabilities,
             frame,
             capabilities: retained,

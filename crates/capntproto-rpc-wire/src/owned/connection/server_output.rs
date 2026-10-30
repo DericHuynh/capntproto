@@ -474,6 +474,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 let copied = if self.writer_policy == WriterPolicy::Native && result.count != 0 {
                     super::payload::copy_return_frame(
                         &result.frame,
+                        result.prepared_return.is_some(),
                         messages,
                         key.id(),
                         result.count,

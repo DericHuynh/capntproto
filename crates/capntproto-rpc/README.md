@@ -474,6 +474,11 @@ existing template field. Final native publication uses it to select the Caller
 destination and append descriptors without reopening the source reader. This
 needs no additional per-invocation storage; general frames keep their checked
 header decoder. Final grant and reflected-descriptor validation still runs.
+Private Results Returns retain the same header knowledge in their existing
+result marker, including capability-bearing replies. Native publication appends
+descriptors and patches the live answer ID without decoding those ancestors
+again. Data-only reuse still requires a matching answer and Finish policy;
+generic result frames keep the ordinary decoder.
 
 Native pipeline projections retain their endpoint inline, including clones and
 cached direct routes. Opaque projection hooks preserve their original wrapper.
