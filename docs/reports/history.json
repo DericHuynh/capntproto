@@ -1989,6 +1989,24 @@
     },
     {
       "attempt": 1,
+      "commit": "d98e17a12913fb6799cb88dba323968b7f1c68e4",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-30T18:52:24Z",
+      "run_id": 41110575373,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41110575373"
+    },
+    {
+      "attempt": 1,
       "commit": "2a47cc7ad579281f2e65767a639c2e2d634f59ea",
       "conclusion": "cancelled",
       "data": {
@@ -4348,6 +4366,24 @@
     },
     {
       "attempt": 1,
+      "commit": "d98e17a12913fb6799cb88dba323968b7f1c68e4",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-30T18:52:24Z",
+      "run_id": 41110575373,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41110575373"
+    },
+    {
+      "attempt": 1,
       "commit": "2a47cc7ad579281f2e65767a639c2e2d634f59ea",
       "conclusion": "cancelled",
       "data": {
@@ -6135,6 +6171,24 @@
       "date": "2026-10-30T18:17:59Z",
       "run_id": 41105725615,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/41105725615"
+    },
+    {
+      "attempt": 1,
+      "commit": "d98e17a12913fb6799cb88dba323968b7f1c68e4",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-30T18:52:24Z",
+      "run_id": 41110575373,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41110575373"
     },
     {
       "attempt": 1,
