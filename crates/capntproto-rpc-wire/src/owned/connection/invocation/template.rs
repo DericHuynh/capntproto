@@ -59,6 +59,13 @@ pub struct PreparedCall<A: capnp::message::Allocator> {
     validation: core::cell::Cell<Option<Validation>>,
 }
 #[cfg(feature = "alloc")]
+fn descriptor_pointer_offset(target: usize) -> usize {
+    use capnp::field_api::Schema;
+    let size = rpc_capnp::api::MessageTarget::SIZE;
+    let payload_data = usize::from(rpc_capnp::api::Payload::SIZE.data);
+    target + (usize::from(size.data) + usize::from(size.pointers) + payload_data) * 8 + 8
+}
+#[cfg(feature = "alloc")]
 impl<A: capnp::message::Allocator> PreparedCall<A> {
     #[inline(always)]
     pub fn from_template(
@@ -109,7 +116,7 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         interface: u64,
         method: u16,
     ) -> capnp::Result<Self> {
-        let mut addresses = (0, 0);
+        let mut addresses = (0, 0, 0);
         let message = message.select(|root| {
             let mut call = root.init_as::<rpc_capnp::message::Builder>().init_call();
             call.set_interface_id(interface);
@@ -127,11 +134,26 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
                 .into_internal_struct_reader()
                 .get_data_section_as_blob()
                 .as_ptr() as usize;
-            Ok(call.init_params().get_content())
+            let payload = call.init_params();
+            #[cfg(debug_assertions)]
+            {
+                addresses.2 = payload
+                    .reborrow_as_reader()
+                    .into_internal_struct_reader()
+                    .get_pointer_section_as_blob()
+                    .as_ptr() as usize
+                    + 8;
+            }
+            Ok(payload.get_content())
         })?;
         let offsets = match message.message().get_segments_for_output() {
             capnp::OutputSegments::SingleSegment([segment]) => {
                 let start = segment.as_ptr() as usize;
+                debug_assert_eq!(
+                    addresses.2 - start,
+                    descriptor_pointer_offset(addresses.1 - start),
+                    "private target and payload allocations are adjacent"
+                );
                 Some((addresses.0 - start, addresses.1 - start))
             }
             _ => None,
@@ -193,18 +215,13 @@ impl<A: capnp::message::Allocator> PreparedCall<A> {
         let Some(call) = self.encoded_for_sending(method)? else {
             return Ok(None);
         };
-        // Only this private builder can supply the immutable envelope. Locate
-        // its descriptor pointer once without visiting application content.
-        let root = self
-            .message()
-            .get_root_as_reader::<rpc_capnp::message::Reader>()?;
-        let rpc_capnp::message::Call(header) = root
-            .which()
-            .map_err(|_| super::super::super::Error::WrongMessage)?
-        else {
-            return Err(super::super::super::Error::WrongMessage);
-        };
-        EncodedCapabilities::new(call, header?.get_params()?)
+        // The private constructor allocates the payload immediately after the
+        // target. Ancestors cannot change through the selected content builder,
+        // and copying a template preserves their relative positions. Like the
+        // legacy builder, use that geometry instead of decoding the header.
+        let table = descriptor_pointer_offset(call.template.target);
+        debug_assert!(table + 8 <= call.segment.len());
+        Ok(Some(EncodedCapabilities { call, table }))
     }
     #[inline(always)]
     pub(super) fn check_method(
@@ -1509,6 +1526,55 @@ mod tests {
             .unwrap()
             .is_some());
         assert!(call.encoded(call.method, options).is_err());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn private_descriptor_location_survives_templates_and_payload_replacement() {
+        use crate::owned::connection::payload::PayloadSegments;
+        use capnp::message::{Builder, HeapAllocator};
+        let mut native = 0;
+        let mut fallback = 0;
+        for words in [1, 32, 256] {
+            let allocator = || HeapAllocator::new().first_segment_words(words);
+            let template = PreparedCallTemplate::new(7, 9);
+            for mut call in [
+                PreparedCall::new(Builder::new(allocator()), 7, 9).unwrap(),
+                PreparedCall::from_template(&template, allocator(), 7, 9).unwrap(),
+                PreparedCall::from_template(&template, allocator(), u64::MAX, u16::MAX).unwrap(),
+            ] {
+                for bytes in [0, 64, 65536, 8] {
+                    call.params()
+                        .initn_as::<capnp::data::Builder>(bytes)
+                        .fill(0x5a);
+                    let Some(encoded) = call.capability_layout(call.method).unwrap() else {
+                        fallback += 1;
+                        continue; // Multi-segment headers keep the ordinary codec.
+                    };
+                    native += 1;
+                    let root = call
+                        .message()
+                        .get_root_as_reader::<rpc_capnp::message::Reader>()
+                        .unwrap();
+                    let rpc_capnp::message::Call(header) = root.which().unwrap() else {
+                        panic!("Call envelope");
+                    };
+                    let checked = PayloadSegments::new(
+                        encoded.call.segment,
+                        encoded.call.second,
+                        header.unwrap().get_params().unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(encoded.table, checked.table);
+                    assert_eq!(
+                        &encoded.call.segment[encoded.table..encoded.table + 8],
+                        &[0; 8]
+                    );
+                }
+            }
+        }
+        assert!(native > 0);
+        assert!(fallback > 0);
     }
 
     #[cfg(feature = "alloc")]
