@@ -2138,6 +2138,24 @@
       "date": "2026-10-30T05:03:05Z",
       "run_id": 41006241448,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/41006241448"
+    },
+    {
+      "attempt": 1,
+      "commit": "e5e5963b3d3c2eeb61327abfac304fa29a92d84f",
+      "conclusion": "cancelled",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "coverage",
+        "note": "This workflow attempt produced no public measurement artifact.",
+        "origin": null,
+        "source_id": null,
+        "status": "unavailable",
+        "tests": null
+      },
+      "date": "2026-10-30T05:16:13Z",
+      "run_id": 41007486839,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41007486839"
     }
   ],
   "format": 1,
