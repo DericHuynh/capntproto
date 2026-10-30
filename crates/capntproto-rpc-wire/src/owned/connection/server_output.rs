@@ -177,6 +177,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
             pipelines::complete(&mut self.ledgers.answers, key, published)
                 .unwrap_or_else(|_| unreachable!("preflighted service completion"));
+            if let Some(adopter) = self.ledgers.answers.get(key).unwrap().owner.adopter {
+                self.refresh_exchange(adopter);
+            }
             Ok(())
         })();
         match checked {
@@ -296,7 +299,21 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .get(key)
             .map_err(|e| Error::Pipeline(pipelines::Error::Answer(e)))?
             .owner;
-        let result = owner.value.as_ref().ok_or(Error::PendingResponse)?;
+        // Adoption acknowledges the redirected source immediately. Its local
+        // producer and result remain live for the adopting question.
+        let pending = Err(capnp::ErrorKind::Failed);
+        let result = owner
+            .value
+            .as_ref()
+            .or_else(|| {
+                self.ledgers
+                    .answers
+                    .execution_state(key)
+                    .ok()
+                    .filter(|state| state.adopted)
+                    .map(|_| &pending)
+            })
+            .ok_or(Error::PendingResponse)?;
         let mut output = queue
             .reserve_with(resources)
             .map_err(|e| Error::Input(super::super::Error::Storage(e)))?;
@@ -317,11 +334,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             .ok_or(Error::Input(super::super::Error::Capacity))?;
         let frame = if cancelled || redirected || result.is_err() {
             Frame::build(messages, minimum, options, |builder| {
-                if cancelled {
-                    return calls::cancelled(builder, key.id());
-                }
                 if redirected {
                     return calls::results_sent_elsewhere(builder, key.id());
+                }
+                if cancelled {
+                    return calls::cancelled(builder, key.id());
                 }
                 let kind = *result.as_ref().err().expect("exception");
                 calls::exception(builder, key.id(), kind, "")?;

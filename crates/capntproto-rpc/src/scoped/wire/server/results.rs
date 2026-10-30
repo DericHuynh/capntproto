@@ -15,9 +15,12 @@ struct State {
     network: RefCell<Option<Box<NetworkState>>>,
     transferred: Cell<bool>,
     wire_returned: Cell<bool>,
+    hook_live: Cell<bool>,
+    cancellation_guards: Cell<usize>,
     context: RefCell<Option<Rc<dyn std::any::Any>>>,
     method: Cell<Option<DynamicCall>>,
     payload: std::cell::OnceCell<CompletedPayload>,
+    pending_payload: Cell<Option<CompletedPayload>>,
     pipeline: RefCell<Option<Rc<dyn PipelineHook>>>,
     completion: RefCell<Completion>,
     wake: RefCell<Waiters>,
@@ -32,14 +35,15 @@ struct State {
 enum Completion {
     #[default]
     Running,
-    AwaitingPayload,
+    AwaitingPayload(capnp::Result<()>),
+    AwaitingCancellation,
     Ready(capnp::Result<()>),
 }
 impl Completion {
     fn poll(&self) -> Poll<capnp::Result<()>> {
         match self {
             Self::Ready(result) => Poll::Ready(result.clone()),
-            Self::Running | Self::AwaitingPayload => Poll::Pending,
+            Self::Running | Self::AwaitingPayload(_) | Self::AwaitingCancellation => Poll::Pending,
         }
     }
 }
@@ -220,9 +224,26 @@ impl State {
         self.complete_with_waker(result, None);
     }
     fn complete_with_waker(&self, result: capnp::Result<()>, current: Option<&Waker>) {
-        let completion = match result {
-            Ok(()) if self.payload.get().is_none() => Completion::AwaitingPayload,
-            result => Completion::Ready(result),
+        let payload = self.pending_payload.take();
+        let completion = if self.hook_live.get()
+            || (result.is_ok() && payload.is_none() && self.payload.get().is_none())
+        {
+            self.pending_payload.set(payload);
+            Completion::AwaitingPayload(result)
+        } else {
+            if result.is_ok() {
+                if let Some(payload) = payload {
+                    assert!(
+                        self.payload.set(payload).is_ok(),
+                        "result payload already published"
+                    );
+                }
+            } else {
+                // No reader can observe the unpublished builder. Drop its
+                // capabilities before making the exception observable.
+                drop(payload);
+            }
+            Completion::Ready(result)
         };
         let ready = matches!(completion, Completion::Ready(_));
         let previous = self.completion.replace(completion);
@@ -232,21 +253,55 @@ impl State {
         }
     }
     fn publish_payload(&self, payload: CompletedPayload) {
+        if matches!(*self.completion.borrow(), Completion::Ready(Err(_))) {
+            drop(payload);
+            return;
+        }
         assert!(
-            self.payload.set(payload).is_ok(),
-            "result payload already published"
+            self.pending_payload.replace(Some(payload)).is_none(),
+            "result payload already returned"
         );
-        let ready = {
-            let mut completion = self.completion.borrow_mut();
-            if matches!(*completion, Completion::AwaitingPayload) {
-                *completion = Completion::Ready(Ok(()));
-                true
-            } else {
-                false
+        let result = match &*self.completion.borrow() {
+            Completion::AwaitingPayload(result) => Some(result.clone()),
+            Completion::AwaitingCancellation if self.cancellation_guards.get() == 0 => {
+                Some(Err(canceled_execution()))
             }
+            _ => None,
         };
-        if ready {
-            self.notify(None);
+        if let Some(result) = result {
+            self.complete(result);
+        }
+    }
+    fn cancel(&self) {
+        if self.hook_live.get() || self.cancellation_guards.get() != 0 {
+            *self.completion.borrow_mut() = Completion::AwaitingCancellation;
+        } else {
+            self.complete(Err(canceled_execution()));
+        }
+    }
+}
+
+fn canceled_execution() -> Error {
+    Error::disconnected("server execution canceled".into())
+}
+
+impl capnp::private::capability::CancellationContext for State {
+    fn retain(&self) {
+        self.cancellation_guards.set(
+            self.cancellation_guards
+                .get()
+                .checked_add(1)
+                .expect("cancellation guard overflow"),
+        );
+    }
+    fn release(&self) {
+        self.cancellation_guards
+            .set(self.cancellation_guards.get() - 1);
+        if self.cancellation_guards.get() == 0
+            && !self.hook_live.get()
+            && matches!(*self.completion.borrow(), Completion::AwaitingCancellation)
+        {
+            self.complete(Err(canceled_execution()));
         }
     }
 }
@@ -309,6 +364,7 @@ impl Cache {
         drop(state.network.get_mut().take());
         drop(state.context.get_mut().take());
         drop(state.payload.take());
+        drop(state.pending_payload.take());
         drop(state.pipeline.get_mut().take());
         drop(std::mem::take(state.completion.get_mut()));
         state.wake.get_mut().clear();
@@ -317,6 +373,8 @@ impl Cache {
         drop(state.trace.get_mut().take());
         state.transferred.set(false);
         state.wire_returned.set(false);
+        debug_assert!(!state.hook_live.get());
+        debug_assert_eq!(state.cancellation_guards.get(), 0);
         state.method.set(None);
         state.trace_prepared.set(false);
         state.revision.set(0);
@@ -536,10 +594,13 @@ impl Results {
             native_origin: RefCell::new(Weak::new()),
             transferred: Cell::new(false),
             wire_returned: Cell::new(false),
+            hook_live: Cell::new(false),
+            cancellation_guards: Cell::new(0),
             network: RefCell::new(None),
             context: RefCell::new(None),
             method: Cell::new(None),
             payload: std::cell::OnceCell::new(),
+            pending_payload: Cell::new(None),
             pipeline: RefCell::new(None),
             completion: RefCell::new(Completion::Running),
             wake: RefCell::new(Waiters::default()),
@@ -552,6 +613,9 @@ impl Results {
         let charge = self.0.charge.borrow_mut().take();
         drop(charge);
     }
+    pub(in crate::scoped::wire) fn wire_returned(&self) -> bool {
+        self.0.wire_returned.get()
+    }
     pub(in crate::scoped::wire) fn prepare_trace(&self, policy: &coordinator::policy::Policy) {
         let Some(error) = self.failure() else {
             return;
@@ -561,8 +625,7 @@ impl Results {
             *self.0.trace.borrow_mut() = trace;
         }
     }
-    /// Success needs both service completion and returned ResultsHook ownership.
-    /// Exceptions are ready even if application code retains an unused builder.
+    /// Completion needs both service completion and returned ResultsHook ownership.
     pub fn poll_completed(&self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>> {
         // This local state cannot change between inspection and registration
         // without running application code. Avoid allocating a waiter for an
@@ -699,8 +762,7 @@ impl Results {
     }
 
     pub(in crate::scoped::wire) fn cancel(&self) {
-        self.0
-            .complete(Err(Error::disconnected("server execution canceled".into())));
+        self.0.cancel();
     }
     pub(crate) fn fail(&self, error: Error) {
         self.0.complete(Err(error));
@@ -813,7 +875,8 @@ impl Future for Execution {
         let Some(operation) = self.operation.as_mut() else {
             return Poll::Ready(match &*self.results.0.completion.borrow() {
                 Completion::Ready(result) => result.clone(),
-                Completion::AwaitingPayload => Ok(()),
+                Completion::AwaitingPayload(result) => result.clone(),
+                Completion::AwaitingCancellation => Err(canceled_execution()),
                 Completion::Running => unreachable!("completed execution"),
             });
         };
@@ -834,9 +897,7 @@ impl Drop for Execution {
     fn drop(&mut self) {
         if let Some(operation) = self.operation.take() {
             drop(operation);
-            self.results
-                .0
-                .complete(Err(Error::disconnected("server execution canceled".into())));
+            self.results.0.cancel();
         }
     }
 }
@@ -866,6 +927,7 @@ impl Drop for Hook {
                 None => Payload::owned(Default::default(), caps),
             })),
         };
+        self.results.0.hook_live.set(false);
         self.results.0.publish_payload(payload);
     }
 }
@@ -880,10 +942,11 @@ impl ResultsHook for Hook {
         crate::admission::retain_context(&mut self.results.0.context.borrow_mut(), context);
     }
     fn cancellation_guard(&self) -> Option<Box<dyn std::any::Any>> {
-        Some(Box::new(self.results.clone()))
+        self.cancellation_context()
+            .map(|guard| Box::new(guard) as Box<dyn std::any::Any>)
     }
     fn cancellation_context(&self) -> Option<capnp::private::capability::CancellationGuard> {
-        Some(capnp::private::capability::CancellationGuard::Shared(
+        Some(capnp::private::capability::CancellationGuard::tracked(
             self.results.0.clone(),
         ))
     }
@@ -1188,6 +1251,7 @@ impl Prepared {
             return Err(Error::failed("server results already started".into()));
         }
         results.0.method.set(Some(self.method));
+        results.0.hook_live.set(true);
         let hook = Hook {
             results: results.clone(),
             message: None,
@@ -1290,7 +1354,7 @@ impl<'id> ClientHooks<'id> {
             Completion::Running => {
                 return Err(Error::overloaded("server results are pending".into()))
             }
-            Completion::AwaitingPayload => {
+            Completion::AwaitingPayload(_) | Completion::AwaitingCancellation => {
                 return Err(Error::overloaded("server still owns its results".into()))
             }
             Completion::Ready(Err(error)) => return Ok(Err(error.kind)),

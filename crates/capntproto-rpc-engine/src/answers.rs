@@ -44,6 +44,15 @@ pub enum Error {
     NotCallable,
     FinishRequired,
 }
+
+/// One generation's execution state, including work retained after its Return.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExecutionState {
+    pub cancellation_requested: bool,
+    pub redirected: bool,
+    pub adopted: bool,
+    pub returned: bool,
+}
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "answer ledger: {self:?}")
@@ -615,6 +624,16 @@ impl<'id, 'storage, T> Answers<'id, 'storage, T> {
     pub fn cancellation_requested(&self, key: Key<'id>) -> Result<bool, Error> {
         let r = self.record(key)?;
         Ok(r.cancellation_requested())
+    }
+    pub fn execution_state(&self, key: Key<'id>) -> Result<ExecutionState, Error> {
+        let r = self.record(key)?;
+        Ok(ExecutionState {
+            cancellation_requested: r.cancellation_requested()
+                || (r.redirect == Redirect::Adopted && r.finished && r.pipelines == 0),
+            redirected: r.redirect != Redirect::None,
+            adopted: r.redirect == Redirect::Adopted,
+            returned: matches!(r.state, State::Returned),
+        })
     }
     pub fn release_pipeline(&mut self, lease: Pipeline<'id>) -> Option<T> {
         let index = lease.key.index;

@@ -763,9 +763,11 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 .results
                 .redirect()
                 .is_some_and(|redirect| redirect.sent.get());
-        if transferred && driver.ledgers().answers.get(key).is_err() {
+        let state = driver.ledgers().answers.execution_state(key);
+        if (transferred || entry.results.wire_returned()) && state.is_err() {
             return Poll::Ready(Ok(Progress::Replied));
         }
+        let state = state.map_err(wire_error)?;
         if entry.results.native_tail().is_some_and(|tail| tail.sent())
             && matches!(entry.stage, Stage::Collect | Stage::Publish)
         {
@@ -775,25 +777,23 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
         if matches!(
             entry.stage,
             Stage::Prepare | Stage::Execute(_) | Stage::Transfer(_) | Stage::Collect
-        ) && driver
-            .ledgers()
-            .answers
-            .cancellation_requested(key)
-            .map_err(wire_error)?
+        ) && state.cancellation_requested
         {
             entry.stage = Stage::Collect; // Drops interest, retaining protected execution.
             if !entry.results.transfer_ready() {
                 entry.results.cancel();
             }
         }
+        if state.adopted && !entry.results.wire_returned() {
+            drop(publish(driver, messages, key, minimum.max(128))?);
+            entry.results.returned();
+            if driver.ledgers().answers.get(key).is_err() {
+                return Poll::Ready(Ok(Progress::Replied));
+            }
+        }
         match &mut entry.stage {
             Stage::Prepare => {
-                if hooks.inbox.native_tail
-                    && !driver
-                        .prepare_answer_return(key)
-                        .map_err(wire_error)?
-                        .is_redirected()
-                {
+                if hooks.inbox.native_tail && !state.redirected {
                     entry.results.native_origin(Rc::downgrade(&hooks.inbox));
                 }
                 let handoff = entry.request().allows_third_party_tail_call();
@@ -919,6 +919,7 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 }
                 if *remaining_budget != 0
                     && !canceled_transfer
+                    && !entry.results.wire_returned()
                     && !entry.request().method().only_promise_pipeline
                 {
                     if let Some(payload) = entry.results.plain_payload() {
@@ -952,11 +953,14 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                         // AwaitFromThirdParty/ResultsSentElsewhere. Its final
                         // local payload feeds handoff observers, not another
                         // Return reservation on the introducer connection.
-                        (redirect.is_none() && !entry.results.transfer_ready()).then_some(key),
+                        (redirect.is_none()
+                            && !entry.results.transfer_ready()
+                            && !entry.results.wire_returned())
+                        .then_some(key),
                         import,
                     )?
                 };
-                let completed = if redirect.is_some() {
+                let completed = if redirect.is_some() || entry.results.wire_returned() {
                     driver.complete_network_answer(entry.request(), output, messages)
                 } else if entry.results.transfer_ready() {
                     driver.complete_transferred_answer(entry.request(), output, messages)
@@ -972,6 +976,9 @@ impl<'p, 'id, I, const C: usize, const H: usize> Worker<'p, 'id, I, C, H> {
                 entry.stage = Stage::Publish;
             }
             Stage::Publish => {
+                if entry.results.wire_returned() {
+                    return Poll::Ready(Ok(Progress::Replied));
+                }
                 if let Some(tail) = entry.results.native_tail().filter(|tail| tail.remote()) {
                     if !tail.sent() {
                         return Poll::Pending;

@@ -1773,12 +1773,12 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
         return Ok(completed.then_some(Progress::Completed));
     };
     let results = results.as_ref().expect("local result context");
-    if completed
+    let canceled = completed
         || invocations
             .poll_local_canceled(driver, local.call.task(), cx)
             .map_err(wire_error)?
-            .is_ready()
-    {
+            .is_ready();
+    if canceled {
         local.stage = Stage::Collect;
         results.cancel();
     }
@@ -1819,11 +1819,19 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
             local.stage = Stage::Collect;
         }
         Stage::Collect => {
-            if results.poll_completed(cx).is_pending() || results.projections_pending(hooks, cx) {
+            if !canceled
+                && (results.poll_completed(cx).is_pending()
+                    || results.projections_pending(hooks, cx))
+            {
                 return Ok(None);
             }
-            let output =
-                hooks.collect_server_results(results, driver, messages, options, import)?;
+            // A local caller owes no wire Return. Retire its invocation now;
+            // protected application execution retains its own result context.
+            let output = if canceled {
+                Err(capnp::ErrorKind::Disconnected)
+            } else {
+                hooks.collect_server_results(results, driver, messages, options, import)?
+            };
             let local = entry.local.take().expect("running local call");
             if let Err(rejected) = invocations.complete_local(driver, messages, local.call, output)
             {

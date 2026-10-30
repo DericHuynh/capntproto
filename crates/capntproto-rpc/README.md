@@ -379,6 +379,7 @@ The legacy-path regression matrix now covers both drivers:
 | Bootstrap and obsolete named exports | `bootstrap_factory` |
 | Call/Return, scalar and capability payloads | `scoped_vat`, `composed_wire_boundary` |
 | Exception details, cancellation, protected execution | `cancellation`, `static_cancellation`, `exception_metadata` |
+| Ignored results, shortening and server revocation | `ignore_result`, `server_hooks` (local, legacy and portable) |
 | Finish, Release, ID reuse and high-ID no-Return hints | `call_hints`, `tail_transfer` |
 | Multiple parameter grants, duplicate IDs, refunds and retained peer ownership | `call_hints`; bounded wire tests also reclaim every request buffer before Return |
 | Native tail transfer, dependent calls, local resolution | `tail_transfer` (both drivers replay the same traces) |
@@ -393,7 +394,9 @@ The legacy-path regression matrix now covers both drivers:
 
 The bounded driver keeps caller-owned storage and explicit capacity errors;
 these are intentional differences from the allocating legacy driver. The hosted
-message bridge still copies frames. Published generic calls retain their export
+message bridge adopts shareable input frames and publishes retained output
+segments directly; fixed buffers and unshareable owners use copying fallbacks.
+Published generic calls retain their export
 IDs and Return policy independently of those frames, like legacy. Multiple grants
 use the configured inline capacity or bounded growth; the output queue owns the
 serialized request until physical output completes. Private request builders whose

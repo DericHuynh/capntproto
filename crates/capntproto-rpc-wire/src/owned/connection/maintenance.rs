@@ -446,8 +446,18 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let output = queue
             .reserve()
             .map_err(|error| Error::Input(crate::owned::Error::Storage(error)))?;
+        let redirected = self
+            .ledgers
+            .answers
+            .execution_state(key)
+            .expect("queued cancellation")
+            .redirected;
         let frame = Frame::build(messages, minimum, options, |builder| {
-            calls::cancelled(builder, key.id())
+            if redirected {
+                calls::results_sent_elsewhere(builder, key.id())
+            } else {
+                calls::cancelled(builder, key.id())
+            }
         })
         .map_err(Error::Input)?;
         let retired = answer::send(key, &mut self.ledgers.answers, messages, frame, output)

@@ -650,23 +650,33 @@ fn finish_cancels_interest_but_preserves_protected_execution() {
                     break;
                 }
             }
-            assert!(worker.is_empty());
             assert_eq!(entered.get(), !early);
+            if !early && !cancellable {
+                assert!(!worker.is_empty());
+                assert!(queue.is_empty());
+                assert!(sender.send(()).is_ok());
+                let task = executor.0.borrow_mut().pop().expect("protected execution");
+                assert!(task.now_or_never().unwrap().is_ok());
+                assert!(completed.get());
+                for _ in 0..16 {
+                    if matches!(
+                        tick(&mut worker, &mut hooks, &mut driver, messages, &mut queue),
+                        Poll::Ready(Ok(Progress::Replied))
+                    ) {
+                        break;
+                    }
+                }
+            } else {
+                assert!(executor.0.borrow().is_empty());
+                assert!(!completed.get());
+            }
+            assert!(worker.is_empty());
             check(&drain(&mut queue, messages), |r| {
                 assert!(matches!(
                     r.which().unwrap(),
                     rpc_capnp::return_::Canceled(())
                 ))
             });
-            if !early && !cancellable {
-                assert!(sender.send(()).is_ok());
-                let task = executor.0.borrow_mut().pop().expect("protected execution");
-                assert!(task.now_or_never().unwrap().is_ok());
-                assert!(completed.get());
-            } else {
-                assert!(executor.0.borrow().is_empty());
-                assert!(!completed.get());
-            }
             close(worker, hooks, driver, messages, &mut queue);
         });
     }

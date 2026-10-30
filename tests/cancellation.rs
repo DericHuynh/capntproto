@@ -1,12 +1,10 @@
 mod support;
 use capnp::traits::HasTypeId;
-use capnp_rpc::{
-    rpc_capnp::{message, return_},
-    RpcSystem,
-};
+use capnp_rpc::rpc_capnp::{message, return_};
 use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
 use std::{cell::RefCell, rc::Rc, time::Duration};
+use support::driver::System as RpcSystem;
 use support::{Endpoint, Hub};
 
 #[derive(Default)]
@@ -114,7 +112,9 @@ fn finish(peer: &mut Endpoint, id: u32) {
         f.set_require_early_cancellation_workaround(false);
     });
 }
-async fn fixture() -> (
+async fn fixture(
+    portable: bool,
+) -> (
     Rc<RefCell<Control>>,
     oneshot::Sender<()>,
     Endpoint,
@@ -128,7 +128,9 @@ async fn fixture() -> (
     let network = Hub::network(&hub, 1);
     assert_eq!(hub.borrow().provision_count(), 0);
     let service: harness::Client = capnp_rpc::new_client(Service(control.clone()));
-    let task = tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(service.client)));
+    let task = tokio::task::spawn_local(
+        RpcSystem::new(portable, Box::new(network), Some(service.client)).run(),
+    );
     let mut peer = hub.borrow_mut().connect(2, 1);
     peer.send(|m| m.init_bootstrap().set_question_id(0));
     let reply = peer.recv().await;
@@ -161,19 +163,21 @@ async fn fixture() -> (
 async fn canceled_call_returns_once_and_releases_answer_id() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let (control, _gate, mut peer, export, task) = fixture().await;
-            pending(&mut peer, 1, export, false, false);
-            settle().await;
-            assert_eq!(control.borrow().started, 1);
-            finish(&mut peer, 1);
-            settle().await;
-            assert_eq!(control.borrow().dropped, 1);
-            assert_eq!(receive_return(&mut peer).await, (1, "canceled"));
-            // Reuse the ID only after Finish AND Return, as specified.
-            peer.send(|m| m.init_bootstrap().set_question_id(1));
-            assert_eq!(receive_return(&mut peer).await, (1, "results"));
-            task.abort();
-            let _ = task.await;
+            for portable in [false, true] {
+                let (control, _gate, mut peer, export, task) = fixture(portable).await;
+                pending(&mut peer, 1, export, false, false);
+                settle().await;
+                assert_eq!(control.borrow().started, 1);
+                finish(&mut peer, 1);
+                settle().await;
+                assert_eq!(control.borrow().dropped, 1);
+                assert_eq!(receive_return(&mut peer).await, (1, "canceled"));
+                // Reuse the ID only after Finish AND Return, as specified.
+                peer.send(|m| m.init_bootstrap().set_question_id(1));
+                assert_eq!(receive_return(&mut peer).await, (1, "results"));
+                task.abort();
+                let _ = task.await;
+            }
         })
         .await;
 }
@@ -182,19 +186,21 @@ async fn canceled_call_returns_once_and_releases_answer_id() {
 async fn legacy_early_finish_allows_dispatch_before_cancellation() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let (control, _gate, mut peer, export, task) = fixture().await;
-            pending(&mut peer, 1, export, false, false);
-            peer.send(|m| {
-                let mut f = m.init_finish();
-                f.set_question_id(1);
-                f.set_require_early_cancellation_workaround(true);
-            });
-            settle().await;
-            assert_eq!(control.borrow().started, 1);
-            assert_eq!(control.borrow().dropped, 1);
-            assert_eq!(receive_return(&mut peer).await, (1, "canceled"));
-            task.abort();
-            let _ = task.await;
+            for portable in [false, true] {
+                let (control, _gate, mut peer, export, task) = fixture(portable).await;
+                pending(&mut peer, 1, export, false, false);
+                peer.send(|m| {
+                    let mut f = m.init_finish();
+                    f.set_question_id(1);
+                    f.set_require_early_cancellation_workaround(true);
+                });
+                settle().await;
+                assert_eq!(control.borrow().started, 1);
+                assert_eq!(control.borrow().dropped, 1);
+                assert_eq!(receive_return(&mut peer).await, (1, "canceled"));
+                task.abort();
+                let _ = task.await;
+            }
         })
         .await;
 }
@@ -203,27 +209,29 @@ async fn legacy_early_finish_allows_dispatch_before_cancellation() {
 async fn retained_context_delays_cancellation_return_and_survives_disconnect() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for disconnect in [false, true] {
-                let (control, _gate, mut peer, export, mut task) = fixture().await;
-                pending(&mut peer, 1, export, true, false);
-                settle().await;
-                finish(&mut peer, 1);
-                settle().await;
-                assert_eq!(control.borrow().dropped, 1);
-                assert!(tokio::time::timeout(Duration::from_millis(2), peer.recv())
-                    .await
-                    .is_err());
-                if disconnect {
-                    task.abort();
-                    let _ = (&mut task).await;
-                }
-                let held = control.borrow_mut().held.take();
-                drop(held);
-                settle().await;
-                if !disconnect {
-                    assert_eq!(receive_return(&mut peer).await, (1, "canceled"));
-                    task.abort();
-                    let _ = task.await;
+            for portable in [false, true] {
+                for disconnect in [false, true] {
+                    let (control, _gate, mut peer, export, mut task) = fixture(portable).await;
+                    pending(&mut peer, 1, export, true, false);
+                    settle().await;
+                    finish(&mut peer, 1);
+                    settle().await;
+                    assert_eq!(control.borrow().dropped, 1);
+                    assert!(tokio::time::timeout(Duration::from_millis(2), peer.recv())
+                        .await
+                        .is_err());
+                    if disconnect {
+                        task.abort();
+                        let _ = (&mut task).await;
+                    }
+                    let held = control.borrow_mut().held.take();
+                    drop(held);
+                    settle().await;
+                    if !disconnect {
+                        assert_eq!(receive_return(&mut peer).await, (1, "canceled"));
+                        task.abort();
+                        let _ = task.await;
+                    }
                 }
             }
         })
@@ -248,26 +256,28 @@ fn pipelined_echo(peer: &mut Endpoint, question: u32, parent: u32) {
 async fn child_pipeline_keeps_parent_running_after_finish() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let (control, gate, mut peer, export, task) = fixture().await;
-            pending(&mut peer, 1, export, false, false);
-            settle().await;
-            pipelined_echo(&mut peer, 2, 1);
-            settle().await;
-            finish(&mut peer, 1);
-            settle().await;
-            assert_eq!(control.borrow().dropped, 0);
-            gate.send(()).unwrap();
-            settle().await;
-            let mut returns = vec![
-                receive_return(&mut peer).await,
-                receive_return(&mut peer).await,
-            ];
-            returns.sort();
-            assert_eq!(returns, vec![(1, "canceled"), (2, "results")]);
-            assert_eq!(control.borrow().completed, 1);
-            assert_eq!(control.borrow().echoes, 1);
-            task.abort();
-            let _ = task.await;
+            for portable in [false, true] {
+                let (control, gate, mut peer, export, task) = fixture(portable).await;
+                pending(&mut peer, 1, export, false, false);
+                settle().await;
+                pipelined_echo(&mut peer, 2, 1);
+                settle().await;
+                finish(&mut peer, 1);
+                settle().await;
+                assert_eq!(control.borrow().dropped, 0);
+                gate.send(()).unwrap();
+                settle().await;
+                let mut returns = vec![
+                    receive_return(&mut peer).await,
+                    receive_return(&mut peer).await,
+                ];
+                returns.sort();
+                assert_eq!(returns, vec![(1, "canceled"), (2, "results")]);
+                assert_eq!(control.borrow().completed, 1);
+                assert_eq!(control.borrow().echoes, 1);
+                task.abort();
+                let _ = task.await;
+            }
         })
         .await;
 }
@@ -275,22 +285,24 @@ async fn child_pipeline_keeps_parent_running_after_finish() {
 async fn redirected_cancellation_and_completion_return_elsewhere_once() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for complete in [false, true] {
-                let (control, gate, mut peer, export, task) = fixture().await;
-                pending(&mut peer, 1, export, false, true);
-                settle().await;
-                if complete {
-                    gate.send(()).unwrap();
+            for portable in [false, true] {
+                for complete in [false, true] {
+                    let (control, gate, mut peer, export, task) = fixture(portable).await;
+                    pending(&mut peer, 1, export, false, true);
                     settle().await;
+                    if complete {
+                        gate.send(()).unwrap();
+                        settle().await;
+                    }
+                    finish(&mut peer, 1);
+                    settle().await;
+                    assert_eq!(receive_return(&mut peer).await, (1, "elsewhere"));
+                    assert_eq!(control.borrow().completed, u32::from(complete));
+                    peer.send(|m| m.init_bootstrap().set_question_id(1));
+                    assert_eq!(receive_return(&mut peer).await, (1, "results"));
+                    task.abort();
+                    let _ = task.await;
                 }
-                finish(&mut peer, 1);
-                settle().await;
-                assert_eq!(receive_return(&mut peer).await, (1, "elsewhere"));
-                assert_eq!(control.borrow().completed, u32::from(complete));
-                peer.send(|m| m.init_bootstrap().set_question_id(1));
-                assert_eq!(receive_return(&mut peer).await, (1, "results"));
-                task.abort();
-                let _ = task.await;
             }
         })
         .await;
@@ -298,7 +310,9 @@ async fn redirected_cancellation_and_completion_return_elsewhere_once() {
 
 // A raw peer asks us to execute its tail call, then redirects our outstanding
 // call to that result. No second RPC engine can accidentally repair ownership.
-async fn adoption_fixture() -> (
+async fn adoption_fixture(
+    portable: bool,
+) -> (
     Rc<RefCell<Control>>,
     oneshot::Sender<()>,
     Endpoint,
@@ -312,11 +326,11 @@ async fn adoption_fixture() -> (
     let hub = Rc::new(RefCell::new(Hub::default()));
     let network = Hub::network(&hub, 1);
     let service: harness::Client = capnp_rpc::new_client(Service(control.clone()));
-    let mut system = RpcSystem::new(Box::new(network), Some(service.client));
+    let mut system = RpcSystem::new(portable, Box::new(network), Some(service.client));
     let mut peer = hub.borrow_mut().connect(2, 1);
     let remote: harness::Client = system.bootstrap(2);
     let request = remote.pending_request().send();
-    let task = tokio::task::spawn_local(system);
+    let task = tokio::task::spawn_local(system.run());
     // Collect the outgoing pipelined call ID. Its bootstrap can remain pending.
     let outgoing_id = loop {
         let input = peer.recv().await;
@@ -370,36 +384,39 @@ fn adopt(peer: &mut Endpoint, outgoing_id: u32) {
 async fn adopted_redirected_call_survives_finish_until_completion() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let (control, gate, mut peer, outgoing_id, request, task) = adoption_fixture().await;
-            adopt(&mut peer, outgoing_id);
-            settle().await;
-            finish(&mut peer, 1);
-            settle().await;
-            assert_eq!(
-                control.borrow().dropped,
-                0,
-                "Finish canceled an adopted task"
-            );
-            gate.send(()).unwrap();
-            let response = tokio::time::timeout(Duration::from_secs(1), request.promise)
-                .await
-                .unwrap()
-                .unwrap();
-            let cap = response.get().unwrap().get_cap().unwrap();
-            assert_eq!(
-                cap.echo_request()
-                    .send()
-                    .promise
+            for portable in [false, true] {
+                let (control, gate, mut peer, outgoing_id, request, task) =
+                    adoption_fixture(portable).await;
+                adopt(&mut peer, outgoing_id);
+                settle().await;
+                finish(&mut peer, 1);
+                settle().await;
+                assert_eq!(
+                    control.borrow().dropped,
+                    0,
+                    "Finish canceled an adopted task"
+                );
+                gate.send(()).unwrap();
+                let response = tokio::time::timeout(Duration::from_secs(1), request.promise)
                     .await
                     .unwrap()
-                    .get()
-                    .unwrap()
-                    .get_value(),
-                7
-            );
-            assert_eq!(control.borrow().completed, 1);
-            task.abort();
-            let _ = task.await;
+                    .unwrap();
+                let cap = response.get().unwrap().get_cap().unwrap();
+                assert_eq!(
+                    cap.echo_request()
+                        .send()
+                        .promise
+                        .await
+                        .unwrap()
+                        .get()
+                        .unwrap()
+                        .get_value(),
+                    7
+                );
+                assert_eq!(control.borrow().completed, 1);
+                task.abort();
+                let _ = task.await;
+            }
         })
         .await;
 }
@@ -424,9 +441,10 @@ async fn replay_tlc_cancellation_traces() {
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
     tokio::task::LocalSet::new().run_until(async {
-        tokio::time::timeout(Duration::from_secs(60),async {
-            for trace in traces {
-                let (control,gate,mut peer,export,mut task) = fixture().await;
+            for portable in [false, true] {
+        let replay = async {
+            for trace in &traces {
+                let (control,gate,mut peer,export,mut task) = fixture(portable).await;
                 let mut gate = Some(gate);
                 pending(&mut peer,1,export,trace.hold,trace.redirect); settle().await;
                 let mut parent_returns = vec![];
@@ -482,8 +500,11 @@ async fn replay_tlc_cancellation_traces() {
                 if connected { task.abort(); let _ = task.await; }
                 let held=control.borrow_mut().held.take(); drop(held);
             }
-        }).await.unwrap();
-    }).await;
+        };
+        tokio::time::timeout(Duration::from_secs(60), replay).await.unwrap();
+
+            }
+        }).await;
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -502,95 +523,98 @@ async fn replay_tlc_tail_adoption_traces() {
     assert!(!traces.is_empty());
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(60), async {
-                for trace in traces {
-                    let (control, gate, mut peer, outgoing_id, request, task) =
-                        adoption_fixture().await;
-                    let mut request = Some(request);
-                    let mut gate = Some(gate);
-                    let mut returns = 0;
-                    for step in &trace {
-                        match step.action.as_str() {
-                            "adopt" => adopt(&mut peer, outgoing_id),
-                            "finish" => finish(&mut peer, 1),
-                            "cancel" => drop(request.take()),
-                            "complete" => {
-                                assert!(gate.take().unwrap().send(()).is_ok(), "{trace:?}");
-                            }
-                            "use" => {
-                                let response = request.take().unwrap().promise.await.unwrap();
-                                let cap = response.get().unwrap().get_cap().unwrap();
-                                assert_eq!(
-                                    cap.echo_request()
-                                        .send()
-                                        .promise
-                                        .await
-                                        .unwrap()
-                                        .get()
-                                        .unwrap()
-                                        .get_value(),
-                                    7
-                                );
-                            }
-                            other => panic!("unknown action {other}"),
-                        }
-                        settle().await;
-                        loop {
-                            let Some(input) = peer.receive_incoming_message().now_or_never() else {
-                                break;
-                            };
-                            let input = input.unwrap().unwrap();
-                            match input
-                                .get_body()
-                                .unwrap()
-                                .get_as::<message::Reader>()
-                                .unwrap()
-                                .which()
-                                .unwrap()
-                            {
-                                message::Return(ret) => {
-                                    let ret = ret.unwrap();
-                                    assert_eq!(ret.get_answer_id(), 1, "{trace:?}");
-                                    assert!(
-                                        matches!(
-                                            ret.which().unwrap(),
-                                            return_::ResultsSentElsewhere(())
-                                        ),
-                                        "{trace:?}"
-                                    );
-                                    returns += 1;
+            for portable in [false, true] {
+                tokio::time::timeout(Duration::from_secs(60), async {
+                    for trace in &traces {
+                        let (control, gate, mut peer, outgoing_id, request, task) =
+                            adoption_fixture(portable).await;
+                        let mut request = Some(request);
+                        let mut gate = Some(gate);
+                        let mut returns = 0;
+                        for step in trace {
+                            match step.action.as_str() {
+                                "adopt" => adopt(&mut peer, outgoing_id),
+                                "finish" => finish(&mut peer, 1),
+                                "cancel" => drop(request.take()),
+                                "complete" => {
+                                    assert!(gate.take().unwrap().send(()).is_ok(), "{trace:?}");
                                 }
-                                message::Abort(_) => panic!("connection aborted in {trace:?}"),
-                                _ => {} // Outgoing question Finish and capability Release.
+                                "use" => {
+                                    let response = request.take().unwrap().promise.await.unwrap();
+                                    let cap = response.get().unwrap().get_cap().unwrap();
+                                    assert_eq!(
+                                        cap.echo_request()
+                                            .send()
+                                            .promise
+                                            .await
+                                            .unwrap()
+                                            .get()
+                                            .unwrap()
+                                            .get_value(),
+                                        7
+                                    );
+                                }
+                                other => panic!("unknown action {other}"),
                             }
+                            settle().await;
+                            loop {
+                                let Some(input) = peer.receive_incoming_message().now_or_never()
+                                else {
+                                    break;
+                                };
+                                let input = input.unwrap().unwrap();
+                                match input
+                                    .get_body()
+                                    .unwrap()
+                                    .get_as::<message::Reader>()
+                                    .unwrap()
+                                    .which()
+                                    .unwrap()
+                                {
+                                    message::Return(ret) => {
+                                        let ret = ret.unwrap();
+                                        assert_eq!(ret.get_answer_id(), 1, "{trace:?}");
+                                        assert!(
+                                            matches!(
+                                                ret.which().unwrap(),
+                                                return_::ResultsSentElsewhere(())
+                                            ),
+                                            "{trace:?}"
+                                        );
+                                        returns += 1;
+                                    }
+                                    message::Abort(_) => panic!("connection aborted in {trace:?}"),
+                                    _ => {} // Outgoing question Finish and capability Release.
+                                }
+                            }
+                            assert_eq!(
+                                returns, step.state[5],
+                                "Return count at {step:?} in {trace:?}"
+                            );
+                            let c = control.borrow();
+                            assert_eq!(c.started, 1);
+                            assert_eq!(
+                                c.completed, step.state[3],
+                                "completion at {step:?} in {trace:?}"
+                            );
+                            assert_eq!(
+                                c.dropped,
+                                1 - step.state[4],
+                                "task lifetime at {step:?} in {trace:?}"
+                            );
+                            assert_eq!(
+                                c.echoes, step.state[6],
+                                "capability use at {step:?} in {trace:?}"
+                            );
                         }
-                        assert_eq!(
-                            returns, step.state[5],
-                            "Return count at {step:?} in {trace:?}"
-                        );
-                        let c = control.borrow();
-                        assert_eq!(c.started, 1);
-                        assert_eq!(
-                            c.completed, step.state[3],
-                            "completion at {step:?} in {trace:?}"
-                        );
-                        assert_eq!(
-                            c.dropped,
-                            1 - step.state[4],
-                            "task lifetime at {step:?} in {trace:?}"
-                        );
-                        assert_eq!(
-                            c.echoes, step.state[6],
-                            "capability use at {step:?} in {trace:?}"
-                        );
+                        drop(request);
+                        task.abort();
+                        let _ = task.await;
                     }
-                    drop(request);
-                    task.abort();
-                    let _ = task.await;
-                }
-            })
-            .await
-            .expect("tail adoption replay timed out");
+                })
+                .await
+                .expect("tail adoption replay timed out");
+            }
         })
         .await;
 }

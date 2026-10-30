@@ -319,7 +319,12 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         returned.which(),
                         Ok(rpc_capnp::return_::AwaitFromThirdParty(_)
                             | rpc_capnp::return_::Canceled(()))
-                    ) || (third_party
+                    ) || ((third_party
+                        || self
+                            .ledgers
+                            .answers
+                            .execution_state(key)
+                            .is_ok_and(|state| state.adopted))
                         && matches!(
                             returned.which(),
                             Ok(rpc_capnp::return_::ResultsSentElsewhere(()))
@@ -354,6 +359,9 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             };
             pipelines::complete(&mut self.ledgers.answers, key, published)
                 .unwrap_or_else(|_| unreachable!("preflighted network answer"));
+            if let Some(adopter) = self.ledgers.answers.get(key).unwrap().owner.adopter {
+                self.refresh_exchange(adopter);
+            }
             Ok(())
         })();
         match checked {

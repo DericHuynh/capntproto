@@ -68,15 +68,16 @@ async fn tlc_ignore_result_lifecycle_traces() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for path in &paths {
-                for wire in [false, true] {
+                for (wire, portable) in [(false, false), (true, false), (true, true)] {
                     inputs += if wire { "1" } else { "0" };
                     let mut fixture = None;
                     for state in path {
                         inputs += &format!(" {}", state["event"]);
                         if state["event"] <= 2 {
                             assert!(fixture.is_none());
-                            fixture =
-                                Some(Fixture::new(wire, state["cancellable"] == 1, 0, 0).await);
+                            fixture = Some(
+                                Fixture::new(wire, portable, state["cancellable"] == 1, 0, 0).await,
+                            );
                         } else {
                             fixture.as_mut().unwrap().step(state["event"]).await;
                         }

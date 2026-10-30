@@ -221,6 +221,16 @@ impl WriterPolicy {
     }
 }
 
+// Retain only checked scalar metadata across the one-turn compatibility yield.
+// The message identity prevents another frame from borrowing that validation;
+// the answer generation prevents a delayed Finish from canceling a reused ID.
+struct DelayedFinish<'pool, 'id> {
+    message: messages::MessageId<'pool>,
+    answer: answers::Key<'id>,
+    release_results: bool,
+    options: capnp::message::ReaderOptions,
+}
+
 /// A connection retains every original question through its late Return, even
 /// after application cancellation. Ordinary input controls may progress while
 /// a Call or Resolve awaits graph/dispatch capacity. The caller must eventually
@@ -229,6 +239,7 @@ pub struct Driver<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, cons
     allow_answer_handoff: bool,
     allow_join: bool,
     defer_calls: bool,
+    delayed_finish: Option<DelayedFinish<'pool, 'id>>,
     owned_output: bool,
     writer_policy: WriterPolicy,
     pipeline_only_enabled: bool,
@@ -414,7 +425,7 @@ enum IncomingKind {
     Return(u32, bool),
     PipelineReturn,
     Resolve,
-    Finish(AnswerId, bool),
+    Finish(AnswerId, bool, bool),
     Release,
     SenderLoopback,
     ReceiverLoopback(u32),
@@ -580,6 +591,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             allow_answer_handoff: false,
             allow_join: true,
             defer_calls: false,
+            delayed_finish: None,
             owned_output: false,
             writer_policy: WriterPolicy::Checked,
             pipeline_only_enabled: true,
@@ -1390,6 +1402,28 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         receiver: &mut impl ImportReceiver<I>,
         make_producer: impl FnOnce(usize) -> capnp::Result<A>,
     ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
+        if self.disconnected.is_none()
+            && self.delayed_finish.as_ref().is_some_and(|finish| {
+                finish.message == frame.lease.identity()
+                    && finish.options.traversal_limit_in_words
+                        == frame.options.traversal_limit_in_words
+                    && finish.options.nesting_limit == frame.options.nesting_limit
+            })
+        {
+            let finish = self.delayed_finish.take().expect("matched Finish retry");
+            if self.ledgers.answers.lookup(finish.answer.id()) != Some(finish.answer) {
+                frame.release(messages);
+                return Ok(Received::Finished(None));
+            }
+            return self.receive_finish(
+                finish.answer.id(),
+                finish.release_results,
+                false,
+                frame,
+                messages,
+                scratch,
+            );
+        }
         // General Return admission already tries the plain transaction before
         // its complex fallback. A separate probe here repeats checked decoding
         // for capability-bearing results without changing their ownership.
@@ -1406,7 +1440,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             // it again through the general classifier and control handler.
             // The same ledger transactions enforce every ownership limit.
             enum Retirement {
-                Finish(AnswerId, bool),
+                Finish(AnswerId, bool, bool),
                 Released,
             }
             // Preserve the ordinary Call's compact Option<Request> layout.
@@ -1429,6 +1463,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                             retirement = Some(Retirement::Finish(
                                 AnswerId::from_wire(finish.get_question_id()),
                                 finish.get_release_result_caps(),
+                                finish.get_require_early_cancellation_workaround(),
                             ));
                             return Ok(None);
                         }
@@ -1490,10 +1525,11 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     })
                 }
                 Ok(None) => match retirement {
-                    Some(Retirement::Finish(id, release_result_caps)) => {
+                    Some(Retirement::Finish(id, release_result_caps, workaround)) => {
                         return self.receive_finish(
                             id,
                             release_result_caps,
+                            workaround,
                             frame,
                             messages,
                             scratch,
@@ -1644,6 +1680,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                         Kind::Finish(
                             AnswerId::from_wire(finish.get_question_id()),
                             finish.get_release_result_caps(),
+                            finish.get_require_early_cancellation_workaround(),
                         )
                     }
                     Ok(rpc_capnp::message::Release(_)) => Kind::Release,
@@ -1858,6 +1895,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                 match returned {
                     Ok(response) => {
                         let key = response.key();
+                        if let Some((adopted, _)) = response.adopted() {
+                            self.ledgers
+                                .answers
+                                .get_mut(adopted.key())
+                                .expect("accepted source adoption")
+                                .owner
+                                .adopter = Some(key);
+                        }
                         let awaiting = response.await_method().is_some();
                         if let Some(metadata) = metadata {
                             if awaiting {
@@ -2174,9 +2219,14 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
                     Err(_) => Ok(Received::DeferredResolution),
                 }
             }
-            Kind::Finish(id, release_result_caps) => {
-                self.receive_finish(id, release_result_caps, frame, messages, scratch)
-            }
+            Kind::Finish(id, release_result_caps, workaround) => self.receive_finish(
+                id,
+                release_result_caps,
+                workaround,
+                frame,
+                messages,
+                scratch,
+            ),
             Kind::Release => {
                 let outcome = frame
                     .with(messages, |root| -> Result<_, super::Error> {
@@ -2259,10 +2309,44 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         &mut self,
         id: AnswerId,
         release_result_caps: bool,
+        workaround: bool,
         frame: Frame<'pool>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         scratch: &mut [u32],
     ) -> Result<Received<'id, A>, Rejected<'pool, A>> {
+        if workaround {
+            if let Some(answer) = self.ledgers.answers.lookup(id) {
+                let retained = self
+                    .call
+                    .as_ref()
+                    .is_some_and(|call| call.answer() == answer);
+                let queued = self
+                    .ledgers
+                    .answers
+                    .get(answer)
+                    .ok()
+                    .and_then(|state| state.owner.queued)
+                    .and_then(|task| self.runtime.queued_owner(task))
+                    .and_then(Task::as_call)
+                    .is_some_and(|call| call.answer() == answer);
+                if retained || queued {
+                    self.delayed_finish = Some(DelayedFinish {
+                        message: frame.lease.identity(),
+                        answer,
+                        release_results: release_result_caps,
+                        options: frame.options,
+                    });
+                    // Like legacy's yield_once before dropping an undelivered
+                    // call, give dispatch a turn to establish cancellation policy.
+                    // Busy preserves this exact immutable frame and its budget.
+                    return Err(Rejected {
+                        error: Error::Busy,
+                        frame,
+                        producer: None,
+                    });
+                }
+            }
+        }
         let outcome = answer::finished_parts(
             id,
             release_result_caps,

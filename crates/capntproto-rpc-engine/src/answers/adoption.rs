@@ -48,6 +48,7 @@ impl<'id, T> Adoption<'_, 'id, '_, T> {
             .record_mut(self.key)
             .expect("preflight adoption");
         record.adopt(true);
+        self.answers.notify_execution(self.key.index);
         Adopted {
             pipeline: Pipeline { key: self.key },
         }
@@ -60,6 +61,7 @@ impl<'id, T> Adoption<'_, 'id, '_, T> {
             .record_mut(self.key)
             .expect("preflight adoption");
         record.adopt(false);
+        self.answers.notify_execution(self.key.index);
     }
 }
 
@@ -81,7 +83,12 @@ mod tests {
                         .redirected()
                         .accept(41);
                     drop(answers.prepare_adoption(id).unwrap());
+                    answers.watch_execution(key).unwrap();
                     let adopted = answers.prepare_adoption(id).unwrap().accept();
+                    assert_eq!(answers.take_changed_producer(), Some(&41));
+                    answers.unwatch_execution(key).unwrap();
+                    let state = answers.execution_state(key).unwrap();
+                    assert!(state.adopted && state.redirected && !state.returned);
                     assert!(matches!(
                         answers.prepare_adoption(id),
                         Err(Error::AlreadyAdopted)
@@ -119,7 +126,10 @@ mod tests {
                     .unwrap()
                     .redirected()
                     .accept(47);
+                answers.watch_execution(key).unwrap();
                 answers.prepare_adoption(id).unwrap().discard();
+                assert_eq!(answers.take_changed_producer(), Some(&47));
+                answers.unwatch_execution(key).unwrap();
                 assert!(matches!(
                     answers.prepare_adoption(id),
                     Err(Error::AlreadyAdopted)

@@ -3,7 +3,7 @@ mod support;
 use capnp::{capability::Client, private::capability::ResultsHook, traits::HasTypeId, Error};
 use capnp_rpc::{
     rpc_capnp::{cap_descriptor, message, return_},
-    Connection, RpcSystem,
+    Connection,
 };
 use capntproto_test_support::{
     cancellation_policy_capnp::{allowed, derived, policy},
@@ -14,7 +14,7 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
-use support::{Endpoint, Hub};
+use support::{driver::System as RpcSystem, Endpoint, Hub};
 #[derive(Default)]
 struct State {
     gate: RefCell<Option<oneshot::Receiver<()>>>,
@@ -168,11 +168,12 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
-    async fn new(mode: u32, early: bool, fail: bool, membrane: bool) -> Self {
-        Self::configured(mode, early, fail, membrane, false, false).await
+    async fn new(portable: bool, mode: u32, early: bool, fail: bool, membrane: bool) -> Self {
+        Self::configured(portable, mode, early, fail, membrane, false, false).await
     }
 
     async fn configured(
+        portable: bool,
         mode: u32,
         early: bool,
         fail: bool,
@@ -236,9 +237,9 @@ impl Fixture {
         };
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), Some(cap));
+        let system = RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), Some(cap));
         let mut peer = hub.borrow_mut().connect(2, 1);
-        let driver = tokio::task::spawn_local(system);
+        let driver = tokio::task::spawn_local(system.run());
         peer.send(|m| m.init_bootstrap().set_question_id(0));
         let input = peer.recv().await;
         let message::Return(r) = input
@@ -415,30 +416,33 @@ impl Fixture {
 async fn protected_calls_survive_finish_and_disconnect_with_early_results_release() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                for mode in 0..6 {
-                    for membrane in [false, true] {
-                        for disconnect in [false, true] {
-                            let protected = mode == 0 || mode == 3;
-                            let mut f = Fixture::new(mode, true, false, membrane).await;
-                            f.step(if disconnect { "disconnect" } else { "finish" })
-                                .await;
-                            assert_eq!(f.state.running.get(), protected, "mode {mode}");
-                            assert_eq!(f.state.alive.get(), protected, "mode {mode}");
-                            if protected {
-                                assert_eq!(f.returns, 0);
-                                f.step("complete").await;
-                                assert!(f.state.completed.get());
+            for portable in [false, true] {
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    for mode in 0..6 {
+                        for membrane in [false, true] {
+                            for disconnect in [false, true] {
+                                let protected = mode == 0 || mode == 3;
+                                let mut f =
+                                    Fixture::new(portable, mode, true, false, membrane).await;
+                                f.step(if disconnect { "disconnect" } else { "finish" })
+                                    .await;
+                                assert_eq!(f.state.running.get(), protected, "mode {mode}");
+                                assert_eq!(f.state.alive.get(), protected, "mode {mode}");
+                                if protected {
+                                    assert_eq!(f.returns, 0);
+                                    f.step("complete").await;
+                                    assert!(f.state.completed.get());
+                                }
+                                assert!(!f.state.alive.get());
+                                assert!(!f.state.running.get());
+                                assert_eq!(f.returns, u32::from(!disconnect));
                             }
-                            assert!(!f.state.alive.get());
-                            assert!(!f.state.running.get());
-                            assert_eq!(f.returns, u32::from(!disconnect));
                         }
                     }
-                }
-            })
-            .await
-            .unwrap();
+                })
+                .await
+                .unwrap();
+            }
         })
         .await;
 }
@@ -447,25 +451,29 @@ async fn protected_calls_survive_finish_and_disconnect_with_early_results_releas
 async fn immediate_rpc_poll_preserves_pending_protection_and_reports_ready_errors() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for fail in [false, true] {
-                for early in [false, true] {
-                    for ready in [false, true] {
-                        let mut f = Fixture::configured(0, early, fail, false, true, ready).await;
-                        if !ready {
-                            f.step("finish").await;
-                            assert!(f.state.running.get());
-                            assert!(f.state.alive.get());
-                            assert_eq!(f.returns, 0);
-                            f.step("complete").await;
-                        } else {
-                            f.drain();
-                            assert_eq!(f.kind, if fail { 3 } else { 1 });
-                            f.step("finish").await;
+            for portable in [false, true] {
+                for fail in [false, true] {
+                    for early in [false, true] {
+                        for ready in [false, true] {
+                            let mut f =
+                                Fixture::configured(portable, 0, early, fail, false, true, ready)
+                                    .await;
+                            if !ready {
+                                f.step("finish").await;
+                                assert!(f.state.running.get());
+                                assert!(f.state.alive.get());
+                                assert_eq!(f.returns, 0);
+                                f.step("complete").await;
+                            } else {
+                                f.drain();
+                                assert_eq!(f.kind, if fail { 3 } else { 1 });
+                                f.step("finish").await;
+                            }
+                            assert!(f.state.completed.get());
+                            assert!(!f.state.running.get());
+                            assert!(!f.state.alive.get());
+                            assert_eq!(f.returns, 1);
                         }
-                        assert!(f.state.completed.get());
-                        assert!(!f.state.running.get());
-                        assert!(!f.state.alive.get());
-                        assert_eq!(f.returns, 1);
                     }
                 }
             }
@@ -572,20 +580,24 @@ async fn replay_tlc_static_cancellation_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for case in cases {
-                let allow = case["allow"].as_bool().unwrap();
-                for mode in if allow { vec![1, 2, 4, 5] } else { vec![0, 3] } {
-                    for membrane in [false, true] {
-                        let mut f = Fixture::new(
-                            mode,
-                            case["early"].as_bool().unwrap(),
-                            case["fail"].as_bool().unwrap(),
-                            membrane,
-                        )
-                        .await;
-                        for step in case["steps"].as_array().unwrap() {
-                            f.step(step["action"].as_str().unwrap()).await;
+            for portable in [false, true] {
+                for case in &cases {
+                    let allow = case["allow"].as_bool().unwrap();
+                    for mode in if allow { vec![1, 2, 4, 5] } else { vec![0, 3] } {
+                        for membrane in [false, true] {
+                            let mut f = Fixture::new(
+                                portable,
+                                mode,
+                                case["early"].as_bool().unwrap(),
+                                case["fail"].as_bool().unwrap(),
+                                membrane,
+                            )
+                            .await;
+                            for step in case["steps"].as_array().unwrap() {
+                                f.step(step["action"].as_str().unwrap()).await;
+                                assert_eq!(f.state.alive.get(), step["state"][4] == 1, "portable={portable} mode={mode} membrane={membrane} case={case} step={step}");
                             f.check(step["state"].as_array().unwrap());
+                            }
                         }
                     }
                 }
@@ -721,49 +733,55 @@ async fn replay_tlc_call_executor_traces() {
 async fn inbound_calls_cannot_bypass_a_stopped_explicit_executor() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for synchronous in [true, false] {
-                for no_pipeline in [false, true] {
-                    let (gate, receiver) = oneshot::channel();
-                    let state = Rc::new(State {
-                        synchronous,
-                        ..Default::default()
-                    });
-                    *state.gate.borrow_mut() = Some(receiver);
-                    let (executor, driver) = capnp_rpc::new_call_executor();
-                    drop(driver);
-                    let local: policy::Client =
-                        capnp_rpc::new_client_with_executor(Service(state.clone()), executor);
-                    let hub = Rc::new(RefCell::new(Hub::default()));
-                    let server =
-                        RpcSystem::new(Box::new(Hub::network(&hub, 2)), Some(local.client));
-                    let mut caller = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
-                    let remote: policy::Client = caller.bootstrap(2);
-                    let server = tokio::task::spawn_local(server);
-                    let caller = tokio::task::spawn_local(caller);
-                    let mut request = remote.pending_request();
-                    request.hook.set_hints(capnp::capability::CallHints {
-                        no_promise_pipelining: no_pipeline,
-                        only_promise_pipeline: false,
-                    });
-                    let result = tokio::time::timeout(
-                        std::time::Duration::from_secs(2),
-                        request.send().promise,
-                    )
-                    .await
-                    .expect("stopped executor must reject the inbound call");
-                    let error = result
-                        .err()
-                        .expect("a stopped explicit executor cannot admit a call");
-                    assert!(error.extra.contains("executor"));
-                    assert!(
-                        !state.started.get(),
-                        "protected application entry follows admission"
-                    );
-                    drop(gate);
-                    caller.abort();
-                    server.abort();
-                    let _ = caller.await;
-                    let _ = server.await;
+            for portable in [false, true] {
+                for synchronous in [true, false] {
+                    for no_pipeline in [false, true] {
+                        let (gate, receiver) = oneshot::channel();
+                        let state = Rc::new(State {
+                            synchronous,
+                            ..Default::default()
+                        });
+                        *state.gate.borrow_mut() = Some(receiver);
+                        let (executor, driver) = capnp_rpc::new_call_executor();
+                        drop(driver);
+                        let local: policy::Client =
+                            capnp_rpc::new_client_with_executor(Service(state.clone()), executor);
+                        let hub = Rc::new(RefCell::new(Hub::default()));
+                        let server = RpcSystem::new(
+                            portable,
+                            Box::new(Hub::network(&hub, 2)),
+                            Some(local.client),
+                        );
+                        let mut caller =
+                            RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), None);
+                        let remote: policy::Client = caller.bootstrap(2);
+                        let server = tokio::task::spawn_local(server.run());
+                        let caller = tokio::task::spawn_local(caller.run());
+                        let mut request = remote.pending_request();
+                        request.hook.set_hints(capnp::capability::CallHints {
+                            no_promise_pipelining: no_pipeline,
+                            only_promise_pipeline: false,
+                        });
+                        let result = tokio::time::timeout(
+                            std::time::Duration::from_secs(2),
+                            request.send().promise,
+                        )
+                        .await
+                        .expect("stopped executor must reject the inbound call");
+                        let error = result
+                            .err()
+                            .expect("a stopped explicit executor cannot admit a call");
+                        assert!(error.extra.contains("executor"));
+                        assert!(
+                            !state.started.get(),
+                            "protected application entry follows admission"
+                        );
+                        drop(gate);
+                        caller.abort();
+                        server.abort();
+                        let _ = caller.await;
+                        let _ = server.await;
+                    }
                 }
             }
         })

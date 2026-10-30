@@ -1,4 +1,10 @@
 use super::*;
+fn has_unpublished_payload(state: &State) -> bool {
+    let payload = state.pending_payload.take();
+    let present = payload.is_some();
+    state.pending_payload.set(payload);
+    present
+}
 
 #[test]
 fn protected_context_borrows_only_with_executor_and_immediate_permission() {
@@ -251,13 +257,10 @@ fn shared_cancellation_guard_retains_context_and_prevents_cache_reuse() {
     let guard = hook
         .cancellation_context()
         .expect("protected execution owner");
-    let capnp::private::capability::CancellationGuard::Shared(owner) = &guard else {
+    let capnp::private::capability::CancellationGuard::Tracked(_) = &guard else {
         panic!("results share their existing context allocation");
     };
-    assert_eq!(
-        owner.as_ref().downcast_ref::<State>().unwrap() as *const State,
-        address
-    );
+    assert_eq!(results.0.cancellation_guards.get(), 1);
     drop(hook);
     cache.recycle(results);
     assert!(!dropped.get());
@@ -350,7 +353,8 @@ fn returned_results_skip_ready_waiters_but_pending_work_and_early_pipelines_stil
             results.poll_work(&mut execution, &mut cx).is_pending(),
             pending
         );
-        assert!(results.0.payload.get().is_some());
+        assert_eq!(results.0.payload.get().is_some(), !pending);
+        assert_eq!(has_unpublished_payload(&results.0), pending);
         assert_eq!(wake.0.load(Ordering::SeqCst), 0);
         if pending {
             results.fail(Error::failed("external completion".into()));
@@ -462,7 +466,7 @@ fn transferred_pipeline_waits_for_results_retained_after_execution_completes() {
     assert_eq!(wake.0.load(Ordering::SeqCst), 0);
     assert!(matches!(
         *results.0.completion.borrow(),
-        Completion::AwaitingPayload
+        Completion::AwaitingPayload(_)
     ));
     assert!(results.0.payload.get().is_none());
     wake.0.store(0, Ordering::SeqCst);
@@ -490,6 +494,7 @@ fn pooled_results_keep_retained_payloads_and_clear_reused_segments() {
             assert!(data.iter().all(|byte| *byte == 0));
             data.fill(value);
             drop(hook);
+            results.0.complete(Ok(()));
             let payload = results.0.payload.get().unwrap().share(&results);
             payload
         };
@@ -1308,7 +1313,7 @@ fn cancellation_keeps_non_cancellable_execution_and_result_context_alive() {
         if cancellable {
             assert!(executor.0.borrow().is_empty());
         } else {
-            assert!(weak.upgrade().unwrap().payload.get().is_some());
+            assert!(has_unpublished_payload(&weak.upgrade().unwrap()));
             assert!(sender.send(()).is_ok());
             let mut task = executor.0.borrow_mut().pop().unwrap();
             assert!(matches!(poll(&mut task), Poll::Ready(Ok(()))));
@@ -1419,7 +1424,7 @@ fn tail_call_rejects_initialized_results_before_sending() {
             );
             assert!(!sent.get());
             assert!(dropped.get());
-            assert!(results.0.payload.get().is_some());
+            assert!(has_unpublished_payload(&results.0));
         }
     }
 }
@@ -1480,7 +1485,7 @@ fn pipeline_only_tail_call_preserves_published_pipeline_and_context_until_cancel
                 assert!(results.0.payload.get().is_none());
             }
             drop(completion);
-            assert!(results.0.payload.get().is_some());
+            assert!(has_unpublished_payload(&results.0));
         }
     }
 }
@@ -1781,9 +1786,7 @@ fn ready_execution_notifies_observers_without_waking_its_active_owner() {
             caps: vec![],
             executor: None,
         });
-        if !failed {
-            drop(hook.take());
-        }
+        drop(hook.take());
         assert!(results
             .poll_completed(&mut Context::from_waker(&observer_wake))
             .is_pending());

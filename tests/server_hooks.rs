@@ -5,7 +5,7 @@ use capnp::{
     traits::HasTypeId,
     Error,
 };
-use capnp_rpc::{RevocableServer, RpcSystem};
+use capnp_rpc::RevocableServer;
 use capntproto_test_support::runtime_test_capnp::harness;
 use futures::channel::oneshot;
 use std::{
@@ -13,6 +13,7 @@ use std::{
     collections::VecDeque,
     rc::Rc,
 };
+use support::driver::System as RpcSystem;
 
 #[derive(Default)]
 struct State {
@@ -165,7 +166,7 @@ async fn weak_self_capability_and_canonical_client_lifetimes() {
     assert!(state.self_cap.get::<harness::Client>().is_none());
 }
 
-async fn trace(steps: &[serde_json::Value], fail: bool, reject: bool, wire: bool) {
+async fn trace(portable: bool, steps: &[serde_json::Value], fail: bool, reject: bool, wire: bool) {
     let state = Rc::new(State {
         fail,
         ..Default::default()
@@ -192,13 +193,14 @@ async fn trace(steps: &[serde_json::Value], fail: bool, reject: bool, wire: bool
     let client = if wire {
         let hub = Rc::new(RefCell::new(support::Hub::default()));
         let server = RpcSystem::new(
+            portable,
             Box::new(support::Hub::network(&hub, 1)),
             Some(local.client.clone()),
         );
-        let mut caller = RpcSystem::new(Box::new(support::Hub::network(&hub, 2)), None);
+        let mut caller = RpcSystem::new(portable, Box::new(support::Hub::network(&hub, 2)), None);
         let client = caller.bootstrap(1);
-        drivers.0.push(tokio::task::spawn_local(server));
-        drivers.0.push(tokio::task::spawn_local(caller));
+        drivers.0.push(tokio::task::spawn_local(server.run()));
+        drivers.0.push(tokio::task::spawn_local(caller.run()));
         client
     } else {
         local.clone()
@@ -354,8 +356,8 @@ async fn shortening_waits_for_old_streams_and_survives_later_revocation() {
                 {"action":"complete-a","state":[3,2,6,1,0,1,0]},
                 {"action":"revoke","state":[3,5,7,1,1,1,1]}
             ]);
-            for wire in [false, true] {
-                trace(steps.as_array().unwrap(), false, false, wire).await;
+            for (wire, portable) in [(false, false), (true, false), (true, true)] {
+                trace(portable, steps.as_array().unwrap(), false, false, wire).await;
             }
         })
         .await;
@@ -369,13 +371,19 @@ async fn replay_tlc_server_hooks_traces() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for case in cases {
-                trace(
-                    case["steps"].as_array().unwrap(),
-                    case["fail"].as_bool().unwrap(),
-                    case["reject"].as_bool().unwrap(),
-                    case["wire"].as_bool().unwrap(),
-                )
-                .await;
+                for portable in [false, true] {
+                    if portable && !case["wire"].as_bool().unwrap() {
+                        continue;
+                    }
+                    trace(
+                        portable,
+                        case["steps"].as_array().unwrap(),
+                        case["fail"].as_bool().unwrap(),
+                        case["reject"].as_bool().unwrap(),
+                        case["wire"].as_bool().unwrap(),
+                    )
+                    .await;
+                }
             }
         })
         .await;

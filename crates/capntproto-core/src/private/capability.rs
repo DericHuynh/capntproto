@@ -305,6 +305,27 @@ impl Clone for alloc::boxed::Box<dyn ClientHook> {
 pub enum CancellationGuard {
     Owned(alloc::boxed::Box<dyn core::any::Any>),
     Shared(alloc::rc::Rc<dyn core::any::Any>),
+    Tracked(TrackedCancellationGuard),
+}
+
+/// A shared context whose individual execution interests have a lifetime of
+/// their own. The owner allocation can also hold the result and its observers.
+pub trait CancellationContext {
+    fn retain(&self);
+    fn release(&self);
+}
+
+pub struct TrackedCancellationGuard(alloc::rc::Rc<dyn CancellationContext>);
+impl CancellationGuard {
+    pub fn tracked(context: alloc::rc::Rc<dyn CancellationContext>) -> Self {
+        context.retain();
+        Self::Tracked(TrackedCancellationGuard(context))
+    }
+}
+impl Drop for TrackedCancellationGuard {
+    fn drop(&mut self) {
+        self.0.release();
+    }
 }
 
 /// Storage behind a single dispatch invocation. Taking ownership consumes both

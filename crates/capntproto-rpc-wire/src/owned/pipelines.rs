@@ -282,6 +282,7 @@ pub struct Results<'pool, 'graph, A, const N: usize> {
     pub(super) value: Option<core::result::Result<Published<'pool, 'graph, N>, capnp::ErrorKind>>,
     pub(crate) network_authority: Option<Client<'graph>>,
     pub(crate) redirect: Option<capntproto_rpc_engine::questions::Local<'graph>>,
+    pub(crate) adopter: Option<capntproto_rpc_engine::questions::Key<'graph>>,
 }
 impl<'pool, 'graph, A, const N: usize> Results<'pool, 'graph, A, N> {
     /// Whether the producer's final local result has not yet been frozen.
@@ -296,6 +297,7 @@ impl<'pool, 'graph, A, const N: usize> Results<'pool, 'graph, A, N> {
             value: None,
             network_authority: None,
             redirect: None,
+            adopter: None,
         }
     }
     pub fn target<G: Capabilities<'graph>>(

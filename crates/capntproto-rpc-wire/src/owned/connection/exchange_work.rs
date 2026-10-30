@@ -19,19 +19,18 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
             && returned.is_some_and(|response| {
                 response.requires_ordered_propagation() || slot.handoff.is_some()
             });
-        let runnable = slot.authorized
-            && outgoing
-            && returned.is_some_and(|response| {
-                response.await_method().is_none() || slot.handoff.is_some() || slot.canceled
-            });
+        let ready = returned.is_some_and(|response| {
+            response.adopted().is_none_or(|(adopted, _)| {
+                self.ledgers
+                    .answers
+                    .get(adopted.key())
+                    .is_ok_and(|source| !source.owner.is_pending())
+            }) && (response.await_method().is_none() || slot.handoff.is_some() || slot.canceled)
+        });
+        let runnable = slot.authorized && outgoing && ready;
         let canceled =
             slot.canceled && (returned.is_some() || key.id().is_pipeline_only()) && !observers;
-        let completed = slot.completion_owner.is_some()
-            && slot.authorized
-            && !observers
-            && returned.is_some_and(|response| {
-                response.await_method().is_none() || slot.handoff.is_some() || slot.canceled
-            });
+        let completed = slot.completion_owner.is_some() && slot.authorized && !observers && ready;
         if completed {
             self.completion_ready
                 .push(&mut self.exchanges, index, |slot| &mut slot.completion_work);

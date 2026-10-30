@@ -1,13 +1,13 @@
 #[allow(dead_code)]
 mod support;
 use capnp::{capability::Promise, private::capability::ResultsHook, Error};
-use capnp_rpc::RpcSystem;
 use capntproto_test_support::{cancellation_policy_capnp::policy, runtime_test_capnp::harness};
 use futures::{channel::oneshot, FutureExt};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
+use support::driver::System as RpcSystem;
 mod ignore_result {
     pub mod hooks;
     pub mod verification;
@@ -88,7 +88,7 @@ struct Fixture {
     _drivers: Drivers,
 }
 impl Fixture {
-    async fn new(wire: bool, cancellable: bool, api: u32, wrapper: u32) -> Self {
+    async fn new(wire: bool, portable: bool, cancellable: bool, api: u32, wrapper: u32) -> Self {
         let (tx, rx) = oneshot::channel();
         let state = Rc::new(State::default());
         *state.gate.borrow_mut() = Some(rx);
@@ -99,13 +99,15 @@ impl Fixture {
         let client: policy::Client = if wire {
             let hub = Rc::new(RefCell::new(support::Hub::default()));
             let server = RpcSystem::new(
+                portable,
                 Box::new(support::Hub::network(&hub, 1)),
                 Some(client.client),
             );
-            let mut caller = RpcSystem::new(Box::new(support::Hub::network(&hub, 2)), None);
+            let mut caller =
+                RpcSystem::new(portable, Box::new(support::Hub::network(&hub, 2)), None);
             let client = caller.bootstrap(1);
-            drivers.0.push(tokio::task::spawn_local(server));
-            drivers.0.push(tokio::task::spawn_local(caller));
+            drivers.0.push(tokio::task::spawn_local(server.run()));
+            drivers.0.push(tokio::task::spawn_local(caller.run()));
             client
         } else {
             client
@@ -248,12 +250,13 @@ impl Fixture {
 async fn typed_and_dynamic_helpers_preserve_lifetime_through_forwarders() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for wire in [false, true] {
+            for (wire, portable) in [(false, false), (true, false), (true, true)] {
                 for api in 0..3 {
                     for wrapper in 0..3 {
                         for cancellable in [false, true] {
                             for terminal in [5, 6, 7] {
-                                let mut f = Fixture::new(wire, cancellable, api, wrapper).await;
+                                let mut f =
+                                    Fixture::new(wire, portable, cancellable, api, wrapper).await;
                                 f.step(3).await;
                                 f.step(4).await;
                                 assert_eq!(f.observation(), [1, 1, 0, 0, 1, 0]);

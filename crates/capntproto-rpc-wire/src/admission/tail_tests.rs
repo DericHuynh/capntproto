@@ -67,15 +67,23 @@ fn tail_publication_binds_both_roles_and_rolls_back_rejected_output() {
                                 lease,
                                 Default::default(),
                             );
-                            if variant == 0 {
+                            if variant == 0 || variant == 6 {
                                 let mut queue_slots = [None];
                                 let mut queue = messages::Queue::new(&mut queue_slots).unwrap();
-                                assert_eq!(pending.unwrap().accept(queue.reserve().unwrap()), None);
+                                // Finish does not revoke a live protected
+                                // producer's once-only tail publication.
+                                assert_eq!(
+                                    pending.unwrap().accept(queue.reserve().unwrap()),
+                                    (variant == 6).then_some(41)
+                                );
                                 assert!(answers.prepare_return(answer).is_err());
                                 let window = queue.window(messages).unwrap().unwrap();
                                 let length = window.bytes().len();
                                 window.advance(length).unwrap();
-                                assert_eq!(answers.finish(answer.id(), false).retired, Some(41));
+                                assert_eq!(
+                                    answers.finish(answer.id(), false).retired,
+                                    (variant == 0).then_some(41)
+                                );
                             } else {
                                 if variant == 2 {
                                     drop(pending.unwrap());

@@ -472,6 +472,9 @@ pub fn finish(
     let mut finish = root.field(Message::FINISH).init()?;
     finish.scalar(Finish::QUESTION_ID).set(id.to_wire());
     finish.scalar(Finish::RELEASE_RESULT_CAPS).set(release_caps);
+    finish
+        .scalar(Finish::REQUIRE_EARLY_CANCELLATION_WORKAROUND)
+        .set(false);
     Ok(())
 }
 pub fn release(output: &mut FixedBuilder<'_>, id: ImportId, count: u32) -> capnp::Result<()> {

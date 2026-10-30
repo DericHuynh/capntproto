@@ -184,6 +184,23 @@ pub struct Lease<'id> {
     brand: Brand<'id>,
 }
 
+/// Non-owning identity of one immutable message in its originating pool.
+/// Aliases compare equal; recycling the buffer changes its identity. This
+/// token grants no right to read, retain, send or release the message.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MessageId<'id> {
+    key: BufferKey,
+    brand: Brand<'id>,
+}
+impl<'id> Lease<'id> {
+    pub fn identity(&self) -> MessageId<'id> {
+        MessageId {
+            key: self.key,
+            brand: PhantomData,
+        }
+    }
+}
+
 /// Rejected sealing returns the writer intact so the caller can retry/discard.
 #[derive(Debug)]
 pub struct SealError<'id> {

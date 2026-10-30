@@ -7,9 +7,9 @@
 //!
 //! Currently opt-in while default RpcSystem parity is completed. Authenticated
 //! independent-path Join, automatic introductions, and incoming answer handoff
-//! and outgoing third-party tail transfer are integrated. Bilateral Join and native
-//! tail/pipeline-only optimizations still need integration. Live incoming/outgoing limits, exact
-//! table diagnostics, opt-in
+//! and outgoing third-party tail transfer are integrated, along with bilateral
+//! Join, native tail calls and pipeline-only publication. Live incoming/outgoing
+//! limits, exact table diagnostics, opt-in
 //! exception traces and transport idle notifications are integrated.
 //! Unsupported network controls fail explicitly; this runtime
 //! never falls back to the legacy driver. The engine itself remains no_std/no_alloc.

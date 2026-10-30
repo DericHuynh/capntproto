@@ -3,6 +3,26 @@ extern crate std;
 use super::*;
 
 #[test]
+fn message_identity_tracks_aliases_and_excludes_recycled_storage() {
+    let mut bytes = [0; 8];
+    let mut buffers = [Buffer::new(&mut bytes)];
+    with_messages(&mut buffers, &mut [], |messages| {
+        let original = messages.copy_from(b"first").unwrap();
+        let id = original.identity();
+        let alias = messages.retain(&original).unwrap();
+        assert_eq!(alias.identity(), id);
+        messages.release(original);
+        assert_eq!(alias.identity(), id);
+        assert!(matches!(messages.reserve(1), Err(Error::NoBuffer)));
+        messages.release(alias);
+        let replacement = messages.copy_from(b"second").unwrap();
+        assert_ne!(replacement.identity(), id);
+        messages.release(replacement);
+    })
+    .unwrap();
+}
+
+#[test]
 fn capacity_lookahead_preserves_fixed_generations_and_live_owners() {
     let mut bytes = [0; 16];
     let mut buffers = [Buffer::new(&mut bytes)];

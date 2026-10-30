@@ -36,8 +36,10 @@ pub fn tail_answer<'a, 'answer, 'answers, 'question, 'questions, 'pool, 'storage
         else {
             return Err(Error::Mismatch);
         };
-        if pending.is_cancelled()
-            || pending.is_redirected()
+        // A protected method can tail-call after Finish. The exact parent
+        // generation still owes its Return; the retained redirected child
+        // supplies the same ownership transfer as legacy.
+        if pending.is_redirected()
             || result.get_answer_id() != pending.id().to_wire()
             || result.get_release_param_caps()
             || result.get_no_finish_needed()
