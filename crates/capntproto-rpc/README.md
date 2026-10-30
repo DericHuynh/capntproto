@@ -213,12 +213,15 @@ Use `run_stream`/`run_connection` for orderly shutdown: stop new work and input,
 retire protocol tables and application owners, drain accepted output, flush,
 then close the write half. `Input::stop` cancels an adapter-owned pending read
 before application destructors or blocked physical closure. Native frame IO
-uses one shared teardown path for hosted and registered connections. Supply a separate abort future for an immediate stop or shutdown deadline;
-it stays active during blocked output and close. Protocol storage is reclaimed
-on success and failure. On an error or abort, the caller drops the IO; the
-coordinator makes only one best-effort Abort attempt for a protocol error on a
-live connection; it does not wait for a blocked peer or attempt close. Closure confirms
-local transport completion, not peer receipt or execution of outstanding calls.
+uses one shared teardown path for hosted and registered connections. Supply a
+separate abort future for an immediate stop or shutdown deadline; it stays active
+during blocked output and close. Protocol and IO failures also await physical
+closure, after one best-effort Abort attempt on an active connection. Immediate
+caller abort skips further IO. `RunError` retains the original `cause`, any
+physical `close` failure, and protocol `cleanup` failure independently. Disconnect
+observers confirm local transport closure even when outstanding calls failed;
+they do not certify peer receipt or execution of those calls. Native read/write
+diagnostics remain attached to the disconnected clients, including trace/details.
 For a task-owned network lifecycle, use the opt-in `portable::RpcSystem` described
 below; the default `RpcSystem` still uses the legacy protocol driver.
 

@@ -111,6 +111,18 @@ pub(super) struct Registration {
     stop: shared::Receiver<capnp::Result<()>>,
 }
 impl Registration {
+    pub(super) fn complete_physical<R, W>(self, result: &Result<(), RunError<R, W>>, closed: bool) {
+        if closed
+            && result
+                .as_ref()
+                .err()
+                .is_none_or(|error| error.cleanup.is_none())
+        {
+            self.guard.complete(Ok(()));
+        } else {
+            self.complete(result);
+        }
+    }
     pub(super) fn poll(&mut self, cx: &mut Context<'_>) -> Poll<capnp::Result<()>> {
         Pin::new(&mut self.stop).poll(cx).map(|result| {
             result.unwrap_or_else(|_| {
@@ -124,22 +136,22 @@ impl Registration {
     pub(super) fn complete<R, W>(self, result: &Result<(), RunError<R, W>>) {
         // Preserve protocol/deadline reasons without imposing Debug on caller IO
         // errors. The running caller still receives its original typed RunError.
-        let outcome = result
-            .as_ref()
-            .map(|_| ())
-            .map_err(|error| match &error.cause {
-                Some(Cause::Protocol(error)) => error.clone(),
-                Some(Cause::Input(_)) => {
-                    Error::disconnected("registered connection input failed".into())
+        let outcome = result.as_ref().map(|_| ()).map_err(|error| {
+            if error.close.is_some() {
+                Error::disconnected("registered connection close failed".into())
+            } else {
+                match &error.cause {
+                    Some(Cause::Protocol(error)) => error.clone(),
+                    Some(Cause::Input(_)) => {
+                        Error::disconnected("registered connection input failed".into())
+                    }
+                    Some(Cause::Output(_)) => {
+                        Error::disconnected("registered connection output failed".into())
+                    }
+                    None => Error::failed("registered connection protocol cleanup failed".into()),
                 }
-                Some(Cause::Output(_)) => {
-                    Error::disconnected("registered connection output failed".into())
-                }
-                Some(Cause::Close(_)) => {
-                    Error::disconnected("registered connection close failed".into())
-                }
-                None => Error::failed("registered connection protocol cleanup failed".into()),
-            });
+            }
+        });
         self.guard.complete(outcome);
     }
 }

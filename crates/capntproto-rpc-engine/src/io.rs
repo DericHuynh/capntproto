@@ -33,8 +33,9 @@ pub trait Close: Flush {
     fn poll_close(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Self::Error>>>;
     /// Close after output has failed, without requiring another successful
     /// flush. Completion still confirms physical closure. Adapters which cannot
-    /// distinguish these operations retain their normal close behavior.
+    /// distinguish these operations flush before their normal close behavior.
     fn poll_abort(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), IoError<Self::Error>>> {
+        core::task::ready!(self.poll_flush(cx))?;
         self.poll_close(cx)
     }
 }

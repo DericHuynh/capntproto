@@ -400,6 +400,9 @@ struct OutputState {
 // set the physical publication limit from their configured output queue.
 const MAXIMUM_PENDING_FRAMES: usize = 64;
 impl Writer {
+    pub(crate) fn shutdown_result(&self) -> Option<&capnp::Result<()>> {
+        self.result.as_ref()
+    }
     fn poll_shutdown(
         &mut self,
         cx: &mut Context<'_>,

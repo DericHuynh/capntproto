@@ -74,7 +74,7 @@ pub(super) fn connect<V: 'static>(
     context
         .tasks
         .try_add_connection(async move {
-            let outcome = run(
+            let completed = run(
                 connection,
                 bootstrap,
                 options,
@@ -89,9 +89,13 @@ pub(super) fn connect<V: 'static>(
                 joiner,
             )
             .await;
+            let (outcome, shutdown) = match completed {
+                Ok(finished) => (finished.outcome, finished.shutdown),
+                Err(error) => (Err(error.clone()), Err(error)),
+            };
             retained.close_clients(outcome.as_ref().err().cloned().unwrap_or_else(closing));
             registration.detach();
-            registration.complete(outcome.clone());
+            registration.complete(shutdown);
             outcome
         })
         .map_err(|_| closing())?;
@@ -100,6 +104,27 @@ pub(super) fn connect<V: 'static>(
         return Err(error);
     }
     Ok(state)
+}
+
+struct Finished {
+    outcome: capnp::Result<()>,
+    shutdown: capnp::Result<()>,
+}
+impl Finished {
+    fn new(result: Result<(), coordinator::RunError<Error, Error>>, writer: &vat::Writer) -> Self {
+        let cleaned = result
+            .as_ref()
+            .err()
+            .is_none_or(|error| error.cleanup.is_none());
+        let outcome = result.map_err(run_error);
+        let failed = || Err(outcome.as_ref().err().cloned().unwrap_or_else(closing));
+        let shutdown = if cleaned {
+            writer.shutdown_result().cloned().unwrap_or_else(failed)
+        } else {
+            failed()
+        };
+        Self { outcome, shutdown }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -116,7 +141,7 @@ async fn run<V: 'static>(
     network_commands: Option<Rc<coordinator::multiparty::Commands>>,
     joins: Option<Rc<dyn crate::multiparty::JoinNetwork<V>>>,
     joiner: super::join::Joiner<V>,
-) -> capnp::Result<()> {
+) -> capnp::Result<Finished> {
     let mut buffers = messages::GrowingBuffers::new(
         options.message_buffers.get(),
         options.message_bytes.get(),
@@ -248,7 +273,7 @@ async fn run<V: 'static>(
                         options.concurrency.get(),
                         joiner,
                     );
-                    coordinator
+                    let result = coordinator
                         .run_vat(
                             messages,
                             &mut queue,
@@ -261,8 +286,8 @@ async fn run<V: 'static>(
                             abort,
                             failure,
                         )
-                        .await
-                        .map_err(run_error)
+                        .await;
+                    Ok(Finished::new(result, &writer))
                 } else {
                     let mut controls = controls;
                     let result = coordinator
@@ -282,7 +307,7 @@ async fn run<V: 'static>(
                     // The idle notifier is weak. Retain this transport owner
                     // through drain even though no NetworkControl owns it.
                     drop(network_connection);
-                    result.map_err(run_error)
+                    Ok(Finished::new(result, &writer))
                 }
             })
             .await
@@ -300,13 +325,14 @@ fn run_error(error: coordinator::RunError<Error, Error>) -> Error {
     match error.cause {
         Some(
             coordinator::Cause::Protocol(error)
-            | coordinator::Cause::Close(error)
             | coordinator::Cause::Output(SendError::Io(error))
             | coordinator::Cause::Input(tasks::ReceiveError::Input(ReceiveError::Io(error))),
         ) => error,
-        other => Error::failed(format!(
-            "portable RPC stopped: {other:?}; cleanup: {:?}",
-            error.cleanup
-        )),
+        other => error.close.unwrap_or_else(|| {
+            Error::failed(format!(
+                "portable RPC stopped: {other:?}; cleanup: {:?}",
+                error.cleanup
+            ))
+        }),
     }
 }

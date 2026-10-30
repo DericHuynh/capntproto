@@ -103,6 +103,7 @@ pub struct ConnectionStatus {
     pub fail_body: bool,
     pub readers: usize,
     pub read_error: Option<Error>,
+    pub shutdown_error: Option<Error>,
     shutdown_gate: Option<oneshot::Receiver<()>>,
 }
 
@@ -379,13 +380,14 @@ impl Connection<u8> for Endpoint {
     fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
         self.0.status.borrow_mut().shutdowns.push(result.is_ok());
         let gate = self.0.status.borrow_mut().shutdown_gate.take();
+        let error = self.0.status.borrow_mut().shutdown_error.take();
         let sender = self.0.sender.clone();
         Promise::from_future(async move {
             if let Some(gate) = gate {
                 let _ = gate.await;
             }
             sender.close_channel();
-            Ok(())
+            error.map_or(Ok(()), Err)
         })
     }
     fn supports_third_party(&self) -> bool {

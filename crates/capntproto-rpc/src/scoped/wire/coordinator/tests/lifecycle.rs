@@ -283,6 +283,58 @@ fn shutdown_abort_cancels_blocked_write_flush_and_close_and_preserves_its_reason
 }
 
 #[test]
+fn protocol_failure_and_physical_close_failure_are_preserved_independently() {
+    with_peer(|driver, messages| {
+        let mut queue = messages::Queue::new_growing(0, 1).unwrap();
+        let coordinator = Coordinator::new(
+            driver,
+            ClientHooks::new(8, 8),
+            NonZeroUsize::new(4).unwrap(),
+            None,
+            options(),
+        )
+        .unwrap();
+        let mut reader = Reader(Rc::default());
+        let mut writer = Writer(Rc::new(RefCell::new(Pipe {
+            fail_close: true,
+            ..Default::default()
+        })));
+        let mut policy = Policy::default();
+        let mut scratch = [0; 32];
+        {
+            let mut run = std::pin::pin!(coordinator.run_stream(
+                messages,
+                &mut queue,
+                &mut reader,
+                &mut writer,
+                &mut scratch,
+                |_| (),
+                &mut policy,
+                async { Err(Error::overloaded("original failure".into())) },
+                std::future::pending(),
+            ));
+            let mut completed = false;
+            let mut cx = Context::from_waker(Waker::noop());
+            for _ in 0..2000 {
+                if let Poll::Ready(result) = run.as_mut().poll(&mut cx) {
+                    let error = result.unwrap_err();
+                    assert!(
+                        matches!(error.cause, Some(Cause::Protocol(error)) if error.extra == "original failure")
+                    );
+                    assert_eq!(error.close, Some("close failed"));
+                    assert!(error.cleanup.is_none());
+                    completed = true;
+                    break;
+                }
+            }
+            assert!(completed);
+        }
+        assert!(queue.is_empty() && policy.stopped);
+        reclaimed(messages);
+    });
+}
+
+#[test]
 fn flush_and_close_failures_are_reported_after_protocol_storage_is_reclaimed() {
     for close in [false, true] {
         with_peer(|mut driver, messages| {
@@ -324,7 +376,8 @@ fn flush_and_close_failures_are_reported_after_protocol_storage_is_reclaimed() {
                         let error = result.unwrap_err();
                         assert!(error.cleanup.is_none());
                         if close {
-                            assert!(matches!(error.cause, Some(Cause::Close("close failed"))));
+                            assert!(error.cause.is_none());
+                            assert_eq!(error.close, Some("close failed"));
                         } else {
                             assert!(matches!(
                                 error.cause,

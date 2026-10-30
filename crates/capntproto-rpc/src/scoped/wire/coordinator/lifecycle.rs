@@ -155,6 +155,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 controls,
                 shutdown.as_mut(),
                 abort.as_mut(),
+                terminal_reason,
             )
             .await;
         closing
@@ -179,6 +180,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         controls: &mut impl Control<'p, 'id, 's, I, P, C, H, O>,
         mut shutdown: Pin<&mut impl Future<Output = capnp::Result<()>>>,
         mut abort: Pin<&mut impl Future<Output = Error>>,
+        project_reason: impl FnOnce(&Result<(), Cause<R::Error, W::Error>>) -> Error,
     ) -> (Closing, Result<(), RunError<R::Error, W::Error>>) {
         let mut pending = None;
         let mut hard_abort = false;
@@ -204,7 +206,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             .await
             .map_err(|error| *error)
         };
-        let reason = terminal_reason(&outcome);
+        let reason = project_reason(&outcome);
         self.disconnect_clients(&reason);
         reader.stop();
         if let Some(frame) = pending {
@@ -246,7 +248,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
         outcome: Result<(), Cause<R, W>>,
         reason: Error,
     ) -> (Closing, Result<(), RunError<R, W>>) {
-        let terminal = matches!(outcome, Ok(()) | Err(Cause::Protocol(_)));
         self.notifications.detach();
         let mut client_reason = reason.clone();
         client_reason.kind = capnp::ErrorKind::Disconnected;
@@ -275,6 +276,7 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             (Ok(()), Ok(())) => Ok(()),
             (outcome, cleanup) => Err(RunError {
                 cause: outcome.err(),
+                close: None,
                 cleanup: cleanup.err(),
             }),
         };
@@ -286,7 +288,6 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
                 registration: self.registration,
                 idle: self.idle,
                 reason,
-                terminal,
                 hard_abort: false,
             },
             result,
@@ -458,7 +459,6 @@ pub(super) struct Closing {
     registration: Option<network::Registration>,
     idle: bool,
     pub(super) reason: Error,
-    terminal: bool,
     pub(super) hard_abort: bool,
 }
 impl Closing {
@@ -481,6 +481,7 @@ impl Closing {
             self.hard_abort = true;
             result = Err(RunError {
                 cause: Some(Cause::Protocol(error)),
+                close: None,
                 cleanup: result.err().and_then(|error| error.cleanup),
             });
         }
@@ -489,7 +490,6 @@ impl Closing {
             .as_ref()
             .err()
             .is_none_or(|error| error.cleanup.is_none())
-            && self.terminal
             && !self.hard_abort
             && !self.idle
         {
@@ -517,49 +517,72 @@ impl Closing {
                 }
             }
         }
-        if result.is_ok() && !self.hard_abort {
-            let outcome = if !output_was_failed && queue.is_failed() {
-                std::future::poll_fn(|cx| {
-                    if let Poll::Ready(error) = abort.as_mut().poll(cx) {
-                        return Poll::Ready(Err(Cause::Protocol(error)));
-                    }
-                    io::poll_abort(writer, cx, self.options.budget).map_err(Cause::Close)
-                })
-                .await
-            } else {
-                let mut drained = false;
-                std::future::poll_fn(|cx| {
-                    if let Poll::Ready(error) = abort.as_mut().poll(cx) {
-                        return Poll::Ready(Err(Cause::Protocol(error)));
-                    }
-                    if !drained {
-                        match self
-                            .output
-                            .poll(writer, queue, messages, cx, self.options.budget)
-                        {
-                            Poll::Pending => return Poll::Pending,
-                            Poll::Ready(Err(error)) => {
-                                return Poll::Ready(Err(Cause::Output(error)))
-                            }
-                            Poll::Ready(Ok(())) => drained = true,
+        let mut closed = false;
+        if !self.hard_abort {
+            // A failed RPC still owns a physical close receipt. Only caller
+            // cancellation skips IO; protocol/write failure uses abort-close.
+            let mut graceful = result.is_ok() && (output_was_failed || !queue.is_failed());
+            let mut draining = graceful;
+            let mut canceled = None;
+            let close = std::future::poll_fn(|cx| {
+                if let Poll::Ready(error) = abort.as_mut().poll(cx) {
+                    canceled = Some(error);
+                    return Poll::Ready(Ok(()));
+                }
+                if draining {
+                    match self
+                        .output
+                        .poll(writer, queue, messages, cx, self.options.budget)
+                    {
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(Ok(())) => draining = false,
+                        Poll::Ready(Err(error)) => {
+                            result = Err(RunError {
+                                cause: Some(Cause::Output(error)),
+                                close: None,
+                                cleanup: None,
+                            });
+                            graceful = false;
+                            draining = false;
                         }
                     }
-                    io::poll_close(writer, cx, self.options.budget).map_err(Cause::Close)
-                })
-                .await
-            };
-            if let Err(cause) = outcome {
+                }
+                if graceful {
+                    io::poll_close(writer, cx, self.options.budget)
+                } else {
+                    io::poll_abort(writer, cx, self.options.budget)
+                }
+            })
+            .await;
+            if let Some(error) = canceled {
                 result = Err(RunError {
-                    cause: Some(cause),
-                    cleanup: None,
+                    cause: Some(Cause::Protocol(error)),
+                    close: None,
+                    cleanup: result.err().and_then(|error| error.cleanup),
                 });
+            } else {
+                match close {
+                    Ok(()) => closed = true,
+                    Err(error) => match &mut result {
+                        Ok(()) => {
+                            result = Err(RunError {
+                                cause: None,
+                                close: Some(error),
+                                cleanup: None,
+                            })
+                        }
+                        Err(result) => result.close = Some(error),
+                    },
+                }
             }
         }
         let result = with_cleanup(
             result,
             discard_output(messages, queue, self.options.budget).await,
         );
-        self.complete(&result);
+        if let Some(registration) = self.registration.take() {
+            registration.complete_physical(&result, closed);
+        }
         result
     }
     fn complete<R, W>(mut self, result: &Result<(), RunError<R, W>>) {
@@ -569,7 +592,7 @@ impl Closing {
     }
 }
 
-fn terminal_reason<R, W>(outcome: &Result<(), Cause<R, W>>) -> Error {
+pub(super) fn terminal_reason<R, W>(outcome: &Result<(), Cause<R, W>>) -> Error {
     match outcome {
         Err(Cause::Protocol(error)) => error.clone(),
         Ok(()) => Error::disconnected("client requested disconnect".into()),
@@ -608,6 +631,7 @@ fn with_cleanup<R, W>(
             Ok(()) => {
                 return Err(RunError {
                     cause: None,
+                    close: None,
                     cleanup: Some(error),
                 })
             }

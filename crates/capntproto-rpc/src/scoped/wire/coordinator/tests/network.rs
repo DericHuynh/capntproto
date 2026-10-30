@@ -357,17 +357,19 @@ fn registered_io_failures_reach_network_and_preserve_typed_run_error() {
                 }
                 let error = failure.unwrap();
                 assert!(matches!(
-                    (stage, error.cause),
-                    (0, Some(Cause::Input(_)))
-                        | (1, Some(Cause::Output(_)))
-                        | (2, Some(Cause::Close("close failed")))
+                    (stage, error.cause, error.close),
+                    (0, Some(Cause::Input(_)), None)
+                        | (1, Some(Cause::Output(_)), None)
+                        | (2, None, Some("close failed"))
                 ));
             }
             assert!(policy.stopped && network.connection(1).is_none());
-            assert!(matches!(
-                poll(&mut network.get_disconnector()),
-                Poll::Ready(Err(_))
-            ));
+            let closed = poll(&mut network.get_disconnector());
+            if stage == 2 {
+                assert!(matches!(closed, Poll::Ready(Err(_))));
+            } else {
+                assert!(matches!(closed, Poll::Ready(Ok(()))));
+            }
             reclaimed(messages);
         });
     }

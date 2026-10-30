@@ -487,3 +487,72 @@ async fn disconnect_releases_exports_before_waiting_for_physical_shutdown() {
         }
     }).await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn native_read_failure_preserves_diagnostics_through_disconnect() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                let mut f = Fixture::new(portable, true).await;
+                drop(f.cap.take());
+                let mut error = Error::overloaded("native read failure".into());
+                error.set_remote_trace("cleanup trace".into());
+                error.set_detail(9, b"owned".to_vec());
+                f.status.borrow_mut().read_error = Some(error);
+                f._hub.borrow_mut().disconnect_pair(1, 2);
+                drain().await;
+                assert!(f.destroyed.get());
+                let response = f.result.borrow_mut().take().unwrap();
+                let error = response.await.err().unwrap();
+                assert_eq!(error.extra, "native read failure", "portable={portable}");
+                check_error(error);
+                check_error(f.question.take().unwrap().promise.await.err().unwrap());
+                tokio::time::timeout(Duration::from_secs(2), f.system.get_disconnector())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn peer_abort_waits_for_physical_shutdown_before_completing_disconnect() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                for (fail_body, close_fails) in [(false, false), (false, true), (true, false), (true, true)] {
+                    let mut f = Fixture::new(portable, true).await;
+                    drop(f.cap.take());
+                    let release = f._hub.borrow_mut().connect(1, 2).gate_shutdown();
+                    {
+                        let mut status = f.status.borrow_mut();
+                        status.fail_body = fail_body;
+                        status.shutdown_error = close_fails.then(|| Error::overloaded("injected close failure".into()));
+                    }
+                    f.abort().await;
+                    assert!(f.destroyed.get());
+                    assert_eq!(f.status.borrow().readers, 0);
+                    assert_eq!(f.status.borrow().shutdowns, [false]);
+                    let mut disconnect = f.system.get_disconnector();
+                    assert!(
+                        futures::poll!(&mut disconnect).is_pending(),
+                        "local shutdown completed early: portable={portable}, fail_body={fail_body}, close_fails={close_fails}"
+                    );
+                    release.send(()).unwrap();
+                    let closed = tokio::time::timeout(Duration::from_secs(2), disconnect).await.unwrap();
+                    if close_fails {
+                        let error = closed.unwrap_err();
+                        assert_eq!(error.kind, ErrorKind::Overloaded);
+                        assert_eq!(error.extra, "injected close failure");
+                    } else {
+                        closed.unwrap();
+                    }
+                    let response = f.result.borrow_mut().take().unwrap();
+                    check_error(response.await.err().unwrap());
+                    check_error(f.question.take().unwrap().promise.await.err().unwrap());
+                }
+            }
+        })
+        .await;
+}

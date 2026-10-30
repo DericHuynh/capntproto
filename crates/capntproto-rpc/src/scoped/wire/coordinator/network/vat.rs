@@ -132,6 +132,7 @@ impl<'p, 'id, 's, P: Copy + Eq, const C: usize, const H: usize>
                 controls,
                 shutdown.as_mut(),
                 aborted.as_mut(),
+                native_reason,
             )
             .await
         };
@@ -142,5 +143,22 @@ impl<'p, 'id, 's, P: Copy + Eq, const C: usize, const H: usize>
         closing
             .finish(messages, queue, writer, abort.as_mut(), result)
             .await
+    }
+}
+
+// Project native failures once on exit, before destructors can reenter RPC.
+// This preserves legacy diagnostics without adding work to successful frames.
+fn native_reason(outcome: &Result<(), Cause<Error, Error>>) -> Error {
+    use capntproto_rpc_wire::io::ReceiveError;
+    match outcome {
+        Err(
+            Cause::Protocol(error)
+            | Cause::Output(io::SendError::Io(error))
+            | Cause::Input(tasks::ReceiveError::Input(ReceiveError::Io(error))),
+        ) => error.clone(),
+        Err(Cause::Input(tasks::ReceiveError::Input(ReceiveError::Wire(kind)))) => {
+            Error::from_kind(*kind)
+        }
+        _ => super::super::lifecycle::terminal_reason(outcome),
     }
 }

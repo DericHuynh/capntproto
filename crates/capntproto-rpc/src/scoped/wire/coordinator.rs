@@ -45,21 +45,22 @@ pub struct Options {
 pub enum Cause<R, W> {
     Input(tasks::ReceiveError<R>),
     Output(io::SendError<W>),
-    Close(W),
     Protocol(Error),
 }
 /// Preserve the original failure even if terminal cleanup also fails.
 #[derive(Debug)]
 pub struct RunError<R, W> {
     pub cause: Option<Cause<R, W>>,
+    /// A physical close failure, kept independently of the original cause.
+    pub close: Option<W>,
     pub cleanup: Option<connection::Error>,
 }
 impl<R: std::fmt::Debug, W: std::fmt::Debug> std::fmt::Display for RunError<R, W> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "connection stopped: {:?}; cleanup: {:?}",
-            self.cause, self.cleanup
+            "connection stopped: {:?}; close: {:?}; cleanup: {:?}",
+            self.cause, self.close, self.cleanup
         )
     }
 }
