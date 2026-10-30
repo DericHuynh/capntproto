@@ -14,6 +14,8 @@ pub use immediate::{CapabilityTable, ImmediateParams};
 pub use template::EncodedCall;
 use template::{EncodedCapabilities, PlainTemplate};
 #[cfg(feature = "alloc")]
+mod prepared_enqueue;
+#[cfg(feature = "alloc")]
 pub use template::{PreparedCall, PreparedCallTemplate};
 
 #[must_use = "complete or release the invocation through its originating graph and pool"]
@@ -288,11 +290,36 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
     fn enqueue_encoded<'c>(
         &mut self,
         target: &clients::Client<'id>,
-        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
         messages: &mut messages::Messages<'pool, '_, '_>,
         minimum: usize,
         options: capnp::message::ReaderOptions,
         encode: impl FnOnce(&mut capnp::message::FixedBuilder<'_>) -> capnp::Result<()>,
+    ) -> Result<InvocationKey<'id>, Error>
+    where
+        'id: 'c,
+    {
+        self.enqueue_frame(
+            target,
+            capabilities,
+            messages,
+            options,
+            |messages, options| {
+                Frame::build(messages, minimum, options, encode).map_err(Error::Input)
+            },
+        )
+    }
+
+    fn enqueue_frame<'c>(
+        &mut self,
+        target: &clients::Client<'id>,
+        mut capabilities: impl ExactSizeIterator<Item = capnp::Result<Option<&'c clients::Client<'id>>>>,
+        messages: &mut messages::Messages<'pool, '_, '_>,
+        options: capnp::message::ReaderOptions,
+        build: impl FnOnce(
+            &mut messages::Messages<'pool, '_, '_>,
+            capnp::message::ReaderOptions,
+        ) -> Result<Frame<'pool>, Error>,
     ) -> Result<InvocationKey<'id>, Error>
     where
         'id: 'c,
@@ -315,7 +342,7 @@ impl<'pool, 'id, 's, I, A, P: Copy + Eq, S, const CAPS: usize, const PATH: usize
         let wire_count =
             u32::try_from(count).map_err(|_| Error::Input(super::super::Error::Capacity))?;
         let operation = self.operations.reserve()?;
-        let frame = Frame::build(messages, minimum, options, encode).map_err(Error::Input)?;
+        let frame = build(messages, options)?;
         let validation = frame
             .with(messages, |root| -> capnp::Result<Option<PlainTemplate>> {
                 let rpc_capnp::message::Call(call) = root.which()? else {

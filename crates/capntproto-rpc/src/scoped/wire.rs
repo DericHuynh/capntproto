@@ -281,6 +281,48 @@ impl<'id> ClientHooks<'id> {
             // before accepting one locally. Both paths retain the same queued
             // task, cancellation and pipeline identities.
             let direct = direct && call.third_party.is_none();
+            let mut original_native = None;
+            if direct
+                && driver.uses_native_writer()
+                && call.native_tail.is_none()
+                && !call.hints.only_promise_pipeline
+            {
+                if let (Some(source), Some(caps)) = (
+                    call.params.prepared_envelope(),
+                    call.params.capability_table(),
+                ) {
+                    if !caps.is_empty() && caps.len() <= driver.capability_capacity() {
+                        let native =
+                            calls::native_parameters(self, caps, driver.capability_capacity());
+                        original_native = Some(native);
+                        if native {
+                            let method = DynamicCall {
+                                interface: call.interface,
+                                method: call.method,
+                                no_promise_pipelining: call.hints.no_promise_pipelining,
+                                only_promise_pipeline: false,
+                            };
+                            if let Some(task) = driver
+                                .try_enqueue_prepared_with_capability_table(
+                                    target,
+                                    method,
+                                    source,
+                                    &calls::ParameterCapabilities::Native(self, caps),
+                                    messages,
+                                    options,
+                                )
+                                .map_err(|error| {
+                                    output_blocked = calls::output_capacity_error(&error);
+                                    wire_error(error)
+                                })?
+                            {
+                                direct_route = true;
+                                return Ok(task);
+                            }
+                        }
+                    }
+                }
+            }
             let params = call.params()?;
             let size = params.target_size()?;
             // Like legacy write_descriptors, use a private builder's existing
@@ -309,7 +351,9 @@ impl<'id> ClientHooks<'id> {
             }
             let mut retained: Vec<Option<Client<'id>>> = Vec::new();
             let native = caps.is_empty()
-                || calls::native_parameters(self, caps, driver.capability_capacity());
+                || direct_caps.and(original_native).unwrap_or_else(|| {
+                    calls::native_parameters(self, caps, driver.capability_capacity())
+                });
             if !native {
                 retained.try_reserve_exact(caps.len()).map_err(wire_error)?;
                 retained.resize_with(caps.len(), || None);

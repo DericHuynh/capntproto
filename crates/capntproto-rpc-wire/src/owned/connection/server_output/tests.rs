@@ -5,6 +5,159 @@ use core::num::NonZeroUsize;
 const ZERO: Word = word(0, 0, 0, 0, 0, 0, 0, 0);
 type Peer<'p, 'id, 's> = Driver<'p, 'id, 's, (), u32, u8, u32, 4, 4>;
 
+#[cfg(feature = "alloc")]
+#[test]
+fn prepared_queued_parameters_preserve_ownership_and_reclaim_every_failed_prefix() {
+    struct Table<'a, 'id> {
+        entries: &'a [Option<&'a clients::Client<'id>>],
+        fail: Option<usize>,
+    }
+    impl<'id> CapabilityTable<'id> for Table<'_, 'id> {
+        fn len(&self) -> usize {
+            self.entries.len()
+        }
+        fn capability(&self, index: usize) -> capnp::Result<Option<&clients::Client<'id>>> {
+            if self.fail == Some(index) {
+                return Err(capnp::Error::from_kind(capnp::ErrorKind::Overloaded));
+            }
+            Ok(self.entries[index])
+        }
+    }
+    with_driver(|mut driver, messages| {
+        let waiting = driver.runtime.promise(&mut None).unwrap();
+        let local = driver
+            .runtime
+            .endpoint(binding::Route::local(73), clients::Location::Local)
+            .unwrap();
+        let entries = [Some(&local), None, Some(&local)];
+        let mut table = Table {
+            entries: &entries,
+            fail: None,
+        };
+        let method = calls::DynamicCall {
+            interface: 47,
+            method: 1,
+            no_promise_pipelining: true,
+            only_promise_pipeline: false,
+        };
+        let mut source = PreparedCall::new(capnp::message::Builder::new_default(), 47, 1).unwrap();
+        source
+            .params()
+            .initn_as::<capnp::data::Builder>(64)
+            .fill(0x5a);
+        source
+            .params()
+            .set_as::<capnp::data::Owned>(&b"retained"[..])
+            .unwrap();
+        assert!(driver
+            .try_enqueue_prepared_with_capability_table(
+                &waiting,
+                method,
+                &source,
+                &table,
+                messages,
+                Default::default()
+            )
+            .unwrap()
+            .is_none());
+        driver.use_native_writer();
+        for failure in 0..entries.len() {
+            table.fail = Some(failure);
+            assert!(matches!(
+                driver.try_enqueue_prepared_with_capability_table(
+                    &waiting,
+                    method,
+                    &source,
+                    &table,
+                    messages,
+                    Default::default()
+                ),
+                Err(Error::Input(crate::owned::Error::Wire(
+                    capnp::ErrorKind::Overloaded
+                )))
+            ));
+        }
+        table.fail = None;
+        for _ in 0..2 {
+            let mut key = None;
+            let measured = allocation_counter::measure(|| {
+                key = driver
+                    .try_enqueue_prepared_with_capability_table(
+                        &waiting,
+                        method,
+                        &source,
+                        &table,
+                        messages,
+                        Default::default(),
+                    )
+                    .unwrap();
+            });
+            assert_eq!(
+                measured.count_total, 0,
+                "fixed admission stays allocation-free"
+            );
+            let key = key.unwrap();
+            let dispatch = driver.operations.get(key).unwrap().task;
+            let Some(Task::Invoke(invocation)) = driver.runtime.queued_owner(dispatch) else {
+                panic!("queued invocation")
+            };
+            invocation
+                .with(messages, |params| {
+                    assert_eq!((params.interface_id(), params.method_id()), (47, 1));
+                    assert!(params.hints().no_promise_pipelining);
+                    assert_eq!(
+                        params
+                            .content()
+                            .unwrap()
+                            .get_as::<capnp::data::Reader>()
+                            .unwrap(),
+                        b"retained"
+                    );
+                    assert_eq!(params.capabilities().len(), entries.len());
+                    assert!(params.capabilities()[1].is_none());
+                    assert_eq!(
+                        params.capabilities()[0].as_ref().unwrap().key(),
+                        local.key()
+                    );
+                    assert_eq!(
+                        params.capabilities()[2].as_ref().unwrap().key(),
+                        local.key()
+                    );
+                })
+                .unwrap();
+            assert!(driver.cancel_invocation(key, messages));
+        }
+        // Unreachable original words may exceed this fixed pool even though a
+        // compact payload fits. No invocation or retained client may survive.
+        source
+            .params()
+            .initn_as::<capnp::data::Builder>(if cfg!(miri) { 2048 } else { 65536 })
+            .fill(0x5a);
+        source
+            .params()
+            .set_as::<capnp::data::Owned>(&b"compact"[..])
+            .unwrap();
+        assert!(driver
+            .try_enqueue_prepared_with_capability_table(
+                &waiting,
+                method,
+                &source,
+                &table,
+                messages,
+                Default::default()
+            )
+            .unwrap()
+            .is_none());
+        driver.runtime.release(waiting);
+        driver.runtime.release(local);
+        close(
+            driver,
+            messages,
+            &mut messages::Queue::<()>::new(&mut []).unwrap(),
+        );
+    });
+}
+
 #[test]
 fn borrowed_capability_tables_roll_back_lookup_failures_without_allocating() {
     use core::cell::Cell;

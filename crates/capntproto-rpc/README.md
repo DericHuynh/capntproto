@@ -108,7 +108,11 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   sizing walk and rebuild. The prepared-table writer uses the same grant and
   output-admission transaction as ordinary calls. Checked writers validate and
   copy the payload; unsupported layouts and pool limits retain the compact-copy
-  fallback. Terminate both workers before terminating the portable driver.
+  fallback. Native queued calls likewise retain their parameter table directly
+  and copy a prepared envelope into bounded invocation storage without walking
+  its payload. Fixed invocation admission remains allocation-free; queueing does
+  not publish descriptors or consume a wire question ID. Terminate both workers
+  before terminating the portable driver.
   The caller still drives IO, maintenance and authenticated network operations.
   `wire::foreign::ForeignPromises` supplies the foreign import callback for
   pending owned hooks. Poll it after graph reclamation and before calls and
