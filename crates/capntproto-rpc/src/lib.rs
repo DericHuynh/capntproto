@@ -1548,7 +1548,8 @@ struct SystemTaskReaper;
 #[cfg(feature = "std")]
 impl crate::task_set::TaskReaper<Error> for SystemTaskReaper {
     fn task_failed(&mut self, error: Error) {
-        println!("ERROR: {error}");
+        // Keep diagnostics out of an application's stdout protocol (for example JSON).
+        eprintln!("ERROR: {error}");
     }
 }
 

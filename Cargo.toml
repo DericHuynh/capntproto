@@ -32,6 +32,7 @@ exclude = [
     "examples/wasip3",
     "examples/embedded-tls",
     "examples/configurations",
+    "examples/checkout",
     "fuzz",
     "verification/miri",
     "verification/portable",

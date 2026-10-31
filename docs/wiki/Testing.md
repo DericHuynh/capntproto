@@ -436,3 +436,12 @@ out to accommodate the count change.
 and embedded example suite as the required CI examples job. See
 [the integration guide](../../examples/integration/README.md) for Node, browser
 and cross-target prerequisites and subset options.
+
+## Distributed application correctness
+
+The [checkout application](../../examples/checkout/README.md) tests three real TLS
+RPC server processes with separate durable databases. Its independent user-history
+checker and ledger oracle run against legacy, portable and mixed drivers, including
+forced reply loss, late requests, cancellation races and process restarts.
+`cargo run --locked -p capntproto-dev -- examples --native-only` includes the suite.
+Use `CHECKOUT_HISTORY_SEEDS=512` with its standalone history test for a longer campaign.

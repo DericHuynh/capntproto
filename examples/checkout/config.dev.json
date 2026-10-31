@@ -1,0 +1,7 @@
+{
+  "stock": 20,
+  "accounts": [
+    { "name": "alice", "token": "alice-development-token", "cents": 50000 },
+    { "name": "bob", "token": "bob-development-token", "cents": 25000 }
+  ]
+}

@@ -145,7 +145,7 @@ jobs:
           cargo fmt --manifest-path benchmarks/runtimes/Cargo.toml -- --check
           cargo fmt --manifest-path examples/webtransport/Cargo.toml -- --check
   examples:
-    name: Run browser WASI Preview 3, embedded TLS and configuration examples
+    name: Run distributed checkout, browser, embedded TLS and configuration examples
     needs: workflows
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -162,6 +162,7 @@ jobs:
           workspaces: |
             . -> target/dev-tools
             examples/configurations -> target
+            examples/checkout -> target
             examples/embedded-tls -> target
             examples/wasip3 -> target
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -181,9 +182,10 @@ jobs:
         run: cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- examples
       - name: Check example formatting and diagnostics
         run: |
-          for example in service wasip3 embedded-tls configurations; do
+          for example in service wasip3 embedded-tls configurations checkout; do
             cargo fmt --manifest-path "examples/$example/Cargo.toml" -- --check
           done
+          cargo clippy --locked --manifest-path examples/checkout/Cargo.toml --all-targets -- -D warnings
           cargo clippy --locked --manifest-path examples/configurations/Cargo.toml --all-targets -- -D warnings
           cargo clippy --locked --manifest-path examples/embedded-tls/Cargo.toml --features host --all-targets -- -D warnings
           cargo clippy --locked --manifest-path examples/wasip3/Cargo.toml --target wasm32-unknown-unknown -- -D warnings

@@ -15,7 +15,8 @@ Use `--native-only` or `--browser-only` after `examples` to select a subset.
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` selects an installed Chromium executable.
 `CARGO_TARGET_DIR` selects the shared build directory.
 
-The suite runs the TCP, TLS, mutual TLS and WebTransport runtime/driver matrix;
+The suite runs the distributed checkout crash/race tests against legacy, portable
+and mixed drivers; the TCP, TLS, mutual TLS and WebTransport runtime/driver matrix;
 the embedded TLS host tests and ARM no-std/Embassy checks; and a real browser
 running the WASI Preview 3 component against separate backend processes. Browser
 checks cover pipelining, concurrent sessions, Unicode payloads, certificate pins,

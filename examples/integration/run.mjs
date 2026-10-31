@@ -11,6 +11,7 @@ assert(!(flags.has('--native-only') && flags.has('--browser-only')), 'choose at 
 const cargo = args => run('cargo', args, { cwd: root }); const manifest = name => `examples/${name}/Cargo.toml`;
 await run(process.execPath, ['--test', path.join(root,'examples/integration/process.test.mjs')], { cwd: root });
 if (!flags.has('--browser-only')) {
+  await cargo(['test','--locked','--manifest-path',manifest('checkout'),'--','--test-threads=1']);
   await cargo(['test','--locked','--manifest-path',manifest('configurations')]);
   await cargo(['test','--locked','--manifest-path',manifest('configurations'),'--no-default-features','--test','matrix']);
   for (const features of ['monoio','webtransport']) await cargo(['check','--locked','--manifest-path',manifest('configurations'),'--no-default-features','--features',features,'--all-targets']);

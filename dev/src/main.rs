@@ -17,7 +17,7 @@ enum Command {
     },
     /// Reject tracked build artifacts, merge conflicts and oversized Git blobs.
     CheckRepository,
-    /// Run browser, embedded TLS and runtime configuration example integrations.
+    /// Run distributed checkout, browser, embedded TLS and runtime integrations.
     Examples(dev::examples::Options),
     /// Verify dependency inventories embedded by cargo-auditable.
     CheckAuditable(dev::checks::AuditArgs),

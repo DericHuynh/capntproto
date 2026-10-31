@@ -1,5 +1,9 @@
 # Examples
 
+The [distributed checkout application](checkout/README.md) runs independent order,
+inventory and payment services. Its process tests check customer histories, stock
+and money conservation, idempotency, cancellations and crash recovery.
+
 The [configuration service](configurations/README.md) covers Tokio/monoio and
 legacy/portable RPC over TCP, TLS and WebTransport. The
 [WASI Preview 3 frontend](wasip3/README.md) runs RPC inside a browser component.

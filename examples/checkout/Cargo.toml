@@ -1,0 +1,26 @@
+[package]
+name = "capntproto-checkout-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+[workspace]
+[dependencies]
+capntproto = { path = "../..", default-features = false, features = ["tls"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "signal", "io-util", "process", "sync"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+clap = { version = "4", features = ["derive", "env"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+[build-dependencies]
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
+[dev-dependencies]
+fixtures = { package = "capntproto-configuration-example", path = "../configurations", default-features = false }
+tempfile = "3"
+[[bin]]
+name = "checkout-node"
+path = "src/bin/node.rs"
+[[bin]]
+name = "checkout-client"
+path = "src/bin/client.rs"

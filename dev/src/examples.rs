@@ -1,4 +1,4 @@
-//! One integration entry point for CI and local development.
+//! Distributed checkout, browser, embedded and runtime integration tests.
 use anyhow::Result;
 use clap::Args;
 use std::process::Command;

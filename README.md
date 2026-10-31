@@ -23,6 +23,7 @@ qualification remain work in progress; see the [release criteria](docs/wiki/Rele
 
 ## Start small, then go deeper
 
+- [Distributed checkout](examples/checkout/README.md): independent order, inventory and payment services with crash recovery and checked concurrent customer histories.
 - [Message round trip](examples/message_basic.rs): `cargo run --no-default-features --example message_basic`.
 - [Key/value server](examples/kv/src/bin/server.rs) and [independent client](examples/kv/src/bin/client.rs), using a shared [Cap'n Proto schema](examples/kv/key_value.capnp).
 - [Deep concurrent client](examples/kv/src/bin/deep-client.rs): concurrent writes and reads through 32 levels of remote directory capabilities.
