@@ -233,13 +233,31 @@ bounded plaintext bridge; that bridge allocates. This is a TCP implementation;
 embedded-tls is not a QUIC TLS provider. Browser WebTransport does not depend on
 either Rust TLS implementation.
 
+## Externally driven runtimes
+
+The direct Tokio TCP/TLS API above is retained. `capntproto-transport` also
+provides caller-owned completion drivers for Tokio and monoio, a native HTTP/3
+core driven by UDP IO and a supplied monotonic timer, and Embassy TCP/TLS with
+borrowed socket/record storage. They reuse the RPC implementation instead of
+creating separate runtime-specific RPC protocols. The hosted RPC adapters still
+allocate; Embassy connects embedded async framing to the existing bounded RPC
+engine and wire API.
+
+See the [runtime API comparison](../../crates/capntproto-transport/README.md#runtime-ownership),
+[monoio client/server service](../../examples/webtransport/README.md#monoio-tcptls-client-and-server),
+and [frozen runtime benchmarks](../../benchmarks/runtimes/README.md). Explicit
+factories return a stream or endpoint plus a driver; poll both application and
+driver in one scope. The additional `tokio::webtransport` facade uses a Tokio LocalSet, and its
+`incoming()` reports driver shutdown as an IO error. The established
+`rpc::webtransport` facade retains its existing Quinn/wtransport implementation.
+
 ## Verification
 
 ```sh
 cargo nextest run --locked --test tcp_rpc --test secure_rpc
 cargo nextest run --locked --no-default-features --features tls --test secure_rpc
 cargo nextest run --locked --no-default-features --features quic --test secure_rpc
-cargo test --locked --no-default-features --features tls,webtransport,embedded-tls --test secure_rpc
+cargo test --locked --no-default-features --features tls,monoio,webtransport,embedded-tls --test secure_rpc
 cargo nextest run --locked --lib transport::backend_tests
 cargo nextest run --locked --lib rpc::quic::retry
 cargo nextest run --locked --lib transport:: -- --skip tlc

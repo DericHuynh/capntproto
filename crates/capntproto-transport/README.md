@@ -7,8 +7,11 @@ server programs, a Cap'n Proto schema, and a browser client.
 
 | Feature | Backend | IO and requirements |
 | --- | --- | --- |
-| `webtransport` | HTTP/3 over Quinn/rustls on native; browser WebTransport on WASM | `futures::AsyncRead + AsyncWrite`; native endpoints need Tokio |
-| `rustls` | Existing rustls Unbuffered stream adapter | Tokio IO traits, TLS 1.3, explicit trust and clock |
+| `webtransport` | HTTP/3 over Quinn/rustls on native; browser WebTransport on WASM | futures IO; native default facade uses Tokio |
+| `webtransport-core` | Runtime-independent native QUIC/HTTP3 | Caller-owned UDP completion halves and timer |
+| `monoio` | Completion-based TCP/TLS; QUIC with `webtransport-core` | io_uring or epoll on Linux, kqueue on macOS; no Tokio runtime |
+| `embassy-net` | Embassy TCP with embedded TLS | No std/alloc; caller-owned network stack and storage |
+| `rustls` | Shared Unbuffered record engine and owned IO driver | TLS 1.3, explicit trust and clock; direct stream additionally requires `tokio` |
 | `embedded-tls` | embedded-tls TLS 1.3 client | `embedded-io-async`; no std or allocator; caller supplies IO, RNG, buffers, root and clock |
 | `embedded-rpc` | Scoped adapter for the embedded client | Bounded allocating plaintext pipes to a hosted futures IO application |
 
@@ -16,6 +19,83 @@ server programs, a Cap'n Proto schema, and a browser client.
 portable RPC drivers. Neither backend is replaced. The hosted RPC driver uses
 allocation; the separate bounded RPC API and isolated embedded TLS backend can
 be built without std or an allocator.
+
+## Runtime ownership
+
+The common IO traits in `io` return buffers with each completion. They have no
+`Send`, `'static`, allocator or executor requirement. Read and write halves are
+separate so a blocked receive cannot block transmission. `Timer` supplies
+monotonic deadlines; `TlsClock` supplies Unix time for certificate validation.
+
+| API | Who polls transport IO? | Allocation / runtime |
+| --- | --- | --- |
+| `rustls::TlsStream` | Its Tokio read/write polls, as before | Native allocating rustls; direct readiness path retained |
+| `rustls::RecordLayer` | Caller supplies ciphertext input/output and drives progress | Native allocating rustls; no socket, task or executor |
+| `rustls::{client, server}` | Caller polls the returned driver alongside `Stream` | Owned completion buffers; no runtime or background task selected |
+| `tokio::tls::{client_driven, server_driven}` | Caller owns the driver | Tokio socket adapter for the same completion engine |
+| `monoio::tls::{client, server}` | Caller owns the driver | Monoio io_uring or epoll; no Tokio runtime |
+| `webtransport::driven::{client, server}` | Caller owns UDP completion halves, timer and driver | Native QUIC/HTTP3 core; std/alloc, no Tokio dependency |
+| `webtransport::{Client, Server}` | Existing Quinn/wtransport tasks on native | Established Tokio implementation retained; browser-owned on WASM |
+| `tokio::webtransport::{Client, Server}` | One local endpoint task spawned by the new facade | Tokio `LocalSet`; same connect/accept/stream model |
+| `monoio::webtransport::{Client, Server}` | One endpoint task spawned by the facade | Monoio; `connect_to` accepts externally resolved addresses |
+| `embassy::connect` | Caller polls TCP/TLS futures and the Embassy network Runner | Borrowed socket/TLS storage; no std or allocator |
+
+For example, after constructing a monoio TCP socket and explicit TLS config:
+
+```rust,ignore
+use capntproto_transport::{driven::DriverExt, monoio::tls};
+let (mut stream, transport) = tls::client(socket, config, server_name)?;
+let result = transport.run_until(async {
+    stream.ready().await?; // Authenticate before exposing RPC capabilities.
+    let rpc = capntproto_transport::rpc::driver(stream, None, side, options)?;
+    // Drive rpc alongside the application, or use the existing RPC helpers.
+    application(rpc).await
+}).await??;
+```
+
+Factories do not spawn or perform IO. The returned future retains outstanding
+completion operations across unrelated wakeups; there are no per-operation
+boxed futures or plaintext relay pipes. Apply a runtime timeout around the
+whole scope when a deadline is required. Successful scope completion drops the
+application frame before requesting shutdown and draining local close output.
+Complete RPC/stream shutdown inside the application before returning. Dropping
+an unfinished scope cancels it; dropping a TLS stream is cancellation, not a
+promise to deliver unfinished calls or buffered writes. Dropping the driver
+wakes surviving handles with an error.
+
+The explicitly driven native HTTP/3 core uses `quinn-proto` and `wtransport-proto`, without the
+high-level Tokio-based wtransport endpoint. It supports one authorized session
+per connection and bidirectional RPC streams. It bounds concurrent connections,
+pending protocol streams and header/capsule bytes through `driven::Limits`.
+Runtime UDP adapters currently send individual datagrams; UDP segmentation and
+receive offload are not implemented. Browser WebTransport remains browser-owned
+and builds for `wasm32-unknown-unknown`.
+
+Use the transport crate directly with `default-features = false` and features
+`monoio` (TLS), or `monoio,webtransport-core` (QUIC), to avoid a Tokio dependency.
+The root crate retains Tokio dependencies for its existing hosted APIs. Monoio
+WebTransport's `connect(url)` uses the host's blocking resolver; use
+`connect_to(peer, url)` for externally resolved addresses. The explicit core
+always takes a resolved address.
+
+## Embassy and bounded RPC
+
+`embassy-net` supplies `embassy::connect`, borrowing TCP receive/transmit buffers,
+TLS record/certificate buffers, RNG and `TlsClock`. The application still owns
+and polls the Embassy network Runner. Socket setup deadlines and DNS belong to
+the application. The embedded TLS crypto/client limitations below still apply;
+this profile does not implement QUIC or a TLS server.
+
+`embassy::{receive, send_pending}` connect embedded async IO to the existing
+bounded RPC engine/wire APIs, reexported as `embassy::{engine, wire}`. Frames use
+the shared Cap'n Proto framing validation. A `SendCursor` retains completed
+write progress if a send future is canceled; `FrameReceiver` retains completed
+read progress. Resume only if the underlying IO supports cancellation. Canceling
+inside embedded-tls requires discarding the session. These adapters cooperate
+after bounded work and perform no allocation. They do not replace the bounded
+RPC state machine or make the hosted `TwoPartyClient` allocator-free. See the
+[bounded RPC examples](../../verification/portable/src/driver.rs) for storage and
+protocol driving.
 
 ## Verification time
 
@@ -89,7 +169,7 @@ driver. Poll that driver concurrently.
 
 ```sh
 cargo check --locked -p capntproto-transport --no-default-features \
-  --features embedded-tls --target thumbv7em-none-eabi --lib
+  --features embassy-net --target thumbv7em-none-eabi --lib
 cargo check --locked -p capntproto --no-default-features \
   --features webtransport,tls,embedded-tls --target wasm32-unknown-unknown --lib
 cargo build --locked --manifest-path examples/webtransport/Cargo.toml \
@@ -99,3 +179,6 @@ cargo build --locked --manifest-path examples/webtransport/Cargo.toml \
 The browser bindings use stable web-sys stream APIs; no `web_sys_unstable_apis`
 flag is required. Compiling rustls for WASM additionally requires a Clang C
 compiler for ring. Browser WebTransport alone does not compile a Rust TLS engine.
+
+Runtime comparisons against the frozen implementation live in
+[benchmarks/runtimes](../../benchmarks/runtimes/README.md).

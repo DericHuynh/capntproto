@@ -11,13 +11,19 @@ description = "WebTransport and clock-controlled TLS backends for Capntproto"
 default = ["rpc"]
 std = ["pki-types/std", "embedded-io?/std", "embedded-io-async?/std"]
 rpc = ["std", "dep:capnp", "dep:capnp-rpc", "dep:futures"]
-webtransport = ["rpc", "dep:tokio", "dep:url", "dep:wtransport", "dep:rustls-quic", "dep:tokio-util", "dep:js-sys", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:web-sys"]
-rustls = ["std", "pki-types/web", "dep:rustls-impl", "dep:tokio", "dep:ring"]
+webtransport = ["webtransport-core", "tokio", "dep:wtransport", "dep:js-sys", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:web-sys"]
+webtransport-core = ["rpc", "dep:url", "dep:rustls-quic", "dep:quinn-proto", "dep:wtransport-proto", "dep:bytes", "dep:socket2"]
+rustls = ["std", "pki-types/web", "dep:rustls-impl", "dep:ring", "dep:futures"]
+tokio = ["std", "dep:tokio", "dep:tokio-util"]
+monoio = ["rpc", "rustls", "dep:monoio"]
+embassy = ["embedded-tls", "dep:capnp", "dep:capntproto-rpc-wire", "dep:capntproto-rpc-engine", "dep:embassy-time"]
+embassy-net = ["embassy", "dep:embassy-net"]
 embedded-tls = ["dep:embedded-tls", "dep:embedded-io", "dep:embedded-io-async", "dep:webpki", "dep:p256", "dep:sha2", "dep:heapless"]
 embedded-rpc = ["embedded-tls", "rpc", "dep:tokio", "dep:tokio-util"]
 
 [dependencies]
-capnp = { package = "capntproto-core", version = "0.25", path = "../capntproto-core", optional = true }
+pin-project-lite = "0.2"
+capnp = { package = "capntproto-core", version = "0.25", path = "../capntproto-core", default-features = false, optional = true }
 capnp-rpc = { package = "capntproto-rpc", version = "0.25.1", path = "../capntproto-rpc", optional = true }
 futures = { version = "0.3", optional = true }
 pki-types = { package = "rustls-pki-types", version = "1.15", default-features = false }
@@ -32,11 +38,22 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "sha25
 sha2 = { version = "0.10", default-features = false, optional = true }
 heapless = { version = "0.9", default-features = false, optional = true }
 url = { version = "2", optional = true }
+bytes = {version="1",optional=true}
+wtransport-proto = {version="0.7.2",default-features=false,optional=true}
+embassy-time = { version = "0.5.1", default-features = false, optional = true }
+embassy-net = { version = "0.9.1", default-features = false, features = ["tcp", "proto-ipv4", "medium-ip"], optional = true }
+capntproto-rpc-wire = { version = "0.1.0", path = "../capntproto-rpc-wire", default-features = false, optional = true }
+capntproto-rpc-engine = { version = "0.1.0", path = "../capntproto-rpc-engine", default-features = false, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "1", default-features = false, features = ["time", "macros"], optional = true }
+wtransport = { version = "0.7.2", default-features = false, features = ["quinn", "ring"], optional = true }
+socket2 = { version = "0.6", optional = true }
+tokio = { version = "1", default-features = false, features = ["time", "macros", "net", "rt"], optional = true }
 rustls-quic = { package = "rustls", version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
-wtransport = { version = "0.7.2", default-features = false, features = ["ring", "quinn"], optional = true }
+quinn-proto = {version="0.11.19",default-features=false,features=["rustls-ring"],optional=true}
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+monoio = { version = "0.2.4", default-features = false, features = ["iouring", "legacy", "macros"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 ring = { version = "0.17", features = ["wasm32_unknown_unknown_js"], optional = true }
@@ -44,3 +61,6 @@ js-sys = { version = "0.3", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", optional = true, features = ["ReadableStream", "ReadableStreamDefaultReader", "WritableStream", "WritableStreamDefaultWriter"] }
+
+[dev-dependencies]
+allocation-counter = "=0.8.1"

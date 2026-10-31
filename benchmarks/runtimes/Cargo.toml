@@ -1,0 +1,40 @@
+[package]
+name = "capntproto-runtime-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[features]
+default = ["driven", "monoio", "webtransport"]
+driven = ["capntproto-transport/tokio"]
+monoio = ["driven", "capntproto-transport/monoio", "dep:monoio"]
+webtransport = ["capntproto-transport/webtransport"]
+
+[dependencies]
+capntproto-transport = {path="../../crates/capntproto-transport",default-features=false,features=["rpc","rustls"]}
+capnp = {package="capntproto-core",path="../../crates/capntproto-core"}
+capnp-rpc = {package="capntproto-rpc",path="../../crates/capntproto-rpc"}
+futures = "0.3"
+tokio = {version="=1.53.3",features=["rt","macros","net","time","io-util"]}
+tokio-util = {version="=0.7.19",features=["compat"]}
+monoio = {version="0.2.4",default-features=false,features=["iouring","legacy","macros"],optional=true}
+serde = {version="1",features=["derive"]}
+serde_json = "1"
+rcgen = {version="0.14",default-features=false,features=["ring","crypto","pem"]}
+libc = "0.2"
+
+[build-dependencies]
+capnp = {package="capntproto-core",path="../../crates/capntproto-core"}
+capnpc = {package="capntproto-codegen",path="../../crates/capntproto-codegen"}
+capntproto-compiler = {path="../../crates/capntproto-compiler"}
+cc = "1"
+
+[profile.release]
+debug = 1
+overflow-checks = true
+
+[[bin]]
+name = "runtime-bench"
+path = "src/main.rs"

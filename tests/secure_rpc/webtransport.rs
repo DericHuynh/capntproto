@@ -185,3 +185,183 @@ async fn listener_rejects_paths_times_out_idle_setup_and_preserves_active_rpc_on
     })
     .await;
 }
+
+// Keep an independent high-level HTTP/3 implementation as the interoperability
+// peer. Self-interoperability alone would hide shared protocol mistakes.
+struct ReferenceStream {
+    read: tokio_util::compat::Compat<wtransport::RecvStream>,
+    write: tokio_util::compat::Compat<wtransport::SendStream>,
+    connection: wtransport::Connection,
+}
+impl ReferenceStream {
+    fn new(
+        connection: wtransport::Connection,
+        send: wtransport::SendStream,
+        recv: wtransport::RecvStream,
+    ) -> Self {
+        use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+        Self {
+            read: recv.compat(),
+            write: send.compat_write(),
+            connection,
+        }
+    }
+}
+impl futures::AsyncRead for ReferenceStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bytes: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.read).poll_read(cx, bytes)
+    }
+}
+impl futures::AsyncWrite for ReferenceStream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bytes: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.write).poll_write(cx, bytes)
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.write).poll_flush(cx)
+    }
+    fn poll_close(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.write).poll_close(cx)
+    }
+}
+impl Drop for ReferenceStream {
+    fn drop(&mut self) {
+        self.connection
+            .close(wtransport::VarInt::from_u32(0), b"RPC stream dropped");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn independent_webtransport_peer_interoperates_in_both_roles_and_rpc_drivers() {
+    use capntproto_transport::tokio::webtransport;
+    for portable in [false, true] {
+        local(async {
+            let pki = Pki::new();
+            let mut tls = (*pki.reference_client()).clone();
+            tls.alpn_protocols = vec![b"h3".to_vec()];
+            let reference = wtransport::Endpoint::client(
+                wtransport::ClientConfig::builder()
+                    .with_bind_default()
+                    .with_custom_tls(tls)
+                    .build(),
+            )
+            .unwrap();
+            let identity = pki.identity("127.0.0.1", false, false);
+            let server = webtransport::Server::bind(
+                "127.0.0.1:0".parse().unwrap(),
+                identity.certificates,
+                identity.private_key,
+                Arc::new(SystemClock),
+            )
+            .unwrap();
+            let url = format!(
+                "https://127.0.0.1:{}/rpc",
+                server.local_addr().unwrap().port()
+            );
+            let serving = async {
+                let mut session = server.accept().await.unwrap().accept().await.unwrap();
+                let stream = session.accept_bi().await.unwrap();
+                capntproto_transport::rpc::driver(
+                    stream,
+                    Some(bootstrap()),
+                    Side::Server,
+                    protocol(portable),
+                )
+                .unwrap()
+                .await
+                .unwrap();
+            };
+            let calling = async {
+                let connection = reference.connect(&url).await.unwrap();
+                let (send, recv) = connection.open_bi().await.unwrap().await.unwrap();
+                exercise_borrowed(
+                    capntproto_transport::rpc::driver(
+                        ReferenceStream::new(connection, send, recv),
+                        None,
+                        Side::Client,
+                        protocol(portable),
+                    )
+                    .unwrap(),
+                )
+                .await;
+            };
+            futures::join!(serving, calling);
+        })
+        .await;
+        local(async {
+            let pki = Pki::new();
+            let identity = pki.identity("127.0.0.1", false, false);
+            let mut tls = webtransport::tls::ServerConfig::builder_with_provider(Arc::new(
+                webtransport::tls::crypto::ring::default_provider(),
+            ))
+            .with_protocol_versions(&[&webtransport::tls::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(identity.certificates, identity.private_key)
+            .unwrap();
+            tls.alpn_protocols = vec![b"h3".to_vec()];
+            let reference = wtransport::Endpoint::server(
+                wtransport::ServerConfig::builder()
+                    .with_bind_address("127.0.0.1:0".parse().unwrap())
+                    .with_custom_tls(tls)
+                    .build(),
+            )
+            .unwrap();
+            let client = webtransport::Client::new(
+                webtransport::tls::RootCertStore {
+                    roots: pki.roots().roots,
+                },
+                Arc::new(SystemClock),
+            )
+            .unwrap();
+            let url = format!(
+                "https://127.0.0.1:{}/rpc",
+                reference.local_addr().unwrap().port()
+            );
+            let serving = async {
+                let request = reference.accept().await.await.unwrap();
+                assert_eq!(request.path(), "/rpc");
+                let connection = request.accept().await.unwrap();
+                let (send, recv) = connection.accept_bi().await.unwrap();
+                capntproto_transport::rpc::driver(
+                    ReferenceStream::new(connection, send, recv),
+                    Some(bootstrap()),
+                    Side::Server,
+                    protocol(portable),
+                )
+                .unwrap()
+                .await
+                .unwrap();
+            };
+            let calling = async {
+                let mut session = client.connect(&url).await.unwrap();
+                let stream = session.open_bi().await.unwrap();
+                exercise_borrowed(
+                    capntproto_transport::rpc::driver(
+                        stream,
+                        None,
+                        Side::Client,
+                        protocol(portable),
+                    )
+                    .unwrap(),
+                )
+                .await;
+            };
+            futures::join!(serving, calling);
+        })
+        .await;
+    }
+}

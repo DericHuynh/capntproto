@@ -93,10 +93,33 @@ pub use capntproto_transport::rustls as tls;
 /// Browser/native WebTransport over HTTP/3. One bidirectional stream carries RPC.
 #[cfg(feature = "webtransport")]
 pub use capntproto_transport::webtransport;
+
+/// Completion-based runtime adapters; no Tokio runtime is required.
+#[cfg(all(feature = "monoio", any(target_os = "linux", target_os = "macos")))]
+pub use capntproto_transport::monoio;
+
+/// Caller-owned transport drivers and scoped shutdown.
+#[cfg(any(
+    feature = "tls",
+    feature = "monoio",
+    feature = "webtransport",
+    feature = "embedded-tls"
+))]
+pub use capntproto_transport::driven;
 #[cfg(all(
     not(target_arch = "wasm32"),
-    any(feature = "tls", feature = "webtransport", feature = "embedded-tls")
+    any(
+        feature = "tls",
+        feature = "monoio",
+        feature = "webtransport",
+        feature = "embedded-tls"
+    )
 ))]
 pub use capntproto_transport::SystemClock;
-#[cfg(any(feature = "tls", feature = "webtransport", feature = "embedded-tls"))]
+#[cfg(any(
+    feature = "tls",
+    feature = "monoio",
+    feature = "webtransport",
+    feature = "embedded-tls"
+))]
 pub use capntproto_transport::TlsClock;

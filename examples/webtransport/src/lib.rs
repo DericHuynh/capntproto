@@ -4,6 +4,7 @@ pub mod greeting_capnp {
 }
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::RpcDriver};
+#[cfg(target_arch = "wasm32")]
 use capntproto::rpc::webtransport;
 use capntproto::{capnp, capnp_rpc};
 
@@ -16,8 +17,13 @@ pub fn protocol() -> capnp::Result<RpcDriver> {
     )?))
 }
 
-pub async fn greeting(stream: webtransport::Stream, prefix: &str, value: &str) -> Result<String> {
-    let mut driver = webtransport::driver(stream, None, Side::Client, protocol()?)?;
+pub async fn greeting<S: futures::AsyncRead + futures::AsyncWrite + Unpin + 'static>(
+    stream: S,
+    prefix: &str,
+    value: &str,
+) -> Result<String> {
+    let mut driver =
+        capnp_rpc::twoparty::TwoPartyClient::with_driver(stream, None, Side::Client, protocol()?)?;
     let service: greeting_capnp::greeting::Client = driver.bootstrap();
     let disconnect = driver.get_disconnector();
     let application = async {
@@ -68,4 +74,34 @@ pub async fn call(
     greeting(stream, &prefix, &value)
         .await
         .map_err(|err| JsValue::from_str(&err.to_string()))
+}
+
+use capnp_rpc::new_client;
+use greeting_capnp::{greeting, session};
+use std::rc::Rc;
+pub struct Service;
+struct Session(String);
+impl greeting::Server for Service {
+    fn open(
+        self: Rc<Self>,
+        context: greeting::OpenContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            let prefix = params.get_prefix()?.to_str()?.to_owned();
+            results.set_session(new_client::<session::Client, _>(Session(prefix)));
+            Ok(())
+        })
+    }
+}
+impl session::Server for Session {
+    fn echo(
+        self: Rc<Self>,
+        context: session::EchoContext<'_>,
+    ) -> capnp::capability::Promise<(), capnp::Error> {
+        context.complete(|params, mut results| {
+            let value = format!("{}{}", self.0, params.get_value()?.to_str()?);
+            results.set_value(&value);
+            Ok(())
+        })
+    }
 }

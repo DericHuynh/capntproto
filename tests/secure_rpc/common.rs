@@ -355,7 +355,7 @@ pub fn portable_options() -> capnp_rpc::portable::Options {
     .unwrap()
 }
 
-#[cfg(any(feature = "embedded-tls", feature = "webtransport"))]
+#[cfg(any(feature = "embedded-tls", feature = "webtransport", feature = "monoio"))]
 pub fn protocol(portable: bool) -> capnp_rpc::twoparty::RpcDriver {
     if portable {
         capnp_rpc::twoparty::RpcDriver::Portable(portable_options())
@@ -364,7 +364,7 @@ pub fn protocol(portable: bool) -> capnp_rpc::twoparty::RpcDriver {
     }
 }
 
-#[cfg(any(feature = "embedded-tls", feature = "webtransport"))]
+#[cfg(any(feature = "embedded-tls", feature = "webtransport", feature = "monoio"))]
 pub async fn exercise_borrowed(mut driver: TwoPartyClient<'_>) {
     driver.set_outgoing_call_limit(64);
     let cap: harness::Client = driver.bootstrap();

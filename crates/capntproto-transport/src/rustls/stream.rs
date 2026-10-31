@@ -3,11 +3,9 @@
 //! record. rustls 0.23 still allocates plaintext records internally.
 #![forbid(unsafe_code)]
 
+use super::record::*;
 use rustls_impl::{
-    client::UnbufferedClientConnection,
-    pki_types::ServerName,
-    server::UnbufferedServerConnection,
-    unbuffered::{ConnectionState, EncodeError, EncryptError, UnbufferedStatus, WriteTraffic},
+    client::UnbufferedClientConnection, pki_types::ServerName, server::UnbufferedServerConnection,
     ClientConfig, CommonState, ServerConfig,
 };
 use std::{
@@ -18,13 +16,6 @@ use std::{
     task::{Context, Poll, Waker},
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-
-// Enough for rustls's largest handshake message and the following record.
-// This buffer never shrinks when a record has been consumed.
-const INPUT_BYTES: usize = 64 * 1024 + 18 * 1024;
-const WRITE_BYTES: usize = 128 * 1024;
-const RECORD_BYTES: usize = 16 * 1024;
-const OUTPUT_BYTES: usize = WRITE_BYTES + 1024;
 
 /// An authenticated TLS stream using rustls's Unbuffered connection API.
 /// The handshake constructors use the supplied verification and ALPN policy;
@@ -45,262 +36,13 @@ pub struct TlsStream<S> {
     writer: Option<Waker>,
 }
 
-enum Connection {
-    Client(UnbufferedClientConnection),
-    Server(UnbufferedServerConnection),
-}
-impl Connection {
-    fn common(&self) -> &CommonState {
-        match self {
-            Self::Client(c) => c,
-            Self::Server(c) => c,
-        }
+impl ReadBuffer for ReadBuf<'_> {
+    fn remaining(&self) -> usize {
+        self.remaining()
     }
-}
-
-// Offsets avoid moving unconsumed ciphertext after each TLS record. Only a
-// socket refill that needs room compacts the buffer.
-#[derive(Default)]
-struct Buffer {
-    bytes: Vec<u8>,
-    start: usize,
-    end: usize,
-    flushed: bool,
-}
-impl Buffer {
-    fn new(size: usize) -> Self {
-        Self {
-            bytes: vec![0; size],
-            ..Self::default()
-        }
+    fn put_slice(&mut self, bytes: &[u8]) {
+        self.put_slice(bytes);
     }
-    fn pending(&self) -> &[u8] {
-        &self.bytes[self.start..self.end]
-    }
-    fn consume(&mut self, size: usize) {
-        self.start += size;
-        if self.start == self.end {
-            self.start = 0;
-            self.end = 0;
-        }
-    }
-    fn append(&mut self, bytes: &[u8]) {
-        if self.end + bytes.len() > self.bytes.len() {
-            self.bytes.resize(self.end + bytes.len(), 0);
-        }
-        self.bytes[self.end..self.end + bytes.len()].copy_from_slice(bytes);
-        self.end += bytes.len();
-    }
-}
-
-enum Operation<'a, 'b> {
-    Handshake,
-    Read(&'a mut ReadBuf<'b>),
-    Write(&'a [u8]),
-    WriteVectored(&'a [io::IoSlice<'b>]),
-    Flush,
-    Shutdown,
-}
-enum Action {
-    Continue,
-    Read,
-    Transmit,
-    Ready(usize),
-}
-
-// Encrypt contiguous payloads directly. Only records crossing a slice boundary
-// need a plaintext copy; ciphertext still accumulates into one bounded write.
-fn encrypt<Data>(
-    traffic: &mut WriteTraffic<'_, Data>,
-    bytes: &[u8],
-    outgoing: &mut Buffer,
-) -> io::Result<()> {
-    let size = match traffic.encrypt(bytes, &mut outgoing.bytes[outgoing.end..]) {
-        Ok(size) => size,
-        Err(EncryptError::InsufficientSize(required)) => {
-            outgoing
-                .bytes
-                .resize(outgoing.end + required.required_size, 0);
-            traffic
-                .encrypt(bytes, &mut outgoing.bytes[outgoing.end..])
-                .map_err(io::Error::other)?
-        }
-        Err(error) => return Err(io::Error::other(error)),
-    };
-    outgoing.end += size;
-    outgoing.flushed = false;
-    Ok(())
-}
-
-fn encrypt_vectored<Data>(
-    traffic: &mut WriteTraffic<'_, Data>,
-    buffers: &[io::IoSlice<'_>],
-    outgoing: &mut Buffer,
-    batch: &mut Vec<u8>,
-) -> io::Result<usize> {
-    // Most RPC writes fit in one record. Copy that batch once without walking
-    // the general cross-record cursor for every slice.
-    let length = buffers.iter().try_fold(0usize, |length, b| {
-        length.checked_add(b.len()).filter(|n| *n <= RECORD_BYTES)
-    });
-    if let Some(length) = length {
-        batch.clear();
-        batch.reserve_exact(length);
-        for buffer in buffers {
-            batch.extend_from_slice(buffer);
-        }
-        encrypt(traffic, batch, outgoing)?;
-        return Ok(length);
-    }
-    let mut slices = buffers
-        .iter()
-        .map(|b| &b[..])
-        .filter(|b| !b.is_empty())
-        .peekable();
-    let mut current = slices.next().unwrap_or_default();
-    let mut accepted = 0;
-    while !current.is_empty() && accepted < WRITE_BYTES {
-        let limit = (WRITE_BYTES - accepted).min(current.len());
-        if limit >= RECORD_BYTES || slices.peek().is_none() {
-            // Keep a partial record for the next slice, unless this is the end.
-            let size = if slices.peek().is_none() {
-                limit
-            } else {
-                limit / RECORD_BYTES * RECORD_BYTES
-            };
-            encrypt(traffic, &current[..size], outgoing)?;
-            accepted += size;
-            current = &current[size..];
-            if current.is_empty() {
-                current = slices.next().unwrap_or_default();
-            }
-        } else {
-            batch.clear();
-            let limit = RECORD_BYTES.min(WRITE_BYTES - accepted);
-            while batch.len() < limit && !current.is_empty() {
-                let size = current.len().min(limit - batch.len());
-                batch.extend_from_slice(&current[..size]);
-                current = &current[size..];
-                if current.is_empty() {
-                    current = slices.next().unwrap_or_default();
-                }
-            }
-            encrypt(traffic, batch, outgoing)?;
-            accepted += batch.len();
-        }
-    }
-    Ok(accepted)
-}
-
-// Handling a state and applying *all* its discard bytes is one operation. No
-// borrowed rustls state survives an await or an underlying IO poll.
-fn handle<Data>(
-    status: UnbufferedStatus<'_, '_, Data>,
-    operation: &mut Operation<'_, '_>,
-    outgoing: &mut Buffer,
-    plaintext: &mut Buffer,
-    write_batch: &mut Vec<u8>,
-    peer_closed: &mut bool,
-    write_closed: &mut bool,
-) -> io::Result<(usize, Action)> {
-    let mut discard = status.discard;
-    let action = match status.state.map_err(io::Error::other)? {
-        ConnectionState::ReadTraffic(mut traffic) => {
-            if let Some(record) = traffic.next_record() {
-                let record = record.map_err(io::Error::other)?;
-                discard += record.discard;
-                if let Operation::Read(buffer) = operation {
-                    let size = buffer.remaining().min(record.payload.len());
-                    buffer.put_slice(&record.payload[..size]);
-                    plaintext.append(&record.payload[size..]);
-                    if size == 0 {
-                        Action::Continue
-                    } else {
-                        Action::Ready(size)
-                    }
-                } else {
-                    // A writer may have to consume a record already in incoming
-                    // before rustls offers WriteTraffic. It never reads more
-                    // application ciphertext from the socket while doing so.
-                    plaintext.append(record.payload);
-                    Action::Continue
-                }
-            } else {
-                Action::Continue
-            }
-        }
-        ConnectionState::EncodeTlsData(mut encode) => {
-            let size = match encode.encode(&mut outgoing.bytes[outgoing.end..]) {
-                Ok(size) => size,
-                Err(EncodeError::InsufficientSize(required)) => {
-                    outgoing
-                        .bytes
-                        .resize(outgoing.end + required.required_size, 0);
-                    encode
-                        .encode(&mut outgoing.bytes[outgoing.end..])
-                        .map_err(io::Error::other)?
-                }
-                Err(error) => return Err(io::Error::other(error)),
-            };
-            outgoing.end += size;
-            outgoing.flushed = false;
-            Action::Continue
-        }
-        ConnectionState::TransmitTlsData(transmit) => {
-            if outgoing.pending().is_empty() && outgoing.flushed {
-                transmit.done();
-                Action::Continue
-            } else {
-                Action::Transmit
-            }
-        }
-        ConnectionState::BlockedHandshake => Action::Read,
-        ConnectionState::WriteTraffic(mut traffic) => match operation {
-            Operation::Handshake | Operation::Flush => Action::Ready(0),
-            Operation::Read(_) => {
-                if *peer_closed {
-                    Action::Ready(0)
-                } else {
-                    Action::Read
-                }
-            }
-            Operation::Write(bytes) => {
-                let bytes = &bytes[..bytes.len().min(WRITE_BYTES)];
-                encrypt(&mut traffic, bytes, outgoing)?;
-                Action::Ready(bytes.len())
-            }
-            Operation::WriteVectored(buffers) => Action::Ready(encrypt_vectored(
-                &mut traffic,
-                buffers,
-                outgoing,
-                write_batch,
-            )?),
-            Operation::Shutdown => {
-                if !*write_closed {
-                    let size = traffic
-                        .queue_close_notify(&mut outgoing.bytes[outgoing.end..])
-                        .map_err(io::Error::other)?;
-                    outgoing.end += size;
-                    outgoing.flushed = false;
-                    *write_closed = true;
-                }
-                Action::Ready(0)
-            }
-        },
-        ConnectionState::PeerClosed => {
-            *peer_closed = true;
-            Action::Continue
-        }
-        ConnectionState::Closed => Action::Ready(0),
-        ConnectionState::ReadEarlyData(_) => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "TLS early data is disabled",
-            ))
-        }
-        _ => return Err(io::Error::other("unsupported rustls connection state")),
-    };
-    Ok((discard, action))
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
@@ -399,7 +141,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
     fn poll_drive(
         &mut self,
         cx: &mut Context<'_>,
-        mut operation: Operation<'_, '_>,
+        mut operation: Operation<'_, '_, ReadBuf<'_>>,
     ) -> Poll<io::Result<usize>> {
         if matches!(
             operation,
@@ -459,7 +201,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream<S> {
     fn poll_write_operation(
         &mut self,
         cx: &mut Context<'_>,
-        operation: Operation<'_, '_>,
+        operation: Operation<'_, '_, ReadBuf<'_>>,
         empty: bool,
     ) -> Poll<io::Result<usize>> {
         if self.write_closed {

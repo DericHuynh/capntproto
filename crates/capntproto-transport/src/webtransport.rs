@@ -4,16 +4,18 @@
 //!
 //! Native endpoints use rustls with the caller's clock. Browsers implement their
 //! own certificate validation and clock; this API cannot override either.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "webtransport"))]
 mod native;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "webtransport"))]
 pub use native::*;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "webtransport"))]
 mod browser;
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(target_arch = "wasm32"))]
+pub mod driven;
+#[cfg(all(target_arch = "wasm32", feature = "webtransport"))]
 pub use browser::*;
 
-fn checked_url(value: &str) -> std::io::Result<url::Url> {
+pub(crate) fn checked_url(value: &str) -> std::io::Result<url::Url> {
     let url = url::Url::parse(value).map_err(std::io::Error::other)?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -31,8 +33,64 @@ fn checked_url(value: &str) -> std::io::Result<url::Url> {
 
 pub use crate::rpc::{driver, network};
 
+// Select dual-stack explicitly instead of relying on IPV6_V6ONLY OS defaults.
+// Runtime adapters own binding; the protocol/driver factories stay IO-free.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "tokio", feature = "monoio")
+))]
+pub(crate) fn client_socket() -> std::io::Result<std::net::UdpSocket> {
+    let ipv6 = || -> std::io::Result<std::net::UdpSocket> {
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV6,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )?;
+        socket.set_only_v6(false)?;
+        socket.bind(&"[::]:0".parse::<std::net::SocketAddr>().unwrap().into())?;
+        Ok(socket.into())
+    };
+    ipv6().or_else(|_| std::net::UdpSocket::bind("0.0.0.0:0"))
+}
+
 #[cfg(test)]
 mod tests {
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        any(feature = "tokio", feature = "monoio")
+    ))]
+    #[test]
+    fn default_client_socket_accepts_ipv4_and_available_ipv6() {
+        use std::{
+            net::{SocketAddr, UdpSocket},
+            time::Duration,
+        };
+        let client = super::client_socket().unwrap();
+        if client.local_addr().unwrap().is_ipv6() {
+            assert!(!socket2::SockRef::from(&client).only_v6().unwrap());
+        }
+        let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let address = match peer.local_addr().unwrap() {
+            SocketAddr::V4(peer) if client.local_addr().unwrap().is_ipv6() => {
+                SocketAddr::new(peer.ip().to_ipv6_mapped().into(), peer.port())
+            }
+            address => address,
+        };
+        client.send_to(b"v4", address).unwrap();
+        let mut bytes = [0; 2];
+        assert_eq!(peer.recv_from(&mut bytes).unwrap().0, 2);
+        assert_eq!(&bytes, b"v4");
+        if client.local_addr().unwrap().is_ipv6() {
+            if let Ok(peer) = UdpSocket::bind("[::1]:0") {
+                peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                client.send_to(b"v6", peer.local_addr().unwrap()).unwrap();
+                assert_eq!(peer.recv_from(&mut bytes).unwrap().0, 2);
+                assert_eq!(&bytes, b"v6");
+            }
+        }
+    }
+
     #[test]
     fn rejects_insecure_or_ambiguous_session_urls() {
         for url in [

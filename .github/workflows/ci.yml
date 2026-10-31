@@ -92,7 +92,7 @@ jobs:
           path: target/quality/portability/*.xml
           if-no-files-found: error
   transports:
-    name: Check WebTransport WASM and embedded TLS
+    name: Check runtimes, WebTransport WASM and embedded TLS
     needs: workflows
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -116,8 +116,8 @@ jobs:
         run: |
           cargo test --locked -p capntproto-transport --all-features --lib
           cargo clippy --locked -p capntproto-transport --all-features --all-targets -- -D warnings
-          cargo test --locked -p capntproto --no-default-features --features tls,webtransport,embedded-tls --test secure_rpc
-          cargo build --locked --manifest-path examples/webtransport/Cargo.toml --bins
+          cargo test --locked -p capntproto --no-default-features --features tls,monoio,webtransport,embedded-tls --test secure_rpc
+          cargo build --locked --manifest-path examples/webtransport/Cargo.toml --features monoio --bins
       - name: Compile WASM library and browser service client
         env:
           CC_wasm32_unknown_unknown: clang
@@ -127,7 +127,21 @@ jobs:
       - name: Check embedded TLS without std or allocation
         env:
           CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
-        run: cargo check --locked -p capntproto-transport --no-default-features --features embedded-tls --target thumbv7em-none-eabi --lib
+        run: cargo check --locked -p capntproto-transport --no-default-features --features embassy-net --target thumbv7em-none-eabi --lib
+      - name: Check isolated monoio profile without Tokio
+        shell: bash
+        run: |
+          cargo check --locked -p capntproto-transport --no-default-features --features monoio,webtransport-core --lib
+          cargo tree --locked -p capntproto-transport --no-default-features --features monoio,webtransport-core -e normal > /tmp/monoio-dependencies.txt
+          if grep -q 'tokio v' /tmp/monoio-dependencies.txt; then
+            cat /tmp/monoio-dependencies.txt
+            exit 1
+          fi
+      - name: Check runtime benchmark worker and example formatting
+        run: |
+          cargo check --locked --manifest-path benchmarks/runtimes/Cargo.toml
+          cargo fmt --manifest-path benchmarks/runtimes/Cargo.toml -- --check
+          cargo fmt --manifest-path examples/webtransport/Cargo.toml -- --check
   platforms:
     name: Build and test (${{ matrix.os }})
     needs: workflows

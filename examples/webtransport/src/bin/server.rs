@@ -1,37 +1,8 @@
 use capnp_rpc::{new_client, twoparty::TwoPartyServer};
+use capntproto::capnp_rpc;
 use capntproto::rpc::{security::Identity, webtransport, SystemClock};
-use capntproto::{capnp, capnp_rpc};
-use capntproto_webtransport_example::{
-    greeting_capnp::{greeting, session},
-    protocol, Result,
-};
-use std::{rc::Rc, sync::Arc, time::Duration};
-struct Service;
-struct Session(String);
-impl greeting::Server for Service {
-    fn open(
-        self: Rc<Self>,
-        context: greeting::OpenContext<'_>,
-    ) -> capnp::capability::Promise<(), capnp::Error> {
-        context.complete(|params, mut results| {
-            let prefix = params.get_prefix()?.to_str()?.to_owned();
-            results.set_session(new_client::<session::Client, _>(Session(prefix)));
-            Ok(())
-        })
-    }
-}
-impl session::Server for Session {
-    fn echo(
-        self: Rc<Self>,
-        context: session::EchoContext<'_>,
-    ) -> capnp::capability::Promise<(), capnp::Error> {
-        context.complete(|params, mut results| {
-            let value = format!("{}{}", self.0, params.get_value()?.to_str()?);
-            results.set_value(&value);
-            Ok(())
-        })
-    }
-}
+use capntproto_webtransport_example::{greeting_capnp::greeting, protocol, Result, Service};
+use std::{sync::Arc, time::Duration};
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     tokio::task::LocalSet::new()

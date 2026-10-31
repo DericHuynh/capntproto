@@ -61,3 +61,25 @@ are not linked into this browser client. Its exported `call` function opens a
 WebTransport session and stream, performs the same pipelined RPC, and shuts it
 down. The native server uses rustls over QUIC; embedded-tls is a separate TCP
 client backend documented in [capntproto-transport](../../crates/capntproto-transport/README.md).
+
+## Monoio TCP/TLS client and server
+
+The `monoio` feature adds separate client/server binaries for the same
+`greeting.capnp` service over TCP/TLS. They execute on monoio without entering a
+Tokio runtime. The shared service and client RPC functions are unchanged.
+FusionDriver selects io_uring where available and epoll otherwise; the runtime
+benchmark selects each driver explicitly.
+
+```sh
+cargo run --locked --manifest-path examples/webtransport/Cargo.toml --features monoio --bin monoio-server -- \
+  127.0.0.1:4434 /tmp/greeting-cert.pem /tmp/greeting-key.pem
+cargo run --locked --manifest-path examples/webtransport/Cargo.toml --features monoio --bin monoio-client -- \
+  127.0.0.1:4434 /tmp/greeting-cert.pem localhost 'Hello, ' world
+```
+
+The client supplies a resolved TCP address and a separate certificate server
+name. It owns a transport driver and polls it alongside the application, with a
+whole-operation deadline. The server accepts concurrent connections and gives
+each its own driver and setup deadline. See the
+[API comparison](../../crates/capntproto-transport/README.md#runtime-ownership)
+for explicitly driven Tokio/WebTransport and bounded Embassy alternatives.

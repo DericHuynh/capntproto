@@ -20,6 +20,7 @@ exclude = [
     "vendor/capnproto",
     "vendor/rustls",
     "benchmarks/rpc",
+    "benchmarks/runtimes",
     "benchmarks/rpc-upstream",
     "benchmarks/storage",
     "benchmarks/instructions",
@@ -38,7 +39,8 @@ default = ["native", "services", "storage"]
 native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:bytes", "dep:zeroize", "dep:capnpc", "dep:capntproto-compiler", "dep:nix", "dep:rustix"]
 services = ["dep:capnpc", "dep:capntproto-compiler"]
 storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capntproto-compiler"]
-tls = ["dep:rustls", "dep:capntproto-transport", "capntproto-transport/rustls"]
+tls = ["dep:rustls", "dep:capntproto-transport", "capntproto-transport/rustls", "capntproto-transport/tokio"]
+monoio = ["dep:capntproto-transport", "capntproto-transport/monoio"]
 webtransport = ["dep:capntproto-transport", "capntproto-transport/webtransport"]
 embedded-tls = ["dep:capntproto-transport", "capntproto-transport/embedded-rpc"]
 quic = ["native"]
@@ -122,6 +124,9 @@ libc = "0.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.31", optional = true, default-features = false, features = ["net", "uio"] }
 rustix = { version = "1.1", optional = true, features = ["net", "time"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+wtransport = { version = "0.7.2", default-features = false, features = ["ring", "quinn"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 rustix = { version = "1.1", features = ["process"] }

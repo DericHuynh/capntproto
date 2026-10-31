@@ -30,11 +30,19 @@ impl TlsClock for SystemClock {
 
 /// Capntproto's TLS byte-stream ALPN. WebTransport uses HTTP/3's `h3` ALPN.
 pub const ALPN: &[u8] = b"capntproto-rpc/1";
+pub mod driven;
+#[cfg(feature = "embassy")]
+pub mod embassy;
 #[cfg(feature = "embedded-tls")]
 pub mod embedded;
+pub mod io;
+#[cfg(all(feature = "monoio", any(target_os = "linux", target_os = "macos")))]
+pub mod monoio;
 #[cfg(feature = "rpc")]
 pub mod rpc;
 #[cfg(feature = "rustls")]
 pub mod rustls;
-#[cfg(feature = "webtransport")]
+#[cfg(all(feature = "tokio", not(target_arch = "wasm32")))]
+pub mod tokio;
+#[cfg(feature = "webtransport-core")]
 pub mod webtransport;

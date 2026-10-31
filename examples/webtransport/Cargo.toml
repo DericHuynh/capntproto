@@ -10,6 +10,7 @@ publish = false
 default = ["native"]
 native = []
 browser = []
+monoio = ["native", "capntproto/monoio"]
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -37,3 +38,11 @@ wasm-bindgen-futures = "0.4"
 capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
 capntproto-compiler = { path = "../../crates/capntproto-compiler" }
+
+[[bin]]
+name = "monoio-client"
+required-features = ["monoio"]
+
+[[bin]]
+name = "monoio-server"
+required-features = ["monoio"]

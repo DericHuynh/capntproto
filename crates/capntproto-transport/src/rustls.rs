@@ -8,7 +8,13 @@ use rustls_impl::pki_types::{
 };
 pub use rustls_impl::{pki_types, ClientConfig, RootCertStore, ServerConfig};
 use std::{fmt, io, path::Path, sync::Arc};
+mod record;
+pub use record::{Progress, RecordLayer};
+mod owned;
+pub use owned::{client, server, Buffer as OwnedBuffer, Stream};
+#[cfg(feature = "tokio")]
 mod stream;
+#[cfg(feature = "tokio")]
 pub use stream::TlsStream;
 
 struct Clock(Arc<dyn TlsClock + Send + Sync>);
