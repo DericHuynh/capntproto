@@ -2,6 +2,7 @@
 use serde::Serialize;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+use std::time::Instant;
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static BLOCKS: AtomicU64 = AtomicU64::new(0);
@@ -57,11 +58,13 @@ extern "C" {
 }
 pub struct Region {
     start: u64,
+    wall: Instant,
     cycles: i32,
     cycles_error: Option<String>,
 }
 #[derive(Serialize)]
 pub struct Sample {
+    pub wall_ns: u64,
     pub cpu_ns: u64,
     pub cycles: Option<u64>,
     pub cycles_error: Option<String>,
@@ -90,14 +93,22 @@ impl Region {
         }
         // SAFETY: The argument-free clock shim returns a process counter by value.
         let start = unsafe { capntproto_cpu_ns() };
+        let wall = Instant::now();
         ACTIVE.store(true, Relaxed);
         Self {
             start,
+            wall,
             cycles,
             cycles_error,
         }
     }
     pub fn stop(self) -> Sample {
+        let wall_ns = self
+            .wall
+            .elapsed()
+            .as_nanos()
+            .try_into()
+            .unwrap_or(u64::MAX);
         ACTIVE.store(false, Relaxed);
         // SAFETY: The descriptor came from the matching open shim, including
         // its documented negative unsupported value. All output is by value.
@@ -113,6 +124,7 @@ impl Region {
             capntproto_measure_stop();
         }
         Sample {
+            wall_ns,
             cpu_ns: elapsed,
             cycles: (self.cycles >= 0).then_some(cycles),
             cycles_error: self.cycles_error,

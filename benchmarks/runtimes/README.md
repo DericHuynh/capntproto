@@ -52,6 +52,14 @@ including partial acceptance, not UDP packets or kernel syscalls. The `io_level`
 field records this distinction. Never compare those counts across transports.
 All builds include the same atomic-counter overhead.
 
+`wall_ns` measures elapsed time around only the validated RPC workload loop,
+after warmup and before disconnect/teardown. Divide by `iterations` for average
+time per workload; throughput is `iterations * 1e9 / wall_ns` workloads/second.
+A workload may include multiple RPCs: concurrent-32 contains 32 reads, and the
+deep case contains 32 concurrent chains of 32 capability hops plus their reads.
+Batch averages and five-run spread are not per-RPC tail latency percentiles.
+The stream counter forwards vectored writes to the underlying transport.
+
 `cycles` uses Linux perf_event hardware counters, excluding kernel/hypervisor.
 A denied/unavailable PMU returns null with the actual OS error; do not replace it
 with wall time. `cpu_ns` is process CPU time, still subject to frequency/scheduler
@@ -266,3 +274,179 @@ Receive storage starts at 128 KiB per endpoint rather than 64 KiB; a retained pa
 Validation: 32 secure RPC integration tests and 17 transport unit tests pass, including epoll zero-allocation ready UDP operations and io_uring completion ownership, empty/dual-stack datagrams, completion fallback, live packet ownership, timer preemption/PTO and receive-flood send progress. Transport and benchmark Clippy pass with warnings denied; monoio client/server examples and the no-std Embassy target compile. Native monoio transport dependencies contain no Tokio.
 
 Hardware cycles remain unavailable (`perf_event_open`: ENOENT). `target/monoio-optimization/samples.jsonl` retains every sample and binary SHA-256; `summary.json` contains minimum/mean/maximum/spread for Ir, Bcm, Bim, allocations, bytes, IO and process CPU time. Raw Callgrind profiles are compressed alongside those ignored artifacts.
+
+## Native elapsed-time comparison (2026-10-31)
+
+Actual native runs, without Valgrind: **1,260 samples / 252 configurations**, five independent processes per configuration. The original Tokio reference is `256241c2801c9b2651f19e335b71f1a0d3155386`; the pre-optimization runtime branch is `36d2db1f794e3a8ad5bd283fd5991eda38ef7013`; current implementation code is `5bc79a117cc4b075e1ff680e2f1304f2970cacc4`. Every worker uses the same updated benchmark sources, including measured-region elapsed time and vectored-write forwarding, with matching shared registry versions/checksums. Earlier instruction tables used the earlier harness and a separate measurement run.
+
+AMD EPYC 9V74 virtual machine, Linux x86-64, Rust 1.97.0, release/fat LTO, one runtime thread. Both loopback peers share that runtime. Every process is pinned to CPU 2; runs are sequential, with no concurrent build or profiler. Builds/runtimes are interleaved across repetitions. These are local workspace results, not CI droplet or WAN measurements. TLS 1.3 is enabled throughout; WebTransport uses QUIC/HTTP3. Connection setup, warmup and teardown are outside the measured interval. Every workload validates values and payload contents.
+
+| Case | Measured iterations | Warmup iterations |
+| --- | ---: | ---: |
+| unary | 16,384 | 64 |
+| dependent | 256 | 8 |
+| pipelined | 512 | 8 |
+| concurrent-32 | 1,024 | 16 |
+| callback | 4,096 | 32 |
+| large | 1,024 | 16 |
+| deep-32-concurrent-32 | 16 | 2 |
+
+Each timing cell below is **minimum / mean / spread**, in **µs per complete workload**. Spread is maximum minus minimum across the five process-level batch averages. These are not individual-RPC p95/p99 latencies. Lower elapsed time is better; no instruction-count estimate is substituted for elapsed time.
+
+### Native portable RPC over TCP/TLS
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 13.06 / 13.59 / 1.26 | 12.94 / 13.59 / 1.79 | 15.01 / 16.46 / 5.89 | 13.87 / 14.66 / 2.63 | 14.53 / 15.09 / 1.39 |
+| dependent | 1,035.24 / 1,061.09 / 56.68 | 1,016.47 / 1,045.13 / 62.10 | 999.37 / 1,026.43 / 70.71 | 945.38 / 988.17 / 150.08 | 1,051.83 / 1,060.07 / 26.91 |
+| pipelined | 783.23 / 849.88 / 126.90 | 794.58 / 824.28 / 92.32 | 441.32 / 475.73 / 100.81 | 437.51 / 475.12 / 70.10 | 455.04 / 483.37 / 70.37 |
+| concurrent-32 | 257.26 / 273.01 / 30.53 | 256.22 / 273.49 / 38.08 | 99.51 / 106.55 / 18.02 | 111.03 / 116.55 / 10.49 | 96.90 / 109.59 / 23.40 |
+| callback | 42.74 / 45.56 / 9.45 | 43.73 / 46.33 / 6.89 | 40.63 / 43.53 / 6.48 | 39.50 / 40.01 / 1.01 | 40.82 / 41.60 / 1.35 |
+| large | 134.54 / 138.73 / 9.60 | 129.61 / 137.21 / 13.71 | 128.49 / 132.61 / 7.95 | 129.20 / 143.41 / 48.80 | 132.36 / 136.34 / 8.70 |
+| deep-32-concurrent-32 | 38,952.44 / 42,446.81 / 6,116.22 | 42,197.43 / 44,184.70 / 3,446.63 | 22,389.05 / 23,176.99 / 2,288.28 | 31,060.81 / 32,652.82 / 3,219.04 | 32,585.74 / 33,051.98 / 1,847.62 |
+
+### Native legacy RPC over TCP/TLS
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 19.39 / 19.73 / 0.81 | 19.52 / 19.95 / 0.87 | 13.55 / 14.16 / 1.38 | 12.66 / 12.78 / 0.44 | 12.60 / 12.84 / 0.50 |
+| dependent | 1,000.71 / 1,035.31 / 74.80 | 1,016.93 / 1,042.05 / 53.15 | 517.00 / 556.34 / 75.12 | 483.05 / 534.55 / 81.35 | 493.95 / 539.38 / 68.88 |
+| pipelined | 798.07 / 849.14 / 111.71 | 814.57 / 868.35 / 108.64 | 159.24 / 174.46 / 32.95 | 162.43 / 170.17 / 18.57 | 175.95 / 186.07 / 19.98 |
+| concurrent-32 | 370.56 / 388.28 / 46.19 | 376.10 / 385.67 / 25.24 | 68.51 / 76.71 / 16.82 | 68.08 / 74.31 / 16.62 | 72.04 / 77.73 / 17.25 |
+| callback | 49.43 / 50.83 / 3.75 | 46.28 / 50.67 / 7.71 | 32.49 / 33.28 / 1.95 | 28.68 / 31.26 / 4.74 | 29.39 / 31.49 / 3.92 |
+| large | 128.34 / 130.07 / 3.94 | 127.88 / 132.52 / 10.43 | 124.81 / 129.43 / 8.84 | 123.17 / 129.27 / 14.73 | 126.23 / 129.87 / 12.60 |
+| deep-32-concurrent-32 | 23,492.05 / 26,192.27 / 5,237.98 | 24,099.12 / 26,674.05 / 6,481.23 | 6,026.62 / 6,259.20 / 410.08 | 6,060.99 / 6,182.91 / 417.50 | 6,381.46 / 6,984.54 / 1,208.73 |
+
+### Native portable RPC over QUIC/WebTransport
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 18.39 / 18.56 / 0.31 | 18.23 / 18.94 / 1.17 | 18.90 / 19.42 / 0.90 | 18.08 / 18.71 / 1.39 | 18.41 / 19.02 / 1.14 |
+| dependent | 1,419.91 / 1,462.35 / 101.91 | 1,396.19 / 1,450.15 / 83.14 | 1,330.89 / 1,406.27 / 242.68 | 1,251.69 / 1,349.94 / 245.82 | 1,394.83 / 1,478.67 / 125.79 |
+| pipelined | 523.24 / 549.81 / 71.50 | 521.89 / 550.86 / 68.83 | 537.26 / 576.05 / 69.93 | 503.43 / 551.70 / 100.37 | 655.95 / 702.19 / 92.36 |
+| concurrent-32 | 123.87 / 139.60 / 37.61 | 131.64 / 135.63 / 11.04 | 150.33 / 156.67 / 14.34 | 150.04 / 155.85 / 14.43 | 158.16 / 172.99 / 43.97 |
+| callback | 53.35 / 58.33 / 8.58 | 57.05 / 60.08 / 7.66 | 50.50 / 55.86 / 8.98 | 52.36 / 54.67 / 5.48 | 53.72 / 56.72 / 6.03 |
+| large | 242.79 / 259.64 / 42.05 | 244.30 / 256.53 / 24.26 | 496.72 / 513.23 / 30.56 | 490.77 / 511.33 / 53.55 | 784.79 / 813.84 / 56.39 |
+| deep-32-concurrent-32 | 24,940.89 / 25,470.16 / 860.54 | 25,314.00 / 26,108.61 / 1,959.40 | 26,451.48 / 28,069.46 / 5,045.84 | 37,973.69 / 39,064.49 / 2,818.72 | 39,903.34 / 40,784.10 / 2,487.09 |
+
+### Native legacy RPC over QUIC/WebTransport
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 16.71 / 18.29 / 4.33 | 16.42 / 18.06 / 3.53 | 17.65 / 19.04 / 2.49 | 16.18 / 17.76 / 3.14 | 16.01 / 17.82 / 2.89 |
+| dependent | 655.55 / 691.97 / 71.16 | 659.40 / 685.20 / 55.37 | 674.57 / 698.03 / 50.84 | 646.55 / 679.17 / 49.29 | 649.87 / 687.27 / 86.89 |
+| pipelined | 237.75 / 248.58 / 24.66 | 248.61 / 257.67 / 15.60 | 262.88 / 271.72 / 17.37 | 255.35 / 265.38 / 18.67 | 304.24 / 320.93 / 35.78 |
+| concurrent-32 | 102.25 / 106.47 / 6.65 | 104.13 / 107.50 / 9.60 | 126.29 / 131.88 / 16.20 | 125.10 / 130.33 / 15.22 | 129.51 / 135.82 / 12.07 |
+| callback | 38.52 / 40.25 / 6.27 | 38.83 / 39.90 / 3.09 | 39.94 / 43.28 / 6.97 | 36.34 / 37.51 / 2.67 | 37.53 / 38.65 / 3.67 |
+| large | 236.59 / 243.86 / 15.47 | 235.73 / 247.32 / 22.66 | 468.56 / 484.51 / 45.15 | 468.29 / 478.08 / 29.09 | 766.61 / 779.93 / 19.29 |
+| deep-32-concurrent-32 | 16,831.37 / 17,650.27 / 1,902.58 | 16,816.05 / 17,777.43 / 2,255.45 | 23,532.13 / 23,763.03 / 623.14 | 16,961.60 / 17,682.20 / 1,447.52 | 9,555.78 / 10,401.42 / 1,524.54 |
+
+### Observed pre/post timing differences
+
+Change in minimum elapsed time from `36d2db1` to `5bc79a1`, with the same timed harness. Negative values indicate less elapsed time. The direct Tokio path is also shown to expose run variation in a largely unchanged reference. Consult the absolute timing spread above and the full sample data when interpreting small differences.
+
+Minimum elapsed time improves in 31 of the 56 monoio comparisons and rises in 25. The 100 KB TLS pre/post differences are +29–33% on monoio, but the direct Tokio control also shifts +23–28% in that case. That discrepancy needs isolation before attributing the full change to a particular optimization. Allocation reductions alone do not establish an elapsed-time improvement.
+
+**Portable / tls**
+
+| Case | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: |
+| unary | -0.8% | +3.5% | -5.7% | -2.3% |
+| dependent | -2.2% | -0.1% | -0.4% | -1.4% |
+| pipelined | +1.5% | -1.0% | 0.0% | +4.3% |
+| concurrent-32 | +2.3% | -3.2% | +9.5% | -7.7% |
+| callback | +5.4% | -2.5% | -2.5% | +5.2% |
+| large | +22.8% | +32.1% | +32.8% | +32.5% |
+| deep-32-concurrent-32 | +2.8% | +3.1% | +1.0% | +5.9% |
+
+**Legacy / tls**
+
+| Case | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: |
+| unary | 0.0% | -3.2% | -0.5% | -0.2% |
+| dependent | +2.4% | -1.1% | -0.1% | +0.2% |
+| pipelined | +2.3% | -2.3% | +2.6% | +5.0% |
+| concurrent-32 | +1.9% | -6.3% | +0.6% | +4.5% |
+| callback | -6.0% | +0.6% | -1.4% | +1.3% |
+| large | +27.6% | +32.0% | +30.9% | +29.3% |
+| deep-32-concurrent-32 | -2.8% | +1.9% | -0.3% | -1.2% |
+
+**Portable / webtransport**
+
+| Case | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: |
+| unary | -1.5% | -3.1% | -2.3% | -1.1% |
+| dependent | +0.9% | -2.3% | -1.6% | -4.7% |
+| pipelined | -1.6% | -1.7% | -1.0% | +5.2% |
+| concurrent-32 | -0.6% | +0.3% | +0.6% | -3.0% |
+| callback | +7.5% | -10.7% | -2.3% | -2.5% |
+| large | +13.6% | +9.9% | +3.2% | +1.9% |
+| deep-32-concurrent-32 | -0.2% | +3.3% | +4.3% | +6.9% |
+
+**Legacy / webtransport**
+
+| Case | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: |
+| unary | -1.7% | -1.6% | -4.1% | -8.5% |
+| dependent | -0.4% | -5.8% | -2.4% | -3.3% |
+| pipelined | +0.6% | -5.9% | -4.3% | +1.7% |
+| concurrent-32 | +0.3% | -3.0% | -2.1% | -3.3% |
+| callback | +3.4% | -3.8% | -2.3% | -2.1% |
+| large | +15.0% | +11.1% | +3.6% | +2.5% |
+| deep-32-concurrent-32 | -10.4% | +4.1% | -6.0% | -2.5% |
+
+### Throughput
+
+Best observed **workloads/second**, derived from the minimum batch time. A concurrent-32 workload contains 32 independent reads; a deep workload contains 32 simultaneous chains, each with 32 capability hops and a final read. Rates across different workload types are not equivalent service-request rates.
+
+**Portable / tls**
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 76,547.8 | 77,290.8 | 66,625.9 | 72,122.8 | 68,813.9 |
+| dependent | 966.0 | 983.8 | 1,000.6 | 1,057.8 | 950.7 |
+| pipelined | 1,276.8 | 1,258.5 | 2,265.9 | 2,285.6 | 2,197.6 |
+| concurrent-32 | 3,887.1 | 3,902.9 | 10,049.1 | 9,006.4 | 10,320.0 |
+| callback | 23,396.8 | 22,866.1 | 24,610.9 | 25,313.3 | 24,495.5 |
+| large | 7,432.5 | 7,715.6 | 7,782.9 | 7,739.8 | 7,555.0 |
+| deep-32-concurrent-32 | 25.7 | 23.7 | 44.7 | 32.2 | 30.7 |
+
+**Legacy / tls**
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 51,564.3 | 51,217.1 | 73,801.4 | 79,018.3 | 79,391.7 |
+| dependent | 999.3 | 983.3 | 1,934.2 | 2,070.2 | 2,024.5 |
+| pipelined | 1,253.0 | 1,227.6 | 6,279.6 | 6,156.4 | 5,683.4 |
+| concurrent-32 | 2,698.6 | 2,658.9 | 14,596.8 | 14,688.0 | 13,881.6 |
+| callback | 20,229.8 | 21,609.3 | 30,783.1 | 34,866.0 | 34,030.9 |
+| large | 7,791.7 | 7,820.0 | 8,012.3 | 8,118.8 | 7,921.9 |
+| deep-32-concurrent-32 | 42.6 | 41.5 | 165.9 | 165.0 | 156.7 |
+
+**Portable / webtransport**
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 54,378.1 | 54,867.7 | 52,900.9 | 55,304.9 | 54,315.7 |
+| dependent | 704.3 | 716.2 | 751.4 | 798.9 | 716.9 |
+| pipelined | 1,911.2 | 1,916.1 | 1,861.3 | 1,986.4 | 1,524.5 |
+| concurrent-32 | 8,073.2 | 7,596.5 | 6,652.1 | 6,665.1 | 6,322.9 |
+| callback | 18,742.6 | 17,527.9 | 19,801.1 | 19,100.2 | 18,614.7 |
+| large | 4,118.7 | 4,093.4 | 2,013.2 | 2,037.6 | 1,274.2 |
+| deep-32-concurrent-32 | 40.1 | 39.5 | 37.8 | 26.3 | 25.1 |
+
+**Legacy / webtransport**
+
+| Case | Original Tokio | Current Tokio | Driven Tokio | Monoio epoll | Monoio io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unary | 59,854.3 | 60,913.7 | 56,673.1 | 61,801.7 | 62,479.3 |
+| dependent | 1,525.4 | 1,516.5 | 1,482.4 | 1,546.7 | 1,538.8 |
+| pipelined | 4,206.0 | 4,022.4 | 3,804.1 | 3,916.2 | 3,286.9 |
+| concurrent-32 | 9,780.4 | 9,603.8 | 7,918.4 | 7,993.8 | 7,721.6 |
+| callback | 25,957.9 | 25,754.7 | 25,035.3 | 27,515.8 | 26,645.2 |
+| large | 4,226.8 | 4,242.2 | 2,134.2 | 2,135.4 | 1,304.5 |
+| deep-32-concurrent-32 | 59.4 | 59.5 | 42.5 | 59.0 | 104.6 |
+
+Among current runtimes, the minimum-time winner across the 28 transport/driver/workload combinations is: Current Tokio: 7, Driven Tokio: 5, Monoio epoll: 12, Monoio io_uring: 4. Counts give each fixture equal weight and are not an aggregate application speedup.
+
+The ignored `target/runtime-native-comparison` directory contains `samples.jsonl` (every native sample), `summary.json` and `summary.csv` (all 252 configurations with minimum/mean/maximum/spread/standard deviation), plus `metadata.json` (CPU, compiler, affinity, inputs and source/binary hashes). Wall time, process CPU time, allocations, requested bytes, read/write completions and throughput are retained separately. Hardware cycles are unavailable on this VM and remain null. Embassy hardware and browser WASM are outside this native timing matrix.

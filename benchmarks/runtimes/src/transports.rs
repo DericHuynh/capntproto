@@ -86,6 +86,17 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Stream<S> {
         }
         result
     }
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        let result = Pin::new(&mut self.0).poll_write_vectored(cx, bytes);
+        if let Poll::Ready(Ok(n)) = &result {
+            measure::write(*n);
+        }
+        result
+    }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.0).poll_flush(cx)
     }
