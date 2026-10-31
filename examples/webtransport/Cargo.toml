@@ -1,0 +1,39 @@
+[package]
+name = "capntproto-webtransport-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[features]
+default = ["native"]
+native = []
+browser = []
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "server"
+required-features = ["native"]
+[[bin]]
+name = "client"
+required-features = ["native"]
+
+[dependencies]
+capntproto = { path = "../..", default-features = false, features = ["webtransport"] }
+futures = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+capntproto = { path = "../..", default-features = false, features = ["tls"] }
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "signal"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+
+[build-dependencies]
+capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
+capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
+capntproto-compiler = { path = "../../crates/capntproto-compiler" }

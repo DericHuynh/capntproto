@@ -37,6 +37,7 @@ jobs:
           cargo fmt --all -- --check
           cargo fmt --manifest-path benchmarks/rpc/Cargo.toml -- --check
           cargo fmt --manifest-path examples/kv/Cargo.toml -- --check
+          cargo fmt --manifest-path examples/webtransport/Cargo.toml -- --check
           cargo clippy --locked -p capntproto-dev --all-targets -- -D warnings
       - name: Check auditable build scripts
         run: |

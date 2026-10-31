@@ -91,6 +91,43 @@ jobs:
           name: portable-generated-views
           path: target/quality/portability/*.xml
           if-no-files-found: error
+  transports:
+    name: Check WebTransport WASM and embedded TLS
+    needs: workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: optional-transports
+          workspaces: |
+            . -> target
+            examples/webtransport -> target
+      - name: Install cross targets and C compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang
+          rustup target add wasm32-unknown-unknown thumbv7em-none-eabi --toolchain 1.97.0
+          rustup component add clippy --toolchain 1.97.0
+      - name: Exercise TLS and HTTP3 RPC with both drivers
+        run: |
+          cargo test --locked -p capntproto-transport --all-features --lib
+          cargo clippy --locked -p capntproto-transport --all-features --all-targets -- -D warnings
+          cargo test --locked -p capntproto --no-default-features --features tls,webtransport,embedded-tls --test secure_rpc
+          cargo build --locked --manifest-path examples/webtransport/Cargo.toml --bins
+      - name: Compile WASM library and browser service client
+        env:
+          CC_wasm32_unknown_unknown: clang
+        run: |
+          cargo check --locked -p capntproto --no-default-features --features webtransport,tls,embedded-tls --target wasm32-unknown-unknown --lib
+          cargo build --locked --manifest-path examples/webtransport/Cargo.toml --no-default-features --features browser --target wasm32-unknown-unknown --lib
+      - name: Check embedded TLS without std or allocation
+        env:
+          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
+        run: cargo check --locked -p capntproto-transport --no-default-features --features embedded-tls --target thumbv7em-none-eabi --lib
   platforms:
     name: Build and test (${{ matrix.os }})
     needs: workflows
@@ -258,7 +295,7 @@ jobs:
           if-no-files-found: warn
   report:
     name: Required CI result
-    needs: [workflows, documentation, portability, platforms, cargo, models, fuzz, extended, performance, cleanup]
+    needs: [workflows, documentation, portability, transports, platforms, cargo, models, fuzz, extended, performance, cleanup]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5

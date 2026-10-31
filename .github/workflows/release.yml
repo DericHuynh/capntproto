@@ -66,7 +66,7 @@ jobs:
           cargo package --locked \
             -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen \
             -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures \
-            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
+            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto-transport -p capntproto
           cargo run --locked --example message_basic
           sha256sum target/package/*.crate > target/package/SHA256SUMS
       - name: Retain verified release packages
@@ -92,5 +92,5 @@ jobs:
           cargo publish --locked --no-verify \
             -p capntproto-core -p capntproto-rpc-engine -p capntproto-codegen \
             -p capntproto-compiler -p capntproto-rpc-wire -p capntproto-futures \
-            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto
+            -p capntproto-rpc -p capntproto-compat -p capntproto-rustls -p capntproto-transport -p capntproto
           sha256sum --check target/package/SHA256SUMS

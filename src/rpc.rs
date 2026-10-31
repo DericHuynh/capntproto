@@ -1,16 +1,21 @@
 //! Scoped RPC connections over TCP, QUIC and generic Tokio streams.
 //!
-//! Retain [`Connection`] while using its bootstrap capabilities. Its drop cancels
-//! the driver; [`Connection::shutdown`] completes bounded graceful cleanup. Use
-//! [`tcp`] or `quic` (feature `quic`) to choose a transport. TLS secures TCP
+//! Retain `Connection` while using its bootstrap capabilities. Its drop cancels
+//! the driver; `Connection::shutdown` completes bounded graceful cleanup. Use
+//! `tcp` or `quic` (feature `quic`) to choose a transport. TLS secures TCP
 //! through `tcp::tls` (feature `tls`); QUIC includes TLS 1.3. The `security`
 //! module holds shared certificates when TLS is enabled.
-//! Use [`raw`] only when an
+//! Feature `webtransport` adds native/browser HTTP3 streams, including WASM.
+//! Feature `embedded-tls` adds a caller-buffered TLS client over TCP or custom IO.
+//! Use `raw` only when an
 //! integration deliberately manages detached task handles.
+#[cfg(not(target_arch = "wasm32"))]
 mod connection;
+#[cfg(not(target_arch = "wasm32"))]
 mod io;
 #[cfg(feature = "native")]
 pub(crate) mod local_io;
+#[cfg(not(target_arch = "wasm32"))]
 pub use connection::Connection;
 #[cfg(feature = "native")]
 pub(crate) mod pacing;
@@ -18,7 +23,9 @@ pub(crate) mod pacing;
 pub(crate) mod packet_batch;
 #[cfg(feature = "native")]
 pub(crate) mod packet_mtu;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod raw;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod task;
 
 // Leave room for RPC framing around a 64 KiB payload while keeping each
@@ -31,8 +38,9 @@ pub type Completion = futures::future::Shared<capnp::capability::Promise<(), cap
 
 #[cfg(feature = "quic")]
 pub mod quic;
-#[cfg(feature = "tls")]
+#[cfg(all(feature = "tls", not(target_arch = "wasm32")))]
 pub mod security;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod tcp;
 
 /// Private RPC ALPN identifier, shared by TCP with TLS and QUIC.
@@ -75,3 +83,20 @@ impl QuicVersion {
         }
     }
 }
+
+/// Caller-buffered TLS 1.3 client for embedded IO and scoped RPC bridging.
+#[cfg(feature = "embedded-tls")]
+pub use capntproto_transport::embedded;
+/// Clock-controlled unbuffered TLS byte streams using Tokio IO traits.
+#[cfg(feature = "tls")]
+pub use capntproto_transport::rustls as tls;
+/// Browser/native WebTransport over HTTP/3. One bidirectional stream carries RPC.
+#[cfg(feature = "webtransport")]
+pub use capntproto_transport::webtransport;
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "tls", feature = "webtransport", feature = "embedded-tls")
+))]
+pub use capntproto_transport::SystemClock;
+#[cfg(any(feature = "tls", feature = "webtransport", feature = "embedded-tls"))]
+pub use capntproto_transport::TlsClock;

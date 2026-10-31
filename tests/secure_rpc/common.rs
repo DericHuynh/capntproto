@@ -27,7 +27,7 @@ impl Pki {
         }
     }
 
-    #[cfg(feature = "quic")]
+    #[cfg(any(feature = "quic", feature = "embedded-tls", feature = "webtransport"))]
     pub fn roots_der(&self) -> Vec<rustls::pki_types::CertificateDer<'static>> {
         vec![self.ca.der().clone()]
     }
@@ -111,6 +111,7 @@ impl Pki {
         tls::server_config(
             self.identity("localhost", false, false),
             mutual.then(|| self.roots()),
+            std::sync::Arc::new(capntproto::rpc::SystemClock),
         )
         .unwrap()
     }
@@ -119,19 +120,25 @@ impl Pki {
         tls::client_config(
             self.roots(),
             mutual.then(|| self.identity("client.local", true, false)),
+            std::sync::Arc::new(capntproto::rpc::SystemClock),
         )
         .unwrap()
     }
 }
 
-pub async fn local(future: impl Future<Output = ()>) {
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            tokio::time::timeout(Duration::from_secs(20), future)
-                .await
-                .expect("secure RPC test timed out");
-        })
-        .await;
+pub fn local(future: impl Future<Output = ()>) -> impl Future<Output = ()> {
+    // Pin once before wrapping the large driver/record-buffer future in the
+    // LocalSet and timeout. Repeated debug-mode moves overflow a test stack.
+    let future = Box::pin(future);
+    async move {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                tokio::time::timeout(Duration::from_secs(20), future)
+                    .await
+                    .expect("secure RPC test timed out");
+            })
+            .await;
+    }
 }
 
 pub struct Echo;
@@ -346,4 +353,52 @@ pub fn portable_options() -> capnp_rpc::portable::Options {
         (8 * 1024 * 1024).try_into().unwrap(),
     )
     .unwrap()
+}
+
+#[cfg(any(feature = "embedded-tls", feature = "webtransport"))]
+pub fn protocol(portable: bool) -> capnp_rpc::twoparty::RpcDriver {
+    if portable {
+        capnp_rpc::twoparty::RpcDriver::Portable(portable_options())
+    } else {
+        capnp_rpc::twoparty::RpcDriver::Legacy
+    }
+}
+
+#[cfg(any(feature = "embedded-tls", feature = "webtransport"))]
+pub async fn exercise_borrowed(mut driver: TwoPartyClient<'_>) {
+    driver.set_outgoing_call_limit(64);
+    let cap: harness::Client = driver.bootstrap();
+    let close = driver.get_disconnector();
+    let diagnostics = driver.diagnostics();
+    let work = async {
+        cap.client.when_resolved().await.unwrap();
+        let results = futures::future::join_all((0..32).map(|n| echo(&cap, n))).await;
+        for (n, result) in results.into_iter().enumerate() {
+            assert_eq!(result.unwrap(), n as u32);
+        }
+        let callback: harness::Client = capnp_rpc::new_client(Echo);
+        let mut request = cap.bounce_request();
+        request.get().set_cap(callback);
+        let sent = request.send();
+        assert_eq!(echo(&sent.pipeline.get_cap(), 29).await.unwrap(), 29);
+        let returned = sent
+            .promise
+            .await
+            .unwrap()
+            .get()
+            .unwrap()
+            .get_cap()
+            .unwrap();
+        assert_eq!(echo(&returned, 31).await.unwrap(), 31);
+        let large = cap.generic_request().send().promise.await.unwrap();
+        assert_eq!(
+            large.get().unwrap().get_value().unwrap(),
+            vec![0x73; 100_000]
+        );
+        close.await.unwrap();
+        assert!(diagnostics.snapshot().is_empty());
+        assert!(echo(&cap, 19).await.is_err());
+    };
+    let (result, ()) = futures::join!(driver, work);
+    result.unwrap();
 }

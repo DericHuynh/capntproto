@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Capntproto WebTransport greeting</title>
+<h1>Greeting service</h1>
+<form id="greeting">
+  <p><label>Service URL <input id="url" value="https://127.0.0.1:4433/rpc" size="40" required></label></p>
+  <p><label>Certificate SHA-256 (optional) <input id="hash" size="64" pattern="[a-fA-F0-9]{64}"></label></p>
+  <p><label>Prefix <input id="prefix" value="Hello, "></label></p>
+  <p><label>Value <input id="value" value="world"></label></p>
+  <button>Call service</button>
+</form>
+<pre id="result" role="status"></pre>
+<script type="module">
+  import init, { call } from './pkg/capntproto_webtransport_example.js';
+  const output = document.querySelector('#result');
+  const form = document.querySelector('#greeting');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = form.querySelector('button');
+    button.disabled = true;
+    output.textContent = 'Calling…';
+    try {
+      await init();
+      const hex = document.querySelector('#hash').value.trim();
+      const pin = hex ? Uint8Array.from(hex.match(/../g), byte => parseInt(byte, 16)) : undefined;
+      output.textContent = await call(document.querySelector('#url').value,
+        document.querySelector('#prefix').value, document.querySelector('#value').value, pin);
+    } catch (error) {
+      output.textContent = String(error);
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
+</html>

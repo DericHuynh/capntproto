@@ -8,6 +8,10 @@ Its [service implementation](kv/src/service.rs) is separate from connection setu
 Schemas compile in Rust; the example needs no external Cap'n Proto compiler.
 Applications use `capntproto` as their sole Cap'n Proto runtime dependency.
 
+The [WebTransport greeting service](webtransport/README.md) has a native server,
+native client, and browser WASM client. Its schema demonstrates a per-client
+session capability and a pipelined child call over HTTP/3.
+
 ## Run the service
 
 In one terminal:

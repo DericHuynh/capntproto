@@ -1,0 +1,46 @@
+[package]
+name = "capntproto-transport"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/DericHuynh/capntproto"
+description = "WebTransport and clock-controlled TLS backends for Capntproto"
+
+[features]
+default = ["rpc"]
+std = ["pki-types/std", "embedded-io?/std", "embedded-io-async?/std"]
+rpc = ["std", "dep:capnp", "dep:capnp-rpc", "dep:futures"]
+webtransport = ["rpc", "dep:tokio", "dep:url", "dep:wtransport", "dep:rustls-quic", "dep:tokio-util", "dep:js-sys", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:web-sys"]
+rustls = ["std", "pki-types/web", "dep:rustls-impl", "dep:tokio", "dep:ring"]
+embedded-tls = ["dep:embedded-tls", "dep:embedded-io", "dep:embedded-io-async", "dep:webpki", "dep:p256", "dep:sha2", "dep:heapless"]
+embedded-rpc = ["embedded-tls", "rpc", "dep:tokio", "dep:tokio-util"]
+
+[dependencies]
+capnp = { package = "capntproto-core", version = "0.25", path = "../capntproto-core", optional = true }
+capnp-rpc = { package = "capntproto-rpc", version = "0.25.1", path = "../capntproto-rpc", optional = true }
+futures = { version = "0.3", optional = true }
+pki-types = { package = "rustls-pki-types", version = "1.15", default-features = false }
+rustls-impl = { package = "capntproto-rustls", version = "=0.23.46", path = "../../vendor/rustls", default-features = false, features = ["ring", "std"], optional = true }
+tokio = { version = "1", default-features = false, features = ["io-util"], optional = true }
+tokio-util = { version = "0.7", features = ["compat"], optional = true }
+embedded-tls = { version = "0.19", default-features = false, optional = true }
+embedded-io = { version = "0.7", default-features = false, optional = true }
+embedded-io-async = { version = "0.7", default-features = false, optional = true }
+webpki = { package = "rustls-webpki", version = "0.103.16", default-features = false, optional = true }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "sha256"], optional = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
+heapless = { version = "0.9", default-features = false, optional = true }
+url = { version = "2", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", default-features = false, features = ["time", "macros"], optional = true }
+rustls-quic = { package = "rustls", version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+wtransport = { version = "0.7.2", default-features = false, features = ["ring", "quinn"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ring = { version = "0.17", features = ["wasm32_unknown_unknown_js"], optional = true }
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["ReadableStream", "ReadableStreamDefaultReader", "WritableStream", "WritableStreamDefaultWriter"] }

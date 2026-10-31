@@ -51,6 +51,7 @@ the root so GitHub discovers them.
 | `capntproto-rpc-engine` | `crates/capntproto-rpc-engine/` | Allocation-free streaming credit and question lifecycles used by the hosted runtime; wider RPC migration in progress |
 | `capntproto-rpc-wire` | `crates/capntproto-rpc-wire/` | Portable RPC schemas shared with hosted RPC, plus bounded validation/publication of outgoing capability grants |
 | `capntproto-futures` | `crates/capntproto-futures/` | Async framing and ordered writes |
+| `capntproto-transport` | `crates/capntproto-transport/` | Native/browser WebTransport, clock-controlled rustls streams, and allocator-free embedded TLS clients |
 | `capntproto-codegen` | `crates/capntproto-codegen/` | Rust schema binding generator |
 | `capntproto-test-support` | `test-support/` | Verification tools and fixtures; a dev dependency of the runtime |
 | `capntproto-dev` | `dev/` | Repository checks, reports, cloud lifecycle, fuzz runners and research probes |

@@ -1,5 +1,6 @@
 # Rust build output (including standalone workspaces). Keep Cargo.lock files.
 target/
+/examples/webtransport/pkg/
 *.rs.bk
 
 # LLVM coverage and profiling output.

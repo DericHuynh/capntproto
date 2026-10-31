@@ -26,6 +26,7 @@ exclude = [
     "benchmarks/concurrency",
     "examples/downstream",
     "examples/kv",
+    "examples/webtransport",
     "fuzz",
     "verification/miri",
     "verification/portable",
@@ -37,10 +38,13 @@ default = ["native", "services", "storage"]
 native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:bytes", "dep:zeroize", "dep:capnpc", "dep:capntproto-compiler", "dep:nix", "dep:rustix"]
 services = ["dep:capnpc", "dep:capntproto-compiler"]
 storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capntproto-compiler"]
-tls = ["dep:rustls"]
+tls = ["dep:rustls", "dep:capntproto-transport", "capntproto-transport/rustls"]
+webtransport = ["dep:capntproto-transport", "capntproto-transport/webtransport"]
+embedded-tls = ["dep:capntproto-transport", "capntproto-transport/embedded-rpc"]
 quic = ["native"]
 
 [dependencies]
+capntproto-transport = { version = "0.1.0", path = "crates/capntproto-transport", optional = true, default-features = false }
 capntproto-rpc-engine = { version = "0.1.0", path = "crates/capntproto-rpc-engine" }
 bytes = { version = "1", optional = true }
 boring = { version = "5", optional = true }
@@ -51,18 +55,15 @@ capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntpro
 capnp-rpc = { package = "capntproto-rpc", version = "0.25.1", path = "crates/capntproto-rpc" }
 capnp-futures = { package = "capntproto-futures", version = "0.25", path = "crates/capntproto-futures" }
 futures = "0.3"
-tokio = { version = "1.53.3", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
+tokio = { version = "1.53.3", features = ["rt", "macros", "time", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
-socket2 = "0.6"
 rustls = { package = "capntproto-rustls", version = "=0.23.46", path = "vendor/rustls", optional = true, default-features = false, features = ["ring", "std"] }
-ring = "0.17"
 memmap2 = { version = "0.9", optional = true }
 fs2 = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 zeroize = { version = "1", optional = true }
-tempfile = "3"
 
 [build-dependencies]
 capnpc = { package = "capntproto-codegen", version = "0.25", path = "crates/capntproto-codegen", optional = true }
@@ -70,6 +71,7 @@ capntproto-compiler = { version = "0.1.0", path = "crates/capntproto-compiler", 
 capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntproto-core" }
 
 [dev-dependencies]
+rand = "0.8"
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 allocation-counter = "=0.8.1"
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
@@ -107,6 +109,12 @@ name = "quic-interop"
 path = "tests/interop/quic_peer.rs"
 required-features = ["quic"]
 
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.53.3", features = ["net"] }
+socket2 = "0.6"
+ring = "0.17"
+tempfile = "3"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 libc = "0.2"

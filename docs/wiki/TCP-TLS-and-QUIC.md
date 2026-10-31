@@ -6,6 +6,7 @@ Select the network transport independently of certificate configuration:
 | --- | --- | --- |
 | TCP | `capntproto::rpc::tcp` | Plain TCP, or TLS 1.3 through `rpc::tcp::tls` |
 | QUIC | `capntproto::rpc::quic` | TLS 1.3 is part of QUIC; it cannot be disabled |
+| WebTransport | `capntproto::rpc::webtransport` | HTTP/3 over QUIC; rustls on native, browser TLS on WASM |
 
 `rpc::security` owns shared certificate material, PEM loading and the rustls
 configuration types. TLS is a security layer for TCP, not a third transport.
@@ -16,7 +17,7 @@ TLS/TCP uses vendored rustls 0.23.46's Unbuffered API through the shared
 `tls::TlsStream<S>` Tokio adapter, including native multiparty TCP/TLS. Both
 maintained benchmark drivers use this same adapter. The independent published
 upstream RPC and framework-managed gRPC comparators retain tokio-rustls.
-All QUIC uses quiche with
+The raw QUIC backend uses quiche with
 Cargo-managed BoringSSL, including standard two-party RPC and the authenticated
 [native multiparty profile](Native-Transports.md). The unmodified quiche 0.30.0 registry package and checksum are pinned in Cargo.lock.
 
@@ -75,9 +76,15 @@ Build configurations once and share their `Arc`s:
 use capntproto::rpc::{security, tcp::tls};
 
 // RootCertStore values contain the application's trusted CA certificates.
-let client = tls::client_config(server_roots, Some(client_identity))?;
-let server = tls::server_config(server_identity, Some(client_roots))?;
+let clock = std::sync::Arc::new(capntproto::rpc::SystemClock);
+let client = tls::client_config(server_roots, Some(client_identity), clock.clone())?;
+let server = tls::server_config(server_identity, Some(client_roots), clock)?;
 ```
+
+TLS configurations require a caller-supplied `TlsClock`, which returns Unix
+seconds or `None` when time is unavailable. Missing time fails certificate
+verification. `SystemClock` explicitly opts into the native host clock; embedded
+applications can supply their own authenticated time source.
 
 Passing `Some(client_roots)` makes client authentication mandatory, including
 certificate-chain, validity-period and client-auth key-usage checks. An absent
@@ -87,7 +94,7 @@ store is not a request to disable verification. Clients always validate the
 server chain and the requested DNS name or IP address.
 
 Helpers use an explicit ring provider, TLS 1.3 only, and the private application
-ALPN `capntproto-rpc/1`. Adapters reject missing or different ALPN values. This
+ALPN `capntproto-rpc/1`. Rustls and raw QUIC adapters reject missing or different ALPN values. This
 ALPN carries ordinary two-party Cap'n Proto framing; it is not HTTP/3 or an
 upstream-assigned Cap'n Proto protocol identifier. Helpers disable early data;
 QUIC setup awaits the full handshake before exposing RPC streams.
@@ -207,12 +214,32 @@ successful write shutdown, drop cancels reading while Quiche retains pending
 transmission until stream collection or connection close/idle timeout. `Endpoint::wait_idle()` waits for route
 release.
 
+## WebTransport and embedded TLS
+
+Feature `webtransport` exposes HTTP/3 sessions and futures IO streams on native
+and `wasm32-unknown-unknown` targets. Native endpoints use Quinn/rustls with
+explicit roots and `TlsClock`; browser endpoints use browser-managed TLS, trust
+and time. A reliable bidirectional stream carries an ordinary RPC connection.
+The [WebTransport greeting service](../../examples/webtransport/README.md) has
+separate native server/client programs, a schema, and a browser WASM client.
+Authorize session paths and browser origins before granting capabilities.
+
+Feature `embedded-tls` adds `rpc::tcp::embedded`: a TLS 1.3 TCP client with caller
+entropy, trust, clock and record/certificate buffers. Its isolated
+[transport backend](../../crates/capntproto-transport/README.md) builds without
+std or allocation and accepts any embedded async IO. Its current crypto profile
+uses AES-128-GCM/SHA-256 and P-256 ECDSA certificates. Hosted RPC uses a scoped,
+bounded plaintext bridge; that bridge allocates. This is a TCP implementation;
+embedded-tls is not a QUIC TLS provider. Browser WebTransport does not depend on
+either Rust TLS implementation.
+
 ## Verification
 
 ```sh
 cargo nextest run --locked --test tcp_rpc --test secure_rpc
 cargo nextest run --locked --no-default-features --features tls --test secure_rpc
 cargo nextest run --locked --no-default-features --features quic --test secure_rpc
+cargo test --locked --no-default-features --features tls,webtransport,embedded-tls --test secure_rpc
 cargo nextest run --locked --lib transport::backend_tests
 cargo nextest run --locked --lib rpc::quic::retry
 cargo nextest run --locked --lib transport:: -- --skip tlc

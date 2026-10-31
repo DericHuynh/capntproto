@@ -7,67 +7,19 @@
 //! when different identities should receive different capabilities.
 
 use super::super::io::{deadline, TokioIo};
-use super::super::{
-    security::{invalid_config, rustls, Identity},
-    AcceptOptions, ALPN,
-};
+use super::super::{security::rustls, AcceptOptions, ALPN};
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
+pub use capntproto_transport::rustls::TlsStream;
 use futures::{stream::FuturesUnordered, StreamExt};
 use rustls::pki_types::ServerName;
 use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
-mod stream;
-pub use stream::TlsStream;
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
-/// Trust only the supplied roots; optionally present a client identity for mTLS.
-/// TLS 1.3 and this crate's RPC ALPN are selected; early data is disabled.
-pub fn client_config(
-    roots: rustls::RootCertStore,
-    identity: Option<Identity>,
-) -> Result<Arc<rustls::ClientConfig>, rustls::Error> {
-    let builder = rustls::ClientConfig::builder_with_provider(Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_protocol_versions(&[&rustls::version::TLS13])?
-    .with_root_certificates(roots);
-    let mut config = match identity {
-        Some(identity) => {
-            builder.with_client_auth_cert(identity.certificates, identity.private_key)?
-        }
-        None => builder.with_no_client_auth(),
-    };
-    config.alpn_protocols = vec![ALPN.to_vec()];
-    config.enable_early_data = false;
-    Ok(Arc::new(config))
-}
-
-/// `Some(client_roots)` requires a trusted client certificate on every session.
-/// `None` enables server-authenticated TLS. Neither mode bypasses verification.
-pub fn server_config(
-    identity: Identity,
-    client_roots: Option<rustls::RootCertStore>,
-) -> io::Result<Arc<rustls::ServerConfig>> {
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let builder = rustls::ServerConfig::builder_with_provider(provider.clone())
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .map_err(invalid_config)?;
-    let builder = match client_roots {
-        Some(roots) => builder.with_client_cert_verifier(
-            rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
-                .build()
-                .map_err(invalid_config)?,
-        ),
-        None => builder.with_no_client_auth(),
-    };
-    let mut config = builder
-        .with_single_cert(identity.certificates, identity.private_key)
-        .map_err(invalid_config)?;
-    config.alpn_protocols = vec![ALPN.to_vec()];
-    config.max_early_data_size = 0;
-    Ok(Arc::new(config))
-}
+// One shared implementation/configuration for generic IO and TCP.
+pub use capntproto_transport::rustls::{client_config, server_config};
+pub use capntproto_transport::{SystemClock, TlsClock};
 
 fn check_alpn(stream: TlsStream<TcpStream>) -> io::Result<TlsStream<TcpStream>> {
     if stream.get_ref().1.alpn_protocol() != Some(ALPN) {

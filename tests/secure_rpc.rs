@@ -13,3 +13,10 @@ mod unbuffered;
 
 #[path = "secure_rpc/rustls_direct.rs"]
 mod rustls_direct;
+
+#[cfg(feature = "embedded-tls")]
+#[path = "secure_rpc/embedded.rs"]
+mod embedded_tests;
+#[cfg(feature = "webtransport")]
+#[path = "secure_rpc/webtransport.rs"]
+mod webtransport_tests;

@@ -45,7 +45,11 @@ impl ClientArgs {
                     let stream = tls::connect(
                         &self.server,
                         self.server_name.clone().try_into()?,
-                        tls::client_config(roots, None)?,
+                        tls::client_config(
+                            roots,
+                            None,
+                            std::sync::Arc::new(capntproto::rpc::SystemClock),
+                        )?,
                         TIMEOUT,
                     )
                     .await?;

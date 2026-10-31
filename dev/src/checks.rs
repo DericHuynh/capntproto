@@ -392,6 +392,7 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
                 "workflows",
                 "documentation",
                 "portability",
+                "transports",
                 "platforms",
                 "cargo",
                 "models",

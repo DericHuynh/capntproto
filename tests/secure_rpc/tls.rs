@@ -95,8 +95,12 @@ async fn rejects_untrusted_wrong_name_expired_and_wrong_usage_servers() {
     .await;
     rejected(pki.server(false), pki.client(false), "other.local", false).await;
     for (expired, client_usage) in [(true, false), (false, true)] {
-        let server =
-            tls::server_config(pki.identity("localhost", client_usage, expired), None).unwrap();
+        let server = tls::server_config(
+            pki.identity("localhost", client_usage, expired),
+            None,
+            std::sync::Arc::new(capntproto::rpc::SystemClock),
+        )
+        .unwrap();
         rejected(server, pki.client(false), "localhost", false).await;
     }
 }
@@ -108,6 +112,7 @@ async fn mtls_rejects_missing_untrusted_expired_and_wrong_usage_clients() {
     let untrusted = tls::client_config(
         pki.roots(),
         Some(Pki::new().identity("client.local", true, false)),
+        std::sync::Arc::new(capntproto::rpc::SystemClock),
     )
     .unwrap();
     rejected(pki.server(true), untrusted, "localhost", true).await;
@@ -115,6 +120,7 @@ async fn mtls_rejects_missing_untrusted_expired_and_wrong_usage_clients() {
         let client = tls::client_config(
             pki.roots(),
             Some(pki.identity("client.local", client_usage, expired)),
+            std::sync::Arc::new(capntproto::rpc::SystemClock),
         )
         .unwrap();
         rejected(pki.server(true), client, "localhost", true).await;
@@ -263,4 +269,27 @@ async fn portable_tls_wakes_only_one_of_32_parked_calls() {
         serving.await.unwrap().unwrap();
     })
     .await;
+}
+
+struct FixedClock(Option<u64>);
+impl capntproto::rpc::TlsClock for FixedClock {
+    fn now(&self) -> Option<u64> {
+        self.0
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn caller_clock_controls_server_and_client_certificate_validity() {
+    for now in [None, Some(0), Some(u64::MAX)] {
+        let pki = Pki::new();
+        let client = tls::client_config(pki.roots(), None, Arc::new(FixedClock(now))).unwrap();
+        rejected(pki.server(false), client, "localhost", false).await;
+        let server = tls::server_config(
+            pki.identity("localhost", false, false),
+            Some(pki.roots()),
+            Arc::new(FixedClock(now)),
+        )
+        .unwrap();
+        rejected(server, pki.client(true), "localhost", true).await;
+    }
 }

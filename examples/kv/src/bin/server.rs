@@ -60,7 +60,11 @@ async fn run(args: Args) -> Result<()> {
                         tls::listen(
                             &server,
                             &listener,
-                            tls::server_config(identity, None)?,
+                            tls::server_config(
+                                identity,
+                                None,
+                                std::sync::Arc::new(capntproto::rpc::SystemClock),
+                            )?,
                             Default::default(),
                             Default::default(),
                             |peer, error| eprintln!("Rejected {peer}: {error}"),

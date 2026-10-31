@@ -203,10 +203,10 @@ be configured for a new crate.
 After that first upload, open each crate's **Settings → Trusted Publishing** on
 crates.io and add a GitHub publisher with owner `DericHuynh`, repository
 `capntproto`, workflow filename `release.yml`, and no environment. Configure all
-ten packages: `capntproto`, `capntproto-core`, `capntproto-codegen`,
+eleven packages: `capntproto`, `capntproto-core`, `capntproto-codegen`,
 `capntproto-compiler`, `capntproto-futures`, `capntproto-rpc`,
 `capntproto-rpc-engine`, `capntproto-rpc-wire`, `capntproto-compat` and
-`capntproto-rustls`. Subsequent releases use **publish** checked and **bootstrap**
+`capntproto-rustls` and `capntproto-transport`. Subsequent releases use **publish** checked and **bootstrap**
 unchecked. GitHub OIDC then obtains a temporary token; the pinned official
 [rust-lang action](https://github.com/rust-lang/crates-io-auth-action) revokes it
 at job completion. Remove the bootstrap secret and revoke its token after the

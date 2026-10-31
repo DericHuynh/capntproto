@@ -286,7 +286,12 @@ fn pem_configuration_roundtrips_and_preserves_actionable_errors() {
     let identity =
         security::Identity::from_pem_files(path("server.pem"), path("server-key.pem")).unwrap();
     assert_eq!(identity.certificates.len(), 1);
-    tls::server_config(identity, None).unwrap();
+    tls::server_config(
+        identity,
+        None,
+        std::sync::Arc::new(capntproto::rpc::SystemClock),
+    )
+    .unwrap();
     assert_eq!(
         security::roots_from_pem_file(path("ca.pem")).unwrap().len(),
         1

@@ -1,5 +1,7 @@
 //! TCP adapters with automatic socket-informed streaming flow control. Generic
 //! byte IO has no socket metadata; use these entry points to sample SO_SNDBUF.
+#[cfg(feature = "embedded-tls")]
+pub mod embedded;
 mod io;
 #[cfg(target_os = "linux")]
 mod low_water;

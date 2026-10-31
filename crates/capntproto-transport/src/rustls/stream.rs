@@ -3,7 +3,7 @@
 //! record. rustls 0.23 still allocates plaintext records internally.
 #![forbid(unsafe_code)]
 
-use rustls::{
+use rustls_impl::{
     client::UnbufferedClientConnection,
     pki_types::ServerName,
     server::UnbufferedServerConnection,
