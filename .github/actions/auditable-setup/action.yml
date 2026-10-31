@@ -13,6 +13,7 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: ./.github/actions/hosted-apt # zizmor: ignore[self-repository]
     - name: Install pinned Rust
       shell: bash
       run: |

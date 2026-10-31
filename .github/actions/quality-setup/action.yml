@@ -7,6 +7,7 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: ./.github/actions/hosted-apt # zizmor: ignore[self-repository]
     - name: Reserve space for instrumented native builds
       shell: bash
       run: |

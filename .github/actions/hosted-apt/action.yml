@@ -1,0 +1,19 @@
+name: Hosted Ubuntu package access
+description: Use the official HTTPS mirror and bounded APT retries on GitHub-hosted Linux.
+runs:
+  using: composite
+  steps:
+    - name: Configure hosted package mirrors and timeouts
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        # The hosted mirror list can keep fetching package indexes from an
+        # unresponsive Azure mirror after falling back for InRelease files.
+        if test "$(dpkg --print-architecture)" = amd64 && test -f /etc/apt/apt-mirrors.txt; then
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+        fi
+        printf '%s\n' \
+          'Acquire::Retries "3";' \
+          'Acquire::http::Timeout "20";' \
+          'Acquire::https::Timeout "20";' \
+          | sudo tee /etc/apt/apt.conf.d/99-capntproto-ci-timeouts >/dev/null
