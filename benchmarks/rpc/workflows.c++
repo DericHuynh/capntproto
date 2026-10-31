@@ -90,7 +90,7 @@ kj::Promise<void> read(Cell::Client client, uint64_t version, const std::vector<
 kj::Promise<void> operation(Workflows::Client& client, Cell::Client& state, Callback::Client& sink, uint64_t& callbacks,
                           const std::string& name, uint64_t sequence, const std::vector<capnp::byte>& payload) {
   if (name == "fanout-32" || name == "fanout-128") {
-    auto width = name == "fanout-128" ? 128 : 32;
+    const uint64_t width = name == "fanout-128" ? 128 : 32;
     auto calls = kj::heapArrayBuilder<kj::Promise<void>>(width);
     for (uint64_t i = 0; i < width; ++i) calls.add(echo(client, sequence * width + i, payload));
     return kj::joinPromises(calls.finish());
