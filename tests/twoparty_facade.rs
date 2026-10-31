@@ -1,7 +1,7 @@
 use capnp::{capability::Promise, Error, ErrorKind};
 use capnp_rpc::{
     rpc_twoparty_capnp::Side,
-    twoparty::{TwoPartyClient, TwoPartyServer},
+    twoparty::{RpcDriver, TwoPartyClient, TwoPartyServer},
 };
 use capntproto_test_support::runtime_test_capnp::harness;
 use futures::{AsyncRead, AsyncWrite, FutureExt};
@@ -61,6 +61,21 @@ impl harness::Server for Echo {
 }
 fn bootstrap() -> capnp::capability::Client {
     capnp_rpc::new_client::<harness::Client, _>(Echo).client
+}
+fn protocol_drivers() -> [RpcDriver; 2] {
+    use std::num::NonZeroUsize as N;
+    [
+        RpcDriver::Legacy,
+        RpcDriver::Portable(
+            capnp_rpc::portable::Options::bounded(
+                N::new(1).unwrap(),
+                N::new(256).unwrap(),
+                N::new(128 * 1024).unwrap(),
+                N::new(4 * 1024 * 1024).unwrap(),
+            )
+            .unwrap(),
+        ),
+    ]
 }
 async fn echo(client: &harness::Client, value: u32) -> capnp::Result<u32> {
     let mut request = client.echo_request();
@@ -269,75 +284,82 @@ async fn owned_drain_tracks_new_connections_and_disconnect_observers_do_not_reta
 #[tokio::test(flavor = "current_thread")]
 async fn borrowed_streams_support_capabilities_large_partial_io_and_reverse_bootstrap() {
     local(async {
-        let (a, b) = tokio::io::duplex(37);
-        let drops = Rc::new(Cell::new(0));
-        let mut a = Tracked {
-            io: a.compat(),
-            drops: drops.clone(),
-        };
-        let mut b = Tracked {
-            io: b.compat(),
-            drops: drops.clone(),
-        };
-        let (server, driver) = TwoPartyServer::new(bootstrap());
-        let server_task = tokio::task::spawn_local(driver);
-        let mut hosted = server.accept_borrowed(&mut a);
-        let reverse: harness::Client = hosted.bootstrap();
-        let mut client = TwoPartyClient::new_borrowed(
-            &mut b,
-            Some(bootstrap()),
-            Side::Client,
-            Default::default(),
-        );
-        let remote: harness::Client = client.bootstrap();
-        let disconnected = client.on_disconnect();
-        let queue = client.outgoing_queue();
-        let disconnect = client.get_disconnector();
-        let work = async {
-            assert_eq!(echo(&remote, 73).await.unwrap(), 73);
-            assert_eq!(echo(&reverse, 91).await.unwrap(), 91);
-            let mut request = remote.bounce_request();
-            request.get().set_cap(capnp_rpc::new_client(Echo));
-            let returned = request
-                .send()
-                .promise
-                .await
-                .unwrap()
-                .get()
-                .unwrap()
-                .get_cap()
+        for server_protocol in protocol_drivers() {
+            for client_protocol in protocol_drivers() {
+                let (a, b) = tokio::io::duplex(37);
+                let drops = Rc::new(Cell::new(0));
+                let mut a = Tracked {
+                    io: a.compat(),
+                    drops: drops.clone(),
+                };
+                let mut b = Tracked {
+                    io: b.compat(),
+                    drops: drops.clone(),
+                };
+                let (server, driver) =
+                    TwoPartyServer::with_driver(bootstrap(), server_protocol, |_| {});
+                let server_task = tokio::task::spawn_local(driver);
+                let mut hosted = server.accept_borrowed(&mut a).unwrap();
+                let reverse: harness::Client = hosted.bootstrap();
+                let mut client = TwoPartyClient::new_borrowed_with_driver(
+                    &mut b,
+                    Some(bootstrap()),
+                    Side::Client,
+                    Default::default(),
+                    client_protocol,
+                )
                 .unwrap();
-            assert_eq!(echo(&returned, 123).await.unwrap(), 123);
-            let response = remote.generic_request().send().promise.await.unwrap();
-            assert_eq!(
-                response.get().unwrap().get_value().unwrap(),
-                vec![0x73; 100_000]
-            );
-            // Borrowed accepts never delay the owned connection drain.
-            server.drain().await.unwrap();
-            disconnect.await.unwrap();
-        };
-        let client_done = Box::pin(async { futures::join!(work, &mut client) });
-        match futures::future::select(client_done, &mut hosted).await {
-            futures::future::Either::Left((((), result), _)) => result.unwrap(),
-            _ => panic!("server ended before client shutdown"),
+                let remote: harness::Client = client.bootstrap();
+                let disconnected = client.on_disconnect();
+                let queue = client.outgoing_queue();
+                let disconnect = client.get_disconnector();
+                let work = async {
+                    assert_eq!(echo(&remote, 73).await.unwrap(), 73);
+                    assert_eq!(echo(&reverse, 91).await.unwrap(), 91);
+                    let mut request = remote.bounce_request();
+                    request.get().set_cap(capnp_rpc::new_client(Echo));
+                    let returned = request
+                        .send()
+                        .promise
+                        .await
+                        .unwrap()
+                        .get()
+                        .unwrap()
+                        .get_cap()
+                        .unwrap();
+                    assert_eq!(echo(&returned, 123).await.unwrap(), 123);
+                    let response = remote.generic_request().send().promise.await.unwrap();
+                    assert_eq!(
+                        response.get().unwrap().get_value().unwrap(),
+                        vec![0x73; 100_000]
+                    );
+                    // Borrowed accepts never delay the owned connection drain.
+                    server.drain().await.unwrap();
+                    disconnect.await.unwrap();
+                };
+                let client_done = Box::pin(async { futures::join!(work, &mut client) });
+                match futures::future::select(client_done, &mut hosted).await {
+                    futures::future::Either::Left((((), result), _)) => result.unwrap(),
+                    _ => panic!("server ended before client shutdown"),
+                }
+                disconnected.await.unwrap();
+                drop(client);
+                assert_eq!(drops.get(), 0);
+                // The owner closes its stream once its borrowed driver is finished.
+                // Otherwise the peer's shutdown reply can block in this 37-byte pipe.
+                drop(b);
+                hosted.await.unwrap();
+                assert_eq!(queue.snapshot().message_count, 0);
+                assert_eq!(
+                    echo(&remote, 1).await.unwrap_err().kind,
+                    ErrorKind::Disconnected
+                );
+                drop(server);
+                server_task.await.unwrap().unwrap();
+                drop(a);
+                assert_eq!(drops.get(), 2);
+            }
         }
-        disconnected.await.unwrap();
-        drop(client);
-        assert_eq!(drops.get(), 0);
-        // The owner closes its stream once its borrowed driver is finished.
-        // Otherwise the peer's shutdown reply can block in this 37-byte pipe.
-        drop(b);
-        hosted.await.unwrap();
-        assert_eq!(queue.snapshot().message_count, 0);
-        assert_eq!(
-            echo(&remote, 1).await.unwrap_err().kind,
-            ErrorKind::Disconnected
-        );
-        drop(server);
-        server_task.await.unwrap().unwrap();
-        drop(a);
-        assert_eq!(drops.get(), 2);
     })
     .await;
 }
@@ -355,7 +377,7 @@ async fn cancellation_releases_borrow_without_closing_stream_and_cleans_unpolled
         };
         let mut b = b.compat();
         let (server, driver) = TwoPartyServer::new(bootstrap());
-        let borrowed = server.accept_borrowed(&mut a);
+        let borrowed = server.accept_borrowed(&mut a).unwrap();
         let observer = borrowed.on_disconnect();
         drop(borrowed);
         assert_eq!(observer.await.unwrap_err().kind, ErrorKind::Disconnected);
@@ -485,39 +507,54 @@ impl AsyncWrite for BrokenIo {
 
 #[tokio::test(flavor = "current_thread")]
 async fn write_errors_finish_owned_and_borrowed_clients_even_when_close_blocks() {
-    for borrowed in [false, true] {
-        let closes = Rc::new(Cell::new(0));
-        let mut io = BrokenIo {
-            closes: closes.clone(),
-            fail_read: false,
-            block_close: true,
-        };
-        let mut client = if borrowed {
-            TwoPartyClient::new_borrowed(&mut io, None, Side::Client, Default::default())
-        } else {
-            TwoPartyClient::new(BrokenIo {
+    for protocol in protocol_drivers() {
+        for borrowed in [false, true] {
+            let closes = Rc::new(Cell::new(0));
+            let mut io = BrokenIo {
                 closes: closes.clone(),
                 fail_read: false,
                 block_close: true,
-            })
-        };
-        let remote: harness::Client = client.bootstrap();
-        let call = remote.echo_request().send().promise;
-        let observer = client.on_disconnect();
-        let result = tokio::time::timeout(Duration::from_secs(1), &mut client)
-            .await
-            .expect("a blocked close must not hide write failure");
-        assert!(result.unwrap_err().to_string().contains("failed output"));
-        assert!(observer
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("failed output"));
-        assert!(call.await.is_err());
-        assert!(
-            closes.get() > 0,
-            "attempt cleanup before reporting the error"
-        );
+            };
+            let mut client = if borrowed {
+                TwoPartyClient::new_borrowed_with_driver(
+                    &mut io,
+                    None,
+                    Side::Client,
+                    Default::default(),
+                    protocol,
+                )
+                .unwrap()
+            } else {
+                TwoPartyClient::with_driver(
+                    BrokenIo {
+                        closes: closes.clone(),
+                        fail_read: false,
+                        block_close: true,
+                    },
+                    None,
+                    Side::Client,
+                    protocol,
+                )
+                .unwrap()
+            };
+            let remote: harness::Client = client.bootstrap();
+            let call = remote.echo_request().send().promise;
+            let observer = client.on_disconnect();
+            let result = tokio::time::timeout(Duration::from_secs(1), &mut client)
+                .await
+                .expect("a blocked close must not hide write failure");
+            assert!(result.unwrap_err().to_string().contains("failed output"));
+            assert!(observer
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("failed output"));
+            assert!(call.await.is_err());
+            assert!(
+                closes.get() > 0,
+                "attempt cleanup before reporting the error"
+            );
+        }
     }
 }
 
@@ -607,6 +644,205 @@ async fn borrowed_cancellation_after_pending_io_breaks_caps_without_destroying_s
         drop(a);
         assert_eq!(drops.get(), 1);
         drop(b);
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn owned_facades_select_both_drivers_and_preserve_controls_and_cleanup() {
+    local(async {
+        for server_protocol in protocol_drivers() {
+            for client_protocol in protocol_drivers() {
+                let (server, driver) =
+                    TwoPartyServer::with_driver(bootstrap(), server_protocol, |_| {});
+                let server_task = tokio::task::spawn_local(driver);
+                let (a, b) = tokio::io::duplex(43);
+                server.accept(a.compat()).unwrap();
+                let mut client =
+                    TwoPartyClient::with_driver(b.compat(), None, Side::Client, client_protocol)
+                        .unwrap();
+                let remote: harness::Client = client.bootstrap();
+                let observer = client.on_disconnect();
+                let disconnect = client.get_disconnector();
+                let diagnostics = client.diagnostics();
+                client.set_outgoing_call_limit(0);
+                let work = async {
+                    assert_eq!(
+                        echo(&remote, 4).await.unwrap_err().kind,
+                        ErrorKind::Overloaded
+                    );
+                };
+                let mut work = Box::pin(work);
+                assert!(matches!(
+                    futures::future::select(&mut work, &mut client).await,
+                    futures::future::Either::Left(((), _))
+                ));
+                client.set_outgoing_call_limit(16);
+                let task = tokio::task::spawn_local(client);
+                assert_eq!(echo(&remote, 87).await.unwrap(), 87);
+                assert!(!diagnostics.snapshot().is_empty());
+                assert!(echo(&remote, u32::MAX)
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("intentional failure"));
+                disconnect.await.unwrap();
+                task.await.unwrap().unwrap();
+                observer.await.unwrap();
+                assert!(diagnostics.snapshot().is_empty());
+                server.drain().await.unwrap();
+                drop(server);
+                server_task.await.unwrap().unwrap();
+            }
+        }
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn selected_server_preserves_reader_limits_at_protocol_admission() {
+    local(async {
+        for protocol in protocol_drivers() {
+            let (mut server, driver) = TwoPartyServer::with_driver(bootstrap(), protocol, |_| {});
+            let mut limits = capnp::message::ReaderOptions::new();
+            limits.nesting_limit(0);
+            server.set_reader_options(limits);
+            let task = tokio::task::spawn_local(driver);
+            let (a, b) = tokio::io::duplex(64);
+            server.accept(a.compat()).unwrap();
+            let mut client = TwoPartyClient::new(b.compat());
+            let remote: harness::Client = client.bootstrap();
+            let client_task = tokio::task::spawn_local(client);
+            assert!(
+                echo(&remote, 17).await.is_err(),
+                "the selected driver bypassed the server's reader limit"
+            );
+            server.drain().await.unwrap();
+            drop(server);
+            task.await.unwrap().unwrap();
+            client_task.abort();
+        }
+    })
+    .await;
+}
+
+#[test]
+fn invalid_portable_limits_fail_acceptance_without_leaking_drain_ownership() {
+    let RpcDriver::Portable(mut options) = protocol_drivers()[1] else {
+        unreachable!()
+    };
+    options.message_bytes = std::num::NonZeroUsize::new(64).unwrap();
+    let (server, _driver) =
+        TwoPartyServer::with_driver(bootstrap(), RpcDriver::Portable(options), |_| {});
+    assert!(server
+        .accept(futures::io::Cursor::new(Vec::<u8>::new()))
+        .is_err());
+    let mut io = futures::io::Cursor::new(Vec::<u8>::new());
+    assert!(server.accept_borrowed(&mut io).is_err());
+    server.drain().now_or_never().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn byte_stream_window_grants_credit_before_a_pending_service_finishes() {
+    struct Gated {
+        started: Rc<Cell<usize>>,
+        completed: Rc<Cell<usize>>,
+        gates:
+            std::cell::RefCell<std::collections::VecDeque<futures::channel::oneshot::Receiver<()>>>,
+    }
+    impl harness::Server for Gated {
+        fn echo(self: Rc<Self>, context: harness::EchoContext<'_>) -> Promise<(), Error> {
+            let (_, _) = context.into_owned();
+            self.started.set(self.started.get() + 1);
+            let gate = self.gates.borrow_mut().pop_front().unwrap();
+            Promise::from_future(async move {
+                gate.await
+                    .map_err(|_| Error::failed("service gate canceled".into()))?;
+                self.completed.set(self.completed.get() + 1);
+                Ok(())
+            })
+        }
+    }
+    local(async {
+        use capnp::traits::HasTypeId;
+        use futures::AsyncReadExt;
+        for server_protocol in protocol_drivers() {
+            for client_protocol in protocol_drivers() {
+                let (first, first_gate) = futures::channel::oneshot::channel();
+                let (second, second_gate) = futures::channel::oneshot::channel();
+                let started = Rc::new(Cell::new(0));
+                let completed = Rc::new(Cell::new(0));
+                let service: harness::Client = capnp_rpc::new_client(Gated {
+                    started: started.clone(),
+                    completed: completed.clone(),
+                    gates: std::cell::RefCell::new([first_gate, second_gate].into()),
+                });
+                let (a, b) = tokio::io::duplex(37);
+                let (read, write) = a.compat().split();
+                let server = TwoPartyClient::from_network_with_driver(
+                    capnp_rpc::twoparty::VatNetwork::new(
+                        read,
+                        write,
+                        Side::Server,
+                        Default::default(),
+                    ),
+                    Some(service.client),
+                    server_protocol,
+                )
+                .unwrap();
+                let (read, write) = b.compat().split();
+                let mut network = capnp_rpc::twoparty::VatNetwork::new(
+                    read,
+                    write,
+                    Side::Client,
+                    Default::default(),
+                );
+                network.set_window_size(0);
+                let mut client =
+                    TwoPartyClient::from_network_with_driver(network, None, client_protocol)
+                        .unwrap();
+                let remote: harness::Client = client.bootstrap();
+                let disconnect = client.get_disconnector();
+                let server_task = tokio::task::spawn_local(server);
+                let client_task = tokio::task::spawn_local(client);
+                let mut credits = Vec::new();
+                for _ in 0..2 {
+                    let request: capnp::capability::StreamingRequest<harness::echo_params::Owned> =
+                        remote
+                            .client
+                            .new_streaming_call(harness::Client::TYPE_ID, 0, None);
+                    credits.push(request.send());
+                }
+
+                while started.get() != 2 {
+                    tokio::task::yield_now().await;
+                }
+
+                credits.remove(0).await.unwrap();
+
+                assert!(futures::poll!(&mut credits[0]).is_pending());
+                assert_eq!(completed.get(), 0);
+                first.send(()).unwrap();
+
+                credits.remove(0).await.unwrap();
+                assert_eq!(
+                    completed.get(),
+                    1,
+                    "remaining window credit is independent of the second Return"
+                );
+
+                second.send(()).unwrap();
+                while completed.get() != 2 {
+                    tokio::task::yield_now().await;
+                }
+
+                disconnect.await.unwrap();
+
+                client_task.await.unwrap().unwrap();
+
+                server_task.await.unwrap().unwrap();
+            }
+        }
     })
     .await;
 }

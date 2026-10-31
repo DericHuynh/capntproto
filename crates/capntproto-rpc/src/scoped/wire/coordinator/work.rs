@@ -756,10 +756,13 @@ impl<'p, 'id, 's, I, P: Copy + Eq, const C: usize, const H: usize>
             |runtime, hook| self.foreign.import(runtime, hook),
             completed,
             Self::hook_refresh(output, refresh),
-            |invocations, driver, messages, credit, publication| {
+            |invocations, driver, messages, credit, stream, publication| {
                 let mut bundle = output.bundle();
                 if let Some(credit) = credit {
                     output.retain_call(&mut bundle, credit)?;
+                }
+                if let Some(stream) = stream {
+                    output.retain_stream(&mut bundle, stream)?;
                 }
                 let (direct, native) = match publication {
                     super::calls::Publication::PreparedCapabilities {

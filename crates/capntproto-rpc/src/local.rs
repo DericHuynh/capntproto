@@ -209,6 +209,9 @@ enum ResultsFulfiller {
 }
 
 impl Results {
+    pub(crate) fn mark_streaming(&mut self) {
+        self.is_streaming = true;
+    }
     fn new(
         fulfiller: oneshot::Sender<Box<dyn ResultsDoneHook>>,
         pipeline_sender: crate::queued::PipelineInnerSender,

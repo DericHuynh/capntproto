@@ -3,6 +3,7 @@ use super::*;
 use capntproto_rpc_engine::imports::Imports;
 use capntproto_rpc_wire::{attachments::ImportReceiver, clients::Route};
 pub mod vat;
+pub use crate::scoped::streaming::Publication as StreamPublication;
 
 #[cfg(unix)]
 use capntproto_rpc_wire::{attachments::Sender, clients::Endpoint, Capacity};
@@ -90,6 +91,13 @@ pub trait Output<I> {
     ) -> capnp::Result<()> {
         Err(Error::unimplemented(
             "output cannot retain call admission credit".into(),
+        ))
+    }
+    /// Retain streaming credit until the exact frame is accepted, then call
+    /// `prepare` before publication and `published` with its message-body words.
+    fn retain_stream(&self, _: &mut Self::Bundle, _: Rc<StreamPublication>) -> capnp::Result<()> {
+        Err(Error::unimplemented(
+            "output cannot retain streaming publication".into(),
         ))
     }
     fn attach<'id, P: Copy, const H: usize>(

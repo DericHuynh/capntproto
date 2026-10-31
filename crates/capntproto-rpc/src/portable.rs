@@ -338,6 +338,11 @@ pub struct Control {
     policy: Rc<coordinator::policy::Settings>,
 }
 impl Control {
+    pub(crate) fn is_closing(&self) -> bool {
+        self.connections
+            .upgrade()
+            .is_none_or(|connections| connections.is_closing())
+    }
     /// Incoming Call backpressure, in full message words. Like C++, pause all
     /// input above the limit and resume strictly below it. This is not a hard
     /// memory bound; cyclic calls can deadlock while reads are paused. Zero

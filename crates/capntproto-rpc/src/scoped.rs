@@ -42,6 +42,7 @@ mod metadata;
 pub use metadata::MetadataSource;
 pub(crate) mod response;
 mod shutdown;
+mod streaming;
 pub mod wire;
 
 /// Owned metadata projected from a scoped endpoint by its hosting adapter.
@@ -62,6 +63,7 @@ struct Inbox {
     call_templates: [std::cell::OnceCell<Box<CallTemplate>>; 4],
     message_pool: Option<capnp::message::SegmentPool>,
     admission: Option<Rc<crate::admission::Admission>>,
+    stream_factory: Option<Rc<streaming::Factory>>,
     joins: Option<wire::coordinator::multiparty::Handle>,
     native_tail: bool,
     queue: RefCell<VecDeque<Box<Call>>>,
@@ -163,6 +165,7 @@ impl Inbox {
     }
 }
 struct Endpoint {
+    streaming: std::cell::OnceCell<Rc<streaming::Flow>>,
     introduction: RefCell<Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>>,
     introduced: RefCell<Option<Rc<dyn ClientHook>>>,
     remote: Cell<bool>,
@@ -184,6 +187,7 @@ struct Endpoint {
 impl Endpoint {
     fn projection(inbox: Weak<Inbox>) -> Rc<Self> {
         Rc::new(Self {
+            streaming: std::cell::OnceCell::new(),
             introduction: RefCell::default(),
             introduced: RefCell::default(),
             remote: Cell::new(true),
@@ -371,6 +375,7 @@ impl<'id> ClientHooks<'id> {
                 call_templates: std::array::from_fn(|_| std::cell::OnceCell::new()),
                 message_pool: None,
                 admission: None,
+                stream_factory: None,
                 joins: None,
                 native_tail: false,
                 queue: RefCell::new(VecDeque::new()),
@@ -398,6 +403,12 @@ impl<'id> ClientHooks<'id> {
         Rc::get_mut(&mut self.inbox)
             .expect("unpublished hook inbox")
             .admission = Some(admission);
+        self
+    }
+    pub(crate) fn with_stream_factory(mut self, factory: Rc<streaming::Factory>) -> Self {
+        Rc::get_mut(&mut self.inbox)
+            .expect("unpublished hook inbox")
+            .stream_factory = Some(factory);
         self
     }
     /// Reuse released application request/result segments. The supplied pool
@@ -650,6 +661,7 @@ impl<'id> ClientHooks<'id> {
         );
         let endpoint = existing.unwrap_or_else(|| {
             Rc::new(Endpoint {
+                streaming: std::cell::OnceCell::new(),
                 introduction: RefCell::default(),
                 introduced: RefCell::default(),
                 remote: Cell::new(remote),
@@ -1422,8 +1434,7 @@ impl Drop for ClientHooks<'_> {
 /// both directions. Dropping an unfinished call fails its completion.
 #[must_use = "complete the call, or drop it to report cancellation"]
 pub struct Call {
-    third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
-    native_tail: Option<Rc<wire::server::NativeTail>>,
+    kind: CallKind,
     credit: Option<Rc<admission::Credit>>,
     interface: u64,
     method: u16,
@@ -1435,6 +1446,46 @@ pub struct Call {
     // Last: release admission after destroying callback-bearing call owners.
     _permit: Permit,
 }
+// These publication modes are mutually exclusive. Keep their cold owners in
+// the same storage instead of enlarging every ordinary request for streaming.
+enum CallKind {
+    Ordinary,
+    Streaming(Option<Rc<streaming::Publication>>),
+    NativeTail(Rc<wire::server::NativeTail>),
+    ThirdParty(Rc<capnp::message::Builder<capnp::message::HeapAllocator>>),
+}
+impl CallKind {
+    fn third_party(&self) -> Option<&Rc<capnp::message::Builder<capnp::message::HeapAllocator>>> {
+        match self {
+            Self::ThirdParty(contact) => Some(contact),
+            _ => None,
+        }
+    }
+    fn native_tail(&self) -> Option<&Rc<wire::server::NativeTail>> {
+        match self {
+            Self::NativeTail(tail) => Some(tail),
+            _ => None,
+        }
+    }
+    fn stream(&self) -> Option<&Rc<streaming::Publication>> {
+        match self {
+            Self::Streaming(publication) => publication.as_ref(),
+            _ => None,
+        }
+    }
+    fn is_streaming(&self) -> bool {
+        matches!(self, Self::Streaming(_))
+    }
+    fn ordinary_destination(&self) -> bool {
+        matches!(self, Self::Ordinary | Self::Streaming(_))
+    }
+    fn release_stream(&mut self) {
+        if let Self::Streaming(publication) = self {
+            drop(publication.take());
+        }
+    }
+}
+
 enum CallParams {
     Request(crate::local::Params),
     OwnedRequest(Box<crate::local::Request>),
@@ -1541,8 +1592,7 @@ impl capnp::private::capability::RequestHook for Call {
         let Ok(context) = context.downcast::<wire::server::NativeTail>() else {
             return false;
         };
-        if self.third_party.is_some()
-            || self.native_tail.is_some()
+        if !self.kind.ordinary_destination()
             || !context.accepts(&self.endpoint().inbox)
             || !self.endpoint().remote.get()
             || self.endpoint().introduced.borrow().is_some()
@@ -1551,14 +1601,14 @@ impl capnp::private::capability::RequestHook for Call {
         {
             return false;
         }
-        self.native_tail = Some(context);
+        self.kind = CallKind::NativeTail(context);
         true
     }
     fn get(&mut self) -> any_pointer::Builder<'_> {
         self.params.request_mut().builder()
     }
     fn get_brand(&self) -> usize {
-        if self.third_party.is_none()
+        if self.kind.third_party().is_none()
             && self.endpoint().remote.get()
             && self.endpoint().introduced.borrow().is_none()
             && self.endpoint().introduction.borrow().is_none()
@@ -1583,13 +1633,13 @@ impl capnp::private::capability::RequestHook for Call {
         &mut self,
         contact: any_pointer::Reader<'_>,
     ) -> capnp::Result<()> {
-        if self.third_party.is_some() || self.third_party_tail_target().is_none() {
+        if self.kind.third_party().is_some() || self.third_party_tail_target().is_none() {
             return Err(Error::failed("ineligible tail transfer".into()));
         }
         contact.validate_capability_indices(0)?;
         let mut body = capnp::message::Builder::new_default();
         body.set_root(contact)?;
-        self.third_party = Some(Rc::new(body));
+        self.kind = CallKind::ThirdParty(Rc::new(body));
         Ok(())
     }
     fn send(mut self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
@@ -1617,7 +1667,45 @@ impl capnp::private::capability::RequestHook for Call {
     }
     fn send_streaming(mut self: Box<Self>) -> Promise<(), Error> {
         self.hints.only_promise_pipeline = false;
-        self.into_request().send_streaming()
+        if self.kind.third_party().is_some()
+            || self.endpoint().introduced.borrow().is_some()
+            || self.endpoint().introduction.borrow().is_some()
+        {
+            return self.into_request().send_streaming();
+        }
+        // Bootstrap and unresolved local promises can acquire a remote route
+        // after send(). Only actual wire publication charges the controller;
+        // an initial routing hint cannot decide streaming readiness.
+        let stream = self
+            .endpoint()
+            .inbox
+            .upgrade()
+            .and_then(|inbox| inbox.stream_factory.clone())
+            .map(|factory| {
+                let flow = self
+                    .endpoint()
+                    .streaming
+                    .get_or_init(|| streaming::Flow::new(factory))
+                    .clone();
+                streaming::Publication::new(flow)
+            });
+        if let Some(tail) = self.kind.native_tail() {
+            tail.forwarded();
+        }
+        self.kind = CallKind::Streaming(stream.clone());
+        // Streaming exposes no result pipeline, just like legacy's dedicated
+        // send. Keep the native completion without allocating an unobservable
+        // pipeline or changing the caller's wire hints. All indirect routes
+        // were forwarded above; a local ResultsHook here would recurse.
+        let response = response::request_prepared(self).promise;
+        let ack = Promise::from_future(async move {
+            response.await?;
+            Ok(())
+        });
+        match stream {
+            Some(stream) => stream.bind(ack),
+            None => ack,
+        }
     }
     fn tail_send(
         mut self: Box<Self>,
@@ -1641,6 +1729,7 @@ impl Call {
         self._permit.release_target();
     }
     fn publication_committed(&mut self) {
+        self.kind.release_stream();
         if let CallCompletion::Response(completion) = &self.completion {
             completion.published();
         }
@@ -1658,7 +1747,7 @@ impl Call {
     }
     #[inline(always)]
     fn can_send_directly(&self) -> bool {
-        self.third_party.is_none() && {
+        self.kind.third_party().is_none() && {
             let unintroduced = self.endpoint().introduced.borrow().is_none()
                 && self.endpoint().introduction.borrow().is_none();
             unintroduced
@@ -1750,7 +1839,10 @@ impl Call {
             self.hints,
             Hook(self._permit.target.take().unwrap(), self.credit),
             context,
-            self.third_party,
+            match self.kind {
+                CallKind::ThirdParty(contact) => Some(contact),
+                _ => None,
+            },
         ))
     }
 }
@@ -1814,7 +1906,7 @@ impl Call {
         self.completion.poll_observed(cx)
     }
     pub fn complete(mut self, result: capnp::Result<()>) {
-        if let Some(tail) = &self.native_tail {
+        if let Some(tail) = self.kind.native_tail() {
             tail.forwarded();
         }
         self.completion.complete(result);
@@ -1823,7 +1915,7 @@ impl Call {
     /// preserving field destruction order without moving the full call to stack.
     #[allow(clippy::boxed_local)] // Preserve the existing allocation through field destruction.
     fn complete_boxed(mut self: Box<Self>, result: capnp::Result<()>) {
-        if let Some(tail) = &self.native_tail {
+        if let Some(tail) = self.kind.native_tail() {
             tail.forwarded();
         }
         self.completion.complete(result);
@@ -1833,13 +1925,13 @@ impl Call {
     /// Params/results (including early pipeline and cancellation policy hooks)
     /// move intact; the adapter does not rebuild the application's context.
     pub fn forward(self, target: &dyn ClientHook) -> Promise<(), Error> {
-        if let Some(tail) = &self.native_tail {
+        if let Some(tail) = self.kind.native_tail() {
             tail.forwarded();
         }
+        let streaming = self.kind.is_streaming();
         let Self {
+            kind: _,
             credit,
-            third_party: _,
-            native_tail: _,
             interface,
             method,
             hints,
@@ -1853,7 +1945,7 @@ impl Call {
             interface,
             method,
             params.into_hook(),
-            results.into_hook(),
+            results.into_streaming_hook(streaming),
             hints,
         );
         Promise::from_future(async move {
@@ -1903,6 +1995,58 @@ impl Drop for Permit {
 #[derive(Clone)]
 pub(crate) struct Hook(Rc<Endpoint>, Option<Rc<admission::Credit>>);
 impl Hook {
+    fn new_request(
+        &self,
+        interface: u64,
+        method: u16,
+        size: Option<capnp::MessageSize>,
+        hints: CallHints,
+    ) -> capnp::Result<Box<Call>> {
+        let inbox = self.0.inbox.upgrade();
+        let credit = inbox
+            .as_ref()
+            .and_then(|inbox| inbox.admission.clone())
+            .map(admission::Credit::new);
+        if self.0.remote.get() {
+            if let Some(credit) = &credit {
+                credit.ensure()?;
+            }
+        }
+        let allocator = crate::local::result_allocator(size);
+        let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
+            Some(pool) => allocator.segment_pool(pool.clone()),
+            None => allocator,
+        };
+        let template = self.0.remote.get().then(|| {
+            inbox
+                .as_ref()
+                .map(|inbox| inbox.call_template(interface, method))
+        });
+        // Allocate before constructing the arena, allowing the compiler to write
+        // the large request directly into its final box without a second owner.
+        let call = Box::<Call>::new_uninit();
+        let request = crate::local::Params::scoped(interface, method, allocator, template);
+        // Keep initialization concrete before coercing to RequestHook. The
+        // pinned coverage compiler otherwise infers an unsized Box::write.
+        let call: Box<Call> = Box::write(
+            call,
+            Call {
+                kind: CallKind::Ordinary,
+                credit,
+                interface,
+                method,
+                hints,
+                params: CallParams::Request(request),
+                results: response::Results::Unsent,
+                completion: CallCompletion::Unsent,
+                shutdown: inbox
+                    .as_ref()
+                    .map_or_else(Shutdown::new, |inbox| inbox.shutdown.clone()),
+                _permit: Permit::new(self.0.clone()),
+            },
+        );
+        Ok(call)
+    }
     fn call_to(
         &self,
         interface: u64,
@@ -1953,9 +2097,8 @@ impl Hook {
         completion: CallCompletion,
     ) -> Result<Rc<Inbox>, Box<Error>> {
         let call = Box::new(Call {
+            kind: third_party.map_or(CallKind::Ordinary, CallKind::ThirdParty),
             credit: self.1.clone(),
-            third_party,
-            native_tail: None,
             interface,
             method,
             hints,
@@ -2157,55 +2300,12 @@ impl ClientHook for Hook {
         if let Some(client) = self.introduced() {
             return client.new_call_with_hints(interface, method, size, hints);
         }
-        let inbox = self.0.inbox.upgrade();
-        let credit = inbox
-            .as_ref()
-            .and_then(|inbox| inbox.admission.clone())
-            .map(admission::Credit::new);
-        if self.0.remote.get() {
-            if let Some(credit) = &credit {
-                if let Err(error) = credit.ensure() {
-                    return capability::Request::new(Box::new(crate::broken::Request::new(
-                        error, size,
-                    )));
-                }
+        match self.new_request(interface, method, size, hints) {
+            Ok(call) => capability::Request::new(call),
+            Err(error) => {
+                capability::Request::new(Box::new(crate::broken::Request::new(error, size)))
             }
         }
-        let allocator = crate::local::result_allocator(size);
-        let allocator = match inbox.as_ref().and_then(|inbox| inbox.message_pool.as_ref()) {
-            Some(pool) => allocator.segment_pool(pool.clone()),
-            None => allocator,
-        };
-        let template = self.0.remote.get().then(|| {
-            inbox
-                .as_ref()
-                .map(|inbox| inbox.call_template(interface, method))
-        });
-        // Allocate before constructing the arena, allowing the compiler to write
-        // the large request directly into its final box without a second owner.
-        let call = Box::<Call>::new_uninit();
-        let request = crate::local::Params::scoped(interface, method, allocator, template);
-        // Keep initialization concrete before coercing to RequestHook. The
-        // pinned coverage compiler otherwise infers an unsized Box::write.
-        let call: Box<Call> = Box::write(
-            call,
-            Call {
-                third_party: None,
-                native_tail: None,
-                credit,
-                interface,
-                method,
-                hints,
-                params: CallParams::Request(request),
-                results: response::Results::Unsent,
-                completion: CallCompletion::Unsent,
-                shutdown: inbox
-                    .as_ref()
-                    .map_or_else(Shutdown::new, |inbox| inbox.shutdown.clone()),
-                _permit: Permit::new(self.0.clone()),
-            },
-        );
-        capability::Request::new(call)
     }
     fn call(
         &self,
@@ -2221,21 +2321,29 @@ impl ClientHook for Hook {
         interface: u64,
         method: u16,
         params: Box<dyn ParamsHook>,
-        results: Box<dyn ResultsHook>,
+        mut results: Box<dyn ResultsHook>,
         hints: CallHints,
     ) -> Promise<(), Error> {
-        if self.0.remote.get()
-            && self
-                .0
-                .inbox
-                .upgrade()
-                .is_some_and(|inbox| inbox.native_tail)
-        {
-            // Match legacy Client::call_with_hints: the original ResultsHook
-            // chooses native transfer, third-party transfer, or forwarding.
+        if self.0.inbox.upgrade().is_some_and(|inbox| {
+            inbox.stream_factory.is_some() || (self.0.remote.get() && inbox.native_tail)
+        }) {
+            // Match legacy Client::call_with_hints even before the route settles
+            // or when optimized tail transfer is disabled. ResultsHook chooses
+            // streaming credit, native/third-party transfer or ordinary forwarding.
             let request = params.get().and_then(|params| {
-                let mut request =
-                    self.new_call_with_hints(interface, method, Some(params.target_size()?), hints);
+                let size = Some(params.target_size()?);
+                let mut request = if let Some(client) = self.introduced() {
+                    client.new_call_with_hints(interface, method, size, hints)
+                } else {
+                    let call = self.new_request(interface, method, size, hints)?;
+                    // Forwarding may copy the inner reply through opaque result
+                    // hooks. Preserve the same reservation in the outer reply,
+                    // independently of that copy and the inner response owner.
+                    if let Some(credit) = &call.credit {
+                        results.retain_response_context(credit.clone());
+                    }
+                    capability::Request::new(call)
+                };
                 request.get().set_as(params)?;
                 Ok(request)
             });

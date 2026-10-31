@@ -496,6 +496,7 @@ struct Fixture {
     task: tokio::task::JoinHandle<capnp::Result<()>>,
     remote: harness::Client,
     joiner: support::driver::Joiner<u8>,
+    disconnect: Option<capnp::capability::Promise<(), capnp::Error>>,
     pipeline: Option<harness::bounce_results::Pipeline>,
     child: Option<harness::Client>,
     a: u32,
@@ -520,6 +521,7 @@ impl Fixture {
             support::driver::System::new(portable, Box::new(Hub::network(&hub, 1)), None);
         let remote: harness::Client = system.bootstrap(2);
         let joiner = system.get_joiner();
+        let disconnect = system.disconnect();
         let mut peer = hub.borrow_mut().connect(2, 1);
         let task = tokio::task::spawn_local(system.run());
         let input = peer.recv().await;
@@ -579,6 +581,7 @@ impl Fixture {
             task,
             remote,
             joiner,
+            disconnect: Some(disconnect),
             pipeline: None,
             child: None,
             a: 0,
@@ -1203,8 +1206,13 @@ async fn pipeline_only_context_holds_flow_credit_until_finish() {
         .await;
 }
 
-async fn queued_streaming_trace(steps: &[serde_json::Value], fail: bool, wrapper: u32) {
-    let mut f = Fixture::new(0).await;
+async fn queued_streaming_trace(
+    steps: &[serde_json::Value],
+    fail: bool,
+    wrapper: u32,
+    portable: bool,
+) {
+    let mut f = Fixture::with_driver(0, portable).await;
     let (tx, rx) = futures::channel::oneshot::channel();
     let mut resolver = Some(tx);
     let queued: harness::Client = capnp_rpc::new_future_client(async move { rx.await.unwrap() });
@@ -1321,6 +1329,293 @@ async fn queued_streaming_trace(steps: &[serde_json::Value], fail: bool, wrapper
         );
     }
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn dropping_streaming_credit_before_driver_poll_keeps_accepted_call_alive() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                let mut fixture = Fixture::with_driver(0, portable).await;
+                let request: capnp::capability::StreamingRequest<harness::echo_params::Owned> =
+                    fixture
+                        .remote
+                        .client
+                        .new_streaming_call(harness::Client::TYPE_ID, 0, None);
+                drop(request.send());
+                let message = fixture.next_call().await;
+                let message::Call(call) = message
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("Call")
+                };
+                let question = call.unwrap().get_question_id();
+                settle().await;
+                fixture.drain();
+                assert!(
+                    !fixture.finishes.contains(&question),
+                    "portable={portable}: credit is not cancellation interest"
+                );
+                fixture.peer.send(|message| {
+                    let mut returned = message.init_return();
+                    returned.set_answer_id(question);
+                    returned.set_release_param_caps(false);
+                    returned.init_results();
+                });
+                settle().await;
+                fixture.drain();
+                assert!(fixture.finishes.contains(&question));
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn streaming_pipeline_and_imported_promise_use_transport_credit() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                for portable in [false, true] {
+                    for imported_promise in [false, true] {
+                        let mut fixture = Fixture::with_driver(0, portable).await;
+                        let parent = fixture.remote.bounce_request().send();
+                        let projected = parent.pipeline.get_cap();
+                        let message = fixture.next_call().await;
+                        let message::Call(call) = message
+                            .get_body()
+                            .unwrap()
+                            .get_as::<message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("parent Call")
+                        };
+                        let parent_id = call.unwrap().get_question_id();
+                        let mut parent_response = Some(parent.promise);
+                        let target = if imported_promise {
+                            fixture.peer.send(|message| {
+                                let mut returned = message.init_return();
+                                returned.set_answer_id(parent_id);
+                                returned.set_release_param_caps(false);
+                                let mut payload = returned.init_results();
+                                let mut table = Vec::new();
+                                let mut content = payload.reborrow().get_content();
+                                content.imbue_mut(&mut table);
+                                content
+                                    .init_as::<harness::bounce_results::Builder>()
+                                    .set_cap(capnp_rpc::new_client(Dummy(None)));
+                                payload.init_cap_table(1).get(0).set_sender_promise(123);
+                            });
+                            parent_response
+                                .take()
+                                .unwrap()
+                                .await
+                                .unwrap()
+                                .get()
+                                .unwrap()
+                                .get_cap()
+                                .unwrap()
+                        } else {
+                            projected
+                        };
+                        let request: capnp::capability::StreamingRequest<
+                            harness::echo_params::Owned,
+                        > = target
+                            .client
+                            .new_streaming_call(harness::Client::TYPE_ID, 0, None);
+                        let mut credit = request.send();
+                        let message = fixture.next_call().await;
+                        let message::Call(call) = message
+                            .get_body()
+                            .unwrap()
+                            .get_as::<message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("stream Call")
+                        };
+                        let call = call.unwrap();
+                        let question = call.get_question_id();
+                        if imported_promise {
+                            assert!(matches!(
+                                call.get_target().unwrap().which().unwrap(),
+                                message_target::ImportedCap(123)
+                            ));
+                        } else {
+                            let message_target::PromisedAnswer(answer) =
+                                call.get_target().unwrap().which().unwrap()
+                            else {
+                                panic!("projected target")
+                            };
+                            assert_eq!(answer.unwrap().get_question_id(), parent_id);
+                        }
+                        assert!(
+                            matches!(futures::poll!(&mut credit), std::task::Poll::Ready(Ok(()))),
+                            "portable={portable}, imported_promise={imported_promise}"
+                        );
+                        fixture.peer.send(|message| {
+                            let mut returned = message.init_return();
+                            returned.set_answer_id(question);
+                            returned.set_release_param_caps(false);
+                            returned.init_results();
+                        });
+                        settle().await;
+                        fixture.drain();
+                        assert!(fixture.finishes.contains(&question));
+                        drop((target, parent_response));
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remote_streaming_credit_does_not_wait_for_its_return() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                let mut fixture = Fixture::with_driver(0, portable).await;
+                let request: capnp::capability::StreamingRequest<harness::echo_params::Owned> =
+                    fixture
+                        .remote
+                        .client
+                        .new_streaming_call(harness::Client::TYPE_ID, 0, None);
+                let mut credit = request.send();
+                let message = fixture.next_call().await;
+                let message::Call(call) = message
+                    .get_body()
+                    .unwrap()
+                    .get_as::<message::Reader>()
+                    .unwrap()
+                    .which()
+                    .unwrap()
+                else {
+                    panic!("Call")
+                };
+                let question = call.unwrap().get_question_id();
+                assert!(
+                    matches!(futures::poll!(&mut credit), std::task::Poll::Ready(Ok(()))),
+                    "portable={portable}: an available byte window grants credit before Return"
+                );
+                fixture.peer.send(|message| {
+                    let mut returned = message.init_return();
+                    returned.set_answer_id(question);
+                    returned.set_release_param_caps(false);
+                    returned.init_results();
+                });
+                settle().await;
+                fixture.drain();
+                assert!(
+                    fixture.finishes.contains(&question),
+                    "the acknowledgement driver must retain and retire the question"
+                );
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn remote_streaming_aliases_share_credit_and_keep_unacknowledged_calls_alive() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            for portable in [false, true] {
+                for fail in [false, true] {
+                    let mut fixture = Fixture::with_driver(0, portable).await;
+                    let status = fixture._hub.borrow_mut().connect(1, 2).status();
+                    status.borrow_mut().stream_window = Some(0);
+                    let alias = fixture.remote.clone();
+                    let mut credits = Vec::new();
+                    let mut questions = Vec::new();
+                    for client in [&fixture.remote, &alias] {
+                        let request: capnp::capability::StreamingRequest<
+                            harness::echo_params::Owned,
+                        > = client
+                            .client
+                            .new_streaming_call(harness::Client::TYPE_ID, 0, None);
+                        credits.push(request.send());
+                    }
+                    for _ in 0..2 {
+                        let message = fixture.next_call().await;
+                        let message::Call(call) = message
+                            .get_body()
+                            .unwrap()
+                            .get_as::<message::Reader>()
+                            .unwrap()
+                            .which()
+                            .unwrap()
+                        else {
+                            panic!("Call")
+                        };
+                        questions.push(call.unwrap().get_question_id());
+                        assert_eq!(
+                            status.borrow().stream_words[questions.len() - 1],
+                            message.size_in_words()
+                        );
+                    }
+                    assert_eq!(
+                        status.borrow().streams,
+                        1,
+                        "portable={portable}: aliases own one stream controller"
+                    );
+                    assert!(matches!(
+                        futures::poll!(&mut credits[0]),
+                        std::task::Poll::Ready(Ok(()))
+                    ));
+                    assert!(futures::poll!(&mut credits[1]).is_pending());
+                    fixture.peer.send(|message| {
+                        let mut returned = message.init_return();
+                        returned.set_answer_id(questions[0]);
+                        returned.set_release_param_caps(false);
+                        if fail {
+                            let mut exception = returned.init_exception();
+                            exception.set_type(capnp_rpc::rpc_capnp::exception::Type::Failed);
+                            exception.set_reason("stream acknowledgement failed");
+                        } else {
+                            returned.init_results();
+                        }
+                    });
+                    settle().await;
+                    fixture.drain();
+                    let std::task::Poll::Ready(result) = futures::poll!(&mut credits[1]) else {
+                        panic!("credit released after first acknowledgement, portable={portable}");
+                    };
+                    if fail {
+                        assert!(result
+                            .unwrap_err()
+                            .to_string()
+                            .contains("stream acknowledgement failed"));
+                    } else {
+                        result.unwrap();
+                    }
+                    assert!(
+                        !fixture.finishes.contains(&questions[1]),
+                        "credit completion cannot cancel an unacknowledged RPC"
+                    );
+                    fixture.peer.send(|message| {
+                        let mut returned = message.init_return();
+                        returned.set_answer_id(questions[1]);
+                        returned.set_release_param_caps(false);
+                        returned.init_results();
+                    });
+                    settle().await;
+                    fixture.drain();
+                    assert!(questions
+                        .iter()
+                        .all(|question| fixture.finishes.contains(question)));
+                }
+            }
+        })
+        .await;
+}
 #[tokio::test(flavor = "current_thread")]
 async fn replay_tlc_queued_streaming_traces() {
     let path = capntproto_test_support::verification::input("CAPNTPROTO_QUEUED_STREAMING_TRACES")
@@ -1332,7 +1627,9 @@ async fn replay_tlc_queued_streaming_traces() {
             for trace in traces {
                 for fail in [false, true] {
                     for wrapper in 0..3 {
-                        queued_streaming_trace(&trace, fail, wrapper).await;
+                        for portable in [false, true] {
+                            queued_streaming_trace(&trace, fail, wrapper, portable).await;
+                        }
                     }
                 }
             }
@@ -1351,7 +1648,10 @@ async fn queued_streaming_preserves_credit_readiness_and_ack_lifetime() {
                     {"action":"ack","state":[1,1,1,1,1,1]}
                 ]);
                 for wrapper in 0..3 {
-                    queued_streaming_trace(steps.as_array().unwrap(), true, wrapper).await;
+                    for portable in [false, true] {
+                        queued_streaming_trace(steps.as_array().unwrap(), true, wrapper, portable)
+                            .await;
+                    }
                 }
             })
             .await
@@ -1411,4 +1711,58 @@ async fn generated_result_schemas_set_conservative_wire_hints() {
             }
         }).await.unwrap();
     }).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn closing_connection_rejects_credit_and_last_client_retires_stream_driver() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                let mut observations = Vec::new();
+                for portable in [false, true] {
+                    let mut fixture = Fixture::with_driver(0, portable).await;
+                    let status = fixture._hub.borrow_mut().connect(1, 2).status();
+                    status.borrow_mut().stream_window = Some(0);
+                    let mut credits = Vec::new();
+                    for _ in 0..2 {
+                        let request: capnp::capability::StreamingRequest<
+                            harness::echo_params::Owned,
+                        > = fixture.remote.client.new_streaming_call(
+                            harness::Client::TYPE_ID,
+                            0,
+                            None,
+                        );
+                        credits.push(request.send());
+                    }
+                    fixture.next_call().await;
+                    fixture.next_call().await;
+                    assert!(matches!(
+                        futures::poll!(&mut credits[0]),
+                        std::task::Poll::Ready(Ok(()))
+                    ));
+                    assert!(futures::poll!(&mut credits[1]).is_pending());
+                    assert_eq!(status.borrow().active_streams, 1);
+                    fixture.disconnect.take().unwrap().await.unwrap();
+                    settle().await;
+                    let failed = matches!(
+                        futures::poll!(&mut credits[1]),
+                        std::task::Poll::Ready(Err(_))
+                    );
+                    let retained = status.borrow().active_streams;
+                    drop(std::mem::replace(
+                        &mut fixture.remote,
+                        capnp_rpc::new_client(Dummy(None)),
+                    ));
+                    settle().await;
+                    observations.push((portable, retained, failed, status.borrow().active_streams));
+                    // Both drivers retain the per-capability controller until the
+                    // final client drops. Neither observer requires system Drop.
+                    assert!(!fixture.task.is_finished());
+                }
+                assert_eq!(observations, [(false, 1, true, 0), (true, 1, true, 0)]);
+            })
+            .await
+            .unwrap();
+        })
+        .await;
 }

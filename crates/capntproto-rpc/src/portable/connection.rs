@@ -229,7 +229,17 @@ async fn run<V: 'static>(
                         options.cached_message_words,
                         options.cached_message_segments,
                     ))
-                    .with_admission(policy.admission.clone());
+                    .with_admission(policy.admission.clone())
+                    .with_stream_factory({
+                        let connection = Rc::downgrade(&network_connection);
+                        let executor = executor.clone();
+                        Rc::new(move || {
+                            let connection = connection.upgrade().ok_or_else(closing)?;
+                            let (controller, driving) = connection.borrow_mut().new_stream();
+                            executor.spawn(driving)?;
+                            Ok(controller)
+                        })
+                    });
                 hooks.set_native_tail(network_connection.borrow().supports_tail_call_transfer());
                 if let Some(commands) = &network_commands {
                     hooks = hooks.with_joins(commands.handle());

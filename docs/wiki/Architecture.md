@@ -2,6 +2,7 @@
 
 For package ownership, dependency direction, and file placement, see the
 [repository layout](Repository-Layout.md).
+The [legacy/portable file audit](Legacy-Portable-Parity.md) records every legacy RPC file, its portable counterpart, remaining storage differences and qualification results.
 
 Capntproto is an unreleased 0.x protocol/runtime. Breaking Rust APIs and rejecting
 obsolete private formats is allowed. Standard Cap'n Proto wire behavior,

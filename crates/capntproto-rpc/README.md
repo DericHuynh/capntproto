@@ -164,8 +164,9 @@ capnp-rpc = { package = "capntproto-rpc", path = "crates/capntproto-rpc", defaul
   Standalone `Calls`, `Worker` and `ForeignPromises` polls return `Progress::Yield`
   when their budget expires; their caller schedules the next poll. Pending means
   a completed idle scan with application wakeups registered.
-  Default migration still requires authenticated multi-party network lifecycle,
-  default VatNetwork task creation, idle notifications and complete limit policies.
+  Default driver selection still requires performance qualification. The opt-in
+  portable RpcSystem supplies authenticated multi-party network lifecycle,
+  VatNetwork task creation, idle notifications and live limit policies.
   Pipeline-only calls without parameter capabilities use separately bounded
   high-ID questions and omit Return. Their stable remote projections retain the
   question until Finish. Published high IDs never wrap or get reused; exhaustion,
@@ -569,3 +570,19 @@ transport bundle before retrying. The frame and grants retain their existing
 retry ownership. The root crate's `unix_rpc::ResourceWriter` supports Unix
 stream IO; use a resource budget of at most 253 descriptors for this transport.
 Fixed bundles do not allocate even if another crate enables `alloc`.
+
+The [complete legacy/portable file comparison](../../docs/wiki/Legacy-Portable-Parity.md)
+records shared code, adapted protocol paths and intentional bounded-storage differences.
+Hosted portable streaming uses the same connection window policy as legacy;
+credit readiness never transfers the acknowledgement driver's ownership to the caller.
+Custom `FlowController` implementations supply `sent(words, ack)` for already
+accepted frames; `send` publishes a message before applying that transition.
+
+The executor-neutral two-party facade can select either driver explicitly with
+`twoparty::RpcDriver::Portable(options)` (or `Legacy`, the default).
+`TwoPartyClient::with_driver`, `from_network_with_driver`,
+`from_scoped_network_with_driver` and `new_borrowed_with_driver` preserve the same
+transport and cleanup contracts. `TwoPartyServer::with_driver` applies selection
+and limits to accepted connections. Its `accept_borrowed` now returns `Result`
+so invalid portable configuration can be reported at acceptance. Drive each
+client future, or the server's returned driver, while making calls.

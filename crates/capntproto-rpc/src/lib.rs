@@ -855,11 +855,21 @@ pub fn new_adaptive_flow_controller_with_clock(
 /// Tracks a particular RPC stream in order to implement a flow control algorithm.
 #[cfg(feature = "std")]
 pub trait FlowController {
+    /// Publish a message immediately, then account for its exact body size.
+    /// Readiness grants byte credit; the controller retains acknowledgement
+    /// ownership independently of the returned promise.
     fn send(
         &mut self,
         message: Box<dyn OutgoingMessage>,
         ack: Promise<(), Error>,
-    ) -> Promise<(), Error>;
+    ) -> Promise<(), Error> {
+        let words = message.size_in_words();
+        let _ = message.send_detached();
+        self.sent(words, ack)
+    }
+    /// Account for a frame already accepted by the transport. This is the same
+    /// credit transition as `send`, without constructing an owned message.
+    fn sent(&mut self, words: usize, ack: Promise<(), Error>) -> Promise<(), Error>;
     fn wait_all_acked(&mut self) -> Promise<(), Error>;
 }
 

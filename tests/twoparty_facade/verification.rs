@@ -65,7 +65,7 @@ async fn replay(path: &[exploration::State]) -> String {
                 peers[0] = Some(tokio::task::spawn_local(peer));
             }
             2 => {
-                borrowed = Some(server.accept_borrowed(borrow.take().unwrap()));
+                borrowed = Some(server.accept_borrowed(borrow.take().unwrap()).unwrap());
                 let mut peer = TwoPartyClient::new(borrowed_peer.take().unwrap().compat());
                 caps[1] = Some(peer.bootstrap());
                 peers[1] = Some(tokio::task::spawn_local(peer));

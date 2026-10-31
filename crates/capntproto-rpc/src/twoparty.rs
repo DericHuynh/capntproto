@@ -36,7 +36,9 @@ mod facade;
 #[cfg(test)]
 mod output_driver_tests;
 mod send_buffer;
-pub use facade::{QueueDiagnostics, ServerDriver, TwoPartyClient, TwoPartyNetwork, TwoPartyServer};
+pub use facade::{
+    QueueDiagnostics, RpcDriver, ServerDriver, TwoPartyClient, TwoPartyNetwork, TwoPartyServer,
+};
 pub use send_buffer::SendBufferWindow;
 
 pub type VatId = crate::rpc_twoparty_capnp::Side;

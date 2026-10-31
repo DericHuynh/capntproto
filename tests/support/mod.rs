@@ -86,6 +86,10 @@ impl IncomingMessage for Input {
 }
 #[derive(Default)]
 pub struct ConnectionStatus {
+    pub stream_window: Option<usize>,
+    pub streams: usize,
+    pub active_streams: usize,
+    pub stream_words: Vec<usize>,
     pub allocation_hints: Vec<u32>,
     pub answer_deadlines: Vec<oneshot::Sender<()>>,
     pub idle: bool,
@@ -299,6 +303,27 @@ impl capnp_rpc::OutgoingMessageStream for FrameOutput {
     }
 }
 impl Connection<u8> for Endpoint {
+    fn new_stream(&mut self) -> (Box<dyn capnp_rpc::FlowController>, Promise<(), Error>) {
+        let window = {
+            let mut status = self.0.status.borrow_mut();
+            status.streams += 1;
+            status.active_streams += 1;
+            status.stream_window.unwrap_or(65536)
+        };
+        let (controller, driving) = capnp_rpc::new_fixed_window_flow_controller(window);
+        let lifetime = StreamDriver(self.0.status.clone());
+        let driving = Promise::from_future(async move {
+            let _lifetime = lifetime;
+            driving.await
+        });
+        (
+            Box::new(ObservedStream {
+                controller,
+                status: self.0.status.clone(),
+            }),
+            driving,
+        )
+    }
     fn control_mode(&self) -> capnp_rpc::ControlMode {
         capnp_rpc::ControlMode::Network
     }
@@ -531,6 +556,25 @@ impl Connection<u8> for Endpoint {
         provision: capnp::any_pointer::Reader<'_>,
     ) -> Promise<Rc<ThirdPartyExchange>, Error> {
         self.complete_for(self.0.local, provision)
+    }
+}
+struct StreamDriver(Rc<RefCell<ConnectionStatus>>);
+impl Drop for StreamDriver {
+    fn drop(&mut self) {
+        self.0.borrow_mut().active_streams -= 1;
+    }
+}
+struct ObservedStream {
+    controller: Box<dyn capnp_rpc::FlowController>,
+    status: Rc<RefCell<ConnectionStatus>>,
+}
+impl capnp_rpc::FlowController for ObservedStream {
+    fn sent(&mut self, words: usize, ack: Promise<(), Error>) -> Promise<(), Error> {
+        self.status.borrow_mut().stream_words.push(words);
+        self.controller.sent(words, ack)
+    }
+    fn wait_all_acked(&mut self) -> Promise<(), Error> {
+        self.controller.wait_all_acked()
     }
 }
 impl Endpoint {

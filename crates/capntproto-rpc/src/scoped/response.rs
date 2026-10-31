@@ -386,6 +386,18 @@ impl Results {
             Self::Direct(direct) => direct.into_hook(),
         }
     }
+    pub(super) fn into_streaming_hook(self, streaming: bool) -> Box<dyn ResultsHook> {
+        let mut hook = self.into_hook();
+        if streaming {
+            if let Some(results) = hook
+                .as_any_mut()
+                .and_then(|hook| hook.downcast_mut::<crate::local::Results>())
+            {
+                results.mark_streaming();
+            }
+        }
+        hook
+    }
     pub(super) fn hook(&mut self) -> &mut dyn ResultsHook {
         if let Self::Direct(direct) = self {
             let hook = direct.take_hook();

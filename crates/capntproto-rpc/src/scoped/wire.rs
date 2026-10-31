@@ -281,11 +281,11 @@ impl<'id> ClientHooks<'id> {
             // Keep unresolved calls direct too: Calls binds a completion owner
             // before accepting one locally. Both paths retain the same queued
             // task, cancellation and pipeline identities.
-            let direct = direct && call.third_party.is_none();
+            let direct = direct && call.kind.third_party().is_none();
             let mut original_native = None;
             if direct
                 && driver.uses_native_writer()
-                && call.native_tail.is_none()
+                && call.kind.native_tail().is_none()
                 && !call.hints.only_promise_pipeline
             {
                 if let (Some(source), Some(caps)) = (
@@ -397,8 +397,8 @@ impl<'id> ClientHooks<'id> {
                     .and_then(|bytes| usize::try_from(bytes).ok())
                     .ok_or_else(|| Error::from_kind(capnp::ErrorKind::MessageSizeOverflow))?;
                 let third_party = call
-                    .third_party
-                    .as_ref()
+                    .kind
+                    .third_party()
                     .map(|body| body.get_root_as_reader::<any_pointer::Reader>())
                     .transpose()?;
                 let extra = third_party
@@ -407,7 +407,7 @@ impl<'id> ClientHooks<'id> {
                     .map(|reader| reader.target_size().map(|size| size.word_count + 1))
                     .transpose()?
                     .unwrap_or(0);
-                let destination = if call.native_tail.is_some() {
+                let destination = if call.kind.native_tail().is_some() {
                     capntproto_rpc_wire::calls::CallDestination::Yourself
                 } else {
                     third_party.map_or(
@@ -994,8 +994,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         self.task().is_none()
             && self.pipeline.is_none()
             && self.call.as_ref().is_some_and(|call| {
-                call.third_party.is_none()
-                    && call.native_tail.is_none()
+                call.kind.ordinary_destination()
                     && self.question() == Some(key)
                     && !call.is_canceled()
             })
@@ -1025,8 +1024,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             return Ok(false);
         };
         if self.pipeline.is_some()
-            || call.third_party.is_some()
-            || call.native_tail.is_some()
+            || !call.kind.ordinary_destination()
             || self.question() != Some(key)
             || call.is_canceled()
         {
@@ -1066,7 +1064,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
             && self
                 .call
                 .as_ref()
-                .is_some_and(|call| call.third_party.is_none())
+                .is_some_and(|call| call.kind.third_party().is_none())
         {
             if let Ok(CallOutput::Remote(remote)) = &mut output {
                 if let Some(message) = remote.take_plain_results() {
@@ -1117,7 +1115,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
         if self
             .call
             .as_ref()
-            .is_some_and(|call| call.third_party.is_some() || call.native_tail.is_some())
+            .is_some_and(|call| !call.kind.ordinary_destination())
         {
             if let CallOutput::Remote(response) = &output {
                 if response

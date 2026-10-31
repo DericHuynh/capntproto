@@ -497,11 +497,27 @@ impl messages::PublicationSink<Bundle> for PublicationSink {
         if let Some(fds) = resources.fds.take() {
             frame.set_fds(fds.iter().cloned().collect());
         }
-        let mut state = self.state.borrow_mut();
-        self.closing.published();
-        if let Err(error) = state.output.publish_reserved(frame) {
-            self.closing.fail();
-            state.failure = Some(error);
+        if let Some(stream) = &resources.stream {
+            if let Err(error) = stream.prepare() {
+                let mut state = self.state.borrow_mut();
+                state.output.cancel_reservation();
+                self.closing.fail();
+                state.failure = Some(error);
+                return;
+            }
+        }
+        let words = resources.stream.as_ref().map(|_| frame.size_in_words());
+        {
+            let mut state = self.state.borrow_mut();
+            self.closing.published();
+            if let Err(error) = state.output.publish_reserved(frame) {
+                self.closing.fail();
+                state.failure = Some(error);
+                return;
+            }
+        }
+        if let Some(stream) = resources.stream {
+            stream.published(words.expect("stream words"));
         }
     }
 }
@@ -557,6 +573,7 @@ pub struct Bundle {
     #[cfg(unix)]
     fds: Option<Box<capntproto_rpc_wire::attachments::Sender<Rc<std::os::fd::OwnedFd>, 4>>>,
     credit: Option<Rc<crate::admission::Permit>>,
+    stream: Option<Rc<super::StreamPublication>>,
 }
 
 impl io::WriteResources<Bundle> for Writer {
@@ -640,9 +657,19 @@ impl Writer {
         if let Some(fds) = resources.and_then(|resources| resources.fds.as_ref()) {
             frame.set_fds(fds.iter().cloned().collect());
         }
-        let mut state = self.state.borrow_mut();
-        state.output.send(frame).map_err(IoError::Failed)?;
-        self.closing.published();
+        let stream = resources.and_then(|resources| resources.stream.as_ref());
+        if let Some(stream) = stream {
+            stream.prepare().map_err(IoError::Failed)?;
+        }
+        let words = stream.map(|_| frame.size_in_words());
+        {
+            let mut state = self.state.borrow_mut();
+            state.output.send(frame).map_err(IoError::Failed)?;
+            self.closing.published();
+        }
+        if let Some(stream) = stream {
+            stream.published(words.expect("stream words"));
+        }
         Ok(())
     }
 }
@@ -697,6 +724,14 @@ impl Output<resources::Import> for Resources {
         credit: Rc<crate::admission::Permit>,
     ) -> capnp::Result<()> {
         bundle.credit = Some(credit);
+        Ok(())
+    }
+    fn retain_stream(
+        &self,
+        bundle: &mut Bundle,
+        stream: Rc<super::StreamPublication>,
+    ) -> capnp::Result<()> {
+        bundle.stream = Some(stream);
         Ok(())
     }
     fn attach<'id, P: Copy, const H: usize>(

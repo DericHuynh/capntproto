@@ -7,6 +7,7 @@ mod tests;
 
 #[derive(Default)]
 struct State {
+    streaming: Cell<bool>,
     revision: Cell<u64>,
     protocol_wake: RefCell<Option<Waker>>,
     message_pool: Option<capnp::message::SegmentPool>,
@@ -390,6 +391,7 @@ impl Cache {
         debug_assert!(!state.hook_live.get());
         debug_assert_eq!(state.cancellation_guards.get(), 0);
         state.method.set(None);
+        state.streaming.set(false);
         state.trace_prepared.set(false);
         state.revision.set(0);
         if self.maximum == 0 {
@@ -445,6 +447,9 @@ impl Drop for Producer {
     }
 }
 impl Results {
+    pub(crate) fn mark_streaming(&self) {
+        self.0.streaming.set(true);
+    }
     pub(in crate::scoped::wire) fn payload_reader(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         self.0.payload.get().expect("published result").reader()
     }
@@ -638,6 +643,7 @@ impl Results {
         message_pool: Option<capnp::message::SegmentPool>,
     ) -> Self {
         Self(Rc::new(State {
+            streaming: Cell::new(false),
             revision: Cell::new(0),
             protocol_wake: RefCell::new(None),
             message_pool,
@@ -1041,6 +1047,20 @@ impl ResultsHook for Hook {
                 futures::future::pending::<capnp::Result<()>>().await
             });
             return (completion, pipeline.hook);
+        }
+        if self.results.0.streaming.get() {
+            let completed = request.send_streaming();
+            let pipeline = Box::new(crate::broken::Pipeline::new(Error::failed(
+                "streaming calls have no result pipeline".into(),
+            )));
+            return (
+                Promise::from_future(async move {
+                    let result = completed.await;
+                    drop(self);
+                    result
+                }),
+                pipeline,
+            );
         }
         if !self.results.0.wire_returned.get()
             && self.results.0.pipeline.borrow().is_none()

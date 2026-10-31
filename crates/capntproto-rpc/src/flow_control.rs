@@ -123,15 +123,8 @@ impl WindowFlowController {
 }
 
 impl crate::FlowController for WindowFlowController {
-    fn send(
-        &mut self,
-        message: Box<dyn crate::OutgoingMessage>,
-        ack: Promise<(), Error>,
-    ) -> Promise<(), Error> {
-        let size = (message.size_in_words() as u128) * 8;
-        // Sending must be immediate, even if earlier calls failed or blocked.
-        // Do not hold our state borrow while invoking an external message/getter.
-        let _ = message.send_detached();
+    fn sent(&mut self, words: usize, ack: Promise<(), Error>) -> Promise<(), Error> {
+        let size = (words as u128) * 8;
         let now = self.clock.as_ref().map_or(Duration::ZERO, |clock| clock());
         let (receipt, needs_window) = {
             let mut inner = self.inner.borrow_mut();

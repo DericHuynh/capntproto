@@ -544,7 +544,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
             },
-            |invocations, driver, messages, _credit, publication| {
+            |invocations, driver, messages, _credit, _stream, publication| {
                 let direct = match publication {
                     Publication::PreparedCapabilities {
                         target,
@@ -670,7 +670,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             |hooks, driver| {
                 hooks.collect_with_metadata(&mut driver.capabilities(), foreign::metadata)
             },
-            |invocations, driver, messages, _credit, publication| {
+            |invocations, driver, messages, _credit, _stream, publication| {
                 let direct = match publication {
                     Publication::PreparedCapabilities { .. } => return Ok(None),
                     Publication::Immediate {
@@ -765,6 +765,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &mut Peer<'p, 'id, '_, I, A, P, C, H>,
             &mut messages::Messages<'p, '_, '_>,
             Option<Rc<crate::admission::Permit>>,
+            Option<Rc<crate::scoped::streaming::Publication>>,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<SendOutcome<'id>>>,
     ) -> Poll<Result<Progress, Box<Error>>> {
@@ -1059,6 +1060,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &mut Peer<'p, 'id, '_, I, A, P, C, H>,
             &mut messages::Messages<'p, '_, '_>,
             Option<Rc<crate::admission::Permit>>,
+            Option<Rc<crate::scoped::streaming::Publication>>,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<SendOutcome<'id>>>,
     ) -> capnp::Result<Option<Progress>> {
@@ -1124,9 +1126,10 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             driver,
             messages,
             credit.clone(),
+            call.kind.stream().cloned(),
             Publication::Queued {
                 direct,
-                native: call.native_tail.as_ref(),
+                native: call.kind.native_tail(),
             },
         )?
         else {
@@ -1218,9 +1221,12 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             .wire
             .call
             .as_ref()
-            .and_then(|call| call.native_tail.as_ref())
+            .and_then(|call| call.kind.native_tail())
         {
             tail.forwarded();
+        }
+        if let Some(call) = entry.wire.call.as_mut() {
+            call.kind.release_stream();
         }
         self.ready.push(index);
         entry.wire.local_results = Some(server::Results::new());
@@ -1287,6 +1293,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             &mut Peer<'p, 'id, '_, I, A, P, C, H>,
             &mut messages::Messages<'p, '_, '_>,
             Option<Rc<crate::admission::Permit>>,
+            Option<Rc<crate::scoped::streaming::Publication>>,
             Publication<'_, 'id>,
         ) -> capnp::Result<Option<SendOutcome<'id>>>,
         refresh: &mut impl FnMut(&mut ClientHooks<'id>, &mut Peer<'p, 'id, '_, I, A, P, C, H>),
@@ -1375,8 +1382,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
             None => hooks.target(call)?,
         };
         if !call.hints.only_promise_pipeline
-            && call.third_party.is_none()
-            && call.native_tail.is_none()
+            && call.kind.ordinary_destination()
             && call.endpoint().remote.get()
         {
             let call = self.pending.as_ref().expect("pending call");
@@ -1502,6 +1508,7 @@ impl<'s, 'wait, 'p, 'id, I, const C: usize, const H: usize> Calls<'s, 'wait, 'p,
                     driver,
                     messages,
                     credit.clone(),
+                    call.kind.stream().cloned(),
                     publication,
                 )
             } else {
@@ -1821,6 +1828,14 @@ fn step<'p, 'id, I, A, P: Copy + Eq, const C: usize, const H: usize>(
     }
     match &mut local.stage {
         Stage::Prepare => {
+            if entry
+                .wire
+                .call
+                .as_ref()
+                .is_some_and(|call| call.kind.is_streaming())
+            {
+                results.mark_streaming();
+            }
             let hook = match driver
                 .runtime()
                 .inspect(local.call.target())

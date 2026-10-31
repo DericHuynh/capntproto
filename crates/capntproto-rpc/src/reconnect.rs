@@ -61,7 +61,7 @@ impl<C> Clone for Box<dyn SetTarget<C>> {
 }
 
 struct ClientInner<C> {
-    current: Option<Box<dyn ClientHook>>,
+    current: Option<Rc<dyn ClientHook>>,
     generation: Rc<()>,
     marker: PhantomData<C>,
 }
@@ -91,38 +91,46 @@ where
         }
     }
 
-    pub(crate) fn get_current(&self) -> Box<dyn ClientHook> {
+    fn get_current(&self) -> (Rc<dyn ClientHook>, Rc<()>) {
         let generation = {
             let inner = self.inner.borrow();
             if let Some(current) = &inner.current {
-                return current.add_ref();
+                return (current.clone(), inner.generation.clone());
             }
             inner.generation.clone()
         };
         let Ok(mut connect) = self.connect.try_borrow_mut() else {
-            return crate::broken::new_cap(capnp::Error::overloaded(
-                "reentrant call while reconnecting".into(),
-            ));
+            return (
+                Rc::from(crate::broken::new_cap(capnp::Error::overloaded(
+                    "reentrant call while reconnecting".into(),
+                ))),
+                generation,
+            );
         };
-        let hook = match connect() {
+        let hook: Rc<dyn ClientHook> = Rc::from(match connect() {
             Ok(client) => client.into_client_hook(),
             Err(error) => crate::broken::new_cap(error),
-        };
+        });
         drop(connect);
         let mut inner = self.inner.borrow_mut();
         if Rc::ptr_eq(&generation, &inner.generation) {
-            inner.current = Some(hook.add_ref());
-            hook
+            inner.current = Some(hook.clone());
+            (hook, generation)
         } else {
-            // A manual update during connect wins over its stale return value.
-            let current = inner.current.as_ref().map(|hook| hook.add_ref());
+            // Snapshot route and generation together. No external hook runs
+            // under the cell borrow, and a stale failure cannot reset a replacement.
+            let current = inner.current.clone();
+            let generation = inner.generation.clone();
             drop(inner);
             drop(hook);
-            current.unwrap_or_else(|| {
-                crate::broken::new_cap(capnp::Error::overloaded(
-                    "target reset while reconnecting".into(),
-                ))
-            })
+            (
+                current.unwrap_or_else(|| {
+                    Rc::from(crate::broken::new_cap(capnp::Error::overloaded(
+                        "target reset while reconnecting".into(),
+                    )))
+                }),
+                generation,
+            )
         }
     }
 
@@ -161,10 +169,11 @@ where
     }
 
     fn set_target(&self, target: C) {
+        let target = Rc::from(target.into_client_hook());
         let old = {
             let mut inner = self.inner.borrow_mut();
             inner.generation = Rc::new(());
-            inner.current.replace(target.into_client_hook())
+            inner.current.replace(target)
         };
         drop(old);
     }
@@ -224,8 +233,7 @@ where
         method_id: u16,
         size_hint: Option<capnp::MessageSize>,
     ) -> capnp::capability::Request<capnp::any_pointer::Owned, capnp::any_pointer::Owned> {
-        let current = self.get_current();
-        let generation = self.inner.borrow().generation.clone();
+        let (current, generation) = self.get_current();
         let result = current.new_call(interface_id, method_id, size_hint);
         let hook = Request::new(self.clone(), generation, result.hook);
         capnp::capability::Request::new(Box::new(hook))
@@ -254,8 +262,7 @@ where
         results: Box<dyn capnp::private::capability::ResultsHook>,
         hints: CallHints,
     ) -> Promise<(), capnp::Error> {
-        let current = self.get_current();
-        let generation = self.inner.borrow().generation.clone();
+        let (current, generation) = self.get_current();
         let result = current.call_with_hints(interface_id, method_id, params, results, hints);
         self.wrap(generation, result)
     }
@@ -435,4 +442,110 @@ where
     let c: Client<F, C> = Client::new(connect);
     let hook: Box<dyn ClientHook> = Box::new(c.clone());
     (FromClientHook::new(hook), Box::new(c))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use capnp::{any_pointer, capability::Client as Capability};
+    use std::cell::Cell;
+
+    struct Reenter {
+        inner: WeakState,
+        replace: RefCell<Option<Box<dyn FnOnce()>>>,
+        clones: Rc<Cell<usize>>,
+    }
+    type WeakState = std::rc::Weak<RefCell<ClientInner<Capability>>>;
+    impl ClientHook for Reenter {
+        fn add_ref(&self) -> Box<dyn ClientHook> {
+            let inner = self.inner.upgrade().unwrap();
+            assert!(
+                inner.try_borrow_mut().is_ok(),
+                "hook cloned under route borrow"
+            );
+            self.clones.set(self.clones.get() + 1);
+            crate::broken::new_cap(capnp::Error::disconnected("old target".into()))
+        }
+        fn new_call(
+            &self,
+            interface: u64,
+            method: u16,
+            size: Option<capnp::MessageSize>,
+        ) -> capnp::capability::Request<any_pointer::Owned, any_pointer::Owned> {
+            let replace = self.replace.borrow_mut().take();
+            replace.unwrap()();
+            crate::broken::new_cap(capnp::Error::disconnected("old target".into()))
+                .new_call(interface, method, size)
+        }
+        fn call(
+            &self,
+            _: u64,
+            _: u16,
+            _: Box<dyn capnp::private::capability::ParamsHook>,
+            _: Box<dyn capnp::private::capability::ResultsHook>,
+        ) -> Promise<(), capnp::Error> {
+            unreachable!()
+        }
+        fn get_brand(&self) -> usize {
+            0
+        }
+        fn get_ptr(&self) -> usize {
+            self as *const Self as usize
+        }
+        fn get_resolved(&self) -> Option<Box<dyn ClientHook>> {
+            None
+        }
+        fn when_more_resolved(&self) -> Option<Promise<Box<dyn ClientHook>, capnp::Error>> {
+            None
+        }
+        fn when_resolved(&self) -> Promise<(), capnp::Error> {
+            Promise::ok(())
+        }
+    }
+    #[test]
+    fn request_snapshots_route_and_generation_without_cloning_external_hooks() {
+        let connects = Rc::new(Cell::new(0));
+        let seen = connects.clone();
+        let client = Client::<_, Capability>::new(move || {
+            seen.set(seen.get() + 1);
+            Err(capnp::Error::failed("unexpected reconnect".into()))
+        });
+        let setter = client.clone();
+        let clones = Rc::new(Cell::new(0));
+        client.set_target(Capability::new(Box::new(Reenter {
+            inner: Rc::downgrade(&client.inner),
+            clones: clones.clone(),
+            replace: RefCell::new(Some(Box::new(move || {
+                setter.set_target(Capability::new(crate::broken::new_cap(
+                    capnp::Error::failed("replacement target".into()),
+                )));
+            }))),
+        })));
+        let first = client.new_call(0, 0, None).send();
+        assert_eq!(
+            futures::executor::block_on(first.promise)
+                .err()
+                .unwrap()
+                .kind,
+            capnp::ErrorKind::Disconnected
+        );
+        let second = client.new_call(0, 0, None).send();
+        assert_eq!(
+            futures::executor::block_on(second.promise)
+                .err()
+                .unwrap()
+                .extra,
+            "replacement target"
+        );
+        assert_eq!(
+            connects.get(),
+            0,
+            "stale failure replaced the current generation"
+        );
+        assert_eq!(
+            clones.get(),
+            0,
+            "request forwarding allocated an external hook"
+        );
+    }
 }
