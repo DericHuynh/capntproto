@@ -329,6 +329,8 @@ fn fixture_bundle(path: &Path) -> Value {
         "capnp_cpp",
         "hot_paths",
         "gungraun-runner",
+        "runtime-bench",
+        "runtime-runner",
     ] {
         crate::write(path.join(name), "fake binary").unwrap();
         binaries.insert(name.into(), json!(crate::hash("fake binary")));
@@ -499,6 +501,8 @@ fn pair_lifecycle_cleans_up_after_second_creation_and_measurement_failures() {
             "capnp_cpp",
             "hot_paths",
             "gungraun-runner",
+            "runtime-bench",
+            "runtime-runner",
         ] {
             crate::write(bundle.join(name), "fake binary").unwrap();
             binaries.insert(name.into(), json!(crate::hash("fake binary")));
@@ -700,6 +704,13 @@ fn latency_campaign_preserves_sampling_and_salvages_failures_without_profiling()
             assert!(!script.contains("--cases") || script.contains("--cases all"));
             assert!(!script.contains("--trace"));
             assert!(script.contains("--comparators"));
+            assert!(
+                script.contains("/root/bench/runtime-runner --worker /root/bench/runtime-bench")
+            );
+            assert!(
+                script.find("runtime-runner").unwrap() < script.find("secure-runner.py").unwrap()
+            );
+            assert!(!script.contains("--smoke"));
             assert!(!script.contains("secure-profile.py"));
             assert!(!calls
                 .iter()

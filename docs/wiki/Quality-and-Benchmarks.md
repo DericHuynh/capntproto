@@ -5617,3 +5617,19 @@ proofs also passed for tracked and directly owned sends. Formal contracts do not
 prove IO, callback behavior or pointer provenance; native fault/reentrancy tests
 and 32-bit Miri cover those boundaries. Hosted CI qualifies the published tree
 and remote measurements separately.
+
+## Hosted runtime combinations
+
+Main's default dedicated benchmark campaign also measures the
+[112-cell runtime matrix](../../benchmarks/runtimes/README.md): direct Tokio,
+driven Tokio, monoio epoll and monoio io_uring; TLS and WebTransport; legacy and
+portable RPC; and all seven unary/dependent/pipelined/concurrent/deep/callback/
+large-message fixtures. Every combination runs five times. Public reports retain
+independent minima, means and spread for CPU, allocations, IO and elapsed time.
+
+The release worker and controller are audited and hashed in the benchmark bundle.
+Build-runner smoke executes all available combinations without performance claims;
+io_uring cannot silently fall back. Actual numbers come from the dedicated host,
+with both loopback peers on one pinned runtime thread. The downloaded runtime
+report is validated against its raw samples and build/certificate identities
+before its exhaustive table is added to the reports README.

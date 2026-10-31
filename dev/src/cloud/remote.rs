@@ -224,7 +224,7 @@ fn upload(
         format!("root@{}:/root/bundle.tar.gz", host.public),
     ]);
     commands.command("scp", &args, 300, cancel)?;
-    commands.ssh(&host.options,&host.public.to_string(),"tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/capnp-rust /root/bench/driver /root/bench/capnp-reference",120,cancel)
+    commands.ssh(&host.options,&host.public.to_string(),"tar -xzf /root/bundle.tar.gz -C /root/bench && chmod +x /root/bench/capnp-rust /root/bench/driver /root/bench/capnp-reference /root/bench/runtime-bench /root/bench/runtime-runner",120,cancel)
 }
 fn retrieve(
     commands: &impl Commands,
@@ -335,6 +335,8 @@ pub(super) fn run(
         "capnp_cpp",
         "hot_paths",
         "gungraun-runner",
+        "runtime-bench",
+        "runtime-runner",
     ] {
         ensure!(
             manifest["binaries"][name] == crate::file_hash(bundle.join(name))?,

@@ -1,5 +1,5 @@
 //! Source-bound CI evidence, standalone SVG graphs, and isolated report publication.
-mod benchmarks;
+pub(crate) mod benchmarks;
 pub mod data;
 mod publish;
 pub mod render;

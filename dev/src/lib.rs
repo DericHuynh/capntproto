@@ -12,6 +12,7 @@ pub mod probes;
 pub mod process;
 pub mod reports;
 pub mod rpc_instructions;
+pub mod runtime_bench;
 pub mod verus;
 pub mod wiki;
 use anyhow::{Context, Result};

@@ -105,6 +105,35 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Stream<S> {
     }
 }
 
+pub fn probe(runtime: &str) -> Result<serde_json::Value> {
+    let result: io::Result<()> = match runtime {
+        "tokio" | "tokio-driven" => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map(drop),
+        #[cfg(all(feature = "monoio", target_os = "linux"))]
+        "monoio-uring" => monoio::RuntimeBuilder::<monoio::IoUringDriver>::new()
+            .enable_timer()
+            .build()
+            .map(drop),
+        #[cfg(feature = "monoio")]
+        "monoio-epoll" => monoio::RuntimeBuilder::<monoio::LegacyDriver>::new()
+            .enable_timer()
+            .build()
+            .map(drop),
+        _ => return Err(format!("runtime not supported in this build: {runtime}").into()),
+    };
+    match result {
+        Ok(()) => Ok(serde_json::json!({"runtime":runtime,"available":true})),
+        Err(error)
+            if runtime == "monoio-uring" && matches!(error.raw_os_error(), Some(1 | 38 | 95)) =>
+        {
+            Ok(serde_json::json!({"runtime":runtime,"available":false,"reason":error.to_string()}))
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 pub fn run(args: &Args) -> Result<measure::Sample> {
     match args.runtime.as_str() {
         "tokio" | "tokio-driven" => tokio::runtime::Builder::new_current_thread()
@@ -222,7 +251,7 @@ async fn wt_tokio(args: &Args) -> Result<measure::Sample> {
     )?)
     .map_err(io::Error::other)?;
     let mut roots = wt::tls::RootCertStore::empty();
-    roots.add(certificate.clone().into())?;
+    roots.add(args.root_certificate()?.into())?;
     let server = wt::Server::bind(
         "127.0.0.1:0".parse()?,
         vec![certificate.into()],
@@ -253,7 +282,7 @@ async fn wt_driven(args: &Args) -> Result<measure::Sample> {
     )?)
     .map_err(io::Error::other)?;
     let mut roots = wt::tls::RootCertStore::empty();
-    roots.add(certificate.clone().into())?;
+    roots.add(args.root_certificate()?.into())?;
     let (server, sd) = wt::server_driven(
         "127.0.0.1:0".parse()?,
         vec![certificate.into()],
@@ -393,7 +422,7 @@ mod completion {
         )?)
         .map_err(io::Error::other)?;
         let mut roots = wt::tls::RootCertStore::empty();
-        roots.add(certificate.clone().into())?;
+        roots.add(args.root_certificate()?.into())?;
         let (server, sd) = wt::server_driven(
             "127.0.0.1:0".parse()?,
             vec![certificate.into()],

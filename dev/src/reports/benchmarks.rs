@@ -110,7 +110,7 @@ const LATENCY_COLUMNS: &[&str] = &[
     "p99 µs",
 ];
 
-pub(super) fn collect(
+pub(crate) fn collect(
     directory: &Path,
     manifest: Option<&Path>,
     mut result: Value,
@@ -383,6 +383,29 @@ pub(super) fn collect(
                 LATENCY_COLUMNS,
                 rows,
             ));
+        }
+    }
+    let runtimes = directory.join("benchmark/secure/secure/runtimes");
+    if runtimes.join("summary.json").is_file() {
+        let manifest =
+            crate::read_json(manifest.context("runtime report requires benchmark manifest")?)?;
+        let recorded = crate::read_json(runtimes.join("summary.json"))?;
+        if recorded["status"] == "passed" {
+            let runtime = crate::runtime_bench::verified(&runtimes, &manifest)?;
+            ensure!(
+                result["source_id"].is_null() || result["source_id"] == json!(runtime.source_id),
+                "runtime report source mismatch"
+            );
+            result["source_id"] = json!(runtime.source_id);
+            tables.push(table(
+                "All TLS/WebTransport runtime combinations (32-hop reads; both peers; whole operations/batches)",
+                &crate::runtime_bench::COLUMNS,
+                crate::runtime_bench::table_rows(&runtime),
+            ));
+        } else {
+            result["status"] = json!("failed");
+            result["charts"] = json!([]);
+            result["note"] = json!("Runtime benchmark matrix did not complete; inspect its source-bound raw samples and failure summary. Missing combinations are unavailable, not zero.");
         }
     }
     if !tables.is_empty() {

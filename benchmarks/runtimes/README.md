@@ -5,7 +5,42 @@ with explicit trust and TLS 1.3 on every connection. Both peers run in the same
 single-thread runtime; counters therefore include both client and server. The
 legacy and portable RPC implementations are selectable independently of IO.
 Setup, certificate generation, warmup and teardown are outside the measured
-region. The final stdout line is the JSON result; the RPC library may print an expected disconnect diagnostic first. Validation and driver errors fail the process.
+region. Stdout contains the JSON result; RPC diagnostics go to stderr. Validation and driver errors fail the process.
+
+Main CI now compiles this worker and the Rust `runtime-runner` into its audited
+release bundle. The default dedicated `run-latency` campaign and `run-secure`
+campaign execute all **112 runtime × transport × RPC-driver × fixture cells**,
+five processes per cell, on one pinned CPU of the dedicated benchmark droplet.
+These are loopback measurements with both peers in one runtime, alongside the
+existing separately defined TLS/QUIC/C++ comparisons.
+
+The build job first runs the entire matrix as correctness smoke. Only smoke may
+mark io_uring unavailable after an explicit kernel-capability probe; it never
+substitutes epoll. Dedicated measurements require every combination. Smoke is
+labelled and cannot become performance publication data.
+
+Minima are the lowest normalized run totals, not individual-request tails.
+Each native cell retains raw samples, independent per-metric minima, means,
+sample standard deviations and maxima. Reports recompute all statistics and
+validate source, worker, runner and certificate identities before publishing all
+112 rows in the reports README. CPU cycles remain unavailable with an explicit
+reason when the kernel denies perf access. IO counter levels stay distinct for
+TLS and WebTransport. Setup, warmup and teardown are excluded from every sample.
+
+Local correctness smoke (not timing evidence), using the same fixture as CI:
+
+```sh
+export CARGO_TARGET_DIR="$PWD/target"
+cargo build --locked --manifest-path benchmarks/runtimes/Cargo.toml
+cargo build --locked -p capntproto-dev --bin runtime-runner
+python3 benchmarks/rpc/generate-certificates.py target/runtime-ci-certificates
+target/debug/runtime-runner --worker target/debug/runtime-bench \
+  --certificates target/runtime-ci-certificates --output target/runtime-smoke --smoke
+```
+
+Native runs use the release bundle's `runtime-runner --worker ... --manifest ...`
+with the same certificate directory and a fresh output path. Main's default
+campaign runs them on dedicated CI droplets; local smoke numbers do not qualify.
 
 Build from the repository root (the same release profile must be used for both
 frozen and candidate):

@@ -1,5 +1,6 @@
 [package]
 name = "capntproto-dev"
+default-run = "capntproto-dev"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.97"
@@ -38,7 +39,7 @@ rcgen = { version = "0.14", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["signal", "process", "resource"] }
+nix = { version = "0.31", features = ["signal", "process", "resource", "sched"] }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -17,7 +17,7 @@ pub const PAYLOADS: [usize; 4] = [0, 64, 1024, 65536];
 const REPETITIONS: usize = 5;
 pub const MEASUREMENT_VERSION: u32 = 2;
 // capnp-reference is C++; its pinned sources/compiler are recorded separately.
-const RUST_BINARIES: [&str; 9] = [
+const RUST_BINARIES: [&str; 11] = [
     "tcp",
     "native",
     "grpc",
@@ -27,6 +27,8 @@ const RUST_BINARIES: [&str; 9] = [
     "hot_paths",
     "gungraun-runner",
     "capnp-rust",
+    "runtime-bench",
+    "runtime-runner",
 ];
 
 /// Keep the comparison independent from our imported/modified runtime crates.
@@ -342,6 +344,40 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         root().join("benchmarks/rpc/target/release/capntproto-rpc-bench"),
         bundle.join("driver"),
     )?;
+    for (name, manifest, package) in [
+        (
+            "runtime-bench",
+            Some("benchmarks/runtimes/Cargo.toml"),
+            None,
+        ),
+        ("runtime-runner", None, Some("capntproto-dev")),
+    ] {
+        let mut args = vec![
+            "build",
+            "--locked",
+            "--release",
+            "--bin",
+            name,
+            "--message-format=json",
+        ];
+        if let Some(manifest) = manifest {
+            args.extend(["--manifest-path", manifest]);
+        }
+        if let Some(package) = package {
+            args.extend(["-p", package]);
+        }
+        let output = r.cargo(&format!("compile-{name}"), &args)?;
+        let artifact = output
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .find(|v| {
+                v["reason"] == "compiler-artifact"
+                    && v["target"]["name"] == name
+                    && v["executable"].is_string()
+            })
+            .ok_or("Cargo did not identify runtime benchmark executable")?;
+        fs::copy(artifact["executable"].as_str().unwrap(), bundle.join(name))?;
+    }
     let metadata = r.run_stdout(
         "upstream-rpc-dependencies",
         v::command("cargo").args([
@@ -463,6 +499,8 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         "driver",
         "hot_paths",
         "gungraun-runner",
+        "runtime-bench",
+        "runtime-runner",
     ] {
         hashes.insert(name, v::sha256(fs::read(bundle.join(name))?));
     }
@@ -474,6 +512,9 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         "lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/rpc/Cargo.lock"))?),
         "upstream_rpc":upstream,
         "upstream_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/rpc-upstream/Cargo.lock"))?),
+        "runtime_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/runtimes/Cargo.lock"))?),
+        "runtime_manifest_sha256":v::sha256(fs::read(root().join("benchmarks/runtimes/Cargo.toml"))?),
+        "runtime_profile":"release; native 112-cell TLS/WebTransport matrix; five repetitions",
         "instructions_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/instructions/Cargo.lock"))?),
         "gungraun_version":"0.20.0",
         "cpp_revision":"0de72d8d8cec6b69edaa29de51d3bd490341f9c2", "binaries":hashes});

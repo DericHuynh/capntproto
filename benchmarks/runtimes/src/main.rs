@@ -85,9 +85,17 @@ impl Args {
             RpcDriver::Legacy
         }
     }
+    fn root_certificate(&self) -> std::io::Result<Vec<u8>> {
+        let ca = self.certificates.join("ca.der");
+        std::fs::read(if ca.is_file() {
+            ca
+        } else {
+            self.certificates.join("server.der")
+        })
+    }
     fn client_config(&self) -> Result<Arc<rustls::ClientConfig>> {
         let mut roots = rustls::RootCertStore::empty();
-        roots.add(std::fs::read(self.certificates.join("server.der"))?.into())?;
+        roots.add(self.root_certificate()?.into())?;
         let mut config =
             rustls::client_config(roots, None, Arc::new(capntproto_transport::SystemClock))?;
         Arc::get_mut(&mut config).unwrap().resumption =
@@ -259,6 +267,14 @@ pub async fn call<S: AsyncRead + AsyncWrite + Unpin + 'static>(
     output
 }
 fn main() -> Result<()> {
+    let input = std::env::args().skip(1).collect::<Vec<_>>();
+    if input.first().map(String::as_str) == Some("--probe-runtime") {
+        if input.len() != 2 {
+            return Err("--probe-runtime requires one runtime name".into());
+        }
+        println!("{}", transports::probe(&input[1])?);
+        return Ok(());
+    }
     let args = Args::parse()?;
     let sample = transports::run(&args)?;
     println!(

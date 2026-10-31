@@ -76,6 +76,7 @@ jobs:
             benchmarks/rpc -> target
             benchmarks/rpc-upstream -> target
             benchmarks/instructions -> target
+            benchmarks/runtimes -> target
       - name: Build prerequisites
         run: |
           sudo apt-get update
@@ -88,12 +89,20 @@ jobs:
       - name: Test droplet packaging, orchestration and cleanup
         run: |
           cargo test --locked -p capntproto-dev --lib cloud::
+          cargo test --locked -p capntproto-dev --lib runtime_bench::
       - name: Test benchmark identity, validation, and CPU placement
         run: cargo nextest run --locked --manifest-path benchmarks/rpc/Cargo.toml
       - name: Test latency means and spread calculations
         run: python3 -m unittest discover -s benchmarks/rpc -p 'test_*.py'
       - name: Exercise all six workflow implementations locally (not timing evidence)
         run: cargo run --locked -p capntproto-dev -- digitalocean-bench smoke --bundle target/benchmark-build/bundle --output "$RUNNER_TEMP/benchmark-workflow-smoke" --state "$RUNNER_TEMP/workflow-smoke"
+      - name: Exercise the complete TLS and WebTransport runtime matrix (not timing evidence)
+        run: |
+          target/benchmark-build/bundle/runtime-runner \
+            --worker target/benchmark-build/bundle/runtime-bench \
+            --manifest target/benchmark-build/bundle/manifest.json \
+            --certificates target/benchmark-build/bundle/certificates \
+            --output "$RUNNER_TEMP/runtime-smoke" --smoke
       - name: Exercise TLS and QUIC fixtures and certificate rejection (not timing evidence)
         run: |
           python3 benchmarks/rpc/secure-check.py \
@@ -178,6 +187,7 @@ jobs:
             target/benchmark-build/bundle/manifest.json
             ${{ runner.temp }}/benchmark-workflow-smoke/
             ${{ runner.temp }}/benchmark-topology-smoke/
+            ${{ runner.temp }}/runtime-smoke/
           if-no-files-found: error
           retention-days: 30
       - name: Explain benchmark scope
@@ -299,6 +309,9 @@ jobs:
           if test -f "$RUNNER_TEMP/benchmark-quality/benchmark/remote/README.md"; then
             sed '/^!\[Remote workflow/d' "$RUNNER_TEMP/benchmark-quality/benchmark/remote/README.md" >> "$GITHUB_STEP_SUMMARY"
             printf '\n[Download remote raw samples, host evidence and workflow graph](%s).\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if test -f "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure/runtimes/README.md"; then
+            cat "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure/runtimes/README.md" >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure/native/README.md"; then
             cat "$RUNNER_TEMP/benchmark-quality/benchmark/secure/secure/native/README.md" >> "$GITHUB_STEP_SUMMARY"

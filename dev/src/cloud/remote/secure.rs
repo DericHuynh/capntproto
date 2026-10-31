@@ -18,7 +18,7 @@ pub(super) fn run(
     fs::create_dir_all(output)?;
     crate::write_json(output.join("host.json"), &host.receipt)?;
     commands.ssh(&host.options, &host.public.to_string(),
-        "DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 openssl strace && mkdir -p /root/results/secure && uname -a > /root/results/secure/kernel.txt && lscpu > /root/results/secure/cpu.txt && valgrind --version > /root/results/secure/valgrind.txt && sha256sum /root/bench/driver /root/bench/capnp-reference /root/bench/*.py /root/bench/*.json > /root/results/secure/hashes.txt", 180, cancel)?;
+        "DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y python3 openssl strace && mkdir -p /root/results/secure && uname -a > /root/results/secure/kernel.txt && lscpu > /root/results/secure/cpu.txt && valgrind --version > /root/results/secure/valgrind.txt && sha256sum /root/bench/runtime-bench /root/bench/runtime-runner /root/bench/driver /root/bench/capnp-reference /root/bench/*.py /root/bench/*.json > /root/results/secure/hashes.txt", 180, cancel)?;
     // Native measurements are a complete campaign on their own. Expensive
     // diagnostics remain opt-in and always follow timing in a full campaign.
     let native = if matches!(phase, Phase::Allocations | Phase::Instructions) {
@@ -41,6 +41,11 @@ done
 python3 secure-profile.py --rust /root/bench/driver --cpp /root/bench/capnp-reference "${baseline[@]}" --output /root/results/secure/profiles"#.to_owned()
         }
     };
+    let runtimes = if matches!(phase, Phase::Latency | Phase::All) {
+        "/root/bench/runtime-runner --worker /root/bench/runtime-bench --manifest /root/bench/manifest.json --certificates /root/bench/certificates --output /root/results/secure/runtimes"
+    } else {
+        ""
+    };
     let command = format!(
         r#"bash -o pipefail -c 'set -eu
 {{
@@ -48,6 +53,7 @@ cd /root/bench
 baseline=()
 if test -f driver-baseline; then baseline+=(--portable-baseline /root/bench/driver-baseline); fi
 if test -f driver-legacy-baseline; then baseline+=(--legacy-baseline /root/bench/driver-legacy-baseline); fi
+{runtimes}
 {native}
 {diagnostics}
 }} 2>&1 | tee /root/results/secure/runner.log'"#
