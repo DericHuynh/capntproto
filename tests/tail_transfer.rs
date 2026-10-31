@@ -572,7 +572,8 @@ impl capntproto_test_support::cancellation_policy_capnp::policy::Server for Dela
                 .get_cap()?
                 .pending_request();
             self.prepared.borrow_mut().take().unwrap().send(()).unwrap();
-            self.gate.borrow_mut().take().unwrap().await.unwrap();
+            let gate = self.gate.borrow_mut().take().unwrap();
+            gate.await.unwrap();
             results.hook.tail_call(request.hook).await
         })
     }

@@ -394,7 +394,7 @@ fn main() {
                         driver.ledgers().questions.is_empty(),
                         "all Return/Finish obligations completed"
                     );
-                    let mut closing = driver.terminate(&mut queue);
+                    let mut closing = driver.terminate();
                     loop {
                         match closing.poll(messages, budget()).unwrap() {
                             Termination::Done => break,
