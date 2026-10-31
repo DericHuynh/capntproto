@@ -16,6 +16,9 @@ use std::{
 };
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
+#[path = "twoparty_facade/options.rs"]
+mod options;
+
 #[path = "twoparty_facade/verification.rs"]
 mod verification;
 

@@ -109,27 +109,17 @@ impl Guest for Frontend {
             return Err("certificate pin must contain 32 SHA-256 bytes".into());
         }
         let application = async {
-            use futures::AsyncReadExt;
             let connection = transport::connect(url, pin).await?;
-            let (read, write) = Stream::new(connection).split();
+            let stream = Stream::new(connection);
             let epoch = wasi::clocks::monotonic_clock::now();
-            let network = service::rpc::twoparty::VatNetwork::new_with_clock(
-                read,
-                write,
-                service::rpc::rpc_twoparty_capnp::Side::Client,
-                Default::default(),
-                move || {
+            let driver = service::rpc::twoparty::ConnectionOptions::new()
+                .driver(service::protocol().map_err(|e| e.to_string())?)
+                .client_with_clock(stream, move || {
                     std::time::Duration::from_nanos(
                         wasi::clocks::monotonic_clock::now().saturating_sub(epoch),
                     )
-                },
-            );
-            let driver = service::rpc::twoparty::TwoPartyClient::from_network_with_driver(
-                network,
-                None,
-                service::protocol().map_err(|e| e.to_string())?,
-            )
-            .map_err(|e| e.to_string())?;
+                })
+                .map_err(|e| e.to_string())?;
             service::greeting_scoped(driver, &prefix, &value)
                 .await
                 .map_err(|e| e.to_string())

@@ -20,48 +20,35 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-//! # Cap'n Proto Schema Compiler Plugin Library
+//! # Cap'n Proto schema bindings in Cargo builds
 //!
-//! This library allows you to do
-//! [Cap'n Proto code generation](https://capnproto.org/otherlang.html#how-to-write-compiler-plugins)
-//! within a Cargo build. You still need the `capnp` binary (implemented in C++).
-//! (If you use a package manager, try looking for a package called
-//! `capnproto`.)
+//! Add one build dependency (the Rust library name is `capnpc`):
 //!
-//! In your Cargo.toml:
-//!
-//! ```ignore
-//! [dependencies]
-//! capnp = "0.25" # Note this is a different library than capnp*c*
-//!
+//! ```toml
 //! [build-dependencies]
-//! capnpc = "0.25"
+//! capnpc = { package = "capntproto-codegen", version = "0.25" }
 //! ```
 //!
-//! In your build.rs:
+//! Compile schemas in Rust, without installing the external `capnp` executable:
 //!
-//! ```ignore
+//! ```no_run
+//! # #[cfg(feature = "native")]
 //! fn main() {
 //!     capnpc::CompilerCommand::new()
 //!         .src_prefix("schema")
-//!         .file("schema/foo.capnp")
-//!         .file("schema/bar.capnp")
-//!         .run().expect("schema compiler command");
+//!         .file("schema/greeting.capnp")
+//!         .run_native()
+//!         .expect("compile greeting schema");
 //! }
+//! # #[cfg(not(feature = "native"))]
+//! # fn main() {}
 //! ```
 //!
-//! In your lib.rs:
-//!
-//! ```ignore
-//! capnp::generated_code!(mod foo_capnp);
-//! capnp::generated_code!(mod bar_capnp);
-//! ```
-//!
-//! This will be equivalent to executing the shell command
-//!
-//! ```ignore
-//!   capnp compile -orust:$OUT_DIR --src-prefix=schema schema/foo.capnp schema/bar.capnp
-//! ```
+//! Include the bindings with `capnp::generated_code!(mod greeting_capnp);`.
+//! `CompilerCommand::run_native` uses the bundled Rust compiler's supported
+//! schema language and emits Cargo dependency tracking for schemas and embeds.
+//! It requires the default `native` feature. For the C++ frontend, use
+//! [`CompilerCommand::run`]; this explicitly requires an installed `capnp` binary.
 
 pub mod codegen;
 pub mod codegen_types;
@@ -347,9 +334,88 @@ impl CompilerCommand {
         self
     }
 
+    /// Compile schemas with the bundled Rust frontend and generate bindings.
+    ///
+    /// Uses `output_path`, or Cargo's `OUT_DIR`, and all code-generation options.
+    /// Standard imports shipped with the compiler are searched after explicit
+    /// `import_path`s unless `no_standard_import` is set. Loaded schemas, embeds
+    /// and import roots are tracked with Cargo `rerun-if-changed` directives.
+    /// No subprocess is launched and `capnp_executable` is not used.
+    ///
+    /// The Rust frontend currently accepts a single `src_prefix`; multiple
+    /// prefixes return an error rather than silently selecting one. It supports
+    /// the schema language documented by `capntproto-compiler`; use `run` for
+    /// schemas requiring the C++ frontend.
+    #[cfg(feature = "native")]
+    pub fn run_native(&mut self) -> capnp::Result<()> {
+        let mut codegen = self.code_generation_command()?;
+        if self.src_prefixes.len() > 1 {
+            return Err(capnp::Error::failed(
+                "run_native accepts one src_prefix; use a common source directory".into(),
+            ));
+        }
+        let mut compiler = capntproto_compiler::FileCompiler::new();
+        if let Some(prefix) = self.src_prefixes.first() {
+            compiler.src_prefix(prefix);
+        }
+        for path in &self.import_paths {
+            compiler.import_path(path);
+        }
+        if !self.no_standard_import {
+            compiler.import_path(capntproto_compiler::standard_imports());
+        }
+        let compiled = compiler
+            .compile_with_dependencies(&self.files)
+            .map_err(|diagnostic| capnp::Error::failed(diagnostic.to_string()))?;
+        for dependency in &compiled.dependencies {
+            println!("cargo:rerun-if-changed={}", dependency.display());
+        }
+        // Watch search roots as well: adding an earlier matching import must
+        // invalidate a build even when no previously loaded file changed.
+        for path in &self.import_paths {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+        codegen.run(capnp::serialize::write_message_to_words(&compiled.message).as_slice())
+    }
+
+    fn code_generation_command(&self) -> capnp::Result<codegen::CodeGenerationCommand> {
+        let output_path = if let Some(output_path) = &self.output_path {
+            output_path.clone()
+        } else {
+            // Try `OUT_DIR` by default
+            PathBuf::from(::std::env::var("OUT_DIR").map_err(|error| {
+                ::capnp::Error::failed(format!(
+                    "Could not access `OUT_DIR` environment variable: {error}. \
+                     You might need to set it up or instead create your own output \
+                     structure using `CompilerCommand::output_path`"
+                ))
+            })?)
+        };
+
+        let mut code_generation_command = crate::codegen::CodeGenerationCommand::new();
+        code_generation_command
+            .bounded_rpc(self.bounded_rpc)
+            .structured_replies(self.structured_replies)
+            .field_api(self.field_api)
+            .field_api_values(self.field_api_values)
+            .field_api_projections(self.field_api_projections)
+            .output_directory(output_path)
+            .default_parent_module(self.default_parent_module.clone())
+            .crates_provide_map(self.crate_provides_map.clone());
+        if let Some(capnp_root) = &self.capnp_root {
+            code_generation_command.capnp_root(capnp_root);
+        }
+        if let Some(raw_code_generator_request_path) = &self.raw_code_generator_request_path {
+            code_generation_command
+                .raw_code_generator_request_path(raw_code_generator_request_path.clone());
+        }
+        Ok(code_generation_command)
+    }
+
     /// Runs the command.
     /// Returns an error if `OUT_DIR` or a custom output directory was not set, or if `capnp compile` fails.
     pub fn run(&mut self) -> ::capnp::Result<()> {
+        let code_generation_command = self.code_generation_command()?;
         match self.new_command().arg("--version").output() {
             Err(error) => {
                 return Err(::capnp::Error::failed(format!(
@@ -411,39 +477,8 @@ impl CompilerCommand {
             command.arg(file);
         }
 
-        let output_path = if let Some(output_path) = &self.output_path {
-            output_path.clone()
-        } else {
-            // Try `OUT_DIR` by default
-            PathBuf::from(::std::env::var("OUT_DIR").map_err(|error| {
-                ::capnp::Error::failed(format!(
-                    "Could not access `OUT_DIR` environment variable: {error}. \
-                     You might need to set it up or instead create your own output \
-                     structure using `CompilerCommand::output_path`"
-                ))
-            })?)
-        };
-
         command.stdout(::std::process::Stdio::piped());
         command.stderr(::std::process::Stdio::inherit());
-
-        let mut code_generation_command = crate::codegen::CodeGenerationCommand::new();
-        code_generation_command
-            .bounded_rpc(self.bounded_rpc)
-            .structured_replies(self.structured_replies)
-            .field_api(self.field_api)
-            .field_api_values(self.field_api_values)
-            .field_api_projections(self.field_api_projections)
-            .output_directory(output_path)
-            .default_parent_module(self.default_parent_module.clone())
-            .crates_provide_map(self.crate_provides_map.clone());
-        if let Some(capnp_root) = &self.capnp_root {
-            code_generation_command.capnp_root(capnp_root);
-        }
-        if let Some(raw_code_generator_request_path) = &self.raw_code_generator_request_path {
-            code_generation_command
-                .raw_code_generator_request_path(raw_code_generator_request_path.clone());
-        }
 
         run_command(command, code_generation_command).map_err(|error| {
             ::capnp::Error::failed(format!(
@@ -460,3 +495,6 @@ fn compiler_command_new_no_out_dir() {
     let error = CompilerCommand::new().run().unwrap_err().into_extra();
     assert!(error.starts_with("Could not access `OUT_DIR` environment variable"));
 }
+
+#[cfg(all(test, feature = "native"))]
+mod native_tests;

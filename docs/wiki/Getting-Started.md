@@ -224,3 +224,11 @@ APIs also support externally driven connections, monoio and caller-owned
 embedded TLS. The [configuration service](../../examples/configurations/README.md),
 [browser component](../../examples/wasip3/README.md) and
 [Embassy telemetry client](../../examples/embedded-tls/README.md) show those setups.
+
+For a small build script, use `capnpc::CompilerCommand::run_native()` from the
+`capntproto-codegen` build dependency; manual compiler-request serialization is
+unnecessary. For executor-neutral hosted RPC, `rpc::ConnectionOptions` constructs
+client and server roles from connected byte streams. Obtain the typed bootstrap,
+then use `run(application)` for graceful shutdown or `run_until(application)` for
+scope cancellation. These helpers do not spawn tasks; TLS trust and clocks remain
+explicit. See the configuration and browser examples for complete applications.

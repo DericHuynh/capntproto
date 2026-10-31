@@ -9,6 +9,4 @@ capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 capnp-rpc = { package = "capntproto-rpc", path = "../../crates/capntproto-rpc" }
 futures = "0.3"
 [build-dependencies]
-capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
 capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
-capntproto-compiler = { path = "../../crates/capntproto-compiler" }

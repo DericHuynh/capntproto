@@ -37,7 +37,8 @@ mod facade;
 mod output_driver_tests;
 mod send_buffer;
 pub use facade::{
-    QueueDiagnostics, RpcDriver, ServerDriver, TwoPartyClient, TwoPartyNetwork, TwoPartyServer,
+    ConnectionOptions, QueueDiagnostics, RpcDriver, ServerDriver, TwoPartyClient, TwoPartyNetwork,
+    TwoPartyServer,
 };
 pub use send_buffer::SendBufferWindow;
 

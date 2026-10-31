@@ -164,6 +164,7 @@ dependencies = [
 name = "capntproto-codegen"
 version = "0.25.3"
 dependencies = [
+ "capntproto-compiler",
  "capntproto-core",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",

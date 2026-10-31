@@ -1,6 +1,6 @@
 //! One schema with explicitly selected runtime, transport and RPC implementation.
 use capntproto::{
-    capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::RpcDriver},
+    capnp_rpc::twoparty::{ConnectionOptions, RpcDriver},
     rpc::{security, tcp::tls, SystemClock},
 };
 use clap::ValueEnum;
@@ -236,12 +236,9 @@ pub async fn server_stream<S: futures::AsyncRead + futures::AsyncWrite + Unpin +
     driver: Driver,
 ) -> Result<()> {
     let service: greeting_capnp::greeting::Client = capntproto::capnp_rpc::new_client(Service);
-    capntproto::capnp_rpc::twoparty::TwoPartyClient::with_driver(
-        stream,
-        Some(service.client),
-        Side::Server,
-        driver.protocol()?,
-    )?
-    .await?;
+    ConnectionOptions::new()
+        .driver(driver.protocol()?)
+        .server(stream, service.client)?
+        .await?;
     Ok(())
 }

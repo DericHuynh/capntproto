@@ -28,22 +28,13 @@ pub async fn call(
         .open_bi()
         .await
         .map_err(|err| JsValue::from_str(&err.to_string()))?;
-    use futures::AsyncReadExt;
-    let (read, write) = stream.split();
     let epoch = browser_now();
-    let network = service::rpc::twoparty::VatNetwork::new_with_clock(
-        read,
-        write,
-        service::rpc::rpc_twoparty_capnp::Side::Client,
-        Default::default(),
-        move || std::time::Duration::from_secs_f64(((browser_now() - epoch) / 1000.0).max(0.0)),
-    );
-    let driver = service::rpc::twoparty::TwoPartyClient::from_network_with_driver(
-        network,
-        None,
-        protocol().map_err(|e| JsValue::from_str(&e.to_string()))?,
-    )
-    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let driver = service::rpc::twoparty::ConnectionOptions::new()
+        .driver(protocol().map_err(|e| JsValue::from_str(&e.to_string()))?)
+        .client_with_clock(stream, move || {
+            std::time::Duration::from_secs_f64(((browser_now() - epoch) / 1000.0).max(0.0))
+        })
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     service::greeting_scoped(driver, &prefix, &value)
         .await
         .map_err(|e| JsValue::from_str(&e.to_string()))

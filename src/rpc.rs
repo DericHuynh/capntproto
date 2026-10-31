@@ -33,6 +33,9 @@ pub(crate) mod task;
 #[cfg(feature = "native")]
 pub(crate) const QUIC_BUFFER_BYTES: usize = 128 * 1024;
 
+/// Executor-neutral setup and protocol selection for existing byte streams.
+pub use capnp_rpc::twoparty::{ConnectionOptions, RpcDriver};
+
 /// Shared RPC task completion. Observers do not retain the task or transport.
 pub type Completion = futures::future::Shared<capnp::capability::Promise<(), capnp::Error>>;
 

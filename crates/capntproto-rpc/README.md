@@ -600,3 +600,38 @@ transport and cleanup contracts. `TwoPartyServer::with_driver` applies selection
 and limits to accepted connections. Its `accept_borrowed` now returns `Result`
 so invalid portable configuration can be reported at acceptance. Drive each
 client future, or the server's returned driver, while making calls.
+
+## Hosted connection setup
+
+`twoparty::ConnectionOptions` works with existing `futures::AsyncRead + AsyncWrite`
+streams on Tokio, monoio, browsers or another local executor. It does not spawn
+any tasks. The default driver is legacy; select `RpcDriver::Portable(options)`
+for bounded portable RPC. Existing direct network and borrowed-stream APIs remain
+available for custom transport policies and caller-owned storage.
+
+```rust,ignore
+use capnp_rpc::twoparty::{ConnectionOptions, RpcDriver};
+let options = ConnectionOptions::new().driver(RpcDriver::Portable(limits));
+let mut rpc = options.client(stream)?;
+let service: greeting_capnp::greeting::Client = rpc.bootstrap();
+let result = rpc.run(async move {
+    let mut request = service.open_request();
+    request.get().set_prefix("Hello, ");
+    request.send().promise.await
+}).await??;
+```
+
+Servers use `options.server(stream, bootstrap.client)?`. For browsers, use
+`client_with_clock(stream, elapsed_time)` or `server_with_clock` to supply a
+monotonic clock without manually constructing a network. This clock is distinct
+from the caller-supplied Unix-time TLS authentication clock. Explicit
+`reader_options` override both framing and portable admission limits regardless
+of builder order; portable limits otherwise carry through unchanged.
+
+`run(application)` drives RPC while the application runs, then disconnects and
+drains gracefully. `run_until(application)` cancels the connection immediately
+after the application completes. Both return `Result<ApplicationOutput, Error>`
+and report an early driver failure even if the application remains pending.
+Neither requires a spawned task or adds a per-call wrapper. Supply an outer
+application deadline when necessary. The [service examples](../../examples/README.md)
+exercise these APIs on native and browser targets.

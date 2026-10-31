@@ -4,10 +4,7 @@ pub mod greeting_capnp {
     include!(concat!(env!("OUT_DIR"), "/greeting_capnp.rs"));
 }
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-use capnp_rpc::{
-    rpc_twoparty_capnp::Side,
-    twoparty::{RpcDriver, TwoPartyClient},
-};
+use capnp_rpc::twoparty::{ConnectionOptions, RpcDriver, TwoPartyClient};
 pub fn protocol() -> capnp::Result<RpcDriver> {
     Ok(RpcDriver::Portable(capnp_rpc::portable::Options::bounded(
         64.try_into().unwrap(),
@@ -33,7 +30,7 @@ pub async fn greeting_with_protocol<
     protocol: RpcDriver,
 ) -> Result<String> {
     greeting_with_driver(
-        TwoPartyClient::with_driver(stream, None, Side::Client, protocol)?,
+        ConnectionOptions::new().driver(protocol).client(stream)?,
         prefix,
         value,
     )
@@ -45,15 +42,7 @@ pub async fn greeting_with_driver(
     value: &str,
 ) -> Result<String> {
     let service: greeting_capnp::greeting::Client = driver.bootstrap();
-    let disconnect = driver.get_disconnector();
-    let application = async {
-        let text = call(&service, prefix, value).await?;
-        disconnect.await?;
-        Ok::<_, Box<dyn std::error::Error>>(text)
-    };
-    let (driver, result) = futures::join!(driver, application);
-    driver?;
-    result
+    driver.run(call(&service, prefix, value)).await?
 }
 
 /// Verified responses followed by cancellation of the caller-owned RPC scope.
@@ -64,15 +53,7 @@ pub async fn greeting_scoped(
     value: &str,
 ) -> Result<String> {
     let service: greeting_capnp::greeting::Client = driver.bootstrap();
-    let application = call(&service, prefix, value);
-    futures::pin_mut!(application, driver);
-    match futures::future::select(application, driver).await {
-        futures::future::Either::Left((result, _)) => result,
-        futures::future::Either::Right((result, _)) => {
-            result?;
-            Err("connection ended before the greeting completed".into())
-        }
-    }
+    driver.run_until(call(&service, prefix, value)).await?
 }
 async fn call(
     service: &greeting_capnp::greeting::Client,

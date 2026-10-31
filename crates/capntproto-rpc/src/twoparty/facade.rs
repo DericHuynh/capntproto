@@ -1,5 +1,7 @@
 //! Executor-neutral conveniences for a single peer and a collection of peers.
 mod borrowed;
+mod options;
+pub use options::ConnectionOptions;
 mod driver;
 pub use driver::RpcDriver;
 use driver::Running;
@@ -240,6 +242,52 @@ impl<'a> TwoPartyClient<'a> {
         )?;
         client.borrowed = Some(Box::new(pump));
         Ok(client)
+    }
+
+    /// Drive RPC until the application completes, then disconnect gracefully.
+    ///
+    /// Obtain bootstrap capabilities before calling this method. No executor or
+    /// spawned task is required. The outer result reports connection/shutdown
+    /// errors; the application output is returned unchanged inside it. Apply a
+    /// caller-owned timeout if shutdown must have a deadline. Dropping this
+    /// future cancels both the application and connection.
+    ///
+    /// ```ignore
+    /// let mut rpc = ConnectionOptions::new().client(stream)?;
+    /// let service: greeting_capnp::greeting::Client = rpc.bootstrap();
+    /// let result = rpc.run(async move {
+    ///     let mut request = service.open_request();
+    ///     request.get().set_prefix("Hello, ");
+    ///     request.send().promise.await
+    /// }).await??;
+    /// ```
+    pub async fn run<F: Future>(mut self, application: F) -> capnp::Result<F::Output> {
+        let result = self.drive_until(application).await?;
+        let disconnect = self.get_disconnector();
+        futures::try_join!(disconnect, self)?;
+        Ok(result)
+    }
+
+    /// Drive RPC until the application completes, then cancel the connection.
+    ///
+    /// Unlike `run`, this does not drain queued messages or await shutdown. Use
+    /// it for an explicitly scoped session whose owner handles transport close.
+    /// Connection errors before application completion are still returned.
+    pub async fn run_until<F: Future>(mut self, application: F) -> capnp::Result<F::Output> {
+        self.drive_until(application).await
+    }
+
+    async fn drive_until<F: Future>(&mut self, application: F) -> capnp::Result<F::Output> {
+        futures::pin_mut!(application);
+        match futures::future::select(application, self).await {
+            futures::future::Either::Left((result, _)) => Ok(result),
+            futures::future::Either::Right((result, _)) => {
+                result?;
+                Err(Error::disconnected(
+                    "RPC connection ended before the application completed".into(),
+                ))
+            }
+        }
     }
 
     /// The remote bootstrap, irrespective of this endpoint's side.

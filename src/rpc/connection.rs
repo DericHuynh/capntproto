@@ -22,6 +22,10 @@ impl Connection {
     /// Start RPC on generic Tokio byte IO. For socket-aware flow control or
     /// configured reader limits, use a transport's driver adapter and `spawn`.
     /// Panics outside a Tokio local executor, like `spawn_local`.
+    /// For application-scoped work without spawning, use
+    /// [`TwoPartyClient::run`] or [`TwoPartyClient::run_until`] instead.
+    /// A driver constructed with [`super::ConnectionOptions`] selects the same
+    /// protocol on Tokio as on other executors.
     pub fn new(
         io: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
         bootstrap: Option<Client>,
@@ -36,6 +40,10 @@ impl Connection {
 
     /// Start a configured TCP (optionally secured with TLS), QUIC or other owned two-party driver.
     /// Panics outside a Tokio local executor, like `spawn_local`.
+    /// For application-scoped work without spawning, use
+    /// [`TwoPartyClient::run`] or [`TwoPartyClient::run_until`] instead.
+    /// A driver constructed with [`super::ConnectionOptions`] selects the same
+    /// protocol on Tokio as on other executors.
     pub fn spawn(mut driver: TwoPartyClient<'static>) -> Self {
         Self {
             bootstrap: driver.bootstrap(),

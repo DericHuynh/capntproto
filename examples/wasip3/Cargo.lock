@@ -18,6 +18,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 name = "capntproto-codegen"
 version = "0.25.3"
 dependencies = [
+ "capntproto-compiler",
  "capntproto-core",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",
@@ -44,7 +45,6 @@ name = "capntproto-example-service"
 version = "0.1.0"
 dependencies = [
  "capntproto-codegen",
- "capntproto-compiler",
  "capntproto-core",
  "capntproto-rpc",
  "futures",
@@ -110,9 +110,9 @@ checksum = "9eb1aa714776b75c7e67e1da744b81a129b3ff919c8712b5e1b32252c1f07cc7"
 
 [[package]]
 name = "equivalent"
-version = "1.0.3"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "foldhash"

@@ -64,7 +64,15 @@
 //! });
 //! ```
 //!
-//! For a more complete example, see <https://github.com/capnproto/capnproto-rust/tree/master/capnp-rpc/examples/calculator>
+//! With the `std` feature, `twoparty::ConnectionOptions` constructs either role
+//! from an already connected byte stream without spawning a task. Obtain its
+//! typed bootstrap, then drive it with `TwoPartyClient::run(application)` for
+//! graceful shutdown or `run_until(application)` for scoped cancellation. Set
+//! `RpcDriver::Portable` explicitly for bounded portable RPC; legacy is the default.
+//! Browser hosts supply their monotonic clock through `client_with_clock`.
+//!
+//! Complete client/server, browser and embedded examples are in the
+//! [project examples](https://github.com/DericHuynh/capntproto/tree/feature/externally-driven-runtimes/examples).
 
 /// Portable protocol transitions and caller-owned resources. The optional
 /// `alloc` profile also enables shared completion owners without requiring std.

@@ -138,6 +138,7 @@ dependencies = [
 name = "capntproto-codegen"
 version = "0.25.3"
 dependencies = [
+ "capntproto-compiler",
  "capntproto-core",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",
@@ -164,7 +165,6 @@ name = "capntproto-example-service"
 version = "0.1.0"
 dependencies = [
  "capntproto-codegen",
- "capntproto-compiler",
  "capntproto-core",
  "capntproto-rpc",
  "futures",
