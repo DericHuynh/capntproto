@@ -14,7 +14,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-10-31T22:25:33Z · run 41248125996 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41248125996) · commit `6e5367f51d92` · **failure**
+Latest Cargo run: [2026-10-31T22:42:19Z · run 41249370501 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41249370501) · commit `f3657bd7eada` · **cancelled**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
@@ -22,7 +22,7 @@ Latest Cargo run: [2026-10-31T22:25:33Z · run 41248125996 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-[2026-10-31T22:25:33Z · run 41248125996 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41248125996) · commit `6e5367f51d92` · **failure**
+[2026-10-31T22:42:19Z · run 41249370501 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41249370501) · commit `f3657bd7eada` · **cancelled**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
@@ -30,7 +30,7 @@ Latest Cargo run: [2026-10-31T22:25:33Z · run 41248125996 / attempt 1](https://
 
 ### Fuzzing: libFuzzer and AFL++
 
-[2026-10-31T22:25:33Z · run 41248125996 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41248125996) · commit `6e5367f51d92` · **failure**
+[2026-10-31T22:42:19Z · run 41249370501 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41249370501) · commit `f3657bd7eada` · **cancelled**
 
 AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. Corpus inputs, crashes, hangs, logs and engine statistics are retained in the linked run. Fuzzer counters are not source coverage percentages.
 
@@ -42,7 +42,7 @@ No validated coverage/baseline comparison is available for the latest run. Missi
 
 ### Linux loopback benchmark comparisons
 
-Latest benchmark run: [2026-10-31T22:25:33Z · run 41248125996 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41248125996) · commit `6e5367f51d92` · **failure**
+Latest benchmark run: [2026-10-31T22:42:19Z · run 41249370501 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41249370501) · commit `f3657bd7eada` · **cancelled**
 
 Measurement evidence: **unavailable**. This workflow attempt produced no public measurement artifact&#46;
 
@@ -55,7 +55,7 @@ Separate client/server processes, one outstanding request, several payload sizes
 
 ## Exhaustive benchmark tables
 
-Measured run: [2026-10-31T22:25:33Z · run 41248125996 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41248125996) · commit `6e5367f51d92` · **failure**
+Measured run: [2026-10-31T22:42:19Z · run 41249370501 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41249370501) · commit `f3657bd7eada` · **cancelled**
 
 No validated benchmark tables were produced for this run. See its original artifacts; unavailable data is not zero.
 
