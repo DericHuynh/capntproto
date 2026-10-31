@@ -203,6 +203,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/hosted-apt # zizmor: ignore[self-repository]
       - name: Check Cargo wrapper argument forwarding
         shell: bash
         run: bash scripts/test-auditable-cargo.sh
