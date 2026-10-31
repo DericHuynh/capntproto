@@ -52,6 +52,28 @@ including partial acceptance, not UDP packets or kernel syscalls. The `io_level`
 field records this distinction. Never compare those counts across transports.
 All builds include the same atomic-counter overhead.
 
+For allocation ownership stacks, opt into DHAT **ad-hoc** events in a separate
+worker build. Each successful measured-region allocation/reallocation records
+one event weighted by its requested bytes. Setup, warmup and teardown produce
+no events. This instrumentation is compiled out by default:
+
+```sh
+CAPNTPROTO_ALLOCATION_TRACE=1 CAPNTPROTO_VALGRIND_INCLUDE=/usr/include \
+  cargo build --locked --release --manifest-path benchmarks/runtimes/Cargo.toml
+valgrind --tool=dhat --mode=ad-hoc --num-callers=32 \
+  --dhat-out-file=target/runtime-allocations.json \
+  target/release/runtime-bench --runtime monoio-epoll --transport tls \
+  --driver portable --case pipelined --iterations 4 --warmup 2 \
+  --certificates target/runtime-certificates
+```
+
+In the DHAT JSON, sum `pps[].tbk` for allocation operations and `pps[].tb` for
+requested bytes; require exact agreement with the worker's `sample.blocks` and
+`sample.bytes`. Group stacks by the RPC/transport owner, leaving workload task
+allocations visible. Rebuild with `CAPNTPROTO_ALLOCATION_TRACE` unset before
+native timing or Callgrind instruction comparisons; keep the worker binaries
+and their SHA-256 hashes separate.
+
 `wall_ns` measures elapsed time around only the validated RPC workload loop,
 after warmup and before disconnect/teardown. Divide by `iterations` for average
 time per workload; throughput is `iterations * 1e9 / wall_ns` workloads/second.
@@ -450,3 +472,64 @@ Best observed **workloads/second**, derived from the minimum batch time. A concu
 Among current runtimes, the minimum-time winner across the 28 transport/driver/workload combinations is: Current Tokio: 7, Driven Tokio: 5, Monoio epoll: 12, Monoio io_uring: 4. Counts give each fixture equal weight and are not an aggregate application speedup.
 
 The ignored `target/runtime-native-comparison` directory contains `samples.jsonl` (every native sample), `summary.json` and `summary.csv` (all 252 configurations with minimum/mean/maximum/spread/standard deviation), plus `metadata.json` (CPU, compiler, affinity, inputs and source/binary hashes). Wall time, process CPU time, allocations, requested bytes, read/write completions and throughput are retained separately. Hardware cycles are unavailable on this VM and remain null. Embassy hardware and browser WASM are outside this native timing matrix.
+
+## RPC allocation optimization (2026-10-31)
+
+Baseline: `ce5b40b18c57c450d267aec0a78dcd865cc3da18`. Same Rust 1.97.0 release/fat-LTO profile, service, certificates and CPU 2 affinity. Five separate processes per configuration, with baseline/candidate order alternated. **1,120 native samples** cover both RPC drivers, four runtimes, both transports and all seven cases. Setup/warmup/teardown are excluded. Native measurements use dependent/pipelined 128 iterations with 8 warmups, concurrent-32 256/16, deep 4/2, unary 1024/32, callback 128/8 and large 32/4.
+
+Two RPC changes account for the savings: concrete native projected requests use direct completion instead of generic local queued-pipeline/channel/parameter/result adapters, and completed calls recycle only cleared request metadata. Generic enqueue shares the connection shutdown receiver. Cleared metadata retention is bounded by the existing concurrency limit and released on close; live replies/pipelines and application owners are never cached. Public APIs and the bounded no-std/no-alloc implementation are unchanged.
+
+Allocation operations per complete workload, **minimum / mean / spread (max − min)** over five runs. Both peers are counted; each dependent/pipelined workload contains 32 capability hops. Monoio epoll over TLS:
+
+| Case | Before | After | Minimum change |
+| --- | ---: | ---: | ---: |
+| dependent | 1,096.000 / 1,096.000 / 0.000 | 1,063.000 / 1,063.000 / 0.000 | -3.01% |
+| pipelined | 2,106.148 / 2,106.155 / 0.008 | 1,234.148 / 1,234.153 / 0.008 | -41.40% |
+| concurrent-32 | 202.000 / 202.000 / 0.000 | 170.000 / 170.000 / 0.000 | -15.84% |
+| deep-32-concurrent-32 | 68,389.750 / 68,415.500 / 56.000 | 40,498.000 / 40,529.600 / 51.500 | -40.78% |
+
+Requested allocation bytes, with the same **minimum / mean / spread** convention:
+
+| Case | Before | After | Minimum change |
+| --- | ---: | ---: | ---: |
+| dependent | 117,424.000 / 117,424.000 / 0.000 | 105,808.000 / 105,808.000 / 0.000 | -9.89% |
+| pipelined | 267,679.930 / 267,725.630 / 57.125 | 141,942.930 / 141,977.205 / 57.125 | -46.97% |
+| concurrent-32 | 34,816.000 / 34,816.000 / 0.000 | 23,552.000 / 23,552.000 / 0.000 | -32.35% |
+| deep-32-concurrent-32 | 10,611,714.250 / 10,619,496.600 / 26,567.750 | 6,633,948.250 / 6,637,428.850 / 5,698.250 | -37.48% |
+
+Minimum allocation operations, **before → after**, across every affected runtime/transport profile:
+
+| Transport | Runtime | Dependent | Pipelined | Concurrent-32 | Deep-32-concurrent-32 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| tls | tokio | 1,128.00 → 1,095.00 | 2,233.90 → 1,361.91 | 264.00 → 232.00 | 73,148.50 → 45,283.75 |
+| tls | tokio-driven | 1,096.00 → 1,063.00 | 2,106.15 → 1,234.15 | 202.00 → 170.00 | 68,296.00 → 40,562.25 |
+| tls | monoio-epoll | 1,096.00 → 1,063.00 | 2,106.15 → 1,234.15 | 202.00 → 170.00 | 68,389.75 → 40,498.00 |
+| tls | monoio-uring | 1,096.00 → 1,063.00 | 2,107.20 → 1,235.20 | 202.00 → 170.00 | 68,613.25 → 40,705.75 |
+| webtransport | tokio | 1,454.22 → 1,421.22 | 2,259.47 → 1,388.08 | 284.12 → 252.12 | 71,893.75 → 44,084.50 |
+| webtransport | tokio-driven | 1,194.50 → 1,161.48 | 2,249.61 → 1,377.62 | 276.18 → 244.17 | 72,044.25 → 44,268.25 |
+| webtransport | monoio-epoll | 1,326.50 → 1,293.50 | 2,253.69 → 1,381.80 | 280.26 → 248.20 | 72,196.00 → 44,553.00 |
+| webtransport | monoio-uring | 1,712.34 → 1,679.38 | 2,305.87 → 1,433.96 | 311.32 → 279.36 | 73,983.50 → 46,083.75 |
+
+Legacy reference in the candidate worker, using the same monoio epoll/TLS fixtures. Each metric is independently minimized:
+
+| Case | Legacy blocks | Portable blocks | Legacy requested bytes | Portable requested bytes |
+| --- | ---: | ---: | ---: | ---: |
+| dependent | 1,189.000 | 1,063.000 | 93,840.000 | 105,808.000 |
+| pipelined | 1,466.000 | 1,234.148 | 183,112.000 | 141,942.930 |
+| concurrent-32 | 206.000 | 170.000 | 36,864.000 | 23,552.000 |
+| deep-32-concurrent-32 | 52,208.750 | 40,498.000 | 9,099,728.000 | 6,633,948.250 |
+
+Five separate Callgrind passes per build/case (40 samples), using the DHAT-disabled workers, monoio epoll/TLS, two warmups and four measured iterations (concurrent: 8; deep: 1). Minimum per-workload counters below come from the dumped measured part. Branch misses are simulated:
+
+| Case | Ir before → after | Ir change | Bcm change | Bim change |
+| --- | ---: | ---: | ---: | ---: |
+| dependent | 3,517,630.500 → 3,526,459.500 | +0.25% | +7.39% | -3.95% |
+| pipelined | 3,224,521.750 → 2,767,705.500 | -14.17% | -10.83% | -14.18% |
+| concurrent-32 | 809,189.250 → 805,802.125 | -0.42% | +1.51% | +28.24% |
+| deep-32-concurrent-32 | 310,117,413.000 → 297,694,905.000 | -4.01% | -9.83% | -15.72% |
+
+This is an allocation improvement, not a uniform CPU or branch-miss improvement. Dependent instructions rise 0.25%; its Bcm and concurrent Bcm/Bim are higher. Miss changes occur in unchanged reader, scheduler and TLS routines as well as edited paths, so the trace does not isolate their cause. Hardware cycles are unavailable (`perf_event_open`: ENOENT); no cycle or latency speedup is claimed. TLS read/write counts and bytes are unchanged in dependent, pipelined and concurrent-32; WebTransport/deep batching and partial stream operations vary.
+
+Raw native JSON samples, mean/range summaries and binary SHA-256 metadata: `target/rpc-allocation-optimization/native/`. Instruction profiles and five-run summaries: `target/rpc-allocation-optimization/instructions/`. DHAT profiles in `target/rpc-allocation-optimization/` separately verify allocation ownership and exact counter agreement. These generated artifacts stay out of source control.
+
+Eight candidate DHAT traces (both drivers, four affected cases) match their allocation counters exactly, as do the baseline traces. Native pipeline adapters disappear from the candidate stacks. Remaining owners include immutable reader arenas, capability receipt/binding storage, admission credits/permits and TLS plaintext buffers. The concurrent fixture also allocates 32 FuturesOrdered task nodes; the workload is unchanged.

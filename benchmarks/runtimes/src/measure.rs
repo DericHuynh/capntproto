@@ -21,6 +21,7 @@ unsafe impl GlobalAlloc for Allocator {
         if !pointer.is_null() && ACTIVE.load(Relaxed) {
             BLOCKS.fetch_add(1, Relaxed);
             BYTES.fetch_add(layout.size() as u64, Relaxed);
+            record_allocation(layout.size());
         }
         pointer
     }
@@ -30,6 +31,7 @@ unsafe impl GlobalAlloc for Allocator {
         if !pointer.is_null() && ACTIVE.load(Relaxed) {
             BLOCKS.fetch_add(1, Relaxed);
             BYTES.fetch_add(layout.size() as u64, Relaxed);
+            record_allocation(layout.size());
         }
         pointer
     }
@@ -43,11 +45,24 @@ unsafe impl GlobalAlloc for Allocator {
         if !pointer.is_null() && ACTIVE.load(Relaxed) {
             BLOCKS.fetch_add(1, Relaxed);
             BYTES.fetch_add(size as u64, Relaxed);
+            record_allocation(size);
         }
         pointer
     }
 }
+#[inline(always)]
+fn record_allocation(bytes: usize) {
+    #[cfg(benchmark_allocation_trace)]
+    // SAFETY: The profiler receives only a byte count and captures its own stack.
+    unsafe {
+        capntproto_record_allocation(bytes as u64);
+    }
+    #[cfg(not(benchmark_allocation_trace))]
+    let _ = bytes;
+}
 extern "C" {
+    #[cfg(benchmark_allocation_trace)]
+    fn capntproto_record_allocation(bytes: u64);
     fn capntproto_callgrind() -> i32;
     fn capntproto_measure_start();
     fn capntproto_measure_stop();

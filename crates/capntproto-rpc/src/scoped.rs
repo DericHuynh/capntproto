@@ -65,6 +65,7 @@ pub struct EndpointMetadata {
 type Shutdown = shutdown::Receiver;
 struct Inbox {
     completion_cache: response::Cache,
+    request_cache: call::Cache,
     call_templates: [std::cell::OnceCell<Box<CallTemplate>>; 4],
     message_pool: Option<capnp::message::SegmentPool>,
     admission: Option<Rc<crate::admission::Admission>>,
@@ -166,6 +167,7 @@ impl Inbox {
         let queue = std::mem::take(&mut *self.queue.borrow_mut());
         self.shutdown.close(error);
         drop(queue);
+        self.request_cache.clear();
         self.notify();
     }
 }
@@ -377,6 +379,7 @@ impl<'id> ClientHooks<'id> {
         Self {
             inbox: Rc::new(Inbox {
                 completion_cache: response::Cache::new(maximum_calls),
+                request_cache: call::Cache::new(maximum_calls),
                 call_templates: std::array::from_fn(|_| std::cell::OnceCell::new()),
                 message_pool: None,
                 admission: None,

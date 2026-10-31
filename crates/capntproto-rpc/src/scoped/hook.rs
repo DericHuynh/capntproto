@@ -56,14 +56,8 @@ impl Hook {
                 .as_ref()
                 .map(|inbox| inbox.call_template(interface, method))
         });
-        // Allocate before constructing the arena, allowing the compiler to write
-        // the large request directly into its final box without a second owner.
-        let call = Box::<Call>::new_uninit();
-        let request = crate::local::Params::scoped(interface, method, allocator, template);
-        // Keep initialization concrete before coercing to RequestHook. The
-        // pinned coverage compiler otherwise infers an unsized Box::write.
-        let call: Box<Call> = Box::write(
-            call,
+        let call = Call::boxed(inbox.as_deref(), || {
+            let request = crate::local::Params::scoped(interface, method, allocator, template);
             Call {
                 kind: CallKind::Ordinary,
                 credit,
@@ -77,8 +71,8 @@ impl Hook {
                     .as_ref()
                     .map_or_else(Shutdown::new, |inbox| inbox.shutdown.clone()),
                 permit: CallPermit::new(self.0.clone()),
-            },
-        );
+            }
+        });
         Ok(call)
     }
     fn call_to(
@@ -130,7 +124,8 @@ impl Hook {
         third_party: Option<Rc<capnp::message::Builder<capnp::message::HeapAllocator>>>,
         completion: CallCompletion,
     ) -> Result<Rc<Inbox>, Box<Error>> {
-        let call = Box::new(Call {
+        let inbox = self.0.inbox.upgrade();
+        let call = Call::boxed(inbox.as_deref(), || Call {
             kind: third_party.map_or(CallKind::Ordinary, CallKind::ThirdParty),
             credit: self.1.clone(),
             interface,
@@ -139,10 +134,12 @@ impl Hook {
             params,
             results,
             completion,
-            shutdown: Shutdown::new(),
+            shutdown: inbox
+                .as_ref()
+                .map_or_else(Shutdown::new, |inbox| inbox.shutdown.clone()),
             permit: CallPermit::new(self.0.clone()),
         });
-        call.enqueue_owned(self.0.inbox.upgrade())
+        call.enqueue_owned(inbox)
     }
 
     // A projection can bind to another unresolved promise. Resolution observers

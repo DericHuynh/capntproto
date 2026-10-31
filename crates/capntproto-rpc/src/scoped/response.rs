@@ -575,6 +575,21 @@ impl State {
         if !self.ready() {
             if has_value(&self.projection) {
                 if let Some(error) = self.projection_failure(cx) {
+                    // A retained child pipeline cannot keep an unsent call
+                    // alive after its target has failed. Publish failure before
+                    // callbacks or cancellation observers can reenter.
+                    self.observed.set(true);
+                    self.projection.take();
+                    let pipeline = self.pipeline.take().and_then(|pipeline| pipeline.upgrade());
+                    let receive = self.receive.take();
+                    let canceled = self.canceled.take();
+                    if let Some(pipeline) = pipeline {
+                        pipeline.break_pending(error.clone());
+                    }
+                    drop(receive);
+                    if let Some(canceled) = canceled {
+                        canceled.wake();
+                    }
                     return Poll::Ready(Err(Box::new(error)));
                 }
             }
@@ -705,11 +720,17 @@ impl Drop for Response {
     }
 }
 
-pub(crate) fn available(client: &dyn ClientHook) -> bool {
+pub(crate) fn available(client: &dyn ClientHook, hints: capability::CallHints) -> bool {
     client
         .as_any()
         .and_then(|client| client.downcast_ref::<Hook>())
-        .or_else(|| wire::direct_response_hook(client))
+        .or_else(|| {
+            if hints.no_promise_pipelining && !hints.only_promise_pipeline {
+                wire::direct_response_hook(client)
+            } else {
+                wire::direct_pipelined_response_hook(client)
+            }
+        })
         .is_some_and(|hook| hook.introduced().is_none())
 }
 pub(crate) fn request(
@@ -745,7 +766,19 @@ pub(crate) fn request_scoped(
     if hook.0.index.get().is_none() {
         state.projection.set(Some(Rc::downgrade(&hook.0)));
     }
-    let results = Results::direct(ResultsSender(state.clone()), context);
+    let pipeline = (!hints.no_promise_pipelining).then(|| {
+        let inbox = hook.0.inbox.upgrade();
+        let pipeline = wire::PipelineState::prepared(inbox.as_ref());
+        let interest = state.retain_pipeline(&pipeline);
+        (pipeline, interest)
+    });
+    let results = Results::Direct(DirectResults {
+        sender: Some(ResultsSender(state.clone())),
+        context,
+        pipeline: pipeline
+            .as_ref()
+            .map(|(pipeline, _)| Rc::downgrade(pipeline)),
+    });
     let completion = CallCompletion::Response(Completion(state.clone()));
     let admitted = hook.enqueue(
         interface,
@@ -758,11 +791,19 @@ pub(crate) fn request_scoped(
     );
     let promise = match admitted {
         Ok(inbox) => state.promise(inbox),
-        Err(error) => capability::ResponsePromise::new(Promise::err(*error)),
+        Err(error) => {
+            if let Some((pipeline, _)) = &pipeline {
+                pipeline.break_pending((*error).clone());
+            }
+            capability::ResponsePromise::new(Promise::err(*error))
+        }
     };
     capability::RemotePromise {
         promise,
-        pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
+        pipeline: any_pointer::Pipeline::new(match pipeline {
+            Some((pipeline, interest)) => pipeline.owned(interest),
+            None => Box::new(crate::broken::DisabledPipeline),
+        }),
     }
 }
 

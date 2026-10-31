@@ -748,13 +748,13 @@ impl RequestHook for Request {
         0
     }
     fn send(mut self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
-        if self.hints.no_promise_pipelining
-            && !self.hints.only_promise_pipeline
-            && !self.is_streaming
+        if !self.is_streaming
             && self.third_party.is_none()
             && match self.client.as_ref().expect("unsent request") {
                 RequestClient::Scoped(hook) => hook.direct_response_available(),
-                RequestClient::Hook(hook) => crate::scoped::response::available(&**hook),
+                RequestClient::Hook(hook) => {
+                    crate::scoped::response::available(&**hook, self.hints)
+                }
                 RequestClient::Publishing { .. } => unreachable!("parameters were already sent"),
             }
         {

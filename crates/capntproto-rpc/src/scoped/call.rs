@@ -13,11 +13,55 @@ use capnp::{
 };
 use capntproto_rpc_engine::completion;
 use std::{
+    cell::{Cell, RefCell},
     future::Future,
     pin::Pin,
     rc::{Rc, Weak},
     task::{Context, Poll},
 };
+
+/// Empty request metadata only. Response/pipeline owners live independently;
+/// clearing a completed request releases all callback-bearing fields first.
+/// Retention follows the inbox's existing concurrent-call bound.
+pub(super) struct Cache {
+    first: Cell<Option<Box<Call>>>,
+    #[allow(clippy::vec_box)] // Reuse the existing RequestHook allocation and address.
+    rest: RefCell<Vec<Box<Call>>>,
+    maximum: usize,
+}
+impl Cache {
+    pub(super) fn new(maximum: usize) -> Self {
+        Self {
+            first: Cell::new(None),
+            rest: RefCell::new(Vec::new()),
+            maximum,
+        }
+    }
+    fn take(&self) -> Option<Box<Call>> {
+        self.first.take().or_else(|| self.rest.borrow_mut().pop())
+    }
+    fn put(&self, call: Box<Call>) {
+        if self.maximum == 0 {
+            return;
+        }
+        match self.first.take() {
+            None => {
+                self.first.set(Some(call));
+                return;
+            }
+            Some(first) => self.first.set(Some(first)),
+        }
+        let mut rest = self.rest.borrow_mut();
+        if rest.len() < self.maximum - 1 && rest.try_reserve(1).is_ok() {
+            rest.push(call);
+        }
+    }
+    pub(super) fn clear(&self) {
+        drop(self.first.take());
+        let rest = std::mem::take(&mut *self.rest.borrow_mut());
+        drop(rest);
+    }
+}
 
 /// Owned hosted call awaiting engine admission/execution. The result hook can
 /// publish a pipeline before the eventual result, and retains capabilities in
@@ -311,6 +355,54 @@ impl capnp::private::capability::RequestHook for Call {
     }
 }
 impl Call {
+    #[inline(always)]
+    pub(super) fn boxed(inbox: Option<&Inbox>, make: impl FnOnce() -> Self) -> Box<Self> {
+        match inbox.and_then(|inbox| inbox.request_cache.take()) {
+            Some(mut call) => {
+                *call = make();
+                call
+            }
+            None => {
+                let storage = Box::<Self>::new_uninit();
+                Box::write(storage, make())
+            }
+        }
+    }
+
+    pub(super) fn recycle_boxed(mut self: Box<Self>) {
+        let Some(inbox) = self.permit.inbox.as_ref().and_then(Weak::upgrade) else {
+            return;
+        };
+        // Match field destruction order, including admission being last. No
+        // request-cache borrow spans user payload/waker destruction. Reentrant
+        // teardown may close the inbox, so check again before retaining storage.
+        drop(core::mem::replace(&mut self.kind, CallKind::Ordinary));
+        drop(self.credit.take());
+        drop(core::mem::replace(&mut self.params, CallParams::Published));
+        drop(core::mem::replace(
+            &mut self.results,
+            response::Results::Unsent,
+        ));
+        drop(core::mem::replace(
+            &mut self.completion,
+            CallCompletion::Unsent,
+        ));
+        drop(core::mem::replace(
+            &mut self.shutdown,
+            inbox.shutdown.clone(),
+        ));
+        drop(core::mem::replace(
+            &mut self.permit,
+            CallPermit {
+                inbox: None,
+                target: None,
+            },
+        ));
+        if !inbox.closed.get() {
+            inbox.request_cache.put(self);
+        }
+    }
+
     pub(super) fn endpoint(&self) -> &Rc<Endpoint> {
         self.permit
             .target
@@ -503,14 +595,15 @@ impl Call {
         }
         self.completion.complete(result);
     }
-    /// Hosted queues already own a box. Complete and drop its fields in place,
-    /// preserving field destruction order without moving the full call to stack.
+    /// Complete in place, then recycle only empty metadata. Callback-bearing
+    /// fields drop in declaration order without moving the full call to stack.
     #[allow(clippy::boxed_local)] // Preserve the existing allocation through field destruction.
     pub(super) fn complete_boxed(mut self: Box<Self>, result: capnp::Result<()>) {
         if let Some(tail) = self.kind.native_tail() {
             tail.forwarded();
         }
         self.completion.complete(result);
+        self.recycle_boxed();
     }
 
     /// Execute an admitted call through an ordinary generated server hook.
@@ -581,5 +674,97 @@ impl Drop for CallPermit {
             // pending waiter to resume. The call's result/cancellation and the
             // last endpoint reference each notify their own actual observers.
         }
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    use crate::scoped::ClientHooks;
+
+    fn empty_call(shutdown: Shutdown) -> Box<Call> {
+        Box::new(Call {
+            kind: CallKind::Ordinary,
+            credit: None,
+            interface: 0,
+            method: 0,
+            hints: CallHints::default(),
+            params: CallParams::Published,
+            results: response::Results::Unsent,
+            completion: CallCompletion::Unsent,
+            shutdown,
+            permit: CallPermit {
+                inbox: None,
+                target: None,
+            },
+        })
+    }
+
+    #[test]
+    fn empty_request_cache_is_bounded_and_close_releases_all_storage() {
+        for maximum in [0, 1, 4] {
+            let hooks = ClientHooks::new(1, maximum);
+            for _ in 0..8 {
+                hooks
+                    .inbox
+                    .request_cache
+                    .put(empty_call(hooks.inbox.shutdown.clone()));
+            }
+            let retained: Vec<_> =
+                std::iter::from_fn(|| hooks.inbox.request_cache.take()).collect();
+            assert_eq!(retained.len(), maximum);
+            for call in retained {
+                hooks.inbox.request_cache.put(call);
+            }
+            hooks.inbox.close(Error::disconnected("closed".into()));
+            assert!(hooks.inbox.request_cache.take().is_none());
+            assert_eq!(hooks.inbox.request_cache.rest.borrow().capacity(), 0);
+            let weak = Rc::downgrade(&hooks.inbox);
+            drop(hooks);
+            assert!(
+                weak.upgrade().is_none(),
+                "cached metadata must not own its inbox"
+            );
+        }
+    }
+
+    #[test]
+    fn recycling_drops_parameters_before_admission_and_allows_reentrant_close() {
+        struct Params(Weak<Inbox>, Rc<Cell<bool>>);
+        impl ParamsHook for Params {
+            fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+                unreachable!()
+            }
+        }
+        impl Drop for Params {
+            fn drop(&mut self) {
+                let inbox = self.0.upgrade().unwrap();
+                assert_eq!(inbox.live_calls.get(), 1, "admission must still be held");
+                assert!(inbox.request_cache.take().is_none());
+                inbox.close(Error::disconnected("parameter destructor".into()));
+                self.1.set(true);
+            }
+        }
+        let hooks = ClientHooks::new(1, 1);
+        let dropped = Rc::new(Cell::new(false));
+        let mut call = empty_call(hooks.inbox.shutdown.clone());
+        call.params = CallParams::Hook(Box::new(Params(
+            Rc::downgrade(&hooks.inbox),
+            dropped.clone(),
+        )));
+        call.permit.inbox = Some(Rc::downgrade(&hooks.inbox));
+        hooks.inbox.live_calls.set(1);
+        call.recycle_boxed();
+        assert!(dropped.get());
+        assert_eq!(
+            Rc::strong_count(&dropped),
+            1,
+            "application owner must be released"
+        );
+        assert_eq!(hooks.inbox.live_calls.get(), 0);
+        assert!(
+            hooks.inbox.request_cache.take().is_none(),
+            "close during clearing forbids recycling"
+        );
     }
 }

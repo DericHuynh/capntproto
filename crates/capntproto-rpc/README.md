@@ -442,6 +442,14 @@ storage or bounded growth without retaining the original request frame. Standalo
 segments. Queued frames retain their bytes through partial writes, so live
 segments cannot be recycled.
 
+Completed hosted calls reuse their empty request boxes up to the connection's
+existing concurrent-call limit. Parameters, capabilities, results, completion
+observers and shutdown subscriptions are released before admission; none survive
+reuse. Retained response and pipeline owners remain independent. Serial use
+keeps one box inline, concurrent use lazily retains its high-water mark, and
+connection shutdown releases this storage. This trades bounded idle metadata
+memory for fewer allocations; the caller-backed no-alloc profile is unchanged.
+
 Queued admission consumes capability bindings directly into its retained table.
 Typed calls do not allocate an intermediate mapping table. The bounded
 `enqueue_dynamic_to` APIs accept an `ExactSizeIterator` in capability-index order,
@@ -513,6 +521,12 @@ cached direct routes. Opaque projection hooks preserve their original wrapper.
 Completing a pipeline retains another hook only when waiting projections need
 delivery; its terminal state already owns the completed pipeline. Public
 pipeline interests still control parent cancellation and publication ordering.
+Calls through concrete native projections use the same direct result/completion
+path as ordinary native calls, including when the child returns a pipeline.
+They retain the parent through publication without generic local queued-pipeline,
+parameter-hook or result-hook adapters. Opaque projections keep those adapters
+so their forwarding policy and early-pipeline behavior remain intact. A failed
+parent cancels an unsent child even when the child's pipeline is retained.
 
 Local forwarding retains immutable parameter and result readers with their
 original traversal budgets. Capability hooks are bound separately and keep their

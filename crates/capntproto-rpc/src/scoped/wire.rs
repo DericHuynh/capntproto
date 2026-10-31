@@ -1013,6 +1013,8 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                 caps: Vec::new(),
             });
             call.complete_boxed(result);
+        } else {
+            call.recycle_boxed();
         }
     }
     #[inline(always)]
@@ -1224,7 +1226,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     },
                 ) {
                     Ok(()) => {
-                        self.call.take();
+                        self.call.take().unwrap().recycle_boxed();
                         return Ok(());
                     }
                     Err(payload) => payload,
@@ -1233,7 +1235,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                     let results = &mut self.call.as_mut().expect("wire completion once").results;
                     match results.finish_admitted(payload) {
                         Ok(()) => {
-                            self.call.take().unwrap().complete(Ok(()));
+                            self.call.take().unwrap().complete_boxed(Ok(()));
                             return Ok(());
                         }
                         Err(payload) => payload,
@@ -1271,7 +1273,7 @@ impl<'pool, 'id, I, const CAPS: usize> WireCall<'pool, 'id, I, CAPS> {
                                     .unwrap_or_else(|| pipeline.expect("enabled pipeline")),
                             );
                         }
-                        self.call.take().unwrap().complete(Ok(()));
+                        self.call.take().unwrap().complete_boxed(Ok(()));
                     }
                     Err(error) => self.fail(error),
                 }
@@ -1860,6 +1862,14 @@ fn projected_native(any: &dyn std::any::Any) -> Option<&Hook> {
 }
 pub(super) fn direct_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
     projected_native(client.as_any()?)
+}
+pub(super) fn direct_pipelined_response_hook(client: &dyn ClientHook) -> Option<&Hook> {
+    // General/opaque projections retain their forwarding policy and early
+    // pipeline adapter. Only this concrete native projection can bypass it.
+    client
+        .as_any()?
+        .downcast_ref::<Projected<Hook>>()
+        .map(|projected| &projected.inner)
 }
 
 pub(super) fn request_projected(

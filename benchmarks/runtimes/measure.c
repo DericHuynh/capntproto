@@ -1,6 +1,10 @@
 #include <stdint.h>
 #include <errno.h>
 #include <time.h>
+#ifdef CAPNTPROTO_ALLOCATION_TRACE
+#include <valgrind/dhat.h>
+void capntproto_record_allocation(uint64_t bytes) { DHAT_AD_HOC_EVENT(bytes); }
+#endif
 #if defined(__has_include)
 #if __has_include(<valgrind/callgrind.h>)
 #include <valgrind/callgrind.h>

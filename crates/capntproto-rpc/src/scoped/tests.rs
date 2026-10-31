@@ -2243,6 +2243,94 @@ fn prepared_request_keeps_its_allocation_through_admission_and_final_hint_change
 }
 
 #[test]
+fn completed_request_storage_reuses_no_parameters_results_or_admission() {
+    clients::with_growing_graph::<u32, u8, _>(
+        0,
+        2,
+        clients::NotificationGrowth::bounded(8, 8),
+        |graph| {
+            let route = graph.endpoint(7, Location::Local).unwrap();
+            let mut hooks = ClientHooks::new(1, 2);
+            let client = hooks.export_snapshot(graph, &route).unwrap();
+            let mut address = None;
+            let mut responses = Vec::new();
+            for method in 0..4 {
+                let mut request = None;
+                let allocations = allocation_counter::measure(|| {
+                    request = Some(client.hook.new_call_with_hints(
+                        47,
+                        method,
+                        None,
+                        CallHints {
+                            no_promise_pipelining: true,
+                            only_promise_pipeline: false,
+                        },
+                    ));
+                });
+                if method != 0 {
+                    assert_eq!(
+                        allocations.count_total, 0,
+                        "empty metadata reuse: {allocations:?}"
+                    );
+                }
+                let mut request = request.unwrap();
+                let current = (&*request.hook
+                    as *const dyn capnp::private::capability::RequestHook)
+                    .cast::<()>();
+                assert_eq!(current, *address.get_or_insert(current));
+                assert!(
+                    request.get().is_null(),
+                    "old parameters must not survive reuse"
+                );
+                request.get().set_as("new parameters").unwrap();
+                let mut reply = request.send();
+                let Poll::Ready(Some(mut call)) =
+                    hooks.poll_owned_next(&mut Context::from_waker(Waker::noop()))
+                else {
+                    panic!("admitted request");
+                };
+                assert_eq!((call.interface_id(), call.method_id()), (47, method));
+                assert_eq!(
+                    call.params()
+                        .unwrap()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "new parameters"
+                );
+                assert!(
+                    call.results().get().unwrap().is_null(),
+                    "old results must not survive reuse"
+                );
+                call.results()
+                    .get()
+                    .unwrap()
+                    .set_as("retained result")
+                    .unwrap();
+                call.complete_boxed(Ok(()));
+                responses.push(ready(&mut reply.promise).unwrap());
+                assert_eq!(hooks.inbox.live_calls.get(), 0);
+            }
+            for response in responses {
+                assert_eq!(
+                    response
+                        .get()
+                        .unwrap()
+                        .get_as::<capnp::text::Reader>()
+                        .unwrap(),
+                    "retained result"
+                );
+            }
+            drop(client);
+            hooks.close(graph, Error::disconnected("done".into()));
+            graph.release(route);
+            assert_eq!(graph.take_retired(), Some(7));
+            assert!(graph.is_empty());
+        },
+    )
+    .unwrap();
+}
+
+#[test]
 fn forwarding_preserves_parameters_results_errors_and_releases_both_call_permits() {
     for plain in [false, true] {
         for fail in [false, true] {
