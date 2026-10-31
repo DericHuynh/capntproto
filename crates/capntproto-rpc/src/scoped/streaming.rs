@@ -1,6 +1,18 @@
 //! Hosted streaming credit. Publication and acknowledgement own different
 //! interests: credit can complete before Return without canceling that Return.
+//!
+//! Publication has two inputs, which may arrive in either order: the accepted
+//! word count from the transport and the acknowledgement future from `bind`.
+//! Once both exist, `charge` moves the acknowledgement into the flow controller
+//! and retains only its credit future. The capability owns the controller; the
+//! controller driver owns Return, independently of the caller's credit future.
+//!
+//! Futures are taken out of their cells before polling. An acknowledgement poll
+//! may reenter transport publication, so an empty `ack` cell alone never means
+//! the call has been charged. `words` records acceptance and `flow` is consumed
+//! exactly once when ownership moves to the controller (or a local call ends).
 use super::*;
+use std::{future::Future, pin::Pin};
 
 pub(crate) type Factory = dyn Fn() -> capnp::Result<Box<dyn crate::FlowController>>;
 

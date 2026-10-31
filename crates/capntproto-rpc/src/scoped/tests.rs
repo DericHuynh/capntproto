@@ -1,10 +1,12 @@
 use super::*;
 use capnp::capability::FromClientHook;
+use capnp::private::capability::{ParamsHook, ResultsHook};
 use capntproto_rpc_engine::clients::{self, dispatch, Destination, Location};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::{future::Future, pin::Pin};
 
 type Remote = capability::RemotePromise<any_pointer::Owned>;
 

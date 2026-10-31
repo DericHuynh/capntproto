@@ -2,6 +2,7 @@
 //! this adapter in the same scope as the driver and polls it alongside IO,
 //! protocol maintenance and application execution.
 use super::*;
+use capnp::private::capability::{DebugInfo, ParamsHook, ResultsHook};
 use capnp::private::capability::{PipelineHook, PipelineOp};
 use capnp::traits::{Imbue, ImbueMut};
 use capntproto_rpc_engine::messages;
@@ -13,6 +14,7 @@ use capntproto_rpc_wire::{
     },
     pipeline,
 };
+use std::{future::Future, pin::Pin};
 
 mod calls;
 pub mod coordinator;

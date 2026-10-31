@@ -3,6 +3,9 @@
 //! This is the hosted request adapter, not a second wire ledger.
 use super::*;
 use crate::local::ResultsDoneHook;
+use capnp::private::capability::ResultsHook;
+#[cfg(test)]
+use std::{future::Future, pin::Pin};
 
 struct Connection {
     shutdown: Shutdown,

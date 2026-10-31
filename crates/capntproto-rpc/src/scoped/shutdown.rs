@@ -1,7 +1,9 @@
 //! Local broadcast of the connection's terminal error. Receivers share no
 //! cross-thread mutex or atomic reference count. Waiter slots are recycled when
 //! calls finish, and every callback runs after releasing the state borrow.
-use super::{completion, Cell, Context, Error, Future, Pin, Poll, Rc, RefCell, Waker};
+use super::{Cell, Context, Error, Poll, Rc, RefCell, Waker};
+use capntproto_rpc_engine::completion;
+use std::{future::Future, pin::Pin};
 
 enum Notification {
     Task(Waker),

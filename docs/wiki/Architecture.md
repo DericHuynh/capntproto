@@ -19,6 +19,27 @@ it also prepares admitted parameters for existing owned server hooks without
 replacing their result contexts. The default network runtime has not switched
 to that bridge.
 
+The hosted bridge has separate source responsibilities:
+
+- [scoped.rs](../../crates/capntproto-rpc/src/scoped.rs) owns the endpoint registry, graph bindings and lifecycle notifications.
+- [call.rs](../../crates/capntproto-rpc/src/scoped/call.rs) owns request storage, admission, publication and completion. Its final `CallPermit` field releases queue admission only after callback-bearing owners are destroyed.
+- [hook.rs](../../crates/capntproto-rpc/src/scoped/hook.rs) adapts owned clients to that registry: request creation, routing, resolution, introductions and generic forwarding. Opaque result hooks retain their policy and response credit.
+- [response.rs](../../crates/capntproto-rpc/src/scoped/response.rs) owns reply delivery and retained result/pipeline interests.
+- [streaming.rs](../../crates/capntproto-rpc/src/scoped/streaming.rs) coordinates transport acceptance with acknowledgement ownership. Credit readiness and Return completion are independent.
+
+Release is split between owners with different lifetimes:
+
+| Owner | Release point |
+| --- | --- |
+| `CallPermit` destination | Dispatch/publication commits, or the call is dropped before that point. |
+| `CallPermit` queue admission | The call is destroyed, after its callback-bearing fields. |
+| Outgoing `Credit` | The last retaining request, response or pipeline context is dropped. |
+| Streaming acknowledgement | The flow-controller driver receives Return or failure, independently of credit readiness. |
+
+These are source boundaries around the same concrete owners. The public
+`scoped::Call` path, field/drop order, inline fast paths and allocation strategy
+remain unchanged; no additional runtime dispatch is introduced.
+
 Legacy and portable now share the bounded atomic notification FIFO in
 `capntproto-rpc-engine::ready_queue`. Its storage and transitions require only
 `core`; callers own the consumer cursor, wakeups and task generations.

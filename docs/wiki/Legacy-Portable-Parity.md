@@ -46,7 +46,7 @@ Paths in the first column are relative to `crates/capntproto-rpc`. “Adapted”
 | [src/queued.rs](../../crates/capntproto-rpc/src/queued.rs) | Shared | [queued.rs](../../crates/capntproto-rpc/src/queued.rs), [wire.rs](../../crates/capntproto-rpc/src/scoped/wire.rs). Same promise queue, resolution order and hook adoption; portable private projections preserve their own bounded graph route. |
 | [src/reconnect.rs](../../crates/capntproto-rpc/src/reconnect.rs) | Shared | [reconnect.rs](../../crates/capntproto-rpc/src/reconnect.rs). Shared route/generation snapshot fix removes external hook clones under the route borrow and protects reentrant replacement. |
 | [src/revocable.rs](../../crates/capntproto-rpc/src/revocable.rs) | Shared | [revocable.rs](../../crates/capntproto-rpc/src/revocable.rs). Same explicit authority revocation and cancellation wrapper. |
-| [src/rpc.rs](../../crates/capntproto-rpc/src/rpc.rs) | Adapted | [scoped.rs](../../crates/capntproto-rpc/src/scoped.rs), [response.rs](../../crates/capntproto-rpc/src/scoped/response.rs), [wire.rs](../../crates/capntproto-rpc/src/scoped/wire.rs), [results.rs](../../crates/capntproto-rpc/src/scoped/wire/server/results.rs), [connection.rs](../../crates/capntproto-rpc-wire/src/owned/connection.rs). Compared every type, hook method and lifecycle path. See responsibility mapping below; allocating table/arena ownership is intentionally bounded in portable. |
+| [src/rpc.rs](../../crates/capntproto-rpc/src/rpc.rs) | Adapted | [scoped.rs](../../crates/capntproto-rpc/src/scoped.rs), [call.rs](../../crates/capntproto-rpc/src/scoped/call.rs), [hook.rs](../../crates/capntproto-rpc/src/scoped/hook.rs), [response.rs](../../crates/capntproto-rpc/src/scoped/response.rs), [wire.rs](../../crates/capntproto-rpc/src/scoped/wire.rs), [results.rs](../../crates/capntproto-rpc/src/scoped/wire/server/results.rs), [connection.rs](../../crates/capntproto-rpc-wire/src/owned/connection.rs). Compared every type, hook method and lifecycle path. See responsibility mapping below; allocating table/arena ownership is intentionally bounded in portable. |
 | [src/rpc/capabilities.rs](../../crates/capntproto-rpc/src/rpc/capabilities.rs) | Adapted | [exporting.rs](../../crates/capntproto-rpc-wire/src/clients/exporting.rs), [resolution.rs](../../crates/capntproto-rpc-wire/src/inbound/full/resolution.rs), [foreign.rs](../../crates/capntproto-rpc/src/scoped/wire/foreign.rs), [introduction.rs](../../crates/capntproto-rpc/src/portable/introduction.rs). Import alias identity, one promise obligation, export grants/refunds, reflection, introduction forwarding and descriptor metadata. |
 | [src/rpc/dispatch.rs](../../crates/capntproto-rpc/src/rpc/dispatch.rs) | Adapted | [connection.rs](../../crates/capntproto-rpc-wire/src/owned/connection.rs), [full.rs](../../crates/capntproto-rpc-wire/src/inbound/full.rs), [returns.rs](../../crates/capntproto-rpc-wire/src/inbound/full/returns.rs), [multiparty.rs](../../crates/capntproto-rpc/src/scoped/wire/coordinator/multiparty.rs). Every wire union arm compared: Call/Return/Finish/Resolve/Release/embargo, Bootstrap, Join, introductions, third-party answers, Abort and optional/obsolete messages. |
 | [src/rpc/references_tests.rs](../../crates/capntproto-rpc/src/rpc/references_tests.rs) | Compared tests | [tests.rs](../../crates/capntproto-rpc-wire/src/owned/tests.rs), [tests.rs](../../crates/capntproto-rpc-wire/src/inbound/full/tests.rs), [tests.rs](../../crates/capntproto-rpc/src/scoped/wire/tests.rs), [call_hints.rs](../../tests/call_hints.rs), [import_alias.rs](../../tests/import_alias.rs), [disconnect_cleanup.rs](../../tests/disconnect_cleanup.rs). Compared ownership, overflow, reentry, synchronous completion, pipeline cancellation, streaming aliases, lookup and empty-storage reuse cases; internal legacy fixture is not copied into the portable driver. |
@@ -78,7 +78,7 @@ Paths in the first column are relative to `crates/capntproto-rpc`. “Adapted”
 | --- | --- |
 | Question lifecycle, Finish, canceled/late Return, no-Finish and high IDs | Shared engine `question`/`questions`; wire `owned/connection`, invocation and exchange owners. Pipeline high IDs are monotonic; bounded exhaustion falls back to ordinary calls. |
 | Direct response and public pipeline interests | `scoped/response.rs`, `scoped/wire.rs`; one completion owns status/results and parent interests. Return settles ordinary projections without a second background response task. |
-| Request construction, final headers, descriptor indices and request-time limits | `scoped.rs`, `local.rs`, wire prepared Call templates, immediate/queued invocation publication and shared outgoing admission. |
+| Request construction, final headers, descriptor indices and request-time limits | `scoped/call.rs`, `scoped/hook.rs`, `local.rs`, wire prepared Call templates, immediate/queued invocation publication and shared outgoing admission. |
 | Parameter/result lifetime, traversal budgets, synchronous dispatch, protected execution | Shared local hooks, `scoped/wire/server.rs`, `server/results.rs`, payload owners and bounded worker. Fixed buffers copy when their storage cannot escape; shareable owners retain their original segments. |
 | Export identity, repeated grants/refunds and promise observers | Wire export/reference ledgers, canonical identity index, `scoped/wire/foreign.rs`; staged publication rolls back uncommitted grants. |
 | Import aliases, descriptor resources, resolution and reflection | Shared engine promise/reference transitions; wire import ledger and resolution; scoped resources/metadata. Original opaque policy hooks survive reflection. |
@@ -99,7 +99,7 @@ Portable still validates bounded capacity, graph identities and generations and 
 
 Both drivers use the same physical framing/output implementation. Portable's adapter and bounded graph/invocation work still have measurable instruction costs; completing this audit does not establish performance parity. Performance results below measure that remaining difference separately from functional coverage.
 
-## Verification and measurements
+## Verification and measurements for the integration batch (`3cdec87`)
 
 The following checks passed on the final source:
 
@@ -146,3 +146,20 @@ For dependent-read, this correctness/integration batch changes minimum Ir by +0.
 For pipelined-read, this correctness/integration batch changes minimum Ir by +0.559%, Bcm by -2.287% and Bim by +5.016%. Portable still executes 63.982% more instructions than legacy in this probe.
 
 Completing the file comparison closes missing integrations; it does not close this instruction/branch gap. Portable uses fewer allocation blocks and half as many write calls here, but allocates more bytes. The bounded graph, protocol ownership, coordinator and hosted future adapters remain candidates for architectural optimization. This probe does not measure TLS/QUIC throughput or C++ performance.
+
+## Source organization refactor
+
+The hosted bridge now separates the registry (`scoped.rs`), request/admission owners (`scoped/call.rs`) and client routing (`scoped/hook.rs`). The public `scoped::Call` path remains available. `CallPermit` names the queue/destination guard separately from outgoing response `Credit`; its fields are private to the request module. Field/drop order, dispatch policy, data storage and the moved function bodies are preserved. Async and capability traits are imported at the relevant module boundaries. Streaming documentation explains ownership during reentrant publication.
+
+Qualification: 458 RPC unit tests, 238 protocol integrations, 33 TLS/QUIC tests, three doctests, three targeted i686 Miri tests and Clippy with warnings denied passed. The no-default-features RPC library check passed for `thumbv7em-none-eabi`; the optimized full fixture mentioned above was not rerun.
+
+The same read probe and five-run method described above compare `3cdec87` with this refactor. Each cell is **minimum / mean / spread**. Branch misses are simulated; no latency or hardware-cycle claim is made.
+
+| Case | Version | Ir: min / mean / spread | Bcm: min / mean / spread | Bim: min / mean / spread |
+| --- | --- | ---: | ---: | ---: |
+| dependent-read | Before (`3cdec87`) | 107,464.417 / 107,465.283 / 1.500 | 1,504.250 / 1,505.067 / 1.250 | 289.000 / 289.000 / 0.000 |
+| dependent-read | Refactored | 107,465.917 / 107,466.417 / 0.750 | 1,459.917 / 1,460.200 / 0.583 | 288.000 / 288.000 / 0.000 |
+| pipelined-read | Before (`3cdec87`) | 108,545.333 / 108,545.517 / 0.667 | 1,796.500 / 1,796.550 / 0.167 | 335.000 / 335.000 / 0.000 |
+| pipelined-read | Refactored | 108,544.667 / 108,545.350 / 0.917 | 1,732.583 / 1,732.733 / 0.417 | 338.000 / 338.000 / 0.000 |
+
+Native allocation and I/O counts are identical before and after, with zero spread across five runs: dependent-read uses 38 allocations / 5,052 bytes / 4 reads / 6 writes; pipelined-read uses 46 allocations / 6,000 bytes / 2 reads / 6 writes. Minimum instruction changes are +0.0014% and -0.0006%, respectively. Simulated Bcm falls 2.95% / 3.56%; Bim changes -0.35% / +0.90%.
