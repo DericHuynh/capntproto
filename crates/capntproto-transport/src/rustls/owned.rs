@@ -177,7 +177,10 @@ impl AsyncRead for Stream {
         }
         let mut s = self.state.borrow_mut();
         s.error()?;
-        let result = if s.authenticated {
+        // An in-flight receive owns all ciphertext storage. Reprocessing an
+        // empty slice cannot advance TLS; only buffered plaintext/EOF is ready.
+        let waiting = s.receiving && s.tls.plaintext.pending().is_empty() && !s.tls.peer_closed;
+        let result = if s.authenticated && !waiting {
             let progress = s.tls.read(bytes)?;
             s.request(progress, cx)
         } else {

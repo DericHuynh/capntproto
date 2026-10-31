@@ -3,5 +3,7 @@
 mod api;
 mod protocol;
 pub use api::*;
+/// Initialized native UDP receive storage; packet slices transfer without copying.
+pub use bytes::BytesMut as ReceiveBuffer;
 pub use protocol::{client_config, server_config, Limits};
 pub use rustls_quic as tls;

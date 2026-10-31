@@ -116,13 +116,19 @@ pub mod webtransport {
     };
     pub use driven::{tls, Incoming, Limits, Request, Session, Stream};
     pub use driven::{Client as DrivenClient, Server as DrivenServer};
-    use std::{rc::Rc, sync::Arc};
+    use nix::{
+        errno::Errno,
+        sys::socket::{recvmsg, sendto, MsgFlags, SockaddrIn, SockaddrIn6, SockaddrStorage},
+    };
+    use std::{os::fd::AsRawFd, rc::Rc, sync::Arc};
     pub struct UdpReader {
         socket: Rc<::monoio::net::udp::UdpSocket>,
+        readiness: bool,
     }
     pub struct UdpWriter {
         socket: Rc<::monoio::net::udp::UdpSocket>,
         ipv6: bool,
+        readiness: bool,
     }
     fn canonical(peer: SocketAddr) -> SocketAddr {
         match peer {
@@ -141,16 +147,64 @@ pub mod webtransport {
         }
     }
     impl DatagramRead for UdpReader {
-        type Buffer = Vec<u8>;
+        type Buffer = driven::ReceiveBuffer;
         type Error = io::Error;
-        async fn receive(&mut self, buffer: Vec<u8>) -> (io::Result<Datagram>, Vec<u8>) {
-            let (result, buffer) = self.socket.recv_from(buffer.into_boxed_slice()).await;
+        async fn receive(
+            &mut self,
+            mut buffer: driven::ReceiveBuffer,
+        ) -> (io::Result<Datagram>, driven::ReceiveBuffer) {
+            // Readiness backends can drain queued packets without boxed recvmsg
+            // metadata. Keep io_uring's completion boundary: draining its queue
+            // synchronously delays ACK/application work and amplifies Quinn's
+            // linear unacknowledged-segment lookups in deep pipelines.
+            if self.readiness {
+                let mut iov = [io::IoSliceMut::new(&mut buffer)];
+                let received = recvmsg::<SockaddrStorage>(
+                    self.socket.as_raw_fd(),
+                    &mut iov,
+                    None,
+                    MsgFlags::MSG_DONTWAIT,
+                )
+                .map(|packet| (packet.bytes, packet.address));
+                match received {
+                    Ok((length, Some(peer))) => {
+                        let peer = peer
+                            .as_sockaddr_in()
+                            .map(|peer| SocketAddr::from(*peer))
+                            .or_else(|| peer.as_sockaddr_in6().map(|peer| SocketAddr::from(*peer)));
+                        let result = peer
+                            .map(|peer| Datagram {
+                                length,
+                                peer: canonical(peer),
+                            })
+                            .ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "UDP packet has no IP source address",
+                                )
+                            });
+                        return (result, buffer);
+                    }
+                    Ok((_, None)) => {
+                        return (
+                            Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "UDP packet has no source address",
+                            )),
+                            buffer,
+                        )
+                    }
+                    Err(Errno::EAGAIN | Errno::EINTR) => (),
+                    Err(error) => return (Err(error.into()), buffer),
+                }
+            }
+            let (result, buffer) = self.socket.recv_from(buffer).await;
             (
                 result.map(|(length, peer)| Datagram {
                     length,
                     peer: canonical(peer),
                 }),
-                buffer.into_vec(),
+                buffer,
             )
         }
     }
@@ -162,9 +216,31 @@ pub mod webtransport {
             buffer: Vec<u8>,
             peer: SocketAddr,
         ) -> Completion<Vec<u8>, io::Error> {
-            self.socket
-                .send_to(buffer, destination(peer, self.ipv6))
-                .await
+            let peer = destination(peer, self.ipv6);
+            if !self.readiness {
+                return self.socket.send_to(buffer, peer).await;
+            }
+            // UDP normally accepts a complete datagram immediately. Bypass the
+            // boxed sendmsg metadata and completion round trip in that case.
+            let result = match peer {
+                SocketAddr::V4(peer) => sendto(
+                    self.socket.as_raw_fd(),
+                    &buffer,
+                    &SockaddrIn::from(peer),
+                    MsgFlags::MSG_DONTWAIT,
+                ),
+                SocketAddr::V6(peer) => sendto(
+                    self.socket.as_raw_fd(),
+                    &buffer,
+                    &SockaddrIn6::from(peer),
+                    MsgFlags::MSG_DONTWAIT,
+                ),
+            };
+            match result {
+                Ok(count) => (Ok(count), buffer),
+                Err(Errno::EAGAIN | Errno::EINTR) => self.socket.send_to(buffer, peer).await,
+                Err(error) => (Err(error.into()), buffer),
+            }
         }
     }
     pub fn datagrams(
@@ -176,10 +252,12 @@ pub mod webtransport {
             address,
             UdpReader {
                 socket: socket.clone(),
+                readiness: ::monoio::utils::is_legacy(),
             },
             UdpWriter {
                 socket,
                 ipv6: address.is_ipv6(),
+                readiness: ::monoio::utils::is_legacy(),
             },
         ))
     }
@@ -304,5 +382,141 @@ pub mod webtransport {
             on_rejected,
         )
         .await
+    }
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::io::{DatagramRead, DatagramWrite};
+        use core::{
+            future::Future,
+            pin::{pin, Pin},
+            task::{Context, Poll},
+        };
+        fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+            future.poll(&mut Context::from_waker(std::task::Waker::noop()))
+        }
+        async fn packets() {
+            for dual_stack in [false, true] {
+                let socket = if dual_stack {
+                    let std = crate::webtransport::client_socket().unwrap();
+                    std.set_nonblocking(::monoio::utils::is_legacy()).unwrap();
+                    ::monoio::net::udp::UdpSocket::from_std(std).unwrap()
+                } else {
+                    ::monoio::net::udp::UdpSocket::bind("127.0.0.1:0").unwrap()
+                };
+                let (address, mut reader, mut writer) = datagrams(socket).unwrap();
+                let destination = SocketAddr::from(([127, 0, 0, 1], address.port()));
+                let peer = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+                peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                peer.send_to(b"first", destination).unwrap();
+                peer.send_to(b"", destination).unwrap();
+                let mut buffer = driven::ReceiveBuffer::from(&[0xcc; 512][..]);
+                let pointer = buffer.as_ptr();
+                for bytes in [b"first".as_slice(), b""] {
+                    let (result, returned) = if reader.readiness {
+                        let (mut result, mut returned) = (None, None);
+                        let allocations = allocation_counter::measure(|| {
+                            let mut receiving = pin!(reader.receive(buffer));
+                            match poll(receiving.as_mut()) {
+                                Poll::Ready((r, b)) => {
+                                    result = Some(r);
+                                    returned = Some(b);
+                                }
+                                Poll::Pending => panic!(
+                                "a queued datagram must complete without another ring submission"
+                            ),
+                            }
+                        });
+                        assert_eq!(
+                            allocations.count_total, 0,
+                            "ready receive must not allocate operation metadata"
+                        );
+                        (result.unwrap(), returned.unwrap())
+                    } else {
+                        reader.receive(buffer).await
+                    };
+                    let packet = result.unwrap();
+                    buffer = returned;
+                    assert_eq!(packet.length, bytes.len());
+                    assert_eq!(packet.peer, peer.local_addr().unwrap());
+                    assert_eq!(&buffer[..packet.length], bytes);
+                    assert_eq!(buffer.len(), 512);
+                    assert_eq!(buffer.as_ptr(), pointer);
+                }
+                let outbound = b"response".to_vec();
+                let pointer = outbound.as_ptr();
+                let (result, outbound) = if writer.readiness {
+                    let mut sent = None;
+                    let allocations = allocation_counter::measure(|| {
+                        let mut sending =
+                            pin!(writer.transmit(outbound, peer.local_addr().unwrap()));
+                        match poll(sending.as_mut()) {
+                            Poll::Ready(value) => sent = Some(value),
+                            Poll::Pending => panic!("ready send must complete immediately"),
+                        }
+                    });
+                    assert_eq!(
+                        allocations.count_total, 0,
+                        "ready send must not allocate operation metadata"
+                    );
+                    sent.unwrap()
+                } else {
+                    writer.transmit(outbound, peer.local_addr().unwrap()).await
+                };
+                assert_eq!(result.unwrap(), 8);
+                assert_eq!(outbound.as_ptr(), pointer);
+                let mut received = [0; 16];
+                assert_eq!(peer.recv_from(&mut received).unwrap().0, 8);
+                assert_eq!(&received[..8], b"response");
+
+                // Empty sockets use the normal completion path, retaining the
+                // initialized buffer over Pending and a later packet arrival.
+                let mut pending = pin!(reader.receive(buffer));
+                assert!(poll(pending.as_mut()).is_pending());
+                peer.send_to(b"later", destination).unwrap();
+                let (packet, buffer) = ::monoio::time::timeout(Duration::from_secs(2), pending)
+                    .await
+                    .unwrap();
+                assert_eq!(packet.unwrap().length, 5);
+                assert_eq!(&buffer[..5], b"later");
+                assert_eq!(buffer.len(), 512);
+                let bytes = b"invalid destination".to_vec();
+                // An invalid IP family returns both the error and owned data.
+                if !address.is_ipv6() {
+                    let (error, returned) = writer
+                        .transmit(bytes.clone(), "[::1]:1234".parse().unwrap())
+                        .await;
+                    assert!(error.is_err());
+                    assert_eq!(returned, bytes);
+                }
+            }
+        }
+        #[test]
+        fn udp_ready_and_pending_paths_preserve_packets_without_metadata_allocations_epoll() {
+            ::monoio::RuntimeBuilder::<::monoio::LegacyDriver>::new()
+                .enable_timer()
+                .build()
+                .unwrap()
+                .block_on(packets());
+        }
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn udp_completion_paths_preserve_owned_packets_uring() {
+            match ::monoio::RuntimeBuilder::<::monoio::IoUringDriver>::new()
+                .enable_timer()
+                .build()
+            {
+                Ok(mut runtime) => runtime.block_on(packets()),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::PermissionDenied | io::ErrorKind::Unsupported
+                    ) =>
+                {
+                    eprintln!("io_uring unavailable: {error}")
+                }
+                Err(error) => panic!("io_uring initialization failed: {error}"),
+            }
+        }
     }
 }

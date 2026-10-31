@@ -126,9 +126,12 @@ pub mod webtransport {
         }
     }
     impl DatagramRead for UdpReader {
-        type Buffer = Vec<u8>;
+        type Buffer = driven::ReceiveBuffer;
         type Error = io::Error;
-        async fn receive(&mut self, mut buffer: Vec<u8>) -> (io::Result<Datagram>, Vec<u8>) {
+        async fn receive(
+            &mut self,
+            mut buffer: driven::ReceiveBuffer,
+        ) -> (io::Result<Datagram>, driven::ReceiveBuffer) {
             let result = self
                 .socket
                 .recv_from(&mut buffer)

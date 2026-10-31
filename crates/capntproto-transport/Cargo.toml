@@ -15,7 +15,7 @@ webtransport = ["webtransport-core", "tokio", "dep:wtransport", "dep:js-sys", "d
 webtransport-core = ["rpc", "dep:url", "dep:rustls-quic", "dep:quinn-proto", "dep:wtransport-proto", "dep:bytes", "dep:socket2"]
 rustls = ["std", "pki-types/web", "dep:rustls-impl", "dep:ring", "dep:futures"]
 tokio = ["std", "dep:tokio", "dep:tokio-util"]
-monoio = ["rpc", "rustls", "dep:monoio"]
+monoio = ["rpc", "rustls", "dep:monoio", "dep:nix"]
 embassy = ["embedded-tls", "dep:capnp", "dep:capntproto-rpc-wire", "dep:capntproto-rpc-engine", "dep:embassy-time"]
 embassy-net = ["embassy", "dep:embassy-net"]
 embedded-tls = ["dep:embedded-tls", "dep:embedded-io", "dep:embedded-io-async", "dep:webpki", "dep:p256", "dep:sha2", "dep:heapless"]
@@ -53,7 +53,8 @@ rustls-quic = { package = "rustls", version = "0.23", default-features = false, 
 quinn-proto = {version="0.11.19",default-features=false,features=["rustls-ring"],optional=true}
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
-monoio = { version = "0.2.4", default-features = false, features = ["iouring", "legacy", "macros"], optional = true }
+nix = { version = "0.31", default-features = false, features = ["net", "uio"], optional = true }
+monoio = { version = "0.2.4", default-features = false, features = ["iouring", "legacy", "macros", "bytes"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 ring = { version = "0.17", features = ["wasm32_unknown_unknown_js"], optional = true }

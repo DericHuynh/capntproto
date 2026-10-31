@@ -11,7 +11,7 @@ use std::{
     rc::Rc,
     sync::Arc,
     task::{Context, Poll},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 type Shared = Rc<RefCell<Endpoint>>;
@@ -397,14 +397,30 @@ impl Drop for Guard {
         self.0.borrow_mut().stop();
     }
 }
-async fn recv<R: DatagramRead<Buffer = Vec<u8>, Error = io::Error>>(
+const MAX_DATAGRAM: usize = 64 * 1024;
+const RECEIVE_STORAGE: usize = 2 * MAX_DATAGRAM;
+
+// Packet slices and the next receive window share initialized, disjoint storage.
+// Reclaim only when no packet still owns the prefix; otherwise start a new slab.
+fn receive_storage(mut buffer: BytesMut) -> BytesMut {
+    if buffer.capacity() < MAX_DATAGRAM {
+        buffer.clear();
+        if !buffer.try_reclaim(RECEIVE_STORAGE) {
+            return BytesMut::zeroed(RECEIVE_STORAGE);
+        }
+    }
+    buffer.resize(buffer.capacity(), 0);
+    buffer
+}
+
+async fn recv<R: DatagramRead<Buffer = BytesMut, Error = io::Error>>(
     reader: Option<R>,
-    buffer: Option<Vec<u8>>,
-) -> (R, Vec<u8>, io::Result<Datagram>) {
+    buffer: Option<BytesMut>,
+) -> (R, BytesMut, io::Result<Datagram>) {
     let Some(mut reader) = reader else {
         return core::future::pending().await;
     };
-    let (result, buffer) = reader.receive(buffer.unwrap()).await;
+    let (result, buffer) = reader.receive(receive_storage(buffer.unwrap())).await;
     (reader, buffer, result)
 }
 async fn send<W: DatagramWrite<Buffer = Vec<u8>, Error = io::Error>>(
@@ -418,6 +434,16 @@ async fn send<W: DatagramWrite<Buffer = Vec<u8>, Error = io::Error>>(
     let (result, buffer) = writer.transmit(buffer.unwrap(), peer).await;
     (writer, buffer, result)
 }
+// Keep an earlier alarm when QUIC extends a deadline. An early wake is safe:
+// handle_timeout checks the current deadline before firing protocol timers.
+// Replacing only for an earlier deadline avoids cancel/register work per packet.
+async fn wait<T: Timer>(timer: &T, deadline: Option<Duration>) {
+    match deadline {
+        Some(at) => timer.wait_until(at).await,
+        None => core::future::pending().await,
+    }
+}
+
 fn drive<R, W, T>(
     state: Shared,
     reader: R,
@@ -425,7 +451,7 @@ fn drive<R, W, T>(
     timer: T,
 ) -> impl crate::driven::Driver<Error = io::Error>
 where
-    R: DatagramRead<Buffer = Vec<u8>, Error = io::Error>,
+    R: DatagramRead<Buffer = BytesMut, Error = io::Error>,
     W: DatagramWrite<Buffer = Vec<u8>, Error = io::Error>,
     T: Timer,
 {
@@ -435,9 +461,11 @@ where
     let shutdown_state = state.clone();
     let future = async move {
         let _guard = guard;
-        let read = recv(Some(reader), Some(vec![0; 65536])).fuse();
+        let read = recv(Some(reader), Some(BytesMut::new())).fuse();
         let write = send::<W>(None, None, "0.0.0.0:0".parse().unwrap()).fuse();
-        futures::pin_mut!(read, write);
+        let sleep = wait(&timer, None).fuse();
+        futures::pin_mut!(read, write, sleep);
+        let mut armed = None;
         let mut writer = Some(writer);
         let mut output = Some(Vec::with_capacity(1500));
         let mut turns = 0;
@@ -445,6 +473,16 @@ where
             turns += 1;
             if turns == 128 {
                 turns = 0;
+                // Preserve receive batching, but guarantee send progress even
+                // when every receive is ready. Reuse the cooperative work
+                // budget instead of sending an ACK after each received packet.
+                if let Poll::Ready((returned, buffer, result)) = futures::poll!(write.as_mut()) {
+                    if result? != buffer.len() {
+                        return Err(io::Error::new(io::ErrorKind::WriteZero, "partial UDP send"));
+                    }
+                    writer = Some(returned);
+                    output = Some(buffer);
+                }
                 let mut first = true;
                 poll_fn(|cx| {
                     if first {
@@ -482,15 +520,17 @@ where
                 }
                 state
                     .next_timeout()
-                    .map(|at| epoch + at.saturating_duration_since(base))
+                    .map(|at| {
+                        epoch
+                            .checked_add(at.saturating_duration_since(base))
+                            .ok_or_else(|| protocol::invalid("monotonic deadline overflow"))
+                    })
+                    .transpose()?
             };
-            let sleep = async {
-                match deadline {
-                    Some(at) => timer.wait_until(at).await,
-                    None => core::future::pending().await,
-                }
+            if let Some(at) = deadline.filter(|at| armed.is_none_or(|armed| *at < armed)) {
+                sleep.set(wait(&timer, Some(at)).fuse());
+                armed = Some(at);
             }
-            .fuse();
             let notified = poll_fn(|cx| {
                 let mut state = state.borrow_mut();
                 state.driver = Some(cx.waker().clone());
@@ -501,20 +541,23 @@ where
                 }
             })
             .fuse();
-            futures::pin_mut!(sleep, notified);
+            futures::pin_mut!(notified);
             futures::select_biased! {
-                (reader,buffer,result)=read=>{
+                (reader,mut buffer,result)=read=>{
                     let packet=result?;
                     if packet.length>buffer.len(){return Err(protocol::invalid("datagram receive count exceeds buffer"));}
                     let now=base.checked_add(timer.now().saturating_sub(epoch)).ok_or_else(||protocol::invalid("monotonic timer overflow"))?;
-                    state.borrow_mut().receive(now,packet.peer,None,BytesMut::from(&buffer[..packet.length]))?;
+                    state.borrow_mut().receive(now,packet.peer,None,buffer.split_to(packet.length))?;
                     read.set(recv(Some(reader),Some(buffer)).fuse());
                 },
                 (returned,buffer,result)=write=>{
                     if result?!=buffer.len(){return Err(io::Error::new(io::ErrorKind::WriteZero,"partial UDP send"));}
                     writer=Some(returned);output=Some(buffer);
                 },
-                _=sleep=>(),
+                _=sleep=>{
+                    armed=None;
+                    sleep.set(wait(&timer,None).fuse());
+                },
                 _=notified=>(),
             }
         }
@@ -533,7 +576,7 @@ pub fn client<R, W, T>(
     limits: Limits,
 ) -> (Client, impl crate::driven::Driver<Error = io::Error>)
 where
-    R: DatagramRead<Buffer = Vec<u8>, Error = io::Error>,
+    R: DatagramRead<Buffer = BytesMut, Error = io::Error>,
     W: DatagramWrite<Buffer = Vec<u8>, Error = io::Error>,
     T: Timer,
 {
@@ -554,7 +597,7 @@ pub fn server<R, W, T>(
     limits: Limits,
 ) -> (Server, impl crate::driven::Driver<Error = io::Error>)
 where
-    R: DatagramRead<Buffer = Vec<u8>, Error = io::Error>,
+    R: DatagramRead<Buffer = BytesMut, Error = io::Error>,
     W: DatagramWrite<Buffer = Vec<u8>, Error = io::Error>,
     T: Timer,
 {
@@ -659,5 +702,222 @@ pub async fn listen<T: Timer>(
             ))?,
             Event::Completed(Err(error)) => on_rejected(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::cell::Cell;
+
+    #[derive(Default)]
+    struct TimeState {
+        now: Cell<Duration>,
+        registrations: RefCell<Vec<Duration>>,
+    }
+    struct ManualTime(Rc<TimeState>);
+    impl Timer for ManualTime {
+        fn now(&self) -> Duration {
+            self.0.now.get()
+        }
+        async fn wait_until(&self, at: Duration) {
+            self.0.registrations.borrow_mut().push(at);
+            poll_fn(|_| {
+                if self.now() >= at {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            })
+            .await;
+        }
+    }
+    struct Receive;
+    impl DatagramRead for Receive {
+        type Buffer = BytesMut;
+        type Error = io::Error;
+        async fn receive(&mut self, buffer: BytesMut) -> (io::Result<Datagram>, BytesMut) {
+            core::future::pending::<()>().await;
+            (Err(io::ErrorKind::Interrupted.into()), buffer)
+        }
+    }
+    struct Send(Rc<Cell<usize>>);
+    impl DatagramWrite for Send {
+        type Buffer = Vec<u8>;
+        type Error = io::Error;
+        async fn transmit(
+            &mut self,
+            buffer: Vec<u8>,
+            _: SocketAddr,
+        ) -> (io::Result<usize>, Vec<u8>) {
+            self.0.set(self.0.get() + 1);
+            (Ok(buffer.len()), buffer)
+        }
+    }
+    fn poll<F: core::future::Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+        future.poll(&mut Context::from_waker(std::task::Waker::noop()))
+    }
+
+    struct Flood(Rc<Cell<usize>>);
+    impl DatagramRead for Flood {
+        type Buffer = BytesMut;
+        type Error = io::Error;
+        async fn receive(&mut self, buffer: BytesMut) -> (io::Result<Datagram>, BytesMut) {
+            self.0.set(self.0.get() + 1);
+            (
+                Ok(Datagram {
+                    length: 0,
+                    peer: "127.0.0.1:4321".parse().unwrap(),
+                }),
+                buffer,
+            )
+        }
+    }
+
+    #[test]
+    fn ready_receive_flood_cannot_starve_transmission_and_driver_yields() {
+        let received = Rc::new(Cell::new(0));
+        let sent = Rc::new(Cell::new(0));
+        let config = super::super::client_config(
+            rustls_quic::RootCertStore::empty(),
+            Arc::new(crate::SystemClock),
+        )
+        .unwrap();
+        let (client, driver) = client(
+            config,
+            "127.0.0.1:1234".parse().unwrap(),
+            Flood(received.clone()),
+            Send(sent.clone()),
+            ManualTime(Rc::default()),
+            Limits::default(),
+        );
+        let mut connecting = std::boxed::Box::pin(client.connect(
+            "127.0.0.1:4321".parse().unwrap(),
+            "https://example.test/rpc",
+        ));
+        let mut driver = std::boxed::Box::pin(driver);
+        assert!(poll(connecting.as_mut()).is_pending());
+        assert!(poll(driver.as_mut()).is_pending());
+        assert!(
+            sent.get() > 0,
+            "ready sends must progress during a receive flood"
+        );
+        assert!(
+            received.get() > 0,
+            "transmission must leave room for receives"
+        );
+        assert!(
+            received.get() < 128,
+            "the driver must yield after bounded work"
+        );
+    }
+
+    #[test]
+    fn packet_storage_keeps_live_slices_and_reclaims_only_released_storage() {
+        let mut buffer = receive_storage(BytesMut::new());
+        let original = buffer.as_ptr();
+        buffer[..40_000].fill(0x77);
+        let packet = buffer.split_to(40_000).freeze();
+        let second = buffer.split_to(30_000);
+        drop(second);
+        assert!(buffer.capacity() < MAX_DATAGRAM);
+        let mut next = receive_storage(buffer);
+        assert_ne!(
+            next.as_ptr(),
+            original,
+            "a retained packet must keep its storage"
+        );
+        next.fill(0xcc);
+        assert!(packet.iter().all(|b| *b == 0x77));
+        drop(packet);
+
+        let mut buffer = receive_storage(BytesMut::new());
+        let original = buffer.as_ptr();
+        drop(buffer.split_to(40_000));
+        drop(buffer.split_to(30_000));
+        let mut reclaimed = None;
+        let allocations = allocation_counter::measure(|| reclaimed = Some(receive_storage(buffer)));
+        let buffer = reclaimed.unwrap();
+        assert_eq!(
+            allocations.count_total, 0,
+            "released packet storage must be reused"
+        );
+        assert_eq!(buffer.as_ptr(), original);
+        assert_eq!(buffer.len(), RECEIVE_STORAGE);
+        assert!(buffer.iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn quic_alarm_survives_notifications_rearms_earlier_and_still_times_out() {
+        let clock = Rc::new(TimeState::default());
+        let sent = Rc::new(Cell::new(0));
+        let config = super::super::client_config(
+            rustls_quic::RootCertStore::empty(),
+            Arc::new(crate::SystemClock),
+        )
+        .unwrap();
+        let (client, driver) = client(
+            config,
+            "127.0.0.1:1234".parse().unwrap(),
+            Receive,
+            Send(sent.clone()),
+            ManualTime(clock.clone()),
+            Limits::default(),
+        );
+        let mut driver = std::boxed::Box::pin(driver);
+        let mut first = std::boxed::Box::pin(client.connect(
+            "127.0.0.1:4321".parse().unwrap(),
+            "https://example.test/rpc",
+        ));
+        assert!(poll(first.as_mut()).is_pending());
+        assert!(poll(driver.as_mut()).is_pending());
+        let first_deadline = clock.registrations.borrow()[0];
+        assert!(first_deadline > Duration::from_millis(1));
+        for _ in 0..16 {
+            client.owner.notify();
+            assert!(poll(driver.as_mut()).is_pending());
+        }
+        assert_eq!(
+            clock.registrations.borrow().len(),
+            1,
+            "notifications must retain the outstanding alarm"
+        );
+        let before = sent.get();
+        clock.now.set(first_deadline);
+        assert!(poll(driver.as_mut()).is_pending());
+        assert!(
+            sent.get() > before,
+            "PTO must retransmit even after notifications"
+        );
+        assert_eq!(clock.registrations.borrow().len(), 2);
+
+        // A new short-idle connection must preempt the retained longer PTO.
+        let mut urgent = client.clone();
+        let mut transport = q::TransportConfig::default();
+        transport.initial_rtt(Duration::from_micros(100));
+        transport.max_idle_timeout(Some(Duration::from_millis(1).try_into().unwrap()));
+        urgent.config.transport_config(Arc::new(transport));
+        let mut connecting = std::boxed::Box::pin(urgent.connect(
+            "127.0.0.1:4322".parse().unwrap(),
+            "https://example.test/rpc",
+        ));
+        assert!(poll(connecting.as_mut()).is_pending());
+        assert!(poll(driver.as_mut()).is_pending());
+        let urgent_deadline = *clock.registrations.borrow().last().unwrap();
+        assert!(urgent_deadline < first_deadline * 2);
+        let mut timed_out = false;
+        for _ in 0..8 {
+            let next = *clock.registrations.borrow().last().unwrap();
+            clock.now.set(next);
+            assert!(poll(driver.as_mut()).is_pending());
+            if matches!(poll(connecting.as_mut()), Poll::Ready(Err(_))) {
+                timed_out = true;
+                break;
+            }
+        }
+        assert!(
+            timed_out,
+            "the earlier idle deadline must not be delayed by a retained PTO"
+        );
     }
 }

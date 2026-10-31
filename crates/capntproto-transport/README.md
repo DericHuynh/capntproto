@@ -67,6 +67,28 @@ The explicitly driven native HTTP/3 core uses `quinn-proto` and `wtransport-prot
 high-level Tokio-based wtransport endpoint. It supports one authorized session
 per connection and bidirectional RPC streams. It bounds concurrent connections,
 pending protocol streams and header/capsule bytes through `driven::Limits`.
+Custom native UDP readers use `driven::ReceiveBuffer` (`bytes::BytesMut`);
+writers still return `Vec<u8>`. The core splits received packets directly into
+QUIC rather than copying their payloads. It reuses initialized 128 KiB receive
+storage when packet owners release it, allocating another slab if a live packet
+still retains the old one. This doubles the initial receive storage from 64 KiB.
+Monoio preserves the initialized buffer length across short receives.
+
+Epoll/kqueue UDP adapters first try a nonblocking syscall with stack-only
+metadata, avoiding boxed sendmsg/recvmsg metadata for ready packets.
+io_uring retains Monoio's send/receive completion boundaries: synchronous draining
+delayed ACK/application processing and magnified Quinn's linear search through
+tiny unacknowledged write fragments in deep concurrent workloads. A would-block
+result uses Monoio's normal owned completion operation; descriptor blocking
+flags remain unchanged. The endpoint
+retains its outstanding QUIC alarm across packet and application wakeups,
+replacing it when an earlier deadline is required. The driver guarantees send
+progress and yields at its existing cooperative work limit, preserving receive
+batching without letting a continuously ready receive queue starve transmission.
+
+The readiness fast path removes operation metadata without batching UDP
+syscalls. Compare kernel CPU separately
+from userspace instruction counts when selecting a runtime for a deployment.
 Runtime UDP adapters currently send individual datagrams; UDP segmentation and
 receive offload are not implemented. Browser WebTransport remains browser-owned
 and builds for `wasm32-unknown-unknown`.

@@ -633,6 +633,7 @@ dependencies = [
  "heapless",
  "js-sys",
  "monoio",
+ "nix",
  "p256",
  "pin-project-lite",
  "quinn-proto",
@@ -2111,6 +2112,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bd0f8bcde87b1949f95338b547543fcab187bc7e7a5024247e359a5e828ba6a"
 dependencies = [
  "auto-const-array",
+ "bytes",
  "fxhash",
  "io-uring",
  "libc",
