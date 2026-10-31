@@ -6,12 +6,18 @@ creates a session; its echo call is pipelined before awaiting the session reply.
 
 ```sh
 cargo run --manifest-path examples/configurations/Cargo.toml --bin example-credentials -- /tmp/example-pki
-cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-server -- --help
-cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-client -- --help
+# Terminal 1: authenticated TCP server (keep it running).
+cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-server -- \
+  --cert /tmp/example-pki/server.pem --key /tmp/example-pki/server-key.pem
+# Terminal 2: independent client, using portable RPC by default.
+cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-client -- \
+  --ca /tmp/example-pki/ca.pem world
+# Linux/macOS: same service with a monoio client and the legacy protocol driver.
+cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-client -- \
+  --runtime monoio --driver legacy --ca /tmp/example-pki/ca.pem world
 ```
 
-Use the generated server certificate/key and CA with the TLS defaults; CLI help
-lists the exact paths/arguments. `--transport tcp` explicitly selects plaintext.
+The client prints `Hello, world`. Use `--help` on either binary for all options. `--transport tcp` explicitly selects plaintext.
 TLS is TCP with TLS authentication; WebTransport is HTTP/3 over QUIC with TLS.
 The example's transport selector makes configuration combinations easy to test;
 the library exposes these through separate modules.

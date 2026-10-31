@@ -16,10 +16,17 @@ The independent host server and client make the device operation testable:
 
 ```sh
 cargo run --manifest-path examples/configurations/Cargo.toml --bin example-credentials -- /tmp/example-pki
-cargo run --manifest-path examples/embedded-tls/Cargo.toml --features host --bin telemetry-server -- --help
-cargo run --manifest-path examples/embedded-tls/Cargo.toml --features host --bin telemetry-client -- --help
+# Terminal 1: keep the telemetry service running.
+cargo run --manifest-path examples/embedded-tls/Cargo.toml --features host --bin telemetry-server -- \
+  127.0.0.1:4434 /tmp/example-pki/server.pem /tmp/example-pki/server-key.pem
+# Terminal 2: run the device client against that service.
+cargo run --manifest-path examples/embedded-tls/Cargo.toml --features host --bin telemetry-client -- \
+  127.0.0.1:4434 /tmp/example-pki/ca.pem localhost
 cargo test --manifest-path examples/embedded-tls/Cargo.toml --features host
 ```
+
+The client prints `sequence=1 accepted=true`. Reuse an existing development PKI
+directory instead of regenerating it; the credential tool refuses to overwrite it.
 
 The shared integration runner also checks `thumbv7em-none-eabi`, with and without
 Embassy networking. Tests use real TLS with fragmented IO, valid and invalid

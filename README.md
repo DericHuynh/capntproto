@@ -36,11 +36,14 @@ cargo run --manifest-path examples/kv/Cargo.toml --bin client -- get greeting
 cargo run --manifest-path examples/kv/Cargo.toml --bin deep-client
 ```
 
-Choose TCP or QUIC as the transport. TLS secures TCP; QUIC includes TLS 1.3.
+Choose TCP, QUIC or WebTransport. TLS secures TCP; QUIC and WebTransport include TLS 1.3.
 Certificate configuration lives in `rpc::security`, TCP's TLS adapter in
 `rpc::tcp::tls`, and QUIC in `rpc::quic`. The facade re-exports `capnp`,
 `capnp_rpc` and `capnp_futures`. Retain an `rpc::Connection` while using its
-capabilities. See the [example guide](examples/README.md) for TLS and QUIC setup.
+capabilities. For work driven in an application scope, use
+`rpc::ConnectionOptions::client(stream)` and `driver.run(application)`; no spawned
+task is needed. `client_with_clock` accepts a browser monotonic clock. See the
+[example guide](examples/README.md) for complete configurations.
 
 ## What is here
 
@@ -77,7 +80,8 @@ cargo nextest run --locked -p capntproto-dev
 ```
 
 The optional `quic-interop` feature adds an independent s2n-quic test peer.
-Production QUIC remains quiche-only. See the [tooling guide](docs/wiki/Repository-Layout.md#development-subcommands).
+Conventional QUIC uses quiche. WebTransport uses Quinn on native hosts and browser
+APIs on WASM. See the [tooling guide](docs/wiki/Repository-Layout.md#development-subcommands).
 
 ## Build and test
 

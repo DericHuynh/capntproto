@@ -157,3 +157,25 @@ async fn dropping_application_scope_releases_driver_and_io() {
     })
     .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn final_driver_poll_can_complete_the_application_without_repolling_a_finished_driver() {
+    local(async {
+        for protocol in protocol_drivers() {
+            for graceful in [false, true] {
+                let driver = ConnectionOptions::new()
+                    .driver(protocol)
+                    .client(futures::io::Cursor::new(Vec::<u8>::new()))
+                    .unwrap();
+                let application = driver.on_disconnect();
+                let output = if graceful {
+                    driver.run(application).await
+                } else {
+                    driver.run_until(application).await
+                };
+                output.unwrap().unwrap();
+            }
+        }
+    })
+    .await;
+}

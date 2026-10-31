@@ -263,8 +263,10 @@ impl<'a> TwoPartyClient<'a> {
     /// ```
     pub async fn run<F: Future>(mut self, application: F) -> capnp::Result<F::Output> {
         let result = self.drive_until(application).await?;
-        let disconnect = self.get_disconnector();
-        futures::try_join!(disconnect, self)?;
+        if self.system.is_some() {
+            let disconnect = self.get_disconnector();
+            futures::future::try_join(disconnect, self).await?;
+        }
         Ok(result)
     }
 
@@ -281,11 +283,16 @@ impl<'a> TwoPartyClient<'a> {
         futures::pin_mut!(application);
         match futures::future::select(application, self).await {
             futures::future::Either::Left((result, _)) => Ok(result),
-            futures::future::Either::Right((result, _)) => {
+            futures::future::Either::Right((result, application)) => {
                 result?;
-                Err(Error::disconnected(
-                    "RPC connection ended before the application completed".into(),
-                ))
+                // The driver's terminal poll can deliver the final reply or
+                // notify a disconnect observer. Give that application one last
+                // poll, without waiting indefinitely on unrelated work.
+                application.now_or_never().ok_or_else(|| {
+                    Error::disconnected(
+                        "RPC connection ended before the application completed".into(),
+                    )
+                })
             }
         }
     }

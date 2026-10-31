@@ -37,3 +37,7 @@ roots take precedence over the bundled standard schemas, including
 The Rust frontend currently accepts one source prefix and supports the schema
 language described by `capntproto-compiler`. `run()` retains the external C++
 compiler path. Disable the default `native` feature for plugin-only builds.
+
+When your runtime dependency is the root `capntproto` facade, add
+`.capnp_root("::capntproto::capnp")` to the builder. With a dependency named `capnp`,
+the default generated runtime path already matches.

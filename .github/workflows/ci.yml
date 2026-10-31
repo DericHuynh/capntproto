@@ -69,6 +69,8 @@ jobs:
             status=1
           fi
           exit "$status"
+      - name: Check hosted RPC without downstream futures feature unification
+        run: cargo check --locked -p capntproto-rpc
       - name: Test generated views and bounded RPC tables with isolated target features
         run: |
           status=0
