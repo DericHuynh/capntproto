@@ -190,3 +190,8 @@ remain visible as separate measurements. Missing results are shown as unavailabl
 The benchmark defaults to portable; `CAPNTPROTO_BENCH_PORTABLE=0` measures the
 legacy control. The library's default driver remains legacy until migration is complete.
 Fuzzing and coverage graphs remain in the dashboard and workflow artifacts.
+
+The [tested service examples](examples/README.md) include a browser WASI Preview 3
+frontend, embedded TLS telemetry and a Tokio/monoio configuration matrix. Run
+`cargo run --locked -p capntproto-dev -- examples` after installing the
+[integration prerequisites](examples/integration/README.md).

@@ -49,7 +49,12 @@ impl<W: AsyncWriteRent> Write for Writer<W> {
 }
 impl<W: AsyncWriteRent> Close for Writer<W> {
     async fn close(&mut self) -> io::Result<()> {
-        self.0.shutdown().await
+        match self.0.shutdown().await {
+            // TLS output is already flushed. ENOTCONN means the peer reached
+            // the requested terminal state before this final write half-close.
+            Err(error) if error.kind() == io::ErrorKind::NotConnected => Ok(()),
+            other => other,
+        }
     }
 }
 
@@ -516,6 +521,45 @@ pub mod webtransport {
                     eprintln!("io_uring unavailable: {error}")
                 }
                 Err(error) => panic!("io_uring initialization failed: {error}"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    use super::*;
+    struct Socket(io::ErrorKind);
+    impl AsyncWriteRent for Socket {
+        async fn write<T: IoBuf>(&mut self, buffer: T) -> ::monoio::BufResult<usize, T> {
+            (Err(self.0.into()), buffer)
+        }
+        async fn writev<T: ::monoio::buf::IoVecBuf>(
+            &mut self,
+            buffer: T,
+        ) -> ::monoio::BufResult<usize, T> {
+            (Err(self.0.into()), buffer)
+        }
+        async fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+        async fn shutdown(&mut self) -> io::Result<()> {
+            Err(self.0.into())
+        }
+    }
+    #[test]
+    fn completed_half_close_preserves_other_errors() {
+        for kind in [
+            io::ErrorKind::NotConnected,
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::ConnectionReset,
+        ] {
+            let mut writer = Writer(Socket(kind));
+            let result = futures::executor::block_on(writer.close());
+            if kind == io::ErrorKind::NotConnected {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(result.unwrap_err().kind(), kind);
             }
         }
     }

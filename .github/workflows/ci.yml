@@ -142,6 +142,49 @@ jobs:
           cargo check --locked --manifest-path benchmarks/runtimes/Cargo.toml
           cargo fmt --manifest-path benchmarks/runtimes/Cargo.toml -- --check
           cargo fmt --manifest-path examples/webtransport/Cargo.toml -- --check
+  examples:
+    name: Run browser WASI Preview 3, embedded TLS and configuration examples
+    needs: workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: example-services
+          workspaces: |
+            . -> target/dev-tools
+            examples/configurations -> target
+            examples/embedded-tls -> target
+            examples/wasip3 -> target
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: examples/integration/package-lock.json
+      - name: Install cross targets and browser tooling
+        run: |
+          rustup target add wasm32-unknown-unknown thumbv7em-none-eabi --toolchain 1.97.0
+          npm ci --prefix examples/integration
+          npm exec --prefix examples/integration -- playwright install --with-deps chromium
+      - name: Run the local integration entry point
+        env:
+          CARGO_TARGET_DIR: target
+          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
+        run: cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- examples
+      - name: Check example formatting and diagnostics
+        run: |
+          for example in service wasip3 embedded-tls configurations; do
+            cargo fmt --manifest-path "examples/$example/Cargo.toml" -- --check
+          done
+          cargo clippy --locked --manifest-path examples/configurations/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path examples/embedded-tls/Cargo.toml --features host --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path examples/wasip3/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
   platforms:
     name: Build and test (${{ matrix.os }})
     needs: workflows
@@ -309,7 +352,7 @@ jobs:
           if-no-files-found: warn
   report:
     name: Required CI result
-    needs: [workflows, documentation, portability, transports, platforms, cargo, models, fuzz, extended, performance, cleanup]
+    needs: [workflows, documentation, portability, transports, examples, platforms, cargo, models, fuzz, extended, performance, cleanup]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5

@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 pub mod checks;
 pub mod cloud;
+pub mod examples;
 pub mod fuzz;
 #[cfg(feature = "quic-interop")]
 pub mod interop;

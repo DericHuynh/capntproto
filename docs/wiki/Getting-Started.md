@@ -216,3 +216,11 @@ The `capntproto-rustls` package preserves our direct-output record encryption
 backport and the upstream rustls licenses. Configure it through
 `capntproto::rpc::security::rustls`; the official `rustls` crate has distinct config
 types. See the [fork's provenance and API differences](../../vendor/rustls/README.capntproto.md).
+
+## Other runtimes and targets
+
+The root connection conveniences use Tokio. Executor-neutral RPC and transport
+APIs also support externally driven connections, monoio and caller-owned
+embedded TLS. The [configuration service](../../examples/configurations/README.md),
+[browser component](../../examples/wasip3/README.md) and
+[Embassy telemetry client](../../examples/embedded-tls/README.md) show those setups.

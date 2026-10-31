@@ -1,0 +1,32 @@
+[package]
+name = "capntproto-configuration-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+autobins = false
+[workspace]
+[features]
+default = ["webtransport", "monoio"]
+webtransport = ["capntproto/webtransport"]
+monoio = ["capntproto/monoio"]
+[dependencies]
+capntproto = { path = "../..", default-features = false, features = ["tls"] }
+service = { package = "capntproto-example-service", path = "../service" }
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "signal", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+clap = { version = "4", features = ["derive"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
+time = "0.3"
+serde_json = "1"
+[dev-dependencies]
+tempfile = "3"
+[[bin]]
+name = "rpc-server"
+path = "src/bin/server.rs"
+[[bin]]
+name = "rpc-client"
+path = "src/bin/client.rs"
+[[bin]]
+name = "example-credentials"
+path = "src/bin/credentials.rs"

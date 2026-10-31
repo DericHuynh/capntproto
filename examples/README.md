@@ -1,5 +1,12 @@
 # Examples
 
+The [configuration service](configurations/README.md) covers Tokio/monoio and
+legacy/portable RPC over TCP, TLS and WebTransport. The
+[WASI Preview 3 frontend](wasip3/README.md) runs RPC inside a browser component.
+The [embedded TLS telemetry service](embedded-tls/README.md) supports caller-owned
+buffers, TLS clocks and Embassy networking. All share one
+[local and CI integration command](integration/README.md).
+
 [message_basic.rs](message_basic.rs) shows serialization without networking.
 The [key/value application](kv) is a separate Cargo package with a
 [shared schema](kv/key_value.capnp), [server](kv/src/bin/server.rs),

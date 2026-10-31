@@ -17,6 +17,8 @@ enum Command {
     },
     /// Reject tracked build artifacts, merge conflicts and oversized Git blobs.
     CheckRepository,
+    /// Run browser, embedded TLS and runtime configuration example integrations.
+    Examples(dev::examples::Options),
     /// Verify dependency inventories embedded by cargo-auditable.
     CheckAuditable(dev::checks::AuditArgs),
     /// Run nextest with a separate JUnit report. Prefix and selection are separated by --.
@@ -54,6 +56,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "quic-interop")]
         Command::CheckQuicInterop { binary } => dev::interop::run(&binary),
         Command::CheckRepository => dev::checks::repository(&dev::root()),
+        Command::Examples(options) => dev::examples::run(options),
         Command::CheckAuditable(a) => dev::checks::audit(&a),
         Command::Nextest { args } => {
             let code = dev::checks::nextest(&args)?;

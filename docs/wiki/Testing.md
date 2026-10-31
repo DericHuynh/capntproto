@@ -429,3 +429,10 @@ plus a deliberate freed-pointer control that must fail. The pinned inventory
 includes the pooled-segment disjointness/reuse regression and selected-reader regressions,
 including the two owning-cache tests; no test was filtered
 out to accommodate the count change.
+
+## Service example integrations
+
+`cargo run --locked -p capntproto-dev -- examples` runs the same browser, native
+and embedded example suite as the required CI examples job. See
+[the integration guide](../../examples/integration/README.md) for Node, browser
+and cross-target prerequisites and subset options.

@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Greeting service</title>
+<style>body{font:18px system-ui;max-width:42rem;margin:3rem auto;padding:1rem}label{display:block;margin:1rem 0}input{display:block;width:100%;box-sizing:border-box;padding:.5rem}button{padding:.7rem 1rem}output{display:block;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:1.5rem}</style>
+<h1>Greeting service</h1><p>Open a backend session and send a greeting.</p><form>
+<label>Backend URL<input name="url" value="https://127.0.0.1:4433/rpc" required></label>
+<label>Development certificate SHA-256<input name="pin" placeholder="Leave empty for a publicly trusted certificate"></label>
+<label>Prefix<input name="prefix" value="Hello, "></label><label>Message<input name="value" value="world"></label>
+<button disabled>Send greeting</button></form><output aria-live="polite"></output><script type="module" src="./app.js"></script></html>

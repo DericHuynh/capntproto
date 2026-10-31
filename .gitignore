@@ -346,3 +346,6 @@ Desktop.ini
 !/research/reports/portable-performance/2026-10-23-fused-metadata/validation.json
 !/research/reports/portable-performance/2026-10-23-fused-metadata/evidence-index.json
 !/research/reports/portable-performance/2026-10-23-fused-metadata/archive.json
+
+# JavaScript component/browser tooling.
+node_modules

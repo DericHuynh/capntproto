@@ -23,6 +23,7 @@ name = "client"
 required-features = ["native"]
 
 [dependencies]
+service = { package="capntproto-example-service", path="../service" }
 capntproto = { path = "../..", default-features = false, features = ["webtransport"] }
 futures = "0.3"
 
@@ -33,11 +34,6 @@ tokio = { version = "1", features = ["rt", "macros", "net", "time", "signal"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-
-[build-dependencies]
-capnp = { package = "capntproto-core", path = "../../crates/capntproto-core" }
-capnpc = { package = "capntproto-codegen", path = "../../crates/capntproto-codegen" }
-capntproto-compiler = { path = "../../crates/capntproto-compiler" }
 
 [[bin]]
 name = "monoio-client"
