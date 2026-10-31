@@ -108,6 +108,7 @@ pub fn plan(smoke: bool) -> Vec<Cell> {
                     ("dependent", 128, 8),
                     ("pipelined", 128, 8),
                     ("concurrent-32", 256, 16),
+                    ("fanout-128", 64, 4),
                     ("deep-32-concurrent-32", 4, 2),
                     ("callback", 128, 8),
                 ] {

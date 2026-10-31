@@ -61,7 +61,7 @@ def main():
     cpus, cpu_topology = r.physical_cpus()
     campaign = Diagnostic(binaries, output, certs, cpus)
     workloads = [(t, name, [50, 500]) for t, name in [('tls', 'dependent-read'), ('tls', 'pipelined-read'), ('quic', 'pipelined-read')]]
-    workloads += [(t, name, [5, 50]) for t in ['tls', 'quic'] for name in ['concurrent-32', 'deep-32-concurrent-32', 'services-4-deep-16-clients-8']]
+    workloads += [(t, name, [5, 50]) for t in ['tls', 'quic'] for name in ['concurrent-32', 'fanout-128', 'deep-32-concurrent-32', 'services-4-deep-16-clients-8']]
     allocation_workloads = [(t, c['name'], [5, 50]) for t in ['tls', 'quic'] for c in r.catalog()]
     scope = dict(diagnostic=True, allocation_only=args.allocation_only, instruction_only=args.instruction_only, warmup=10, environment_overrides=dict(CAPNTPROTO_BENCH_QUIC_IDLE_MS='120000'), allocation_workloads=[] if args.instruction_only else [dict(transport=t, case=n, points=p) for t,n,p in allocation_workloads], workloads=[dict(transport=t, case=n, points=p) for t,n,p in workloads], cpu_topology=cpu_topology, cpus=cpus,
                  binaries={k: dict(path=str(v), sha256=r.topology.digest(v)) for k, v in binaries.items()},

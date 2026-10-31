@@ -9,7 +9,7 @@ region. Stdout contains the JSON result; RPC diagnostics go to stderr. Validatio
 
 Main CI now compiles this worker and the Rust `runtime-runner` into its audited
 release bundle. The default dedicated `run-latency` campaign and `run-secure`
-campaign execute all **112 runtime × transport × RPC-driver × fixture cells**,
+campaign execute all **128 runtime × transport × RPC-driver × fixture cells**,
 five processes per cell, on one pinned CPU of the dedicated benchmark droplet.
 These are loopback measurements with both peers in one runtime, alongside the
 existing separately defined TLS/QUIC/C++ comparisons.
@@ -23,7 +23,7 @@ Minima are the lowest normalized run totals, not individual-request tails.
 Each native cell retains raw samples, independent per-metric minima, means,
 sample standard deviations and maxima. Reports recompute all statistics and
 validate source, worker, runner and certificate identities before publishing all
-112 rows in the reports README. CPU cycles remain unavailable with an explicit
+128 rows in the reports README. CPU cycles remain unavailable with an explicit
 reason when the kernel denies perf access. IO counter levels stay distinct for
 TLS and WebTransport. Setup, warmup and teardown are excluded from every sample.
 
@@ -60,9 +60,13 @@ Cargo normally uses `benchmarks/runtimes/target` for this isolated package. Set
 | `--runtime` | `tokio` (direct TLS / facade WebTransport), `tokio-driven`, `monoio-epoll`, `monoio-uring` |
 | `--transport` | `tls`, `webtransport` |
 | `--driver` | `legacy`, `portable` |
-| `--case` | `unary`, `large` (100KB), `dependent` (32 awaited capability hops), `pipelined` (32 promise-pipelined hops), `concurrent-32`, `deep-32-concurrent-32`, `callback` |
+| `--case` | `unary`, `large` (100KB), `dependent` (32 awaited capability hops), `pipelined` (32 promise-pipelined hops), `concurrent-32`, `fanout-128` (128 concurrent validated reads), `deep-32-concurrent-32`, `callback` |
 | `--iterations` / `--warmup` | Positive measured operations / unmeasured operations, defaults 32 / 4 |
 | `--certificates` | Directory containing `server.der` and `server-key.der` |
+
+`fanout-128` starts 128 distinct reads concurrently and validates every reply.
+Its native budget is 64 batches with four warmup batches, so each process
+measures 8,192 RPCs. Statistics for concurrent cases are per entire batch.
 
 Every workload verifies returned values, payload size/content and completion.
 The pipelined cases retain all parent promises and check their completion.
@@ -568,3 +572,76 @@ This is an allocation improvement, not a uniform CPU or branch-miss improvement.
 Raw native JSON samples, mean/range summaries and binary SHA-256 metadata: `target/rpc-allocation-optimization/native/`. Instruction profiles and five-run summaries: `target/rpc-allocation-optimization/instructions/`. DHAT profiles in `target/rpc-allocation-optimization/` separately verify allocation ownership and exact counter agreement. These generated artifacts stay out of source control.
 
 Eight candidate DHAT traces (both drivers, four affected cases) match their allocation counters exactly, as do the baseline traces. Native pipeline adapters disappear from the candidate stacks. Remaining owners include immutable reader arenas, capability receipt/binding storage, admission credits/permits and TLS plaintext buffers. The concurrent fixture also allocates 32 FuturesOrdered task nodes; the workload is unchanged.
+
+
+## Fanout-128 profiling (2026-10-31)
+
+The runtime fixture issues 128 independent scalar reads concurrently. The
+workflow fixture separately echoes 1 KiB on each of 128 concurrent calls across
+legacy, portable, upstream Rust, C++, gRPC and WebSocket. Both validate every
+response. The default native runtime matrix now contains 128 cells and 640
+process trials. Full diagnostics include fanout-128 allocation, instruction and
+IO traces.
+
+Local profiles used the same new fixture with the frozen `a5a1f6f` implementation
+and the candidate, in Rust 1.97.0 release/fat-LTO workers, with one codegen unit, overflow checks and one CPU
+affinity. Setup/warmup/shutdown were excluded. Each configuration used five
+native processes (64 measured batches, four warmups), and five Callgrind 3.24.0
+processes (eight measured batches, four warmups, branch simulation enabled).
+Values below use independent per-metric minima; these are local diagnostics.
+Hardware cycles were unavailable; no cycle or latency speedup is claimed.
+
+| Transport / runtime / driver | Allocations per batch, before → after | Ir change | Bc change | Bcm change | Bim change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| tls / tokio / legacy | 1,552.000 → 1,042.000 | -41.86% | -20.10% | -50.96% | -51.05% |
+| tls / tokio / portable | 970.547 → 716.000 | -14.95% | -0.54% | -26.95% | -24.30% |
+| tls / monoio-epoll / legacy | 1,042.000 → 1,042.000 | +0.00% | +0.00% | -3.60% | -15.74% |
+| tls / monoio-epoll / portable | 716.000 → 716.000 | +0.00% | +0.00% | -9.15% | +25.49% |
+| webtransport / tokio / legacy | 1,584.906 → 1,056.656 | -35.36% | -36.76% | -20.79% | -11.27% |
+| webtransport / tokio / portable | 1,000.719 → 730.719 | -10.64% | -10.95% | -13.30% | +23.90% |
+| webtransport / monoio-epoll / legacy | 1,581.438 → 1,581.188 | -0.49% | -1.44% | -2.85% | -17.51% |
+| webtransport / monoio-epoll / portable | 997.297 → 997.047 | +0.26% | +0.12% | -9.02% | +5.04% |
+
+Portable Tokio spread, mean ± sample SD across all five processes:
+
+| Transport / metric per batch | Frozen mean ± SD | Final mean ± SD |
+| --- | ---: | ---: |
+| tls / blocks | 970.550 ± 0.007 | 716.000 ± 0.000 |
+| tls / Ir | 5,033,739.700 ± 46,625.278 | 4,210,383.000 ± 0.000 |
+| tls / Bc | 839,197.750 ± 9,346.382 | 818,004.750 ± 0.000 |
+| tls / Bcm | 20,217.800 ± 65.141 | 14,712.625 ± 0.000 |
+| tls / Bim | 3,339.925 ± 1.653 | 2,527.750 ± 0.000 |
+| webtransport / blocks | 1,000.719 ± 0.000 | 730.719 ± 0.000 |
+| webtransport / Ir | 4,946,238.650 ± 3,713.299 | 4,420,912.100 ± 8,067.173 |
+| webtransport / Bc | 916,110.525 ± 645.731 | 815,579.525 ± 372.514 |
+| webtransport / Bcm | 20,868.275 ± 63.709 | 18,138.550 ± 89.204 |
+| webtransport / Bim | 2,492.125 ± 1.926 | 3,089.575 ± 5.647 |
+
+The direct Tokio TLS fixture had used `tokio-util::Compat`, which forwards
+scalar writes only. `tokio::FuturesIo` preserves scatter/gather writes without
+adding buffering or tasks. Portable ciphertext writes fell from 256 to two per
+batch; legacy fell from 512 to two. Differential DHAT profiles (16 minus eight
+measured batches) confirmed that portable rustls plaintext allocations fell
+from 256 to two per batch. This corrects the direct Tokio fixture to match the
+TCP facade's existing batching semantics; these gains are not an RPC engine
+change. The facade now uses the same direct adapter for its TLS writer.
+
+Native WebTransport also had a scalar vectored-write fallback. It now coalesces
+small fragments into a reusable buffer bounded at 64 KiB. Large contiguous
+slices pass through directly. A first version copied large payloads and added
+about 4% instructions; the direct path reduced that to under 0.3% in large-case
+spot checks. Partial writes, empty slices, payload order across 300,003 bytes,
+write-after-close rejection and reverse traffic after half-close have a real
+WebTransport regression test.
+
+These changes do not improve every branch-miss metric: the table includes
+portable Bim regressions. Monoio's TLS instruction and executed branch counts
+are unchanged. Portable still executes about 51% more instructions than legacy
+on batched TLS paths. Message-pool scans remain a major contributor: separate
+shared/input search hints increased instructions about 0.5% and were discarded.
+
+Correctness checks passed all 128 optimized runtime cells, 33 secure RPC tests,
+19 facade tests, the adapter's Pending/partial/vectored/error regressions, and an
+actual C++ fanout-128 workflow (640 measured plus 512 warmup RPCs). Local raw
+samples, profiles, binary identities and per-metric min/mean/SD/max summaries
+are retained under `target/fanout-128/`, outside source control.

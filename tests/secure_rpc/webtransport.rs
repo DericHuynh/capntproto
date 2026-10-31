@@ -365,3 +365,86 @@ async fn independent_webtransport_peer_interoperates_in_both_roles_and_rpc_drive
         .await;
     }
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn vectored_webtransport_writes_preserve_large_partial_batches_and_half_close() {
+    use futures::{AsyncReadExt, AsyncWriteExt};
+    use std::io::{ErrorKind, IoSlice};
+    local(async {
+        let pki = Pki::new();
+        let identity = pki.identity("127.0.0.1", false, false);
+        let server = webtransport::Server::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            identity.certificates,
+            identity.private_key,
+            Arc::new(SystemClock),
+        )
+        .unwrap();
+        let client = webtransport::Client::new(
+            webtransport::tls::RootCertStore {
+                roots: pki.roots().roots,
+            },
+            Arc::new(SystemClock),
+        )
+        .unwrap();
+        let url = format!(
+            "https://127.0.0.1:{}/rpc",
+            server.local_addr().unwrap().port()
+        );
+        let serving = async {
+            let mut session = server.accept().await.unwrap().accept().await.unwrap();
+            let mut stream = session.accept_bi().await.unwrap();
+            let mut bytes = Vec::new();
+            stream.read_to_end(&mut bytes).await.unwrap();
+            assert_eq!(&bytes[..3], b"rpc");
+            assert_eq!(&bytes[3..7], b"head");
+            assert_eq!(&bytes[7..bytes.len() - 4], &vec![0x5a; 300_003]);
+            assert_eq!(&bytes[bytes.len() - 4..], b"tail");
+            stream.write_all(b"ack").await.unwrap();
+            stream.close().await.unwrap();
+        };
+        let calling = async {
+            let mut session = client.connect(&url).await.unwrap();
+            let mut stream = session.open_bi().await.unwrap();
+            assert_eq!(stream.write_vectored(&[]).await.unwrap(), 0);
+            assert_eq!(
+                stream
+                    .write_vectored(&[IoSlice::new(b"rpc")])
+                    .await
+                    .unwrap(),
+                3
+            );
+            let payload = vec![0x5a; 300_003];
+            let mut buffers = [
+                IoSlice::new(&[]),
+                IoSlice::new(b"head"),
+                IoSlice::new(&payload),
+                IoSlice::new(b"tail"),
+                IoSlice::new(&[]),
+            ];
+            let mut remaining = &mut buffers[..];
+            let mut writes = 0;
+            while remaining.iter().any(|buffer| !buffer.is_empty()) {
+                let written = stream.write_vectored(remaining).await.unwrap();
+                assert!(written > 0 && written <= 128 * 1024);
+                IoSlice::advance_slices(&mut remaining, written);
+                writes += 1;
+            }
+            assert!(writes >= 3);
+            stream.close().await.unwrap();
+            assert_eq!(
+                stream
+                    .write_vectored(&[IoSlice::new(b"late"), IoSlice::new(b"write")])
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                ErrorKind::BrokenPipe
+            );
+            let mut reply = Vec::new();
+            stream.read_to_end(&mut reply).await.unwrap();
+            assert_eq!(reply, b"ack");
+        };
+        futures::join!(serving, calling);
+    })
+    .await;
+}

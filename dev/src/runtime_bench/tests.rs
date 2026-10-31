@@ -9,11 +9,15 @@ fn trials(smoke: bool, repetitions: usize) -> Vec<Trial> {
 #[test]
 fn matrix_covers_every_runtime_transport_driver_and_fixture() {
     let plan = plan(false);
-    assert_eq!(plan.len(), 112);
-    assert_eq!(plan.iter().collect::<BTreeSet<_>>().len(), 112);
+    assert_eq!(plan.len(), 128);
+    assert_eq!(plan.iter().collect::<BTreeSet<_>>().len(), 128);
     for runtime in RUNTIMES {
-        assert_eq!(plan.iter().filter(|c| c.runtime == runtime).count(), 28);
+        assert_eq!(plan.iter().filter(|c| c.runtime == runtime).count(), 32);
     }
+    assert_eq!(
+        plan.iter().filter(|c| c.case == "fanout-128").count(),
+        RUNTIMES.len() * TRANSPORTS.len() * DRIVERS.len()
+    );
     assert!(plan.iter().any(|c| c.runtime == "monoio-uring"
         && c.transport == "webtransport"
         && c.driver == "portable"
@@ -71,7 +75,7 @@ fn smoke_marks_unsupported_uring_without_falling_back_or_becoming_native() {
     let mut trials = trials(true, 1);
     trials.retain(|t| t.cell.runtime != "monoio-uring");
     let unavailable = BTreeMap::from([("monoio-uring".into(), "EPERM".into())]);
-    assert_eq!(aggregate(&trials, true, 1, &unavailable).unwrap().len(), 84);
+    assert_eq!(aggregate(&trials, true, 1, &unavailable).unwrap().len(), 96);
     assert!(aggregate(&trials, false, 5, &unavailable).is_err());
 }
 pub(crate) fn fixture(directory: &Path) -> Value {
@@ -106,7 +110,7 @@ pub(crate) fn fixture(directory: &Path) -> Value {
 fn publication_recomputes_every_cell_and_rejects_stale_sources_or_forged_summaries() {
     let temp = tempfile::tempdir().unwrap();
     let manifest = fixture(temp.path());
-    assert_eq!(verified(temp.path(), &manifest).unwrap().rows.len(), 112);
+    assert_eq!(verified(temp.path(), &manifest).unwrap().rows.len(), 128);
     let base = crate::read_json(temp.path().join("summary.json")).unwrap();
     for (pointer, value) in [
         ("/mode", json!("smoke")),
@@ -128,7 +132,7 @@ fn publication_recomputes_every_cell_and_rejects_stale_sources_or_forged_summari
     }
 }
 #[test]
-fn report_export_includes_all_112_runtime_combinations() {
+fn report_export_includes_all_128_runtime_combinations() {
     let temp = tempfile::tempdir().unwrap();
     let manifest = fixture(&temp.path().join("benchmark/secure/secure/runtimes"));
     let path = temp.path().join("manifest.json");
@@ -142,7 +146,7 @@ fn report_export_includes_all_112_runtime_combinations() {
     assert_eq!(publication["status"], "passed");
     assert_eq!(
         publication["tables"][0]["rows"].as_array().unwrap().len(),
-        112
+        128
     );
     crate::reports::data::validate_publication(&publication).unwrap();
 }

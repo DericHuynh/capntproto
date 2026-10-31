@@ -514,7 +514,7 @@ pub fn bundle(r: &mut Runner) -> Result<()> {
         "upstream_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/rpc-upstream/Cargo.lock"))?),
         "runtime_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/runtimes/Cargo.lock"))?),
         "runtime_manifest_sha256":v::sha256(fs::read(root().join("benchmarks/runtimes/Cargo.toml"))?),
-        "runtime_profile":"release; native 112-cell TLS/WebTransport matrix; five repetitions",
+        "runtime_profile":"release; native 128-cell TLS/WebTransport matrix; five repetitions",
         "instructions_lockfile_sha256":v::sha256(fs::read(root().join("benchmarks/instructions/Cargo.lock"))?),
         "gungraun_version":"0.20.0",
         "cpp_revision":"0de72d8d8cec6b69edaa29de51d3bd490341f9c2", "binaries":hashes});

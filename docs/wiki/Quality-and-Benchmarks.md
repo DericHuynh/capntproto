@@ -5621,9 +5621,9 @@ and remote measurements separately.
 ## Hosted runtime combinations
 
 Main's default dedicated benchmark campaign also measures the
-[112-cell runtime matrix](../../benchmarks/runtimes/README.md): direct Tokio,
+[128-cell runtime matrix](../../benchmarks/runtimes/README.md): direct Tokio,
 driven Tokio, monoio epoll and monoio io_uring; TLS and WebTransport; legacy and
-portable RPC; and all seven unary/dependent/pipelined/concurrent/deep/callback/
+portable RPC; and all eight unary/dependent/pipelined/concurrent/fanout/deep/callback/
 large-message fixtures. Every combination runs five times. Public reports retain
 independent minima, means and spread for CPU, allocations, IO and elapsed time.
 

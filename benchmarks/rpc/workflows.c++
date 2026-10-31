@@ -89,9 +89,10 @@ kj::Promise<void> read(Cell::Client client, uint64_t version, const std::vector<
 }
 kj::Promise<void> operation(Workflows::Client& client, Cell::Client& state, Callback::Client& sink, uint64_t& callbacks,
                           const std::string& name, uint64_t sequence, const std::vector<capnp::byte>& payload) {
-  if (name == "fanout-32") {
-    auto calls = kj::heapArrayBuilder<kj::Promise<void>>(32);
-    for (uint64_t i = 0; i < 32; ++i) calls.add(echo(client, sequence * 32 + i, payload));
+  if (name == "fanout-32" || name == "fanout-128") {
+    auto width = name == "fanout-128" ? 128 : 32;
+    auto calls = kj::heapArrayBuilder<kj::Promise<void>>(width);
+    for (uint64_t i = 0; i < width; ++i) calls.add(echo(client, sequence * width + i, payload));
     return kj::joinPromises(calls.finish());
   }
   if (name == "dependent-read" || name == "pipelined-read") {
@@ -146,7 +147,7 @@ int runWorkflows(int argc, char** argv) {
   else if (name == "bulk-256k") bytes = 262144;
   else if (name == "bulk-1m") bytes = 1048576;
   else if (name == "bulk-4m") bytes = 4194304;
-  else KJ_REQUIRE(name == "unary-1k" || name == "fanout-32" || name == "dependent-read" || name == "pipelined-read" || name == "write-read");
+  else KJ_REQUIRE(name == "unary-1k" || name == "fanout-32" || name == "fanout-128" || name == "dependent-read" || name == "pipelined-read" || name == "write-read");
   auto warmup = std::stoull(argv[4]);
   auto iterations = std::stoull(argv[5]);
   KJ_REQUIRE(warmup <= 100000 && iterations > 0 && iterations <= 100000);
@@ -173,8 +174,8 @@ int runWorkflows(int argc, char** argv) {
     if (sequence >= warmup) samples.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - before).count());
   }
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
-  auto width = name == "fanout-32" ? 32 : 1;
-  auto rpcs = width == 32 ? 32 : (name == "dependent-read" || name == "pipelined-read" || name == "write-read" || name == "callback" ? 2 : 1);
+  auto width = name == "fanout-128" ? 128 : (name == "fanout-32" ? 32 : 1);
+  auto rpcs = width > 1 ? width : (name == "dependent-read" || name == "pipelined-read" || name == "write-read" || name == "callback" ? 2 : 1);
   std::cout << "{\"security\":" << BenchmarkTransport::metadata() << ",\"workflow_version\":3,\"implementation\":\"capnp-cpp\",\"case\":{\"name\":\"" << name << "\",\"payload_bytes\":" << bytes << ",\"width\":" << width << ",\"rpcs_per_iteration\":" << rpcs << "},\"warmup\":" << warmup << ",\"iterations\":" << iterations << ",\"elapsed_ns\":" << elapsed << ",\"latency_ns\":[";
   for (size_t n = 0; n < samples.size(); ++n) { if (n) std::cout << ','; std::cout << samples[n]; }
   std::cout << "]}" << std::endl;

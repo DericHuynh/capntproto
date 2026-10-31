@@ -217,8 +217,9 @@ async fn perform(client: &service::Client, case: &str) -> capnp::Result<()> {
         }
         "dependent" => dependent(client.clone(), 32).await?,
         "pipelined" => pipelined(client.clone(), 32).await?,
-        "concurrent-32" => {
-            futures::future::try_join_all((0..32).map(|n| read(client, n, 0))).await?;
+        "concurrent-32" | "fanout-128" => {
+            let width = if case == "fanout-128" { 128 } else { 32 };
+            futures::future::try_join_all((0..width).map(|n| read(client, n, 0))).await?;
         }
         "deep-32-concurrent-32" => {
             futures::future::try_join_all((0..32).map(|_| pipelined(client.clone(), 32))).await?;

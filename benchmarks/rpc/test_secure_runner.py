@@ -92,8 +92,8 @@ class SecurityEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, '1 profile trials failed'):
                 profiler.main()
             scope = json.loads((output / 'scope.json').read_text())
-            self.assertEqual(len(calls), 400)
-            self.assertEqual(len(scope['trials']), 399)
+            self.assertEqual(len(calls), 428)
+            self.assertEqual(len(scope['trials']), 427)
             measured = {(trial['transport'], trial['case']) for trial in scope['trials'] if trial['mode'] == 'dhat'}
             self.assertEqual(measured, {(t, c['name']) for t in ['tls', 'quic'] for c in runner.catalog()})
             self.assertEqual(len(scope['failures']), 1)

@@ -6,11 +6,12 @@
 //! Inspect the authenticated peer's certificates before choosing a bootstrap
 //! when different identities should receive different capabilities.
 
-use super::super::io::{deadline, TokioIo};
+use super::super::io::deadline;
 use super::super::{security::rustls, AcceptOptions, ALPN};
 use capnp::{capability::Client, message::ReaderOptions};
 use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty};
 pub use capntproto_transport::rustls::TlsStream;
+use capntproto_transport::tokio::FuturesIo;
 use futures::{stream::FuturesUnordered, StreamExt};
 use rustls::pki_types::ServerName;
 use std::{io, net::SocketAddr, sync::Arc, time::Duration};
@@ -74,7 +75,7 @@ pub fn network(stream: TlsStream<TcpStream>, side: Side, options: ReaderOptions)
     let (read, write) = tokio::io::split(stream);
     let mut network = twoparty::VatNetwork::new_with_send_buffer(
         read.compat(),
-        TokioIo::new(write),
+        FuturesIo::new(write),
         side,
         options,
         move |_| window,

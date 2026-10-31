@@ -32,6 +32,7 @@ monotonic deadlines; `TlsClock` supplies Unix time for certificate validation.
 | `rustls::TlsStream` | Its Tokio read/write polls, as before | Native allocating rustls; direct readiness path retained |
 | `rustls::RecordLayer` | Caller supplies ciphertext input/output and drives progress | Native allocating rustls; no socket, task or executor |
 | `rustls::{client, server}` | Caller polls the returned driver alongside `Stream` | Owned completion buffers; no runtime or background task selected |
+| `tokio::FuturesIo::new(stream)` | Futures IO adapter preserving vectored writes | Use with direct Tokio TLS streams and futures-based RPC |
 | `tokio::tls::{client_driven, server_driven}` | Caller owns the driver | Tokio socket adapter for the same completion engine |
 | `monoio::tls::{client, server}` | Caller owns the driver | Monoio io_uring or epoll; no Tokio runtime |
 | `webtransport::driven::{client, server}` | Caller owns UDP completion halves, timer and driver | Native QUIC/HTTP3 core; std/alloc, no Tokio dependency |

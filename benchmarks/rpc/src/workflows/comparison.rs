@@ -63,35 +63,38 @@ impl Client {
         payload: &[u8],
     ) -> Result<()> {
         match case {
-            "fanout-32" => match self {
-                Self::Grpc(client) => {
-                    try_join_all((0..32).map(|i| {
-                        let mut rpc = client.rpc.clone();
-                        async move {
-                            let sequence = sequence * 32 + i;
-                            let reply = rpc
-                                .echo(request(Kind::Echo, sequence, payload))
-                                .await?
-                                .into_inner();
-                            validate_echo(reply, sequence, payload)
+            "fanout-32" | "fanout-128" => {
+                let width = if case == "fanout-128" { 128 } else { 32 };
+                match self {
+                    Self::Grpc(client) => {
+                        try_join_all((0..width).map(|i| {
+                            let mut rpc = client.rpc.clone();
+                            async move {
+                                let sequence = sequence * width + i;
+                                let reply = rpc
+                                    .echo(request(Kind::Echo, sequence, payload))
+                                    .await?
+                                    .into_inner();
+                                validate_echo(reply, sequence, payload)
+                            }
+                        }))
+                        .await?;
+                    }
+                    Self::Websocket(client) => {
+                        for i in 0..width {
+                            client
+                                .feed(request(Kind::Echo, sequence * width + i, payload))
+                                .await?;
                         }
-                    }))
-                    .await?;
-                }
-                Self::Websocket(client) => {
-                    for i in 0..32 {
-                        client
-                            .feed(request(Kind::Echo, sequence * 32 + i, payload))
-                            .await?;
-                    }
-                    client.flush().await?;
-                    // This application server replies in arrival order. Every
-                    // sequence is checked; duplicate/lost replies cannot pass.
-                    for i in 0..32 {
-                        validate_echo(client.receive().await?, sequence * 32 + i, payload)?;
+                        client.flush().await?;
+                        // This application server replies in arrival order. Every
+                        // sequence is checked; duplicate/lost replies cannot pass.
+                        for i in 0..width {
+                            validate_echo(client.receive().await?, sequence * width + i, payload)?;
+                        }
                     }
                 }
-            },
+            }
             "dependent-read" => {
                 let opened = self.open(payload, sequence, true).await?;
                 self.read(opened, sequence, 0, payload).await?;

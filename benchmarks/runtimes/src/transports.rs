@@ -1,5 +1,6 @@
 use crate::{measure, Args, Result};
 use capntproto_transport::rustls;
+use capntproto_transport::tokio::FuturesIo;
 use futures::{AsyncRead, AsyncWrite};
 use std::{
     io,
@@ -7,7 +8,6 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::io::{AsyncRead as TokioRead, AsyncWrite as TokioWrite, ReadBuf};
-use tokio_util::compat::TokioAsyncReadCompatExt;
 
 struct Socket<S>(S);
 impl<S: TokioRead + Unpin> TokioRead for Socket<S> {
@@ -176,14 +176,14 @@ async fn tls_tokio(args: &Args) -> Result<measure::Sample> {
         let (socket, _) = listener.accept().await?;
         socket.set_nodelay(true)?;
         let tls = rustls::TlsStream::accept(Socket(socket), config).await?;
-        crate::serve(tls.compat(), args).await
+        crate::serve(FuturesIo::new(tls), args).await
     };
     let calling = async {
         let socket = tokio::net::TcpStream::connect(address).await?;
         socket.set_nodelay(true)?;
         let tls =
             rustls::TlsStream::connect(Socket(socket), client, "localhost".try_into()?).await?;
-        crate::call(tls.compat(), args).await
+        crate::call(FuturesIo::new(tls), args).await
     };
     let (server, client) = futures::join!(serving, calling);
     server?;

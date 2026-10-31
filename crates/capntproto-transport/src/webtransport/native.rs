@@ -176,6 +176,7 @@ impl Session {
         Ok(Stream {
             recv: recv.compat(),
             send: send.compat_write(),
+            write_batch: Vec::new(),
             _session: self.0.clone(),
             closing: None,
             close_done: false,
@@ -187,6 +188,7 @@ impl Session {
         Ok(Stream {
             recv: recv.compat(),
             send: send.compat_write(),
+            write_batch: Vec::new(),
             _session: self.0.clone(),
             closing: None,
             close_done: false,
@@ -205,6 +207,7 @@ impl Session {
 pub struct Stream {
     recv: Compat<wtransport::RecvStream>,
     send: Compat<wtransport::SendStream>,
+    write_batch: Vec<u8>,
     _session: Arc<Owner>,
     closing: Option<Pin<Box<dyn Future<Output = io::Result<()>> + Send>>>,
     close_done: bool,
@@ -232,6 +235,48 @@ impl AsyncWrite for Stream {
             )));
         }
         Pin::new(&mut self.send).poll_write(cx, bytes)
+    }
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buffers: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        if this.close_done || this.closing.is_some() || this.close_failed {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "WebTransport write half closed",
+            )));
+        }
+        if let [buffer] = buffers {
+            return Pin::new(&mut this.send).poll_write(cx, buffer);
+        }
+        // Quinn copies each scalar write into owned send storage. Gather a
+        // bounded prefix so one RPC batch does not allocate once per fragment.
+        // Pending/partial writes consume only the reported prefix; callers
+        // retain all original slices and retry their unconsumed suffix.
+        const MAX_BATCH_BYTES: usize = 64 * 1024;
+        if buffers.iter().any(|buffer| buffer.len() >= MAX_BATCH_BYTES) {
+            // Large contiguous payloads already amortize QUIC send overhead.
+            // Preserve the borrowed path instead of copying them into scratch.
+            let first = buffers.iter().find(|buffer| !buffer.is_empty()).unwrap();
+            return Pin::new(&mut this.send)
+                .poll_write(cx, &first[..first.len().min(MAX_BATCH_BYTES)]);
+        }
+        let length = buffers.iter().fold(0usize, |sum, buffer| {
+            sum.saturating_add(buffer.len()).min(MAX_BATCH_BYTES)
+        });
+        this.write_batch.clear();
+        this.write_batch.reserve_exact(length);
+        for buffer in buffers {
+            let remaining = length - this.write_batch.len();
+            if remaining == 0 {
+                break;
+            }
+            this.write_batch
+                .extend_from_slice(&buffer[..buffer.len().min(remaining)]);
+        }
+        Pin::new(&mut this.send).poll_write(cx, &this.write_batch)
     }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.send).poll_flush(cx)

@@ -139,8 +139,9 @@ async fn operation(
     payload: &[u8],
 ) -> Result<()> {
     match case {
-        "fanout-32" => {
-            try_join_all((0..32).map(|i| echo(client, sequence * 32 + i, payload))).await?;
+        "fanout-32" | "fanout-128" => {
+            let width = if case == "fanout-128" { 128 } else { 32 };
+            try_join_all((0..width).map(|i| echo(client, sequence * width + i, payload))).await?;
         }
         "dependent-read" | "pipelined-read" => {
             let mut request = client.open_request();

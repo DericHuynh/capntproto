@@ -1,5 +1,7 @@
 //! Tokio convenience types and explicit completion-IO adapters. The existing
 //! direct poll TLS stream remains available without a relay or extra task.
+
+mod futures_io;
 #[cfg(any(feature = "rustls", feature = "webtransport-core"))]
 use crate::io::Completion;
 use crate::io::Timer;
@@ -11,6 +13,7 @@ use crate::{
 pub use ::tokio as runtime;
 #[cfg(feature = "rustls")]
 use ::tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+pub use futures_io::FuturesIo;
 #[cfg(any(feature = "rustls", feature = "webtransport-core"))]
 use std::io;
 use std::time::Duration;

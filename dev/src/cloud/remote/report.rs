@@ -344,7 +344,7 @@ pub(super) mod tests {
                 let target = portable_target(&measured);
                 assert_eq!(target["all_workflows_pass"], passes);
                 let cells = target["rows"].as_array().unwrap();
-                assert_eq!(cells.len(), 12);
+                assert_eq!(cells.len(), cases().len());
                 for cell in cells {
                     assert_eq!(cell["reference"], reference);
                     assert_eq!(cell["reference_min_ns"], 100);
@@ -392,7 +392,7 @@ pub(super) mod tests {
     fn full_matrix_and_bad_evidence() {
         let valid = trials();
         let rows = matrix(&valid).unwrap();
-        assert_eq!(rows.len(), 70);
+        assert_eq!(rows.len(), 76);
         assert_eq!(rows[0]["mean_ns"], 10.0);
         assert_eq!(rows[0]["repetition_mean_stddev_ns"], 0.0);
         let mut varied = valid.clone();
@@ -432,7 +432,7 @@ pub(super) mod tests {
             .iter()
             .filter(|r| r["implementation"] == "capnp-rust")
             .collect();
-        assert_eq!(upstream.len(), 12);
+        assert_eq!(upstream.len(), cases().len());
         assert!(upstream.iter().all(|r| r["min_ratio_to_cpp"] == 1.5));
         for (name, bytes) in [
             ("bulk-256k", 262144),
@@ -547,10 +547,10 @@ pub(super) mod tests {
         crate::write_json(output.join("client/workflow-trials.json"), &trials()).unwrap();
         generate(&output, &bundle).unwrap();
         let summary = crate::read_json(output.join("summary.json")).unwrap();
-        assert_eq!(summary["rows"].as_array().unwrap().len(), 70);
+        assert_eq!(summary["rows"].as_array().unwrap().len(), 76);
         assert_eq!(
             summary["portable_target"]["rows"].as_array().unwrap().len(),
-            12
+            cases().len()
         );
         assert_eq!(summary["portable_target"]["all_workflows_pass"], true);
         let svg = fs::read_to_string(output.join("minimum-ratios.svg")).unwrap();
@@ -560,7 +560,7 @@ pub(super) mod tests {
                 .descendants()
                 .filter(|node| node.has_tag_name("rect"))
                 .count(),
-            71
+            summary["rows"].as_array().unwrap().len() + 1
         );
         let markdown = fs::read_to_string(output.join("README.md")).unwrap();
         for case in cases() {

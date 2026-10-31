@@ -3,6 +3,7 @@
   {"name":"unary-small","payload_bytes":64,"width":1,"rpcs_per_iteration":1},
   {"name":"unary-1k","payload_bytes":1024,"width":1,"rpcs_per_iteration":1},
   {"name":"fanout-32","payload_bytes":1024,"width":32,"rpcs_per_iteration":32},
+  {"name":"fanout-128","payload_bytes":1024,"width":128,"rpcs_per_iteration":128},
   {"name":"dependent-read","payload_bytes":1024,"width":1,"rpcs_per_iteration":2},
   {"name":"pipelined-read","payload_bytes":1024,"width":1,"rpcs_per_iteration":2},
   {"name":"write-read","payload_bytes":1024,"width":1,"rpcs_per_iteration":2},
