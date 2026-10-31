@@ -5813,6 +5813,29 @@
       "date": "2026-10-31T05:05:02Z",
       "run_id": 41171141966,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/41171141966"
+    },
+    {
+      "attempt": 1,
+      "commit": "a5a1f6fb03d68c2ee7997650178ea15731c38b4b",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "coverage",
+        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "a5a1f6fb03d68c2ee7997650178ea15731c38b4b",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 41243644598
+        },
+        "source_id": "4c8be6eba8ff3e7530f06978be34a0bc244f886c615e029f6720e87ffc3fe6e2",
+        "status": "failed",
+        "tests": null
+      },
+      "date": "2026-10-31T21:27:06Z",
+      "run_id": 41243644598,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41243644598"
     }
   ],
   "format": 1,
