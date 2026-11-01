@@ -1,6 +1,8 @@
 // Copyright (c) 2026 ReProto contributors. Licensed under the MIT License.
 
 //! Buffered stream framing with explicit short-lived message ownership.
+#[cfg(test)]
+mod shared_recycling_tests;
 use core::{
     pin::Pin,
     task::{ready, Context, Poll},
@@ -468,6 +470,7 @@ pub struct BufferedRead<R> {
     options: ReaderOptions,
     buffer: ReceiveBuffer,
     shared_borrowed: bool,
+    shared_spare: Option<AlignedBuffer>,
     begin: usize,
     end: usize,
     frame: Option<Frame>,
@@ -497,6 +500,8 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
     /// reusable spill allocation, bounded as documented by `finish_borrowed_frame`.
     /// Owning reads lazily cache one released spill of at most 8 MiB. Live
     /// readers never share that allocation with a subsequent receive.
+    /// Immutable byte sharing retains at most one additional allocation of up
+    /// to 8 MiB, reusable only after all external strong and weak owners are gone.
     pub fn with_buffer_size(input: R, options: ReaderOptions, words: usize) -> Result<Self> {
         if words < MIN_BUFFER_WORDS
             || words
@@ -513,6 +518,7 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
             options,
             buffer: ReceiveBuffer::Words(Arc::new(Word::allocate_zeroed_vec(words))),
             shared_borrowed: false,
+            shared_spare: None,
             begin: 0,
             end: 0,
             frame: None,
@@ -881,11 +887,30 @@ impl<R: AsyncRead + Unpin> BufferedRead<R> {
         if !self.borrowed && self.streaming.is_none() && self.shared_borrowed {
             self.shared_borrowed = false;
             if !self.buffer.exclusive() {
-                let mut replacement = AlignedBuffer::new(self.buffer.len());
+                // The receive loop may probe for a successor before the caller
+                // has dropped the just-delivered response. Alternate buffers
+                // once their readers release them instead of allocating on
+                // every such probe. A retained owner is never made mutable.
+                let words = self.buffer.len();
+                let mut replacement = self
+                    .shared_spare
+                    .take()
+                    .filter(|spare| spare.len() >= words && spare.exclusive())
+                    .unwrap_or_else(|| AlignedBuffer::new(words));
                 let remaining = self.end - self.begin;
                 replacement.bytes_mut()[..remaining]
                     .copy_from_slice(&self.buffer.bytes()[self.begin..self.end]);
-                self.buffer = ReceiveBuffer::Bytes(replacement);
+                if let ReceiveBuffer::Bytes(retired) =
+                    core::mem::replace(&mut self.buffer, ReceiveBuffer::Bytes(replacement))
+                {
+                    // Weak observers must not keep a retired allocation alive,
+                    // and a burst must not pin an unbounded receive buffer.
+                    if retired.allocation.capacity() <= MAX_CACHED_SPILL_WORDS * 8
+                        && Arc::weak_count(&retired.allocation) == 0
+                    {
+                        self.shared_spare = Some(retired);
+                    }
+                }
                 self.begin = 0;
                 self.end = remaining;
             }
