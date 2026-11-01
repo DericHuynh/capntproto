@@ -2223,6 +2223,38 @@
     },
     {
       "attempt": 1,
+      "commit": "b0669ca5b74099de7d53d0d9654d6297da3d98f8",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "cargo",
+        "note": "Lane failed or did not complete; inspect the linked CI run.",
+        "origin": {
+          "attempt": 1,
+          "commit": "b0669ca5b74099de7d53d0d9654d6297da3d98f8",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 41253250028
+        },
+        "source_id": "898273c08e870045da085183f485ee4e8ad7de7eba4665f867cb2e9949023c0f",
+        "status": "failed",
+        "tests": {
+          "command_passed": false,
+          "complete": false,
+          "errors": 0,
+          "failed": 2,
+          "passed": 2721,
+          "skipped": 17,
+          "suites": 209,
+          "total": 2740
+        }
+      },
+      "date": "2026-10-31T23:36:34Z",
+      "run_id": 41253250028,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41253250028"
+    },
+    {
+      "attempt": 1,
       "commit": "aed664dafb585f00a949761a6f10745a7d8ba1a5",
       "conclusion": "cancelled",
       "data": {
@@ -5072,6 +5104,29 @@
     },
     {
       "attempt": 1,
+      "commit": "b0669ca5b74099de7d53d0d9654d6297da3d98f8",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "b0669ca5b74099de7d53d0d9654d6297da3d98f8",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 41253250028
+        },
+        "source_id": "898273c08e870045da085183f485ee4e8ad7de7eba4665f867cb2e9949023c0f",
+        "status": "passed",
+        "tests": null
+      },
+      "date": "2026-10-31T23:36:34Z",
+      "run_id": 41253250028,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41253250028"
+    },
+    {
+      "attempt": 1,
       "commit": "aed664dafb585f00a949761a6f10745a7d8ba1a5",
       "conclusion": "cancelled",
       "data": {
@@ -7093,6 +7148,38 @@
       "date": "2026-10-31T23:13:47Z",
       "run_id": 41251634339,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/41251634339"
+    },
+    {
+      "attempt": 1,
+      "commit": "b0669ca5b74099de7d53d0d9654d6297da3d98f8",
+      "conclusion": "failure",
+      "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "b0669ca5b74099de7d53d0d9654d6297da3d98f8",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 41253250028
+        },
+        "source_id": "898273c08e870045da085183f485ee4e8ad7de7eba4665f867cb2e9949023c0f",
+        "status": "passed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "passed": 233,
+          "skipped": 7,
+          "suites": 88,
+          "total": 240
+        }
+      },
+      "date": "2026-10-31T23:36:34Z",
+      "run_id": 41253250028,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41253250028"
     },
     {
       "attempt": 1,
