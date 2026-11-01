@@ -469,23 +469,11 @@ fn core_feature_profiles() {
 }
 
 fn optimized_checks(filters: &[&str], name: &str) {
-    let mut args = vec![
-        "nextest",
-        "run",
-        "--locked",
-        "--release",
-        "--test",
-        "storage",
-        "--test",
-        "durable_bulk",
-        "--test",
-        "persistence",
-        "--test",
-        "field_api_rpc",
-        "--test",
-        "native",
-        "--",
-    ];
+    let mut args = vec!["nextest", "run", "--locked", "--release"];
+    for target in v::OPTIMIZED_RUNTIME_TESTS {
+        args.extend(["--test", target]);
+    }
+    args.push("--");
     args.extend(filters);
     cargo(&args, name);
 }

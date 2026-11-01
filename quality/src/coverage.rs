@@ -373,6 +373,27 @@ fn service_examples(build: &Path, profiles: &Path) -> Command {
     command.env("CARGO_TARGET_DIR", build.join("service-examples"));
     command
 }
+fn optimized_runtime_build() -> Command {
+    let mut command = v::command("cargo");
+    // Match the native child invocation made by tooling::optimized_runtime,
+    // including its default target directory and pinned project toolchain.
+    for key in [
+        "RUSTFLAGS",
+        "CARGO_ENCODED_RUSTFLAGS",
+        "RUSTDOCFLAGS",
+        "LLVM_PROFILE_FILE",
+        "CARGO_TARGET_DIR",
+        "RUSTUP_TOOLCHAIN",
+        "CAPNTPROTO_COVERAGE_CHILDREN_NATIVE",
+    ] {
+        command.env_remove(key);
+    }
+    command.args(["nextest", "run", "--locked", "--release", "--no-run"]);
+    for target in v::OPTIMIZED_RUNTIME_TESTS {
+        command.args(["--test", target]);
+    }
+    command
+}
 fn reference_compiler(configured: Option<String>) -> String {
     configured.unwrap_or_else(|| "clang++".into())
 }
@@ -517,6 +538,10 @@ pub fn collect(r: &mut Runner) -> Result<()> {
         "service-examples-build",
         &mut service_examples(&build, &profiles),
     )?;
+    // Cold release/LTO compilation can exceed the nested test driver's ten
+    // minute deadline. Build its exact native graph before concurrent tests;
+    // the test still verifies freshness and runs every release regression.
+    r.run("optimized-runtime-build", &mut optimized_runtime_build())?;
     let tests = r.nextest(
         "workspace-tests",
         instrumented(
@@ -835,6 +860,29 @@ mod tests {
             reference_compiler(Some("/tools/custom-clang".into())),
             "/tools/custom-clang"
         );
+    }
+    #[test]
+    fn optimized_warmup_builds_the_native_release_test_graph_without_running_it() {
+        let command = optimized_runtime_build();
+        let args: Vec<_> = command.get_args().map(|a| a.to_str().unwrap()).collect();
+        assert!(args.starts_with(&["nextest", "run", "--locked", "--release", "--no-run"]));
+        let targets: Vec<_> = args
+            .windows(2)
+            .filter_map(|pair| (pair[0] == "--test").then_some(pair[1]))
+            .collect();
+        assert_eq!(targets, v::OPTIMIZED_RUNTIME_TESTS);
+        let environment: BTreeMap<_, _> = command.get_envs().collect();
+        for key in [
+            "RUSTFLAGS",
+            "CARGO_ENCODED_RUSTFLAGS",
+            "RUSTDOCFLAGS",
+            "LLVM_PROFILE_FILE",
+            "CARGO_TARGET_DIR",
+            "RUSTUP_TOOLCHAIN",
+            "CAPNTPROTO_COVERAGE_CHILDREN_NATIVE",
+        ] {
+            assert_eq!(environment.get(std::ffi::OsStr::new(key)), Some(&None));
+        }
     }
     #[test]
     fn scope_excludes_dependencies_generated_files_and_path_escapes() {

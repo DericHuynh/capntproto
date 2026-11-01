@@ -23,6 +23,15 @@ mod measurement;
 pub mod nextest;
 pub mod regressions;
 
+/// Release-profile regression targets shared by the test driver and CI warmup.
+pub const OPTIMIZED_RUNTIME_TESTS: &[&str] = &[
+    "storage",
+    "durable_bulk",
+    "persistence",
+    "field_api_rpc",
+    "native",
+];
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Deserialize, Serialize)]
