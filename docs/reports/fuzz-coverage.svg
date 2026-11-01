@@ -6,38 +6,38 @@
 <text x="35.00" y="78.00" font-size="14" fill="#64748b">Engine-local counters, not LLVM source coverage. Do not compare counts across engines or builds.</text>
 <text x="35.00" y="122.00" font-size="20" fill="#1e293b">libFuzzer + ASan</text>
 <text x="35.00" y="153.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_framing</text>
-<rect x="600.00" y="138.00" width="47.38" height="23" fill="#0868d4"/>
-<text x="653.38" y="155.00" font-size="13" fill="#334155">617</text>
+<rect x="600.00" y="138.00" width="47.47" height="23" fill="#0868d4"/>
+<text x="653.47" y="155.00" font-size="13" fill="#334155">617</text>
 <text x="35.00" y="195.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_pointers</text>
-<rect x="600.00" y="180.00" width="101.14" height="23" fill="#00ac7b"/>
-<text x="707.14" y="197.00" font-size="13" fill="#334155">1317</text>
+<rect x="600.00" y="180.00" width="101.32" height="23" fill="#00ac7b"/>
+<text x="707.32" y="197.00" font-size="13" fill="#334155">1317</text>
 <text x="35.00" y="237.00" font-size="13" fill="#334155">libFuzzer &#x2F; capnp_schema</text>
-<rect x="600.00" y="222.00" width="259.34" height="23" fill="#ef4444"/>
-<text x="865.34" y="239.00" font-size="13" fill="#334155">3377</text>
+<rect x="600.00" y="222.00" width="259.80" height="23" fill="#ef4444"/>
+<text x="865.80" y="239.00" font-size="13" fill="#334155">3377</text>
 <text x="35.00" y="279.00" font-size="13" fill="#334155">libFuzzer &#x2F; native_packet</text>
-<rect x="600.00" y="264.00" width="428.21" height="23" fill="#e89200"/>
-<text x="1034.21" y="281.00" font-size="13" fill="#334155">5576</text>
+<rect x="600.00" y="264.00" width="428.75" height="23" fill="#e89200"/>
+<text x="1034.75" y="281.00" font-size="13" fill="#334155">5573</text>
 <text x="35.00" y="321.00" font-size="13" fill="#334155">libFuzzer &#x2F; native_stream</text>
-<rect x="600.00" y="306.00" width="430.90" height="23" fill="#8b5cf6"/>
-<text x="1036.90" y="323.00" font-size="13" fill="#334155">5611</text>
+<rect x="600.00" y="306.00" width="431.52" height="23" fill="#8b5cf6"/>
+<text x="1037.52" y="323.00" font-size="13" fill="#334155">5609</text>
 <text x="35.00" y="363.00" font-size="13" fill="#334155">libFuzzer &#x2F; rpc_lifecycle</text>
 <rect x="600.00" y="348.00" width="600.00" height="23" fill="#0868d4"/>
-<text x="1206.00" y="365.00" font-size="13" fill="#334155">7813</text>
+<text x="1206.00" y="365.00" font-size="13" fill="#334155">7799</text>
 <text x="600.00" y="410.00" font-size="13" fill="#64748b">Feedback entries</text>
 <text x="35.00" y="474.00" font-size="20" fill="#1e293b">AFL++ + RPC IJON</text>
 <text x="35.00" y="505.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_framing</text>
-<rect x="600.00" y="490.00" width="53.14" height="23" fill="#0868d4"/>
-<text x="659.14" y="507.00" font-size="13" fill="#334155">1047</text>
+<rect x="600.00" y="490.00" width="52.06" height="23" fill="#0868d4"/>
+<text x="658.06" y="507.00" font-size="13" fill="#334155">1047</text>
 <text x="35.00" y="547.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_pointers</text>
-<rect x="600.00" y="532.00" width="88.72" height="23" fill="#00ac7b"/>
-<text x="694.72" y="549.00" font-size="13" fill="#334155">1748</text>
+<rect x="600.00" y="532.00" width="86.92" height="23" fill="#00ac7b"/>
+<text x="692.92" y="549.00" font-size="13" fill="#334155">1748</text>
 <text x="35.00" y="589.00" font-size="13" fill="#334155">AFL++ &#x2F; capnp_schema</text>
-<rect x="600.00" y="574.00" width="260.41" height="23" fill="#ef4444"/>
-<text x="866.41" y="591.00" font-size="13" fill="#334155">5131</text>
+<rect x="600.00" y="574.00" width="255.15" height="23" fill="#ef4444"/>
+<text x="861.15" y="591.00" font-size="13" fill="#334155">5131</text>
 <text x="35.00" y="631.00" font-size="13" fill="#334155">AFL++ &#x2F; rpc_lifecycle</text>
 <rect x="600.00" y="616.00" width="600.00" height="23" fill="#e89200"/>
-<text x="1206.00" y="633.00" font-size="13" fill="#334155">11822</text>
+<text x="1206.00" y="633.00" font-size="13" fill="#334155">12066</text>
 <text x="600.00" y="678.00" font-size="13" fill="#64748b">Feedback entries</text>
-<text x="35.00" y="742.00" font-size="13" fill="#64748b">Measured 2026-11-01T06:46:49Z | commit ecc180599caf</text>
+<text x="35.00" y="742.00" font-size="13" fill="#64748b">Measured 2026-11-01T16:41:43Z | commit af2eeeb4818f</text>
 </g>
 </svg>
