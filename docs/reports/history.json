@@ -3305,6 +3305,734 @@
       "date": "2026-11-01T05:00:37Z",
       "run_id": 41275232417,
       "url": "https://github.com/DericHuynh/capntproto/actions/runs/41275232417"
+    },
+    {
+      "attempt": 1,
+      "commit": "ecc180599cafc6844201befed0f5dba3c0eed66b",
+      "conclusion": "success",
+      "data": {
+        "charts": [
+          {
+            "coverage": true,
+            "name": "coverage-lines",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 96.14181438998958
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 96.14181438998958
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 91.42499251150505
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 91.42499251150505
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 89.8838004101162
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 89.8838004101162
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 84.78129037361246
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 84.8169191919192
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 91.81102362204724
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 91.81102362204724
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 97.1172455943771
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 97.1172455943771
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 79.87737482012888
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 79.87841755125024
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 68.52084789191707
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 68.52084789191707
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 86.97173187502513
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 86.97173187502513
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM lines: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-regions",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 95.51427849380845
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 95.51427849380845
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 91.48940900526354
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 91.48940900526354
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 86.88921651221567
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 86.88921651221567
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 84.97054097482592
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 84.99545478851398
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 87.6919140225179
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 87.6919140225179
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 96.31960109224742
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 96.31960109224742
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 78.77798975800783
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 78.77870698435012
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 66.7203178834595
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 66.7203178834595
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 84.77500642838775
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 84.77500642838775
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM regions: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-functions",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 91.94915254237289
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 91.94915254237289
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 86.92771680015821
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 86.92771680015821
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 82.84132841328413
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 82.84132841328413
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 90.70688604509445
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 90.72384428223845
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 91.12426035502959
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 91.12426035502959
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 94.79015918958032
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 94.79015918958032
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 79.66215086134805
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 79.66215086134805
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 68.78787878787878
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 68.78787878787878
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 84.43093549476528
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 84.43093549476528
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM functions: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          },
+          {
+            "coverage": true,
+            "name": "coverage-branches",
+            "note": "Gray: reviewed baseline. Blue: current run. N/A: no mapped counters; never treated as 0% or 100%.",
+            "panels": [
+              {
+                "bars": [
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "async framing / baseline",
+                    "value": 91.94139194139194
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "async framing / current",
+                    "value": 91.94139194139194
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "capability rpc / baseline",
+                    "value": 76.36500250459176
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "capability rpc / current",
+                    "value": 76.36500250459176
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "optional compatibility / baseline",
+                    "value": 73.45013477088949
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "optional compatibility / current",
+                    "value": 73.45013477088949
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "runtime / baseline",
+                    "value": 73.96514161220044
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "runtime / current",
+                    "value": 73.96514161220044
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "rust codegen / baseline",
+                    "value": 87.04268292682927
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "rust codegen / current",
+                    "value": 87.04268292682927
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "schema compiler / baseline",
+                    "value": 83.28290468986384
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "schema compiler / current",
+                    "value": 83.28290468986384
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tests and verification / baseline",
+                    "value": 58.15337152930807
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tests and verification / current",
+                    "value": 58.17540766857647
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "tools fuzz examples benchmarks / baseline",
+                    "value": 62.41299303944316
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "tools fuzz examples benchmarks / current",
+                    "value": 62.41299303944316
+                  },
+                  {
+                    "color": [
+                      148,
+                      163,
+                      184
+                    ],
+                    "label": "wire runtime / baseline",
+                    "value": 79.02760609806346
+                  },
+                  {
+                    "color": [
+                      0,
+                      114,
+                      178
+                    ],
+                    "label": "wire runtime / current",
+                    "value": 79.02760609806346
+                  }
+                ],
+                "title": "Source groups (different groups cover different code)"
+              }
+            ],
+            "title": "LLVM branches: current versus reviewed baseline",
+            "unit": "Coverage (%) - higher is better"
+          }
+        ],
+        "format": 1,
+        "kind": "coverage",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "ecc180599cafc6844201befed0f5dba3c0eed66b",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 41282184216
+        },
+        "source_id": "e5a9ee178df510f40ecf841cca8187342993baeaadcf199c907d338cec6ce2f1",
+        "status": "passed",
+        "tests": null
+      },
+      "date": "2026-11-01T06:46:49Z",
+      "run_id": 41282184216,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41282184216"
     }
   ],
   "format": 1,
