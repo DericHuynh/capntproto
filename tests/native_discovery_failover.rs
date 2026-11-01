@@ -101,10 +101,10 @@ async fn echo(cap: &harness::Client, value: u32) {
     );
 }
 fn options() -> DiscoveryOptions {
-    DiscoveryOptions {
-        attempt_timeout: Duration::from_millis(100),
-        timeout: Duration::from_millis(500),
-    }
+    // These fixtures test authority selection and route loss, not deadline
+    // precision. Use production budgets so instrumented RPC dispatch cannot
+    // turn an authoritative response into failover after only 100 ms.
+    DiscoveryOptions::default()
 }
 fn publish(
     directory: &Directory,
@@ -133,7 +133,7 @@ fn publish(
 async fn lost_control_route_fails_over_then_native_rpc_survives_all_directory_routes() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(8), async {
+            tokio::time::timeout(Duration::from_secs(30), async {
                 for named in [false, true] {
                     let caller = Rc::new(Identity::generate());
                     let host = Rc::new(Identity::generate());
@@ -201,7 +201,7 @@ async fn lost_control_route_fails_over_then_native_rpc_survives_all_directory_ro
 async fn authoritative_absence_and_provisioning_failure_do_not_consult_another_reader() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::time::timeout(Duration::from_secs(15), async {
                 let caller = Rc::new(Identity::generate());
                 let host = Rc::new(Identity::generate());
                 let listener = Listener::bind(local(), host.clone(), Limits::default())
