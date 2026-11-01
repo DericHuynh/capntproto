@@ -794,7 +794,7 @@ impl<VatId: 'static> ConnectionState<VatId> {
                             );
                             QuestionRef::fulfill_result(
                                 &reference,
-                                Ok(Response::redirected(Box::new(empty))),
+                                Ok(Response::redirected(Rc::new(empty))),
                             );
                         }
                         return_::TakeFromOtherQuestion(id) => {

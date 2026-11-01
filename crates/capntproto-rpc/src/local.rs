@@ -35,7 +35,7 @@ use futures::TryFutureExt;
 
 use std::any::{Any, TypeId};
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
@@ -46,23 +46,16 @@ mod allocation_tests;
 #[cfg(test)]
 mod owned_results_tests;
 
-pub trait ResultsDoneHook {
-    fn add_ref(&self) -> Box<dyn ResultsDoneHook>;
-    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>>;
-}
-
-impl Clone for Box<dyn ResultsDoneHook> {
-    fn clone(&self) -> Self {
-        self.add_ref()
-    }
-}
+// Results and pipelines retain the same immutable response owner, as in
+// C++ LocalCallContext/LocalPipeline. Cloning ownership never boxes a hook.
+pub(crate) type SharedResults = Rc<dyn ResponseHook>;
 
 pub(crate) struct Response {
-    results: Box<dyn ResultsDoneHook>,
+    results: SharedResults,
 }
 
 impl Response {
-    pub(crate) fn new(results: Box<dyn ResultsDoneHook>) -> Self {
+    pub(crate) fn new(results: SharedResults) -> Self {
         Self { results }
     }
 }
@@ -90,19 +83,19 @@ impl ParamsHook for Params {
 
 pub(crate) struct Results {
     context: Option<Rc<dyn std::any::Any>>,
-    retained_results: OnceCell<Rc<RefCell<Option<Box<dyn ResultsDoneHook>>>>>,
+    retained_results: OnceCell<Rc<RefCell<Option<SharedResults>>>>,
     only_pipeline: bool,
     is_streaming: bool,
     message: Option<message::Builder<message::HeapAllocator>>,
     response: Option<Rc<dyn ResponseHook>>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
-    results_done_fulfiller: Option<oneshot::Sender<Box<dyn ResultsDoneHook>>>,
+    results_done_fulfiller: Option<oneshot::Sender<SharedResults>>,
     pipeline_sender: Option<crate::queued::PipelineInnerSender>,
 }
 
 impl Results {
     fn new(
-        fulfiller: oneshot::Sender<Box<dyn ResultsDoneHook>>,
+        fulfiller: oneshot::Sender<SharedResults>,
         pipeline_sender: crate::queued::PipelineInnerSender,
     ) -> Self {
         Self {
@@ -125,12 +118,15 @@ impl Drop for Results {
             return;
         };
         let cap_table = ::std::mem::take(&mut self.cap_table);
-        let result: Box<dyn ResultsDoneHook> = match self.response.take() {
-            Some(response) => Box::new(SharedResponse {
-                response,
-                context: self.context.take(),
-            }),
-            None => Box::new(
+        let result: SharedResults = match self.response.take() {
+            Some(response) => match self.context.take() {
+                Some(context) => Rc::new(SharedResponse {
+                    response,
+                    _context: context,
+                }),
+                None => response,
+            },
+            None => Rc::new(
                 ResultsDone::new(self.message.take().unwrap_or_default(), cap_table)
                     .with_context(self.context.take()),
             ),
@@ -140,7 +136,7 @@ impl Drop for Results {
             .get()
             .filter(|r| Rc::strong_count(r) > 1)
         {
-            *retained.borrow_mut() = Some(result.add_ref());
+            *retained.borrow_mut() = Some(result.clone());
         }
         let _ = fulfiller.send(result);
     }
@@ -206,8 +202,8 @@ impl ResultsHook for Results {
         root2.imbue_mut(&mut cap_table2);
         root2.set_as(root.into_reader())?;
         let hook =
-            Box::new(ResultsDone::new(message2, cap_table2).with_context(self.context.clone()))
-                as Box<dyn ResultsDoneHook>;
+            Rc::new(ResultsDone::new(message2, cap_table2).with_context(self.context.clone()))
+                as SharedResults;
         self.set_pipeline_from(Box::new(Pipeline::new(hook)))
     }
 
@@ -263,7 +259,9 @@ impl ResultsHook for Results {
         }
         let completion = Promise::from_future(async move {
             let response = promise.await?;
-            self.get()?.set_as(response.get()?)?;
+            // C++ LocalCallContext adopts the tail response rather than
+            // copying its payload into a second result message.
+            self.set_response(Rc::from(response.hook))?;
             Ok(())
         });
         (completion, pipeline.hook)
@@ -286,68 +284,42 @@ pub(crate) fn result_allocator(size_hint: Option<capnp::MessageSize>) -> message
     allocator.first_segment_words((payload_words + 1) as u32)
 }
 
-struct ResultsDoneInner {
-    _context: Option<Rc<dyn std::any::Any>>,
-    message: ::capnp::message::Builder<::capnp::message::HeapAllocator>,
-    cap_table: Vec<Option<Box<dyn ClientHook>>>,
-}
-
 struct SharedResponse {
     response: Rc<dyn ResponseHook>,
-    context: Option<Rc<dyn Any>>,
+    _context: Rc<dyn Any>,
 }
-impl ResultsDoneHook for SharedResponse {
-    fn add_ref(&self) -> Box<dyn ResultsDoneHook> {
-        Box::new(Self {
-            response: self.response.clone(),
-            context: self.context.clone(),
-        })
-    }
+impl ResponseHook for SharedResponse {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
         self.response.get()
     }
 }
 
 pub(crate) struct ResultsDone {
-    inner: Rc<ResultsDoneInner>,
+    _context: Option<Rc<dyn Any>>,
+    message: message::Builder<message::HeapAllocator>,
+    cap_table: Vec<Option<Box<dyn ClientHook>>>,
 }
-
 impl ResultsDone {
     pub(crate) fn new(
         message: message::Builder<message::HeapAllocator>,
         cap_table: Vec<Option<Box<dyn ClientHook>>>,
     ) -> Self {
         Self {
-            inner: Rc::new(ResultsDoneInner {
-                message,
-                cap_table,
-                _context: None,
-            }),
+            message,
+            cap_table,
+            _context: None,
         }
     }
-    pub(crate) fn with_context(mut self, context: Option<Rc<dyn std::any::Any>>) -> Self {
-        Rc::get_mut(&mut self.inner)
-            .expect("unpublished results")
-            ._context = context;
+    pub(crate) fn with_context(mut self, context: Option<Rc<dyn Any>>) -> Self {
+        self._context = context;
         self
-    }
-}
-
-impl ResultsDoneHook for ResultsDone {
-    fn add_ref(&self) -> Box<dyn ResultsDoneHook> {
-        Box::new(Self {
-            inner: self.inner.clone(),
-        })
-    }
-    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
-        let mut result: any_pointer::Reader = self.inner.message.get_root_as_reader()?;
-        result.imbue(&self.inner.cap_table);
-        Ok(result)
     }
 }
 impl ResponseHook for ResultsDone {
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        ResultsDoneHook::get(self)
+        let mut result: any_pointer::Reader = self.message.get_root_as_reader()?;
+        result.imbue(&self.cap_table);
+        Ok(result)
     }
 }
 
@@ -436,8 +408,7 @@ impl RequestHook for Request {
             (sender, Some(pipeline))
         };
 
-        let (results_done_fulfiller, results_done_promise) =
-            oneshot::channel::<Box<dyn ResultsDoneHook>>();
+        let (results_done_fulfiller, results_done_promise) = oneshot::channel::<SharedResults>();
         let results_done_promise = results_done_promise.map_err(crate::canceled_to_error);
         let mut results = Results::new(results_done_fulfiller, pipeline_sender.weak_clone());
         results.context = context;
@@ -464,9 +435,9 @@ impl RequestHook for Request {
         let mut pipeline = pipeline.expect("enabled pipeline");
         let p = futures::future::try_join(promise, results_done_promise).and_then(
             move |((), results_done_hook)| {
-                pipeline_sender
-                    .complete(Box::new(Pipeline::new(results_done_hook.add_ref()))
-                        as Box<dyn PipelineHook>);
+                pipeline_sender.complete(
+                    Box::new(Pipeline::new(results_done_hook.clone())) as Box<dyn PipelineHook>
+                );
                 Promise::ok((
                     capability::Response::new(Box::new(Response::new(results_done_hook))),
                     (),
@@ -501,45 +472,27 @@ impl RequestHook for Request {
     }
 }
 
-struct PipelineInner {
-    results: Box<dyn ResultsDoneHook>,
-}
-
+#[derive(Clone)]
 pub(crate) struct Pipeline {
-    inner: Rc<RefCell<PipelineInner>>,
+    results: SharedResults,
 }
-
 impl Pipeline {
-    pub(crate) fn new(results: Box<dyn ResultsDoneHook>) -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(PipelineInner { results })),
-        }
+    pub(crate) fn new(results: SharedResults) -> Self {
+        Self { results }
     }
 }
-
-impl Clone for Pipeline {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
 impl PipelineHook for Pipeline {
     fn add_ref(&self) -> Box<dyn PipelineHook> {
         Box::new(self.clone())
     }
     fn get_pipelined_cap(&self, ops: &[PipelineOp]) -> Box<dyn ClientHook> {
         match self
-            .inner
-            .borrow_mut()
             .results
             .get()
-            .unwrap()
-            .get_pipelined_cap(ops)
+            .and_then(|results| results.get_pipelined_cap(ops))
         {
-            Ok(v) => v,
-            Err(e) => Box::new(crate::broken::Client::new(e, true, 0)) as Box<dyn ClientHook>,
+            Ok(client) => client,
+            Err(error) => Box::new(crate::broken::Client::new(error, true, 0)),
         }
     }
 }
@@ -583,6 +536,7 @@ impl<S: capability::Server + Clone + 'static> RegisteredState for LocalState<S> 
     }
 }
 struct LocalRegistration {
+    kind: TypeId,
     state: Weak<dyn RegisteredState>,
     revocable: bool,
 }
@@ -591,10 +545,65 @@ impl LocalRegistration {
         self.state.upgrade().is_some_and(|state| state.is_live())
     }
 }
+// Most servers have one generated interface view. Keep that registration
+// directly in the pointer table instead of allocating and hashing another map.
+// Additional views must still participate in canonicalization and revocation.
+struct LocalViews {
+    first: LocalRegistration,
+    others: Vec<LocalRegistration>,
+}
+impl LocalViews {
+    fn get(&self, kind: &TypeId) -> Option<&LocalRegistration> {
+        if self.first.kind == *kind {
+            Some(&self.first)
+        } else {
+            self.others.iter().find(|view| view.kind == *kind)
+        }
+    }
+    fn conflicts(&self, revocable: bool) -> bool {
+        ((revocable || self.first.revocable) && self.first.is_live())
+            || self
+                .others
+                .iter()
+                .any(|view| (revocable || view.revocable) && view.is_live())
+    }
+    fn insert(&mut self, registration: LocalRegistration) {
+        if self.first.kind == registration.kind {
+            self.first = registration;
+        } else if let Some(old) = self
+            .others
+            .iter_mut()
+            .find(|view| view.kind == registration.kind)
+        {
+            *old = registration;
+        } else {
+            self.others.push(registration);
+        }
+    }
+    // A replaced registration must not be removed by the former owner's Drop.
+    // Return true only when the pointer's last registration can be retired.
+    fn remove_dead(&mut self, kind: TypeId) -> bool {
+        if self.first.kind == kind {
+            if self.first.state.strong_count() == 0 {
+                match self.others.pop() {
+                    Some(next) => self.first = next,
+                    None => return true,
+                }
+            }
+        } else if let Some(index) = self
+            .others
+            .iter()
+            .position(|view| view.kind == kind && view.state.strong_count() == 0)
+        {
+            self.others.swap_remove(index);
+        }
+        false
+    }
+}
 thread_local! {
     // Weak entries do not keep application servers alive. Different generated
     // interface views of a Rust server have distinct dispatch implementations.
-    static LOCAL_CLIENTS: RefCell<HashMap<usize, HashMap<TypeId, LocalRegistration>>> = RefCell::default();
+    static LOCAL_CLIENTS: RefCell<HashMap<usize, LocalViews>> = RefCell::default();
 }
 
 struct ClientState<S>
@@ -626,16 +635,11 @@ impl<S: capability::Server + Clone> Drop for ClientState<S> {
         if let Some(key) = self.registration {
             let _ = LOCAL_CLIENTS.try_with(|clients| {
                 if let Ok(mut clients) = clients.try_borrow_mut() {
-                    if let Some(views) = clients.get_mut(&key.1) {
-                        if views
-                            .get(&key.0)
-                            .is_some_and(|entry| entry.state.strong_count() == 0)
-                        {
-                            views.remove(&key.0);
-                        }
-                        if views.is_empty() {
-                            clients.remove(&key.1);
-                        }
+                    if clients
+                        .get_mut(&key.1)
+                        .is_some_and(|views| views.remove_dead(key.0))
+                    {
+                        clients.remove(&key.1);
                     }
                 }
             });
@@ -1004,9 +1008,7 @@ where
             match clients.get(&key.1) {
                 Some(views) => (
                     views.get(&key.0).and_then(|entry| entry.state.upgrade()),
-                    views
-                        .values()
-                        .any(|entry| (revocable || entry.revocable) && entry.is_live()),
+                    views.conflicts(revocable),
                 ),
                 None => (None, false),
             }
@@ -1030,13 +1032,20 @@ where
         self.state.borrow_mut().registration = Some(key);
         let erased: Rc<dyn RegisteredState> = self.state.clone();
         LOCAL_CLIENTS.with(|clients| {
-            clients.borrow_mut().entry(key.1).or_default().insert(
-                key.0,
-                LocalRegistration {
-                    state: Rc::downgrade(&erased),
-                    revocable,
-                },
-            )
+            let registration = LocalRegistration {
+                kind: key.0,
+                state: Rc::downgrade(&erased),
+                revocable,
+            };
+            match clients.borrow_mut().entry(key.1) {
+                Entry::Occupied(mut entry) => entry.get_mut().insert(registration),
+                Entry::Vacant(entry) => {
+                    entry.insert(LocalViews {
+                        first: registration,
+                        others: Vec::new(),
+                    });
+                }
+            }
         });
         drop(erased);
 

@@ -52,7 +52,7 @@ impl<T: Owned> PipelineBuilder<T> {
         T::Pipeline: FromTypelessPipeline,
     {
         FromTypelessPipeline::new(any_pointer::Pipeline::new(Box::new(
-            crate::local::Pipeline::new(Box::new(crate::local::ResultsDone::new(
+            crate::local::Pipeline::new(std::rc::Rc::new(crate::local::ResultsDone::new(
                 self.message,
                 self.caps,
             ))),

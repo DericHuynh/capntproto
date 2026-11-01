@@ -28,29 +28,60 @@ budgets must match when comparing frozen binaries.
 qualified performance result. The worker no longer accepts driver, transport or
 runtime selectors. Historical multi-implementation results remain archival data.
 
-## Local instruction comparison
+## C++ ownership comparison and local profiles
 
-Frozen main `af2eeeb` versus the legacy-only build, Rust 1.97.0, fat LTO,
-one codegen unit, release overflow checks, Valgrind 3.24.0. The same certificates,
-fixtures and measured-region markers were used on both binaries. Five fresh
-processes per cell; 16 measured iterations after eight warmups (two measured
-iterations for the deep concurrent case). Counts include both peers. This is
-instruction simulation and allocation evidence, not a network latency claim.
+The RPC implementation follows these paths in the pinned C++ reference:
 
-| Case | Ir minimum | Ir mean ± SD | Ir change | Bcm change | Bim change | Allocations | Allocated bytes |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| unary | 42,961.00 | 42,961.19 ± 0.23 | -7.96% | -8.62% | -21.49% | 7 | 744 |
-| large | 1,706,671.88 | 1,706,812.38 ± 79.38 | -0.25% | -10.40% | -12.79% | 18 | 201,048 |
-| dependent | 1,907,816.12 | 1,907,853.11 ± 41.77 | -6.43% | -2.68% | -19.64% | 1,189 | 93,840 |
-| pipelined | 1,411,390.12 | 1,412,167.24 ± 785.03 | -2.06% | +0.89% | -18.33% | 1,466 | 183,112 |
-| concurrent-32 | 569,556.31 | 569,557.40 ± 0.84 | -3.12% | -3.80% | -33.60% | 206 | 36,864 |
-| fanout-128 | 2,716,461.94 | 2,716,476.09 ± 30.91 | -2.49% | +1.55% | -26.90% | 1,042 | 436,480 |
-| deep-32-concurrent-32 | 53,894,232.00 | 53,911,940.80 ± 10,171.94 | -1.59% | +5.56% | -19.42% | 52,213 | 8,783,408 |
-| callback | 105,739.81 | 105,740.49 ± 0.62 | -7.45% | -8.51% | -23.29% | 39 | 3,612 |
+- `capability.c++`, `LocalCallContext` / `LocalPipeline`: share one immutable
+  response owner instead of cloning boxed results hooks and retaining a second
+  mutable pipeline owner.
+- `capability.c++`, `LocalClient`: its server keeps a direct hook. The Rust
+  registry now keeps the first generated interface view inline, removing the
+  inner TypeId hash table. Extra views retain canonicalization and revocation
+  checks, including replacement while an older owner is still alive.
+- `capability.c++`, `LocalCallContext::directTailCall`: adopt the tail response
+  instead of copying its payload. The 64 KiB regression checks pointer identity
+  and less than 1 KiB of allocation during completion. Adoption without extra
+  lifetime context reuses the supplied response owner without allocation.
+- `kj/async.c++`, `TaskSet`: track actual tasks. Empty Rust task sets no longer
+  install a never-completing sentinel, and can accept work after becoming empty.
 
-Changes compare independent minima. Allocation minima are unchanged in all eight
-fixtures. Conditional branch misses rose in pipelined, fanout and deep concurrent
-work; indirect misses and instruction counts fell throughout. The separate TLS
-first-write regression verifies zero allocations for a single effective iovec;
-the workload table measures warmed connections. CI retains the full raw traces
-and statistics in its `legacy-tokio-profiles` artifact.
+Before/after: the frozen legacy-only worker and the simplified implementation,
+Rust 1.97.0, fat LTO, one codegen unit, release overflow checks, Valgrind 3.24.0.
+The same certificates and fixtures were used. Each cell has five fresh processes,
+16 measured iterations after eight warmups (two measured iterations for the deep
+concurrent case). Counts include both peers and exclude setup and shutdown.
+Concurrent cases report a complete batch, not one leaf call.
+
+| Case | Allocations before → after | Bytes before → after | Ir mean ± sample SD | Ir change | Bcm change | Bim change |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| unary | 7 → 7 | 744 → 744 | 42,946.93 ± 0.10 | -0.033% | +3.61% | +15.59% |
+| large | 18 → 18 | 201,048 → 201,048 | 1,706,807.32 ± 150.19 | +0.000% | +4.84% | +5.35% |
+| dependent | 1,189 → 1,093 | 93,840 → 87,056 | 1,870,400.24 ± 301.27 | -1.970% | -9.39% | +5.14% |
+| pipelined | 1,466 → 1,370 | 183,112 → 176,328 | 1,363,521.88 ± 519.35 | -3.440% | -9.57% | +21.98% |
+| concurrent-32 | 206 → 206 | 36,864 → 36,864 | 569,538.72 ± 0.67 | -0.003% | -2.36% | +65.50% |
+| fanout-128 | 1,042 → 1,042 | 436,480 → 436,480 | 2,715,895.92 ± 24.35 | -0.022% | -2.18% | +78.90% |
+| deep-32-concurrent-32 | 52,213 → 49,141 | 8,783,408 → 8,566,320 | 51,913,572.30 ± 37,481.82 | -3.760% | -1.47% | +28.83% |
+| callback | 39 → 38 | 3,612 → 3,432 | 104,830.69 ± 0.27 | -0.860% | -0.45% | +10.08% |
+
+Allocation and counter changes compare independent minima. Read/write counts and
+wire-byte minima are unchanged in all eight fixtures. The ordinary benchmarks
+do not exercise the local 64 KiB tail-response regression described above.
+
+Incremental qualification, using the same five-run fixtures:
+
+| Change | Dependent allocations | Pipelined allocations | Deep concurrent allocations |
+| --- | ---: | ---: | ---: |
+| Frozen legacy-only | 1,189 | 1,466 | 52,213 |
+| Shared response/pipeline owner | 1,125 | 1,402 | 50,165 |
+| Inline first interface registration | 1,093 | 1,370 | 49,141 |
+| Empty task set and tail adoption | 1,093 | 1,370 | 49,141 |
+
+These are allocation and guest-instruction improvements, not a universal speedup
+claim. Simulated indirect branch misses increase in several fixtures, including
+concurrent/fanout workloads whose executed instruction counts barely change.
+The modified build also executes fewer indirect branches in dependent/pipelined
+work. Actual cycle counters are unavailable in this workspace; native branch
+prediction and CPU-cycle performance remain unqualified.
+
+Worker SHA-256, frozen: `3083e863397418f6eccaaf1d3554c6d8d68cd6f326b668c7bf6f4a779e45650b`; modified: `63ab1bd0a585a679b1497395700d41662b3b52a32e6f884f61274c1fd862d7bd`.

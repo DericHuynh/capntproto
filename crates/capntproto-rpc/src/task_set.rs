@@ -112,7 +112,7 @@ where
             parent: futures::task::AtomicWaker::new(),
         });
 
-        let mut set = Self {
+        let set = Self {
             enqueued: Some(receiver),
             in_progress: ReadySet::new(),
             last: ReadySet::new(),
@@ -124,11 +124,6 @@ where
             on_empty_fulfillers: vec![],
             reaper,
         };
-
-        // If the FuturesUnordered ever gets empty, its stream will terminate, which
-        // is not what we want. So we make sure there is always at least one future in it.
-        set.in_progress
-            .push(TaskInProgress::Task(Box::pin(::futures::future::pending())));
 
         let handle = TaskSetHandle { sender };
 
@@ -143,8 +138,7 @@ where
         if self.on_empty_fulfillers.is_empty() {
             return;
         }
-        // There is always the one pending() future that we added in `new()`.
-        if self.in_progress.len() <= 1
+        if self.in_progress.len() == 0
             && self.last.len() == 0
             && self.enqueued.as_ref().is_none_or(|queue| queue.is_empty())
         {
@@ -262,7 +256,7 @@ where
             }
             self.update_on_empty_fulfillers();
         }
-        if self.enqueued.is_none() && self.in_progress.len() <= 1 && self.last.len() == 0 {
+        if self.enqueued.is_none() && self.in_progress.len() == 0 && self.last.len() == 0 {
             Poll::Ready(Ok(()))
         } else {
             Poll::Pending
@@ -273,8 +267,8 @@ where
 impl<E: 'static> TaskSet<E> {
     fn poll_regular(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), E>> {
         let mut enqueued_stream_complete = false;
-        // Run newly admitted work once before allocating a FuturesUnordered
-        // node. Many RPC completions finish immediately. Pending work is then
+        // Run newly admitted work once before putting it in the ready
+        // set. Many RPC completions finish immediately. Pending work is then
         // polled by the set to register its own wakeup; a wake during this first
         // poll also wakes the parent, so no readiness can be lost in handoff.
         // Bound admission because a completed task/reaper may enqueue more work.
@@ -321,18 +315,18 @@ impl<E: 'static> TaskSet<E> {
         }
 
         // on_empty() must also complete when it was queued on an already
-        // empty set. The sentinel future is not an application task.
+        // empty set. An open admission queue can receive new work afterward.
         self.update_on_empty_fulfillers();
-        if self.enqueued.is_none() && self.in_progress.len() <= 1 && self.last.len() == 0 {
+        if self.enqueued.is_none() && self.in_progress.len() == 0 && self.last.len() == 0 {
             return Poll::Ready(Ok(()));
         }
         loop {
             match Stream::poll_next(Pin::new(&mut self.in_progress), cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(v) => match v {
-                    None => return Poll::Ready(Ok(())),
+                    None => return Poll::Pending,
                     Some(TaskDone::Continue(result)) => {
-                        // FuturesUnordered has released the completed task.
+                        // The ready set has released the completed task.
                         // Reap here instead of allocating a mapped future and
                         // sharing the reaper with every task.
                         match result {
@@ -341,7 +335,7 @@ impl<E: 'static> TaskSet<E> {
                         }
                         self.update_on_empty_fulfillers();
                         if self.enqueued.is_none()
-                            && self.in_progress.len() <= 1
+                            && self.in_progress.len() == 0
                             && self.last.len() == 0
                         {
                             return Poll::Ready(Ok(()));
@@ -384,6 +378,24 @@ mod tests {
     }
     fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
         Pin::new(future).poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
+    }
+
+    #[test]
+    fn an_empty_open_set_has_no_sentinel_and_accepts_work_again() {
+        let results = Rc::new(RefCell::new(Vec::new()));
+        let (mut handle, mut tasks) = TaskSet::new(Box::new(Reaper(results.clone())));
+        for completed in 1..=3 {
+            assert_eq!(tasks.in_progress.len(), 0);
+            let mut drained = handle.on_empty();
+            assert!(poll(&mut tasks).is_pending());
+            assert_eq!(poll(&mut drained), Poll::Ready(Ok(())));
+            handle.add(async { Ok(()) });
+            assert!(poll(&mut tasks).is_pending());
+            assert_eq!(results.borrow().len(), completed);
+        }
+        assert_eq!(tasks.in_progress.len(), 0);
+        drop(handle);
+        assert_eq!(poll(&mut tasks), Poll::Ready(Ok(())));
     }
 
     #[test]

@@ -97,3 +97,55 @@ fn weak_registration_does_not_retain_the_service_or_its_state() {
     assert!(weak.upgrade().is_none());
     assert_eq!(Rc::strong_count(&token), 1);
 }
+
+#[test]
+fn first_interface_registration_needs_only_the_returned_hook_allocation() {
+    // Warm only the outer pointer table. A new server must not allocate an
+    // inner dispatch-type map even on its first registration.
+    drop(Client::new(Server(Rc::new(()))).into_hook());
+    let client = Client::new(Server(Rc::new(())));
+    let weak = Rc::downgrade(&client.state);
+    let mut hook = None;
+    let counts = allocation_counter::measure(|| {
+        hook = Some(client.into_hook());
+    });
+    assert_eq!(counts.count_total, 1);
+    assert!(weak.upgrade().is_some());
+    drop(hook);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn interface_views_promote_survivors_and_old_owners_cannot_retire_replacements() {
+    fn registration(client: &Client<Server>, kind: TypeId) -> LocalRegistration {
+        let state: Rc<dyn RegisteredState> = client.state.clone();
+        LocalRegistration {
+            kind,
+            state: Rc::downgrade(&state),
+            revocable: false,
+        }
+    }
+    let first = Client::new(Server(Rc::new(())));
+    let second = Client::new(Server(Rc::new(())));
+    let a = TypeId::of::<u8>();
+    let b = TypeId::of::<u16>();
+    let mut views = LocalViews {
+        first: registration(&first, a),
+        others: Vec::new(),
+    };
+    views.insert(registration(&second, b));
+    assert!(!views.conflicts(false));
+    assert!(views.conflicts(true));
+    assert!(views.get(&a).unwrap().is_live());
+    drop(first);
+    assert!(!views.remove_dead(a));
+    assert!(views.get(&a).is_none());
+    assert!(views.get(&b).unwrap().is_live());
+    let replacement = Client::new(Server(Rc::new(())));
+    views.insert(registration(&replacement, b));
+    drop(second);
+    assert!(!views.remove_dead(b));
+    assert!(views.get(&b).unwrap().is_live());
+    drop(replacement);
+    assert!(views.remove_dead(b));
+}

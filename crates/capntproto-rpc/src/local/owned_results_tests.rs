@@ -8,7 +8,7 @@ fn response() -> Rc<dyn ResponseHook> {
     Rc::new(ResultsDone::new(message, Vec::new()))
 }
 
-fn results() -> (Results, oneshot::Receiver<Box<dyn ResultsDoneHook>>) {
+fn results() -> (Results, oneshot::Receiver<SharedResults>) {
     let (sender, receiver) = oneshot::channel();
     let (pipeline, _) = crate::queued::Pipeline::new();
     (Results::new(sender, pipeline), receiver)
@@ -41,7 +41,7 @@ fn adopted_response_shares_bytes_and_retains_context_through_readers_and_guard()
             .as_ptr(),
         original
     );
-    let retained = reader.add_ref();
+    let retained = reader.clone();
     drop(reader);
     assert!(weak.upgrade().is_some());
     drop(retained);
@@ -162,4 +162,134 @@ fn default_response_adoption_cannot_bypass_a_wrapper_builder() {
             .get_as::<capnp::data::Reader>()
             .unwrap()
     );
+}
+
+#[test]
+fn frozen_result_and_pipeline_use_one_owner_without_clone_allocations() {
+    let mut message = message::Builder::new_default();
+    message
+        .set_root::<capnp::data::Owned>(&b"shared result"[..])
+        .unwrap();
+    let pointer = message
+        .get_root_as_reader::<capnp::data::Reader>()
+        .unwrap()
+        .as_ptr();
+    let context = Rc::new(());
+    let weak = Rc::downgrade(&context);
+    let mut owners = None;
+    let counts = allocation_counter::measure(|| {
+        let response: SharedResults =
+            Rc::new(ResultsDone::new(message, Vec::new()).with_context(Some(context)));
+        let pipeline = Pipeline::new(response.clone());
+        owners = Some((response.clone(), pipeline.clone()));
+    });
+    assert_eq!(counts.count_total, 1);
+    let (response, pipeline) = owners.unwrap();
+    assert_eq!(
+        response
+            .get()
+            .unwrap()
+            .get_as::<capnp::data::Reader>()
+            .unwrap()
+            .as_ptr(),
+        pointer
+    );
+    drop(response);
+    assert!(weak.upgrade().is_some());
+    assert_eq!(
+        pipeline
+            .results
+            .get()
+            .unwrap()
+            .get_as::<capnp::data::Reader>()
+            .unwrap()
+            .as_ptr(),
+        pointer
+    );
+    drop(pipeline);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn failed_result_projection_returns_a_broken_capability() {
+    struct Failed;
+    impl ResponseHook for Failed {
+        fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+            Err(Error::failed("injected result access failure".into()))
+        }
+    }
+    let pipeline = Pipeline::new(Rc::new(Failed));
+    let client = pipeline.get_pipelined_cap(&[]);
+    let request = client.new_call(0, 0, None);
+    let result = futures::executor::block_on(request.send().promise);
+    assert_eq!(
+        result.err().unwrap().extra,
+        "injected result access failure"
+    );
+}
+
+struct ReadyResponseRequest(SharedResults);
+impl RequestHook for ReadyResponseRequest {
+    fn get(&mut self) -> any_pointer::Builder<'_> {
+        unreachable!()
+    }
+    fn get_brand(&self) -> usize {
+        0
+    }
+    fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
+        capability::RemotePromise {
+            promise: capability::ResponsePromise::new(Promise::ok(capability::Response::new(
+                Box::new(Response::new(self.0)),
+            ))),
+            pipeline: any_pointer::Pipeline::new(Box::new(crate::broken::DisabledPipeline)),
+        }
+    }
+    fn send_streaming(self: Box<Self>) -> Promise<(), Error> {
+        unreachable!()
+    }
+    fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
+        None
+    }
+}
+
+#[test]
+fn tail_response_retains_its_original_payload_without_a_second_message() {
+    let response = response();
+    let pointer = response
+        .get()
+        .unwrap()
+        .get_as::<capnp::data::Reader>()
+        .unwrap()
+        .as_ptr();
+    let (results, receiver) = results();
+    let (completion, pipeline) =
+        Box::new(results).direct_tail_call(Box::new(ReadyResponseRequest(response)));
+    futures::executor::block_on(async {}); // Initialize the executor outside the measurement.
+    let counts = allocation_counter::measure(|| {
+        futures::executor::block_on(completion).unwrap();
+    });
+    assert!(
+        counts.bytes_total < 1024,
+        "tail copied a 64 KiB payload: {counts:?}"
+    );
+    let delivered = futures::executor::block_on(receiver).unwrap();
+    let data = delivered
+        .get()
+        .unwrap()
+        .get_as::<capnp::data::Reader>()
+        .unwrap();
+    assert_eq!(data.len(), 65536);
+    assert_eq!(data.as_ptr(), pointer);
+    drop(pipeline);
+}
+
+#[test]
+fn response_adoption_without_extra_context_keeps_the_same_owner() {
+    let response = response();
+    let (mut results, receiver) = results();
+    results.set_response(response.clone()).unwrap();
+    let counts = allocation_counter::measure(|| drop(results));
+    assert_eq!(counts.count_total, 0);
+    let delivered = futures::executor::block_on(receiver).unwrap();
+    assert!(Rc::ptr_eq(&delivered, &response));
 }

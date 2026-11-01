@@ -41,7 +41,7 @@ use std::mem;
 use std::rc::{Rc, Weak};
 
 use crate::attach::Attach;
-use crate::local::ResultsDoneHook;
+use crate::local::SharedResults;
 use crate::rpc_capnp::{
     bootstrap, call, cap_descriptor, disembargo, exception, finish, message, message_target,
     payload, promised_answer, resolve, return_,
@@ -1466,7 +1466,7 @@ where
 {
     Empty,
     Rpc(ResponseState<VatId>),
-    LocallyRedirected(Box<dyn ResultsDoneHook>),
+    LocallyRedirected(SharedResults),
     Adopted(Box<dyn ResponseHook>, Box<dyn std::any::Any>),
 }
 
@@ -1504,7 +1504,7 @@ impl<VatId> Response<VatId> {
         Self { variant }
     }
 
-    fn redirected(results_done: Box<dyn ResultsDoneHook>) -> Self {
+    fn redirected(results_done: SharedResults) -> Self {
         Self {
             variant: Rc::new(ResponseVariant::LocallyRedirected(results_done)),
         }
@@ -2786,8 +2786,8 @@ impl<VatId> ResultsHook for Results<VatId> {
             .response_context
             .borrow()
             .clone();
-        let hook = Box::new(local::ResultsDone::new(message2, cap_table2).with_context(context))
-            as Box<dyn ResultsDoneHook>;
+        let hook = Rc::new(local::ResultsDone::new(message2, cap_table2).with_context(context))
+            as SharedResults;
         self.set_pipeline_from(Box::new(local::Pipeline::new(hook)))
     }
 
@@ -2935,17 +2935,17 @@ enum ResultsDoneVariant {
 
 struct ResultsDone {
     context: Option<Rc<dyn std::any::Any>>,
-    inner: Rc<ResultsDoneVariant>,
+    inner: ResultsDoneVariant,
 }
 
 // Ordinary replies are already owned by the transport. Only local redirection
 // needs to return a results hook to the caller of from_results_inner().
 enum ResultsCompletion {
     Sent,
-    Retained(Box<dyn ResultsDoneHook>),
+    Retained(SharedResults),
 }
 impl ResultsCompletion {
-    fn into_retained(self) -> Result<Box<dyn ResultsDoneHook>, Error> {
+    fn into_retained(self) -> Result<SharedResults, Error> {
         match self {
             Self::Retained(results) => Ok(results),
             Self::Sent => Err(Error::failed(
@@ -2987,7 +2987,7 @@ impl ResultsDone {
                         // credit. Completion acknowledges ownership, not result data.
                         pipeline_sender.complete(pipeline);
                         call_status?;
-                        Ok(ResultsCompletion::Retained(Box::new(
+                        Ok(ResultsCompletion::Retained(Rc::new(
                             Self::redirected(capnp::message::Builder::new_default(), vec![])
                                 .with_context(&status),
                         )))
@@ -2996,11 +2996,10 @@ impl ResultsDone {
                     Some(ResultsVariant::Rpc(mut message, cap_table)) => {
                         match (status.received_finish.get(), call_status) {
                             (true, _) => {
-                                let hook = Box::new(
+                                let hook = Rc::new(
                                     Self::rpc(Rc::new(message.take()), cap_table)
                                         .with_context(&status),
-                                )
-                                    as Box<dyn ResultsDoneHook>;
+                                ) as SharedResults;
                                 pipeline_sender
                                     .complete_with(|| Box::new(local::Pipeline::new(hook.clone())));
 
@@ -3076,7 +3075,7 @@ impl ResultsDone {
                                     let (message, cap_table, exports) = pending.take().unwrap();
                                     let m = message.send_detached();
                                     connection_state.answer_has_sent_return(answer_id, exports);
-                                    Box::new(local::Pipeline::new(Box::new(
+                                    Box::new(local::Pipeline::new(Rc::new(
                                         Self::rpc(m, cap_table).with_context(&status),
                                     )))
                                 });
@@ -3104,9 +3103,9 @@ impl ResultsDone {
                                 .complete_with(|| Box::new(broken::Pipeline::new(error.clone())));
                             return Err(error);
                         }
-                        let hook = Box::new(
+                        let hook = Rc::new(
                             Self::redirected(*results_done, cap_table).with_context(&status),
-                        ) as Box<dyn ResultsDoneHook>;
+                        ) as SharedResults;
                         pipeline_sender
                             .complete_with(|| Box::new(crate::local::Pipeline::new(hook.clone())));
                         Ok(ResultsCompletion::Retained(hook))
@@ -3144,7 +3143,7 @@ impl ResultsDone {
         cap_table: Vec<Option<Box<dyn ClientHook>>>,
     ) -> Self {
         Self {
-            inner: Rc::new(ResultsDoneVariant::Rpc(message, cap_table)),
+            inner: ResultsDoneVariant::Rpc(message, cap_table),
             context: None,
         }
     }
@@ -3154,22 +3153,16 @@ impl ResultsDone {
         cap_table: Vec<Option<Box<dyn ClientHook>>>,
     ) -> Self {
         Self {
-            inner: Rc::new(ResultsDoneVariant::LocallyRedirected(message, cap_table)),
+            inner: ResultsDoneVariant::LocallyRedirected(message, cap_table),
             context: None,
         }
     }
 }
 
-impl ResultsDoneHook for ResultsDone {
-    fn add_ref(&self) -> Box<dyn ResultsDoneHook> {
-        Box::new(Self {
-            inner: self.inner.clone(),
-            context: self.context.clone(),
-        })
-    }
+impl ResponseHook for ResultsDone {
     fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
         use ::capnp::traits::Imbue;
-        match *self.inner {
+        match self.inner {
             ResultsDoneVariant::Rpc(ref message, ref cap_table) => {
                 let root: message::Reader = message.get_root_as_reader()?;
                 let message::Return(ret) = root.which()? else {
