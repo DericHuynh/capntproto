@@ -1,5 +1,8 @@
 # Failed TLA+ replay tests
 
-[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/41275232461) · commit `fda88272f6f86b33df67785e9f3cbc8c02ff8d9e` · attempt 1
+[Workflow run and full logs](https://github.com/DericHuynh/capntproto/actions/runs/41282184234) · commit `ecc180599cafc6844201befed0f5dba3c0eed66b` · attempt 1
 
-No test inventory was produced. A build or infrastructure failure is not a passing test run. Inspect the workflow logs.
+Recorded: **0 failed**, **0 without a terminal result**, 233 passed and 7 skipped.
+
+No completed test reported a failure.
+
