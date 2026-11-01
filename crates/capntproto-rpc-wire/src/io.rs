@@ -59,3 +59,6 @@ pub fn poll_receive<R: Read>(
         Err(e) => Poll::Ready(Err(ReceiveError::Wire(e.kind))),
     }
 }
+
+#[cfg(test)]
+mod tests;
