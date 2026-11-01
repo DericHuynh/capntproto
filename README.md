@@ -60,23 +60,9 @@ AFL++ guides the RPC lifecycle oracle with IJON state and progress annotations. 
 
 ### LLVM coverage
 
-Latest coverage run: [2026-11-01T06:46:49Z · run 41282184216 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41282184216) · commit `ecc180599caf` · **success**
+Latest coverage run: [2026-11-01T16:41:43Z · run 41327633446 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41327633446) · commit `af2eeeb4818f` · **failure**
 
-![LLVM lines&#58; current versus reviewed baseline](docs/reports/coverage-lines.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
-
-![LLVM regions&#58; current versus reviewed baseline](docs/reports/coverage-regions.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
-
-![LLVM functions&#58; current versus reviewed baseline](docs/reports/coverage-functions.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
-
-![LLVM branches&#58; current versus reviewed baseline](docs/reports/coverage-branches.svg)
-
-Gray&#58; reviewed baseline&#46; Blue&#58; current run&#46; N&#47;A&#58; no mapped counters&#59; never treated as 0&#37; or 100&#37;&#46;
+No validated coverage/baseline comparison is available for the latest run. Missing or unmapped counters are never presented as 100% coverage.
 
 ### Linux loopback benchmark comparisons
 
