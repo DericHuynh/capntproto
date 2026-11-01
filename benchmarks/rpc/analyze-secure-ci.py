@@ -49,19 +49,27 @@ else:
     native = json.loads(summaries[0].read_text())
     scope = json.loads((root/'native/scope.json').read_text())
     assert not scope['diagnostic'] and not native['diagnostic']
-    assert scope['repetitions']==5 and scope['iterations']==1000 and len(native['rows'])==48
+    assert scope['repetitions']==5 and scope['iterations']==1000
+    spec = importlib.util.spec_from_file_location('comparison_runner', Path(__file__).with_name('secure-runner.py'))
+    comparison_runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(comparison_runner)
+    cases = {case['name']: case for case in scope['cases']}
+    transports = set(scope['transports'])
+    assert cases and len(cases) == len(scope['cases']), 'missing or duplicate declared cases'
+    assert transports and transports <= {'tls', 'quic'} and len(transports) == len(scope['transports']), 'invalid declared transports'
+    expected_rows = {(transport, name) for transport in transports for name in cases}
+    actual_rows = [(row['transport'], row['case']['name']) for row in native['rows']]
+    assert len(actual_rows) == len(expected_rows) and set(actual_rows) == expected_rows, 'incomplete or duplicate case/transport matrix'
     if scope.get('comparison_version') == 1:
-        spec = importlib.util.spec_from_file_location('comparison_runner', Path(__file__).with_name('secure-runner.py'))
-        comparison_runner = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(comparison_runner)
         assert {'grpc', 'websocket'} <= scope['binaries'].keys(), 'missing comparison executables'
-        expected = set()
-        for row in native['rows']:
-            labels = {label for label in scope['binaries'] if comparison_runner.supported(label, row['transport'], row['case'])}
-            assert row['variants'].keys() == labels, 'missing or unsupported protocol comparison'
-            expected.update((row['transport'], row['case']['name'], label, rep) for label in labels for rep in range(5))
-        actual = [(trial['transport'], trial['case'], trial['client'], trial['repetition']) for trial in scope['trials']]
-        assert len(actual) == len(expected) and set(actual) == expected, 'incomplete protocol comparison repetitions'
+    expected = set()
+    for row in native['rows']:
+        assert row['case'] == cases[row['case']['name']], 'case differs from declared workload'
+        labels = {label for label in scope['binaries'] if comparison_runner.supported(label, row['transport'], row['case'])}
+        assert labels and row['variants'].keys() == labels, 'missing or unsupported protocol comparison'
+        expected.update((row['transport'], row['case']['name'], label, rep) for label in labels for rep in range(5))
+    actual = [(trial['transport'], trial['case'], trial['client'], trial['repetition']) for trial in scope['trials']]
+    assert len(actual) == len(expected) and set(actual) == expected, 'incomplete protocol comparison repetitions'
     cells=collections.defaultdict(list)
     minima=collections.defaultdict(list)
     host_samples=[]

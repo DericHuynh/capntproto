@@ -30,13 +30,14 @@ class SavedAnalysisTests(unittest.TestCase):
                         variants[label] = summarize(samples)
                         for rep, values in enumerate(samples):
                             path = f'{transport}-{name}-{label}-{rep}'
-                            trials.append(dict(transport=transport, case=name, client=label, path=path, mixed=False))
+                            trials.append(dict(transport=transport, case=name, client=label, path=path, mixed=False, repetition=rep))
                             save(root/'native'/path/'trial.json', dict(iterations=1000, latency_ns=values,
                                  security=dict(tls='1.3', authentication='server-certificate')))
                             save(root/'native'/path/'host.json', dict(before={}, after={}))
-                    rows.append(dict(transport=transport, case=dict(name=name), variants=variants))
+                    rows.append(dict(transport=transport, case=dict(name=name, family='workflow'), variants=variants))
             save(root/'native/summary.json', dict(diagnostic=False, rows=rows))
             save(root/'native/scope.json', dict(diagnostic=False, repetitions=5, iterations=1000,
+                 cases=[row['case'] for row in rows if row['transport']=='tls'], transports=['tls', 'quic'],
                  trials=trials, binaries={'legacy': {}, 'legacy-baseline': {}}))
             save(root.parent/'host.json', {})
             (root/'cpu.txt').write_text('synthetic analysis fixture')
@@ -88,8 +89,8 @@ class SavedAnalysisTests(unittest.TestCase):
             output = Path(directory)/'analysis'
             rows, trials = [], []
             for transport in ['tls', 'quic']:
-                for case in range(24):
-                    name = f'case-{case}'
+                for case in range(25):
+                    name = 'fanout-128' if case == 24 else f'case-{case}'
                     variants = {}
                     labels = [('portable', 100), ('legacy', 200)]
                     if transport == 'tls':
@@ -106,6 +107,7 @@ class SavedAnalysisTests(unittest.TestCase):
                     rows.append(dict(transport=transport, case=dict(name=name, family='workflow'), variants=variants))
             save(root/'native/summary.json', dict(diagnostic=False, rows=rows))
             scope = dict(diagnostic=False, repetitions=5, iterations=1000, comparison_version=1,
+                 cases=[row['case'] for row in rows if row['transport']=='tls'], transports=['tls', 'quic'],
                  trials=trials, binaries={k:{} for k in ['portable', 'legacy', 'grpc', 'websocket']})
             save(root/'native/scope.json', scope)
             save(root.parent/'host.json', {})
@@ -121,10 +123,12 @@ class SavedAnalysisTests(unittest.TestCase):
             self.assertTrue(report['native_only'])
             self.assertFalse(report['diagnostics_requested'])
             self.assertFalse(report['diagnostics_complete'])
-            self.assertEqual(report['native_trials'], 720)
-            self.assertEqual(report['aggregate']['tls']['legacy']['lower_minima'], 24)
-            self.assertEqual(report['aggregate']['tls']['grpc']['lower_minima'], 24)
-            self.assertEqual(report['aggregate']['tls']['websocket']['lower_minima'], 24)
+            self.assertEqual(report['native_trials'], 750)
+            self.assertEqual(report['aggregate']['tls']['legacy']['lower_minima'], 25)
+            self.assertEqual(report['aggregate']['tls']['grpc']['lower_minima'], 25)
+            self.assertEqual(report['aggregate']['tls']['websocket']['lower_minima'], 25)
+            self.assertEqual(len(report['latency']), 50)
+            self.assertTrue(any(row['case']['name'] == 'fanout-128' for row in report['latency']))
             self.assertNotIn('grpc', report['aggregate']['quic'])
             self.assertEqual(report['profile_trials'], 0)
             self.assertEqual(report['profiles'], [])
@@ -135,6 +139,15 @@ class SavedAnalysisTests(unittest.TestCase):
             self.assertNotEqual(analyze(incomplete).returncode, 0)
             self.assertTrue((incomplete/'native-summary.json').is_file())
             self.assertFalse((incomplete/'summary.json').exists())
+            # The declared matrix must remain complete as the catalog grows.
+            last = rows.pop()
+            save(root/'native/summary.json', dict(diagnostic=False, rows=rows))
+            self.assertNotEqual(analyze(Path(directory)/'missing-case', '--native-only').returncode, 0)
+            rows.append(rows[0])
+            save(root/'native/summary.json', dict(diagnostic=False, rows=rows))
+            self.assertNotEqual(analyze(Path(directory)/'duplicate-case', '--native-only').returncode, 0)
+            rows[-1] = last
+            save(root/'native/summary.json', dict(diagnostic=False, rows=rows))
             # Omitting an external protocol or repeating a run cannot make a
             # partial comparison matrix look complete.
             comparator = rows[0]['variants'].pop('grpc')
