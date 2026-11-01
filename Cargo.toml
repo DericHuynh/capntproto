@@ -19,6 +19,8 @@ members = ["test-support", "quality", "dev", "crates/*"]
 exclude = [
     "vendor/capnproto",
     "vendor/rustls",
+    "vendor/embedded-tls",
+    "vendor/monoio",
     "benchmarks/rpc",
     "benchmarks/runtimes",
     "benchmarks/rpc-upstream",

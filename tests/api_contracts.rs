@@ -103,7 +103,7 @@ fn bounded_result_publication_compile_contracts() {
 fn bounded_connection_and_adoption_compile_contracts() {
     let prelude = "use capntproto_rpc_engine::{connection::{with_connection, Storage}, imports, exports, questions, answers, ids::{ImportId, AnswerId, WireId}};";
     let storage = "let mut is = [imports::Slot::<i32>::EMPTY]; let mut es = [exports::Slot::<i32>::EMPTY]; let mut qs = [questions::Slot::EMPTY]; let mut as_ = [answers::Slot::<i32>::EMPTY];";
-    let scope = "with_connection(Storage { imports:&mut is, exports:&mut es, questions:&mut qs, answers:&mut as_ }, |connection|";
+    let scope = "with_connection(Storage { imports:&mut is, exports:&mut es, questions:&mut qs, pipeline_questions:&mut [], answers:&mut as_ }, |connection|";
     let setup = "let id = AnswerId::from_wire(17); connection.answers.prepare_admission(id, None).unwrap().redirected().accept(41); let pending = connection.answers.prepare_adoption(id).unwrap();";
     let mut cases = vec![("positive".into(), format!("{prelude} fn main() {{ {storage} {scope} {{ {setup} let adopted = pending.accept(); assert_eq!(connection.answers.adopted(&adopted), &41); connection.answers.release_adopted(adopted); }}).unwrap(); }}"), None)];
     for (name, code, error) in [

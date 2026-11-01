@@ -30,11 +30,11 @@ pki-types = { package = "rustls-pki-types", version = "1.15", default-features =
 rustls-impl = { package = "capntproto-rustls", version = "=0.23.46", path = "../../vendor/rustls", default-features = false, features = ["ring", "std"], optional = true }
 tokio = { version = "1", default-features = false, features = ["io-util"], optional = true }
 tokio-util = { version = "0.7", features = ["compat"], optional = true }
-embedded-tls = { version = "0.19", default-features = false, optional = true }
+embedded-tls = { package = "capntproto-embedded-tls", version = "=0.19.0", path = "../../vendor/embedded-tls", default-features = false, optional = true }
 embedded-io = { version = "0.7", default-features = false, optional = true }
 embedded-io-async = { version = "0.7", default-features = false, optional = true }
 webpki = { package = "rustls-webpki", version = "0.103.16", default-features = false, optional = true }
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "sha256"], optional = true }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "sha256"], optional = true }
 sha2 = { version = "0.10", default-features = false, optional = true }
 heapless = { version = "0.9", default-features = false, optional = true }
 url = { version = "2", optional = true }
@@ -54,7 +54,7 @@ quinn-proto = {version="0.11.19",default-features=false,features=["rustls-ring"]
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["net", "uio"], optional = true }
-monoio = { version = "0.2.4", default-features = false, features = ["iouring", "legacy", "macros", "bytes"], optional = true }
+monoio = { package = "capntproto-monoio", version = "=0.2.4", path = "../../vendor/monoio", default-features = false, features = ["iouring", "legacy", "macros", "bytes"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 ring = { version = "0.17", features = ["wasm32_unknown_unknown_js"], optional = true }

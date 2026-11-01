@@ -1,0 +1,7 @@
+crate = "monoio"
+version = "0.2.4"
+crates_io_checksum = "3bd0f8bcde87b1949f95338b547543fcab187bc7e7a5024247e359a5e828ba6a"
+local_package = "capntproto-monoio"
+changes = [
+  "Apply upstream bytedance/monoio commit 212fde187f3d41f65ecd35b9cac80f7e246bb58e: replace unmaintained fxhash with rustc-hash.",
+]

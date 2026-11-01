@@ -60,11 +60,7 @@ pub(super) fn take(inner: &Rc<Inner>) -> capnp::Result<capnp_rpc::FrameIo> {
     inner.reading.set(true);
     inner.frame_output.observed.set(true);
     Ok(capnp_rpc::FrameIo {
-        incoming: Box::new(Input(ReadGuard {
-            inner: inner.clone(),
-            input: Some(input),
-            complete: false,
-        })),
+        incoming: Box::new(Input(input)),
         outgoing: Box::new(Output {
             inner: inner.clone(),
             through: inner.frame_output.next.get(),
@@ -74,13 +70,16 @@ pub(super) fn take(inner: &Rc<Inner>) -> capnp::Result<capnp_rpc::FrameIo> {
     })
 }
 
-struct Input(ReadGuard);
+// Input and output have independent lifetimes. Retiring the reader releases
+// prefetched descriptors before the coordinator drains and closes output.
+// A per-message ReadGuard would abort that pending output when dropped.
+struct Input(FdReader<Rc<UnixStream>>);
 impl Input {
     fn reader(&self) -> &FdReader<Rc<UnixStream>> {
-        self.0.input.as_ref().expect("exclusive frame input")
+        &self.0
     }
     fn reader_mut(&mut self) -> &mut FdReader<Rc<UnixStream>> {
-        self.0.input.as_mut().expect("exclusive frame input")
+        &mut self.0
     }
     fn descriptors(&mut self) -> Vec<OwnedFd> {
         let reader = self.reader();
@@ -199,6 +198,41 @@ impl capnp_rpc::OutgoingMessageStream for Output {
 mod tests {
     use super::*;
     use std::{future::Future, pin::Pin};
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn retiring_frame_input_preserves_queued_output_and_orderly_shutdown() {
+        use tokio::io::AsyncReadExt;
+
+        let (left, mut right) = UnixStream::pair().unwrap();
+        let mut network = VatNetwork::new(left, Side::Client, Options::default());
+        let mut connection = capnp_rpc::VatNetwork::connect(&mut network, Side::Server).unwrap();
+        let mut io = connection.take_frame_io().unwrap();
+        let mut message = Builder::new_default();
+        message.set_root("drain after input retirement").unwrap();
+        let bytes = capnp::serialize::write_message_to_words(&message);
+        io.outgoing
+            .send(capnp_rpc::OutgoingFrame::copy_from(&bytes).unwrap())
+            .unwrap();
+
+        // The coordinator retires input before draining accepted output. No
+        // writer has polled yet, so aborting here would lose the entire frame.
+        drop(io.incoming);
+        let shutdown = io.outgoing.shutdown(Ok(()));
+        let driver = capnp_rpc::VatNetwork::take_output_driver(&mut network).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let receive = async {
+                let mut received = vec![0; bytes.len()];
+                right.read_exact(&mut received).await.unwrap();
+                assert_eq!(received, bytes);
+                assert_eq!(right.read(&mut [0]).await.unwrap(), 0);
+            };
+            let (written, closed, ()) = futures::join!(driver, shutdown, receive);
+            written.unwrap();
+            closed.unwrap();
+        })
+        .await
+        .unwrap();
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn exclusive_frames_keep_descriptors_at_their_admission_boundary() {
