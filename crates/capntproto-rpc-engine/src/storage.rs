@@ -144,3 +144,11 @@ mod proofs {
         }
     }
 }
+
+/// Explicit capacity bounds for reusable message/send storage.
+#[cfg(feature = "alloc")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Growth {
+    pub initial: usize,
+    pub maximum: usize,
+}

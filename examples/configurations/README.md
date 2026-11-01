@@ -1,38 +1,27 @@
-# Runtime and protocol configurations
+# Greeting service over Tokio and rustls
 
-A real greeting service with separate client/server binaries and a shared
-[Cap'n Proto schema](../webtransport/schema/greeting.capnp). The first request
-creates a session; its echo call is pipelined before awaiting the session reply.
+Separate client/server executables use a shared [schema](../service/schema/greeting.capnp)
+and [service implementation](../service/src/lib.rs). A greeting creates a session
+capability; the client pipelines its echo before awaiting the first reply.
 
 ```sh
 cargo run --manifest-path examples/configurations/Cargo.toml --bin example-credentials -- /tmp/example-pki
-# Terminal 1: authenticated TCP server (keep it running).
+# Terminal 1
 cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-server -- \
   --cert /tmp/example-pki/server.pem --key /tmp/example-pki/server-key.pem
-# Terminal 2: independent client, using portable RPC by default.
+# Terminal 2
 cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-client -- \
   --ca /tmp/example-pki/ca.pem world
-# Linux/macOS: same service with a monoio client and the legacy protocol driver.
-cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-client -- \
-  --runtime monoio --driver legacy --ca /tmp/example-pki/ca.pem world
 ```
 
-The client prints `Hello, world`. Use `--help` on either binary for all options. `--transport tcp` explicitly selects plaintext.
-TLS is TCP with TLS authentication; WebTransport is HTTP/3 over QUIC with TLS.
-The example's transport selector makes configuration combinations easy to test;
-the library exposes these through separate modules.
+For mutual TLS, add `--client-ca /tmp/example-pki/ca.pem` to the server and
+`--cert /tmp/example-pki/client.pem --key /tmp/example-pki/client-key.pem` to
+the client. The credentials are for local development and expire after seven
+days. Regeneration cannot overwrite an existing directory.
 
-The server uses Tokio. Clients select Tokio or monoio (Linux/macOS), and legacy
-or bounded portable RPC independently. The monoio example explicitly uses its
-readiness driver; it does not silently fall back from io_uring. Optional features
-`monoio` and `webtransport` can be disabled independently. Browser connections
-use the companion WASI Preview 3 frontend.
-
-`tests/matrix.rs` checks all four server/client driver pairings for Tokio TCP,
-TLS, mutual TLS and WebTransport, and monoio TLS, mutual TLS and WebTransport.
-Additional tests reject missing client identities and prevent credential
-regeneration from overwriting an existing directory. Credentials are for local
-development, expire after seven days and are never committed.
+`tests/matrix.rs` runs the actual greeting protocol over TCP with TLS and mutual
+TLS and rejects clients without a required identity. All connections use the
+legacy RPC implementation and Tokio; there are no runtime/driver selectors.
 
 ```sh
 cargo test --locked --manifest-path examples/configurations/Cargo.toml

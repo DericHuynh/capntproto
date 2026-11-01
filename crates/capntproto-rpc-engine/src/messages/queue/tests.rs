@@ -154,7 +154,7 @@ fn owned_fifo_shared_output_pins_pool_after_completion_and_failure() {
         let mut pool = GrowingBuffers::new(1, 16, 23);
         let shared = with_growing_messages(
             &mut pool,
-            crate::connection::Growth {
+            crate::storage::Growth {
                 initial: 0,
                 maximum: 0,
             },

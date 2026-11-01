@@ -261,3 +261,48 @@ async fn vectored_records_preserve_order_under_bidirectional_backpressure() {
     .await
     .expect("vectored TLS traffic stalled");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn first_contiguous_vectored_write_needs_no_staging_allocation() {
+    use std::{
+        future::Future,
+        io::IoSlice,
+        task::{Context, Poll, Waker},
+    };
+    let pki = Pki::new();
+    let mut config = (*pki.server(false)).clone();
+    config.send_tls13_tickets = 0;
+    let (client_io, server_io) = tokio::io::duplex(256 * 1024);
+    let (client, server) = tokio::join!(
+        TlsStream::connect(
+            client_io,
+            pki.client(false),
+            "localhost".try_into().unwrap()
+        ),
+        TlsStream::accept(server_io, Arc::new(config)),
+    );
+    let mut client = client.unwrap();
+    let mut server = server.unwrap();
+    for value in [17u8, 93] {
+        let payload = [value; 257];
+        let slices = [IoSlice::new(&[]), IoSlice::new(&payload), IoSlice::new(&[])];
+        {
+            let mut write = std::pin::pin!(client.write_vectored(&slices));
+            let mut cx = Context::from_waker(Waker::noop());
+            let mut accepted = 0;
+            let allocations = allocation_counter::measure(|| {
+                accepted = match write.as_mut().poll(&mut cx) {
+                    Poll::Ready(Ok(count)) => count,
+                    other => panic!("ready memory transport did not accept the write: {other:?}"),
+                };
+            });
+            assert_eq!(accepted, payload.len());
+            assert_eq!(allocations.count_total, 0);
+            assert_eq!(allocations.bytes_total, 0);
+        }
+        client.flush().await.unwrap();
+        let mut received = [0; 257];
+        server.read_exact(&mut received).await.unwrap();
+        assert_eq!(received, payload);
+    }
+}

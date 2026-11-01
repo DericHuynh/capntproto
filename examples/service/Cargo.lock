@@ -78,7 +78,6 @@ dependencies = [
  "capntproto-codegen",
  "capntproto-compiler",
  "capntproto-core",
- "capntproto-rpc-engine",
 ]
 
 [[package]]

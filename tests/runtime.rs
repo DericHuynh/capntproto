@@ -129,26 +129,11 @@ fn accept(raw: &mut Endpoint, embargo: bool) {
     });
 }
 fn start_system(
-    portable: bool,
+    _legacy_case: bool,
     network: impl capnp_rpc::VatNetwork<u8> + 'static,
     service: harness::Client,
 ) -> tokio::task::JoinHandle<capnp::Result<()>> {
-    if portable {
-        let options = capnp_rpc::portable::Options::bounded(
-            16.try_into().unwrap(),
-            256.try_into().unwrap(),
-            (512 * 1024).try_into().unwrap(),
-            (8 * 1024 * 1024).try_into().unwrap(),
-        )
-        .unwrap();
-        tokio::task::spawn_local(
-            capnp_rpc::portable::RpcSystem::new(Box::new(network), Some(service.client), options)
-                .unwrap()
-                .run(),
-        )
-    } else {
-        tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(service.client)))
-    }
+    tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(service.client)))
 }
 fn call(raw: &mut Endpoint, question: u32, target: u32, promised: bool, value: u32) {
     raw.send(|m| {
@@ -368,7 +353,6 @@ async fn portable_automatic_introduction_survives_broker_drop() {
                             .map_err(|_| capnp::Error::disconnected("bootstrap canceled".into()))
                     });
                     let mut broker = support::driver::System::new(
-                        true,
                         Box::new(Hub::network(&hub, 2)),
                         Some(service.client),
                     );
@@ -376,7 +360,7 @@ async fn portable_automatic_introduction_survives_broker_drop() {
                     let broker = tokio::task::spawn_local(broker.run());
                     let remote = capnp::capability::get_resolved_cap(remote).await;
                     let mut caller =
-                        support::driver::System::new(true, Box::new(Hub::network(&hub, 1)), None);
+                        support::driver::System::new(Box::new(Hub::network(&hub, 1)), None);
                     let proxy: harness::Client = caller.bootstrap(2);
                     let caller = tokio::task::spawn_local(caller.run());
                     let first = if promised {
@@ -439,7 +423,7 @@ async fn portable_call_parameter_introduction_releases_its_provision() {
                     capnp_rpc::new_client(Echo(200, log.clone())),
                 );
                 let mut caller =
-                    support::driver::System::new(true, Box::new(Hub::network(&hub, 1)), None);
+                    support::driver::System::new(Box::new(Hub::network(&hub, 1)), None);
                 let remote: harness::Client = caller.bootstrap(3);
                 let broker: harness::Client = caller.bootstrap(2);
                 let caller = tokio::task::spawn_local(caller.run());

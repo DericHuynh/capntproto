@@ -1,3 +1,17 @@
+# Unreleased — one RPC implementation
+
+- Remove portable/bounded RPC and their generator API, Monoio, Embassy,
+  embedded TLS, QUIC and WebTransport backends, examples and feature selectors.
+- Use the legacy RPC driver with Tokio and rustls TLS 1.3. Keep its pooled
+  envelopes, reusable framing scratch, batched output and scatter/gather writes.
+- Bypass plaintext staging for TLS writes with one nonempty iovec. The first
+  such write allocates zero times; RPC connections and TLS reads still allocate.
+- Keep real TLS/mTLS services, deep capability pipelines and distributed checkout
+  recovery/concurrency tests. Simplify CI and profile all eight remaining
+  workloads five times with instruction, branch and allocation statistics.
+
+Earlier entries describe historical implementations and APIs.
+
 # 0.1.0 developer preview (unpublished)
 
 - Port pipeline-only high-ID/no-Return calls to portable, including fixed

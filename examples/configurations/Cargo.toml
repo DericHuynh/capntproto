@@ -5,10 +5,6 @@ edition = "2021"
 publish = false
 autobins = false
 [workspace]
-[features]
-default = ["webtransport", "monoio"]
-webtransport = ["capntproto/webtransport"]
-monoio = ["capntproto/monoio"]
 [dependencies]
 capntproto = { path = "../..", default-features = false, features = ["tls"] }
 service = { package = "capntproto-example-service", path = "../service" }

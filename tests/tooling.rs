@@ -309,64 +309,21 @@ fn installed_cpp_rpc_interoperability() {
             command(&executable)
         };
         run(&mut cmd, &log(&format!("cpp/{name}")), 0).unwrap();
-        if name == "rpc-peer" {
-            run(
-                command("cargo")
-                    .args([
-                        "run",
-                        "--locked",
-                        "--quiet",
-                        "--example",
-                        "bounded_cpp_interop",
-                        "--",
-                    ])
-                    .arg(&executable),
-                &log("cpp/bounded-rpc-peer"),
-                0,
-            )
-            .unwrap();
-        }
     }
 }
 
 #[test]
-fn pinned_native_profile() {
+fn pinned_tokio_rustls_profile() {
     let graph = cargo(
         &["tree", "--locked", "-e", "normal,build"],
         "native/dependencies",
     );
     assert!(!graph.contains("snow v"));
     assert!(graph.contains("capntproto-rustls v"));
-    assert!(graph.contains("boring v"));
-    let output = cargo(
-        &["metadata", "--locked", "--format-version", "1"],
-        "native/metadata",
-    );
-    let metadata: Value = serde_json::from_str(output.trim()).unwrap();
-    let packages: Vec<_> = metadata["packages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|p| p["name"] == "quiche")
-        .collect();
-    assert_eq!(packages.len(), 1);
-    assert_eq!(packages[0]["version"], "0.30.0");
-    assert_eq!(
-        packages[0]["source"],
-        "registry+https://github.com/rust-lang/crates.io-index"
-    );
-    let node = metadata["resolve"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|n| n["id"] == packages[0]["id"])
-        .unwrap();
-    assert!(!node["features"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|f| f == "fuzzing"));
-    assert!(!root().join("vendor/quiche").exists());
+    assert!(!graph.contains("boring v"));
+    for removed in ["quiche v", "monoio v", "embedded-tls v", "quinn v"] {
+        assert!(!graph.contains(removed), "unexpected backend: {removed}");
+    }
 }
 
 #[test]
@@ -847,7 +804,7 @@ fn cpp_decodes_durable_payloads() {
                     "--locked",
                     "--quiet",
                     "--example",
-                    "native_store",
+                    "durable_store",
                     "--",
                 ])
                 .arg(&path),
@@ -878,7 +835,7 @@ fn cpp_decodes_durable_payloads() {
                 0,
             )
             .unwrap();
-            assert!(output.contains("Hello from Native-backed"));
+            assert!(output.contains("Hello from legacy"));
             decoded += 1;
         }
         offset += 80 + ((length + 7) & !7) + 16;
@@ -897,7 +854,7 @@ fn formatting_and_lints() {
         &[
             "fmt",
             "--manifest-path",
-            "benchmarks/rpc/Cargo.toml",
+            "benchmarks/runtimes/Cargo.toml",
             "--",
             "--check",
         ],
@@ -919,22 +876,17 @@ fn formatting_and_lints() {
 }
 
 #[test]
-fn fuzz_and_benchmark_harness_unit_tests() {
-    for (name, manifest) in [
-        ("fuzz-native", "fuzz/Cargo.toml"),
-        ("benchmark-harness", "benchmarks/rpc/Cargo.toml"),
-    ] {
-        cargo(
-            &[
-                "nextest",
-                "run",
-                "--locked",
-                "--manifest-path",
-                manifest,
-                "--no-default-features",
-                "--lib",
-            ],
-            name,
-        );
-    }
+fn fuzz_harness_unit_tests() {
+    cargo(
+        &[
+            "nextest",
+            "run",
+            "--locked",
+            "--manifest-path",
+            "fuzz/Cargo.toml",
+            "--no-default-features",
+            "--lib",
+        ],
+        "fuzz-codec-rpc",
+    );
 }

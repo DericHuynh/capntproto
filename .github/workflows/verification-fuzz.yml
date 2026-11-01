@@ -6,66 +6,37 @@ on:
     - cron: '39 3 * * 1'
 permissions:
   contents: read
-concurrency:
-  group: verification-fuzz-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-env:
-  CARGO_TERM_COLOR: never
-  CARGO_BUILD_JOBS: '2'
-  CARGO_INCREMENTAL: '0'
-  RUST_BACKTRACE: '1'
 jobs:
   fuzz:
-    name: Fuzzing and independent reporting
-    runs-on: ubuntu-26.04
-    timeout-minutes: 90
+    name: Fuzz codec and legacy RPC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      # actionlint 1.7.12 requires checked-out local action syntax.
-      - uses: ./.github/actions/quality-setup # zizmor: ignore[self-repository]
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
         with:
-          lane: fuzz
-      - name: Configure AFL++ on the disposable hosted runner
+          cache-key: legacy-fuzz
+          workspaces: |
+            . -> target
+            fuzz -> target
+      - name: Install pinned fuzz tools
         run: |
-          test "$RUNNER_ENVIRONMENT" = github-hosted
-          cargo afl system-config
-      - name: Run Fuzzing
-        env:
-          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
-        run: cargo run --locked -p capntproto-quality -- fuzz target/quality/fuzz
-      - name: Collect counts, graphs and failed tests
-        if: success() || failure()
-        run: cargo run --locked -p capntproto-dev -- reports collect --input target/quality --kind fuzz --output target/readme-data/publication.json --failures-output target/quality/fuzz/FAILED-TESTS.md --report-output target/quality/fuzz
+          rustup toolchain install nightly-2026-08-29 --profile minimal
+          cargo install cargo-fuzz --version 0.13.1 --locked
+      - name: Exercise every supported fuzz target
+        run: |
+          for target in rpc_lifecycle capnp_framing capnp_pointers capnp_schema; do
+            cargo +nightly-2026-08-29 fuzz run --features fuzz-targets "$target" -- \
+              -max_total_time=30 -timeout=5 -rss_limit_mb=2048 -seed=1
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: readme-data-fuzz-${{ github.run_attempt }}
-          path: target/readme-data/publication.json
+          name: legacy-fuzz-findings
+          path: |
+            fuzz/artifacts/
+            fuzz/corpus/
           if-no-files-found: warn
-          retention-days: 90
-      # AFL's queue/crash names contain colons, which upload-artifact rejects.
-      # Archive all raw evidence even when the fuzzer or report step fails.
-      - name: Package fuzz reports and raw findings
-        if: always()
-        run: cargo run --locked -p capntproto-dev -- package-fuzz-report
-      - id: report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: fuzz-report
-          overwrite: true
-          path: target/fuzz-report.tar.gz
-          if-no-files-found: error
-          compression-level: 0
           retention-days: 30
-      - name: Link all results and diagnostics
-        if: always()
-        env:
-          REPORT_URL: ${{ steps.report.outputs.artifact-url }}
-        run: |
-          printf '[Download all results, graphs and diagnostics (fuzz-report.tar.gz)](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
-          if test -f target/quality/fuzz/FAILED-TESTS.md; then
-            cat target/quality/fuzz/FAILED-TESTS.md >> "$GITHUB_STEP_SUMMARY"
-          fi

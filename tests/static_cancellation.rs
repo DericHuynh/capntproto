@@ -173,7 +173,7 @@ impl Fixture {
     }
 
     async fn configured(
-        portable: bool,
+        _portable: bool,
         mode: u32,
         early: bool,
         fail: bool,
@@ -237,7 +237,7 @@ impl Fixture {
         };
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let system = RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), Some(cap));
+        let system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), Some(cap));
         let mut peer = hub.borrow_mut().connect(2, 1);
         let driver = tokio::task::spawn_local(system.run());
         peer.send(|m| m.init_bootstrap().set_question_id(0));
@@ -416,7 +416,7 @@ impl Fixture {
 async fn protected_calls_survive_finish_and_disconnect_with_early_results_release() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(std::time::Duration::from_secs(5), async {
                     for mode in 0..6 {
                         for membrane in [false, true] {
@@ -451,7 +451,7 @@ async fn protected_calls_survive_finish_and_disconnect_with_early_results_releas
 async fn immediate_rpc_poll_preserves_pending_protection_and_reports_ready_errors() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for fail in [false, true] {
                     for early in [false, true] {
                         for ready in [false, true] {
@@ -580,7 +580,7 @@ async fn replay_tlc_static_cancellation_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for case in &cases {
                     let allow = case["allow"].as_bool().unwrap();
                     for mode in if allow { vec![1, 2, 4, 5] } else { vec![0, 3] } {
@@ -733,7 +733,7 @@ async fn replay_tlc_call_executor_traces() {
 async fn inbound_calls_cannot_bypass_a_stopped_explicit_executor() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for _portable in [false] {
                 for synchronous in [true, false] {
                     for no_pipeline in [false, true] {
                         let (gate, receiver) = oneshot::channel();
@@ -747,13 +747,9 @@ async fn inbound_calls_cannot_bypass_a_stopped_explicit_executor() {
                         let local: policy::Client =
                             capnp_rpc::new_client_with_executor(Service(state.clone()), executor);
                         let hub = Rc::new(RefCell::new(Hub::default()));
-                        let server = RpcSystem::new(
-                            portable,
-                            Box::new(Hub::network(&hub, 2)),
-                            Some(local.client),
-                        );
-                        let mut caller =
-                            RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), None);
+                        let server =
+                            RpcSystem::new(Box::new(Hub::network(&hub, 2)), Some(local.client));
+                        let mut caller = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
                         let remote: policy::Client = caller.bootstrap(2);
                         let server = tokio::task::spawn_local(server.run());
                         let caller = tokio::task::spawn_local(caller.run());

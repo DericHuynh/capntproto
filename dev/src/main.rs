@@ -9,15 +9,9 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Test the production quiche transport against independent s2n-quic peers.
-    #[cfg(feature = "quic-interop")]
-    CheckQuicInterop {
-        #[arg(long, default_value = "target/debug/examples/quic-interop")]
-        binary: std::path::PathBuf,
-    },
     /// Reject tracked build artifacts, merge conflicts and oversized Git blobs.
     CheckRepository,
-    /// Run distributed checkout, browser, embedded TLS and runtime integrations.
+    /// Run schema services and the distributed checkout application.
     Examples(dev::examples::Options),
     /// Verify dependency inventories embedded by cargo-auditable.
     CheckAuditable(dev::checks::AuditArgs),
@@ -30,9 +24,7 @@ enum Command {
     CheckUnsafe,
     /// Verify workflow trigger and trust boundaries.
     CheckWorkflows,
-    /// Build and profile the complete portable TCP client; optionally train LLVM PGO.
-    RpcInstructions(dev::rpc_instructions::Args),
-    /// Prove the portable engine and fixed arena, with production mutation controls.
+    /// Prove shared RPC state transitions and the fixed arena, with mutation controls.
     Kani(dev::kani::Args),
     /// Verify source contracts and unbounded temporal proofs, with fault controls.
     #[command(subcommand)]
@@ -41,7 +33,7 @@ enum Command {
     Wiki(dev::wiki::Args),
     #[command(subcommand)]
     Reports(dev::reports::Args),
-    DigitaloceanBench(dev::cloud::Args),
+    DigitaloceanBench(CleanupArgs),
     AflFuzz(dev::fuzz::Args),
     PackageFuzzReport,
     #[command(subcommand)]
@@ -49,12 +41,22 @@ enum Command {
     #[command(subcommand)]
     Probe(dev::probes::Args),
 }
+#[derive(Parser)]
+struct CleanupArgs {
+    #[arg(value_enum)]
+    action: CleanupAction,
+    #[arg(long)]
+    state: std::path::PathBuf,
+}
+#[derive(Clone, clap::ValueEnum)]
+enum CleanupAction {
+    Cleanup,
+    Janitor,
+}
 fn main() -> Result<()> {
     let cli = Cli::parse();
     std::env::set_current_dir(dev::root())?;
     match cli.command {
-        #[cfg(feature = "quic-interop")]
-        Command::CheckQuicInterop { binary } => dev::interop::run(&binary),
         Command::CheckRepository => dev::checks::repository(&dev::root()),
         Command::Examples(options) => dev::examples::run(options),
         Command::CheckAuditable(a) => dev::checks::audit(&a),
@@ -67,12 +69,20 @@ fn main() -> Result<()> {
         }
         Command::CheckUnsafe => dev::checks::unsafe_code(),
         Command::CheckWorkflows => dev::checks::workflows(),
-        Command::RpcInstructions(args) => dev::rpc_instructions::run(args),
         Command::Kani(args) => dev::kani::run(args),
         Command::Verus(args) => dev::verus::run(args),
         Command::Wiki(a) => dev::wiki::run(a),
         Command::Reports(a) => dev::reports::run(a),
-        Command::DigitaloceanBench(a) => dev::cloud::run(a),
+        Command::DigitaloceanBench(a) => dev::cloud::run(dev::cloud::Args {
+            action: match a.action {
+                CleanupAction::Cleanup => dev::cloud::Action::Cleanup,
+                CleanupAction::Janitor => dev::cloud::Action::Janitor,
+            },
+            state: a.state,
+            trace_io: false,
+            bundle: None,
+            output: None,
+        }),
         Command::AflFuzz(a) => dev::fuzz::run(a),
         Command::PackageFuzzReport => {
             println!("{}", dev::fuzz::package(&dev::root())?.display());

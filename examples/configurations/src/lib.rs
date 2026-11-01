@@ -1,40 +1,13 @@
-//! One schema with explicitly selected runtime, transport and RPC implementation.
+//! Tokio/rustls service configuration with explicit server trust and optional mutual TLS.
 use capntproto::{
-    capnp_rpc::twoparty::{ConnectionOptions, RpcDriver},
+    capnp_rpc::twoparty::ConnectionOptions,
     rpc::{security, tcp::tls, SystemClock},
 };
-use clap::ValueEnum;
 pub use service::{greeting_capnp, Service};
 use std::{net::SocketAddr, path::Path, sync::Arc, time::Duration};
 use tokio_util::compat::TokioAsyncReadCompatExt;
 pub type Result<T> = service::Result<T>;
 pub const DEADLINE: Duration = Duration::from_secs(15);
-#[derive(Clone, Copy, Debug, ValueEnum)]
-pub enum Driver {
-    Legacy,
-    Portable,
-}
-impl Driver {
-    pub fn protocol(self) -> capntproto::capnp::Result<RpcDriver> {
-        match self {
-            Self::Legacy => Ok(RpcDriver::Legacy),
-            Self::Portable => service::protocol(),
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, ValueEnum)]
-pub enum Runtime {
-    Tokio,
-    #[cfg(all(feature = "monoio", any(target_os = "linux", target_os = "macos")))]
-    Monoio,
-}
-#[derive(Clone, Copy, Debug, ValueEnum)]
-pub enum Transport {
-    Tcp,
-    Tls,
-    #[cfg(feature = "webtransport")]
-    Webtransport,
-}
 pub struct Pki {
     pub root: Vec<u8>,
     pub server: security::Identity,
@@ -141,104 +114,25 @@ pub fn copy_identity(identity: &security::Identity) -> security::Identity {
         private_key: identity.private_key.clone_key(),
     }
 }
-pub async fn tokio_client(
+/// Connect to the authenticated greeting service using Tokio and rustls.
+pub async fn client(
     address: SocketAddr,
-    transport: Transport,
-    driver: Driver,
     ca: &[u8],
-    client_identity: Option<security::Identity>,
+    identity: Option<security::Identity>,
     prefix: &str,
     value: &str,
 ) -> Result<String> {
-    match transport {
-        Transport::Tcp => {
-            service::greeting_with_protocol(
-                tokio::net::TcpStream::connect(address).await?.compat(),
-                prefix,
-                value,
-                driver.protocol()?,
-            )
-            .await
-        }
-        Transport::Tls => {
-            let config = tls::client_config(roots(ca)?, client_identity, Arc::new(SystemClock))?;
-            let io = tls::connect(address, "localhost".try_into()?, config, DEADLINE).await?;
-            service::greeting_with_protocol(io.compat(), prefix, value, driver.protocol()?).await
-        }
-        #[cfg(feature = "webtransport")]
-        Transport::Webtransport => {
-            let client = capntproto::rpc::webtransport::Client::new(
-                capntproto::rpc::webtransport::tls::RootCertStore {
-                    roots: roots(ca)?.roots,
-                },
-                Arc::new(SystemClock),
-            )?;
-            let mut session = client.connect(&format!("https://{address}/rpc")).await?;
-            service::greeting_with_protocol(
-                session.open_bi().await?,
-                prefix,
-                value,
-                driver.protocol()?,
-            )
-            .await
-        }
-    }
-}
-#[cfg(all(feature = "monoio", any(target_os = "linux", target_os = "macos")))]
-pub async fn monoio_client(
-    address: SocketAddr,
-    transport: Transport,
-    driver: Driver,
-    ca: &[u8],
-    client_identity: Option<security::Identity>,
-    prefix: &str,
-    value: &str,
-) -> Result<String> {
-    use capntproto::rpc::{driven::DriverExt, monoio};
-    match transport {
-        Transport::Tcp => Err("monoio example requires TLS; use tls or webtransport".into()),
-        Transport::Tls => {
-            let socket = monoio::tls::tcp_connect(address).await?;
-            let config = tls::client_config(roots(ca)?, client_identity, Arc::new(SystemClock))?;
-            let (mut stream, transport) =
-                monoio::tls::client(socket, config, "localhost".try_into()?)?;
-            transport
-                .run_until(async {
-                    stream.ready().await?;
-                    service::greeting_with_protocol(stream, prefix, value, driver.protocol()?).await
-                })
-                .await
-                .map_err(|e| std::io::Error::other(format!("transport: {e:?}")))?
-        }
-        #[cfg(feature = "webtransport")]
-        Transport::Webtransport => {
-            let client = monoio::webtransport::Client::new(
-                capntproto::rpc::webtransport::tls::RootCertStore {
-                    roots: roots(ca)?.roots,
-                },
-                Arc::new(SystemClock),
-            )?;
-            let mut session = client
-                .connect_to(address, &format!("https://{address}/rpc"))
-                .await?;
-            service::greeting_with_protocol(
-                session.open_bi().await?,
-                prefix,
-                value,
-                driver.protocol()?,
-            )
-            .await
-        }
-    }
+    let config = tls::client_config(roots(ca)?, identity, Arc::new(SystemClock))?;
+    let stream = tls::connect(address, "localhost".try_into()?, config, DEADLINE).await?;
+    service::greeting(stream.compat(), prefix, value).await
 }
 pub async fn server_stream<S: futures::AsyncRead + futures::AsyncWrite + Unpin + 'static>(
     stream: S,
-    driver: Driver,
 ) -> Result<()> {
-    let service: greeting_capnp::greeting::Client = capntproto::capnp_rpc::new_client(Service);
+    let bootstrap =
+        capntproto::capnp_rpc::new_client::<greeting_capnp::greeting::Client, _>(Service);
     ConnectionOptions::new()
-        .driver(driver.protocol()?)
-        .server(stream, service.client)?
+        .server(stream, bootstrap.client)?
         .await?;
     Ok(())
 }

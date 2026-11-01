@@ -77,7 +77,7 @@ async fn tail_peer(
     tail_peer_with_bootstrap(portable, service.client).await
 }
 async fn tail_peer_with_bootstrap(
-    portable: bool,
+    _portable: bool,
     service: capnp::capability::Client,
 ) -> (
     Rc<RefCell<Hub>>,
@@ -86,8 +86,7 @@ async fn tail_peer_with_bootstrap(
     tokio::task::JoinHandle<capnp::Result<()>>,
 ) {
     let hub = Rc::new(RefCell::new(Hub::default()));
-    let system =
-        support::driver::System::new(portable, Box::new(Hub::network(&hub, 1)), Some(service));
+    let system = support::driver::System::new(Box::new(Hub::network(&hub, 1)), Some(service));
     let task = tokio::task::spawn_local(system.run());
     let mut peer = hub.borrow_mut().connect(2, 1);
     peer.send(|m| m.init_bootstrap().set_question_id(0));
@@ -130,12 +129,11 @@ struct Fixture {
     disconnected: bool,
 }
 impl Fixture {
-    async fn with_driver(portable: bool, only_pipeline: bool) -> Self {
+    async fn with_driver(_portable: bool, only_pipeline: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 1);
         let service: harness::Client = capnp_rpc::new_client(Tail);
-        let mut system =
-            support::driver::System::new(portable, Box::new(network), Some(service.client));
+        let mut system = support::driver::System::new(Box::new(network), Some(service.client));
         system.set_outgoing_call_limit(2);
         if !only_pipeline {
             system.set_flow_limit(1);
@@ -409,7 +407,7 @@ struct Step {
     state: [u32; 8],
 }
 async fn replay(steps: &[Step]) {
-    for portable in [false, true] {
+    for portable in [false] {
         replay_driver(steps, portable).await;
     }
 }
@@ -584,11 +582,11 @@ struct RoutingStep {
     state: [u32; 4],
 }
 async fn routing_trace(steps: &[RoutingStep]) {
-    for portable in [false, true] {
+    for portable in [false] {
         routing_trace_driver(steps, portable).await;
     }
 }
-async fn routing_trace_driver(steps: &[RoutingStep], portable: bool) {
+async fn routing_trace_driver(steps: &[RoutingStep], _portable: bool) {
     let hub = Rc::new(RefCell::new(Hub::default()));
     let network = Hub::network(&hub, 1);
     let (prepared, ready) = futures::channel::oneshot::channel();
@@ -598,7 +596,7 @@ async fn routing_trace_driver(steps: &[RoutingStep], portable: bool) {
         gate: RefCell::new(Some(waiting)),
     });
     let task = tokio::task::spawn_local(
-        support::driver::System::new(portable, Box::new(network), Some(service.client)).run(),
+        support::driver::System::new(Box::new(network), Some(service.client)).run(),
     );
     let mut peer = hub.borrow_mut().connect(2, 1);
     peer.send(|m| m.init_bootstrap().set_question_id(0));
@@ -789,7 +787,7 @@ async fn pipeline_only_hint_skips_tail_transfer() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
-                for portable in [false, true] {
+                for portable in [false] {
                     Fixture::with_driver(portable, true).await.cleanup().await;
                 }
             })
@@ -804,7 +802,7 @@ async fn pipeline_only_tail_forwarding_keeps_parent_pending() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
-                for portable in [false, true] {
+                for portable in [false] {
                     for downstream_return in [false, true] {
                         let (hub, mut peer, export, task) =
                             tail_peer(portable, capnp_rpc::new_client(Tail)).await;
@@ -917,7 +915,7 @@ struct InitializedTail {
 async fn pipeline_only_tail_preserves_dependent_calls_after_parent_finish() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(
                     Duration::from_secs(5),
                     dependent_pipeline_after_finish(portable),
@@ -1103,7 +1101,7 @@ impl harness::Server for CompletedPipeline {
 async fn completed_pipeline_answer_remains_callable_without_return_until_finish() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(5), completed_pipeline_answer(portable))
                     .await
                     .unwrap();
@@ -1223,7 +1221,7 @@ async fn initialized_tail_results_are_rejected_by_both_drivers() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(Duration::from_secs(5), async {
-                for portable in [false, true] {
+                for portable in [false] {
                     for populated in [false, true] {
                         let (_hub, mut peer, export, task) = tail_peer(
                             portable,
@@ -1276,7 +1274,7 @@ async fn initialized_tail_results_are_rejected_by_both_drivers() {
 async fn protected_tail_after_parent_finish_keeps_the_connection_usable() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for (portable, finish_before_resume) in [false, true].into_iter().flat_map(|portable| [true, false].map(|early| (portable, early))) {
+            for (portable, finish_before_resume) in [false].into_iter().flat_map(|portable| [true, false].map(|early| (portable, early))) {
                 tokio::time::timeout(Duration::from_secs(2), async {
                     let (prepared, ready) = futures::channel::oneshot::channel();
                     let (gate, waiting) = futures::channel::oneshot::channel();

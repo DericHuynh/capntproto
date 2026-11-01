@@ -5,6 +5,6 @@ fn main() {
     capnpc::CompilerCommand::new()
         .src_prefix("schemas")
         .file("schemas/lifecycle.capnp")
-        .run()
+        .run_native()
         .expect("compile stateful RPC fuzz fixture");
 }

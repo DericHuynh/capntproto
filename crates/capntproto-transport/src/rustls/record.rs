@@ -1,4 +1,4 @@
-//! IO-free rustls record processing shared by direct readiness and completion IO.
+//! rustls record processing for the direct Tokio stream.
 use rustls_impl::{
     client::UnbufferedClientConnection,
     server::UnbufferedServerConnection,
@@ -11,229 +11,7 @@ pub(crate) trait ReadBuffer {
     fn remaining(&self) -> usize;
     fn put_slice(&mut self, bytes: &[u8]);
 }
-pub(crate) struct SliceRead<'a> {
-    pub bytes: &'a mut [u8],
-    pub filled: usize,
-}
-impl ReadBuffer for SliceRead<'_> {
-    fn remaining(&self) -> usize {
-        self.bytes.len() - self.filled
-    }
-    fn put_slice(&mut self, bytes: &[u8]) {
-        self.bytes[self.filled..self.filled + bytes.len()].copy_from_slice(bytes);
-        self.filled += bytes.len();
-    }
-}
 
-/// Progress requested by the IO-free record layer. Yield means more local work
-/// is ready after the bounded processing allowance, not socket readiness.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Progress<T> {
-    Ready(T),
-    Input,
-    Output,
-    Yield,
-}
-
-/// A TLS state machine with no socket, executor, task, timer, or waker. Native
-/// rustls owns allocating record storage; this is not the embedded TLS profile.
-pub struct RecordLayer {
-    pub(crate) connection: Connection,
-    pub(crate) incoming: Buffer,
-    pub(crate) outgoing: Buffer,
-    pub(crate) plaintext: Buffer,
-    pub(crate) write_batch: Vec<u8>,
-    pub(crate) peer_closed: bool,
-    pub(crate) write_closed: bool,
-}
-impl RecordLayer {
-    pub fn client(
-        config: std::sync::Arc<rustls_impl::ClientConfig>,
-        name: rustls_impl::pki_types::ServerName<'static>,
-    ) -> io::Result<Self> {
-        if config.enable_early_data {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "TLS early data is disabled",
-            ));
-        }
-        Ok(Self::new(Connection::Client(
-            UnbufferedClientConnection::new(config, name).map_err(io::Error::other)?,
-        )))
-    }
-    pub fn server(config: std::sync::Arc<rustls_impl::ServerConfig>) -> io::Result<Self> {
-        if config.max_early_data_size != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "TLS early data is disabled",
-            ));
-        }
-        Ok(Self::new(Connection::Server(
-            UnbufferedServerConnection::new(config).map_err(io::Error::other)?,
-        )))
-    }
-    fn new(connection: Connection) -> Self {
-        Self {
-            connection,
-            incoming: Buffer::new(INPUT_BYTES),
-            outgoing: Buffer::new(OUTPUT_BYTES),
-            plaintext: Buffer::default(),
-            write_batch: Vec::new(),
-            peer_closed: false,
-            write_closed: false,
-        }
-    }
-    pub fn common(&self) -> &CommonState {
-        self.connection.common()
-    }
-
-    /// Lend unused ciphertext input. Commit only the bytes actually received.
-    /// Existing incomplete records are compacted only when refill needs room.
-    pub fn input(&mut self) -> io::Result<&mut [u8]> {
-        let b = &mut self.incoming;
-        if b.bytes.is_empty() {
-            return Err(io::ErrorKind::WouldBlock.into());
-        }
-        if b.bytes.len() - b.end < 18 * 1024 && b.start != 0 {
-            b.bytes.copy_within(b.start..b.end, 0);
-            b.end -= b.start;
-            b.start = 0;
-        }
-        if b.end == b.bytes.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "TLS input limit exceeded",
-            ));
-        }
-        Ok(&mut b.bytes[b.end..])
-    }
-    pub fn commit_input(&mut self, count: usize) -> io::Result<()> {
-        if self.incoming.bytes.is_empty() || count > self.incoming.bytes.len() - self.incoming.end {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "TLS receive count exceeds the lent buffer",
-            ));
-        }
-        if count == 0 && !self.peer_closed {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "TLS peer closed without close_notify",
-            ));
-        }
-        self.incoming.end += count;
-        Ok(())
-    }
-    pub fn output(&self) -> &[u8] {
-        self.outgoing.pending()
-    }
-    pub fn consume_output(&mut self, count: usize) -> io::Result<()> {
-        if count > self.outgoing.pending().len() {
-            return Err(io::ErrorKind::InvalidInput.into());
-        }
-        self.outgoing.consume(count);
-        Ok(())
-    }
-    /// Mark physical/local flush completion only after all accepted output.
-    pub fn flushed(&mut self) -> io::Result<()> {
-        if !self.outgoing.pending().is_empty() {
-            return Err(io::ErrorKind::WouldBlock.into());
-        }
-        self.outgoing.flushed = true;
-        Ok(())
-    }
-    pub fn handshake(&mut self) -> io::Result<Progress<usize>> {
-        self.advance(Operation::Handshake)
-    }
-    pub fn read(&mut self, bytes: &mut [u8]) -> io::Result<Progress<usize>> {
-        if bytes.is_empty() {
-            return Ok(Progress::Ready(0));
-        }
-        if !self.plaintext.pending().is_empty() {
-            let n = bytes.len().min(self.plaintext.pending().len());
-            bytes[..n].copy_from_slice(&self.plaintext.pending()[..n]);
-            self.plaintext.consume(n);
-            return Ok(Progress::Ready(n));
-        }
-        if self.peer_closed {
-            return Ok(Progress::Ready(0));
-        }
-        self.advance(Operation::Read(&mut SliceRead { bytes, filled: 0 }))
-    }
-    pub fn write(&mut self, bytes: &[u8]) -> io::Result<Progress<usize>> {
-        if self.write_closed {
-            return Err(io::ErrorKind::BrokenPipe.into());
-        }
-        if bytes.is_empty() {
-            return Ok(Progress::Ready(0));
-        }
-        // Accept a bounded batch before the completion driver submits IO.
-        // AsyncWrite acceptance does not require flushing the previous write.
-        if self.outgoing.end >= WRITE_BYTES {
-            return Ok(Progress::Output);
-        }
-        self.advance(Operation::Write(bytes))
-    }
-    pub fn write_vectored(&mut self, bytes: &[io::IoSlice<'_>]) -> io::Result<Progress<usize>> {
-        if self.write_closed {
-            return Err(io::ErrorKind::BrokenPipe.into());
-        }
-        if bytes.iter().all(|b| b.is_empty()) {
-            return Ok(Progress::Ready(0));
-        }
-        // Accept a bounded batch before the completion driver submits IO.
-        // AsyncWrite acceptance does not require flushing the previous write.
-        if self.outgoing.end >= WRITE_BYTES {
-            return Ok(Progress::Output);
-        }
-        self.advance(Operation::WriteVectored(bytes))
-    }
-    pub fn flush(&mut self) -> io::Result<Progress<usize>> {
-        self.advance(Operation::Flush)
-    }
-    pub fn shutdown(&mut self) -> io::Result<Progress<usize>> {
-        self.advance(Operation::Shutdown)
-    }
-    fn advance(
-        &mut self,
-        mut operation: Operation<'_, '_, SliceRead<'_>>,
-    ) -> io::Result<Progress<usize>> {
-        for _ in 0..128 {
-            let bytes = if self.incoming.bytes.is_empty() {
-                &mut [][..]
-            } else {
-                &mut self.incoming.bytes[self.incoming.start..self.incoming.end]
-            };
-            let (discard, action) = match &mut self.connection {
-                Connection::Client(c) => handle(
-                    c.process_tls_records(bytes),
-                    &mut operation,
-                    &mut self.outgoing,
-                    &mut self.plaintext,
-                    &mut self.write_batch,
-                    &mut self.peer_closed,
-                    &mut self.write_closed,
-                )?,
-                Connection::Server(c) => handle(
-                    c.process_tls_records(bytes),
-                    &mut operation,
-                    &mut self.outgoing,
-                    &mut self.plaintext,
-                    &mut self.write_batch,
-                    &mut self.peer_closed,
-                    &mut self.write_closed,
-                )?,
-            };
-            self.incoming.consume(discard);
-            match action {
-                Action::Continue => (),
-                Action::Read => return Ok(Progress::Input),
-                Action::Transmit => return Ok(Progress::Output),
-                Action::Ready(n) => return Ok(Progress::Ready(n)),
-            }
-        }
-        Ok(Progress::Yield)
-    }
-}
 // Enough for rustls's largest handshake message and the following record.
 // This buffer never shrinks when a record has been consumed.
 pub(crate) const INPUT_BYTES: usize = 64 * 1024 + 18 * 1024;
@@ -334,6 +112,17 @@ fn encrypt_vectored<Data>(
     outgoing: &mut Buffer,
     batch: &mut Vec<u8>,
 ) -> io::Result<usize> {
+    // A single effective slice already has contiguous plaintext. Feed it
+    // directly to rustls's caller-owned ciphertext output instead of copying
+    // through (and initially allocating) the scatter/gather staging buffer.
+    let mut nonempty = buffers.iter().filter(|buffer| !buffer.is_empty());
+    if let Some(first) = nonempty.next() {
+        if nonempty.next().is_none() {
+            let size = first.len().min(WRITE_BYTES);
+            encrypt(traffic, &first[..size], outgoing)?;
+            return Ok(size);
+        }
+    }
     // Most RPC writes fit in one record. Copy that batch once without walking
     // the general cross-record cursor for every slice.
     let length = buffers.iter().try_fold(0usize, |length, b| {

@@ -2,9 +2,6 @@
 mod borrowed;
 mod options;
 pub use options::ConnectionOptions;
-mod driver;
-pub use driver::RpcDriver;
-use driver::Running;
 mod notify;
 use notify::WakeDriven;
 
@@ -86,7 +83,7 @@ impl<T: AsyncRead + Unpin + 'static> TwoPartyNetwork for VatNetwork<T> {
 /// neither mechanism places borrowed IO in the runtime's `'static` tasks.
 #[must_use = "the client must be polled to drive RPC"]
 pub struct TwoPartyClient<'a> {
-    system: Option<Running>,
+    system: Option<RpcSystem<VatId>>,
     side: VatId,
     queue: QueueDiagnostics,
     output_closed: Option<WakeDriven<Shared<Promise<(), Error>>>>,
@@ -121,24 +118,13 @@ impl TwoPartyClient<'static> {
         network: N,
         bootstrap: Option<Client>,
     ) -> Self {
-        Self::from_network_with_driver(network, bootstrap, RpcDriver::Legacy)
-            .expect("legacy construction is infallible")
-    }
-
-    /// Select the protocol driver explicitly. Portable storage limits are
-    /// validated before the network is transferred to its runtime.
-    pub fn from_network_with_driver<N: TwoPartyNetwork + 'static>(
-        network: N,
-        bootstrap: Option<Client>,
-        driver: RpcDriver,
-    ) -> capnp::Result<Self> {
         let side = network.side();
         let queue = network.outgoing_queue();
         let output_closed = network.output_closed();
         let write_finished = network.when_write_finished();
         let (completion, receiver) = oneshot::channel();
-        Ok(Self {
-            system: Some(Running::new(Box::new(network), bootstrap, driver)?),
+        Self {
+            system: Some(RpcSystem::new(Box::new(network), bootstrap)),
             side,
             queue,
             output_closed: Some(WakeDriven::new(output_closed)),
@@ -152,22 +138,7 @@ impl TwoPartyClient<'static> {
             completion: Some(completion),
             borrowed: None,
             scope: None,
-        })
-    }
-
-    /// Connect an owned byte stream using the selected protocol driver.
-    pub fn with_driver(
-        stream: impl AsyncRead + AsyncWrite + Unpin + 'static,
-        bootstrap: Option<Client>,
-        side: VatId,
-        driver: RpcDriver,
-    ) -> capnp::Result<Self> {
-        let (read, write) = stream.split();
-        Self::from_network_with_driver(
-            VatNetwork::new(read, write, side, driver.reader_options()),
-            bootstrap,
-            driver,
-        )
+        }
     }
 }
 
@@ -185,21 +156,6 @@ impl<'a> TwoPartyClient<'a> {
             let _resource = resource;
         }));
         client
-    }
-    /// Scoped-network variant with explicit driver selection. The resource
-    /// remains borrowed until protocol and transport ownership are released.
-    pub fn from_scoped_network_with_driver<N: TwoPartyNetwork + 'static, T: ?Sized>(
-        network: N,
-        bootstrap: Option<Client>,
-        resource: &'a mut T,
-        driver: RpcDriver,
-    ) -> capnp::Result<Self> {
-        let mut client: Self =
-            TwoPartyClient::from_network_with_driver(network, bootstrap, driver)?;
-        client.scope = Some(Box::new(move || {
-            let _resource = resource;
-        }));
-        Ok(client)
     }
     /// Borrow a stream until this driver completes or is dropped. Cancellation
     /// releases the borrow without dropping or closing the caller's stream.
@@ -219,29 +175,12 @@ impl<'a> TwoPartyClient<'a> {
         side: VatId,
         options: ReaderOptions,
     ) -> Self {
-        Self::new_borrowed_with_driver(stream, bootstrap, side, options, RpcDriver::Legacy)
-            .expect("legacy construction is infallible")
-    }
-
-    /// Borrowed-stream variant with explicit driver selection. Both drivers
-    /// use the same bounded IO pump and release the caller's borrow on Drop.
-    /// The explicit reader options apply to both framing and portable admission.
-    pub fn new_borrowed_with_driver<T: AsyncRead + AsyncWrite + Unpin + 'a>(
-        stream: &'a mut T,
-        bootstrap: Option<Client>,
-        side: VatId,
-        options: ReaderOptions,
-        driver: RpcDriver,
-    ) -> capnp::Result<Self> {
         let (proxy, pump) = borrowed::new(stream);
         let (read, write) = proxy.split();
-        let mut client: Self = TwoPartyClient::from_network_with_driver(
-            VatNetwork::new(read, write, side, options),
-            bootstrap,
-            driver.with_reader_options(options),
-        )?;
+        let mut client: Self =
+            TwoPartyClient::from_network(VatNetwork::new(read, write, side, options), bootstrap);
         client.borrowed = Some(Box::new(pump));
-        Ok(client)
+        client
     }
 
     /// Drive RPC until the application completes, then disconnect gracefully.
@@ -321,7 +260,7 @@ impl<'a> TwoPartyClient<'a> {
     /// completed drivers return a ready future, making shutdown idempotent.
     pub fn get_disconnector(&self) -> Promise<(), Error> {
         match &self.system {
-            Some(system) => system.get_disconnector(),
+            Some(system) => Promise::from_future(system.get_disconnector()),
             None => Promise::ok(()),
         }
     }
@@ -353,7 +292,7 @@ impl<'a> TwoPartyClient<'a> {
     pub fn diagnostics(&self) -> crate::RpcDiagnostics {
         self.system.as_ref().map_or_else(
             || crate::RpcDiagnostics(Rc::new(Vec::new)),
-            Running::diagnostics,
+            RpcSystem::diagnostics,
         )
     }
     pub fn get_current_queue_size(&self) -> usize {
@@ -427,7 +366,7 @@ impl Future for TwoPartyClient<'_> {
                             && this
                                 .system
                                 .as_ref()
-                                .is_some_and(|system| system.is_closing())
+                                .is_some_and(|system| system.connections.borrow().is_closing())
                     });
                     if let Some(error) = failure.filter(|_| !deliberate) {
                         let result = if error.kind == capnp::ErrorKind::Disconnected {
@@ -479,7 +418,6 @@ type TraceEncoder = Rc<dyn Fn(&Error) -> String>;
 pub struct TwoPartyServer {
     bootstrap: Client,
     options: ReaderOptions,
-    driver: RpcDriver,
     trace_encoder: Option<TraceEncoder>,
     tasks: task_set::TaskSetHandle<Error>,
     drain: Rc<RefCell<Drain>>,
@@ -578,16 +516,6 @@ impl TwoPartyServer {
         bootstrap: Client,
         on_error: impl FnMut(Error) + 'static,
     ) -> (Self, ServerDriver) {
-        Self::with_driver(bootstrap, RpcDriver::Legacy, on_error)
-    }
-
-    /// All accepted owned, borrowed and scoped connections use this driver.
-    /// Portable options are checked for each acceptance; no legacy fallback is used.
-    pub fn with_driver(
-        bootstrap: Client,
-        protocol: RpcDriver,
-        on_error: impl FnMut(Error) + 'static,
-    ) -> (Self, ServerDriver) {
         let (tasks, driver) = task_set::TaskSet::new(Box::new(Reaper(on_error)));
         let drain = Rc::new(RefCell::new(Drain {
             alive: true,
@@ -597,8 +525,7 @@ impl TwoPartyServer {
         (
             Self {
                 bootstrap,
-                options: protocol.reader_options(),
-                driver: protocol,
+                options: ReaderOptions::new(),
                 trace_encoder: None,
                 tasks,
                 drain: drain.clone(),
@@ -613,7 +540,6 @@ impl TwoPartyServer {
     /// Applies to subsequently accepted connections.
     pub fn set_reader_options(&mut self, options: ReaderOptions) {
         self.options = options;
-        self.driver = self.driver.with_reader_options(options);
     }
 
     /// Applies to subsequently accepted connections; existing connections keep
@@ -646,11 +572,7 @@ impl TwoPartyServer {
         if network.side() != VatId::Server {
             return Err(Error::failed("server network must use Side::Server".into()));
         }
-        let mut client = TwoPartyClient::from_network_with_driver(
-            network,
-            Some(self.bootstrap.clone()),
-            self.driver,
-        )?;
+        let mut client = TwoPartyClient::from_network(network, Some(self.bootstrap.clone()));
         self.configure(&mut client);
         self.drain.borrow_mut().count += 1;
         self.tasks
@@ -671,12 +593,8 @@ impl TwoPartyServer {
         if network.side() != VatId::Server {
             return Err(Error::failed("server network must use Side::Server".into()));
         }
-        let mut client = TwoPartyClient::from_scoped_network_with_driver(
-            network,
-            Some(self.bootstrap.clone()),
-            resource,
-            self.driver,
-        )?;
+        let mut client =
+            TwoPartyClient::from_scoped_network(network, Some(self.bootstrap.clone()), resource);
         self.configure(&mut client);
         Ok(client)
     }
@@ -687,13 +605,12 @@ impl TwoPartyServer {
         &self,
         stream: &'a mut T,
     ) -> capnp::Result<TwoPartyClient<'a>> {
-        let mut client = TwoPartyClient::new_borrowed_with_driver(
+        let mut client = TwoPartyClient::new_borrowed(
             stream,
             Some(self.bootstrap.clone()),
             VatId::Server,
             self.options,
-            self.driver,
-        )?;
+        );
         self.configure(&mut client);
         Ok(client)
     }

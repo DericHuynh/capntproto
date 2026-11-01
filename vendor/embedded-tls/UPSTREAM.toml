@@ -1,8 +1,0 @@
-crate = "embedded-tls"
-version = "0.19.0"
-crates_io_checksum = "6ff3c16c9cedcab3ef5c79fd46349152adbb98f997b937cb1ead7655f5c07e43"
-local_package = "capntproto-embedded-tls"
-changes = [
-  "Upgrade P-256, ECDSA and signature traits to maintained RustCrypto versions (RUSTSEC-2026-0387).",
-  "Adapt rand_core 0.6 caller entropy to rand_core 0.10 without changing the entropy source.",
-]

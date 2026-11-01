@@ -8,14 +8,12 @@ replace them.
 |---|---|---|
 | Owned `capntproto-core`, `capntproto-codegen`, `capntproto-rpc` crates derived from capnp-rs | Each directory's `LICENSE` under `crates/` (MIT) | Corresponding `vendor/provenance/*-revision.json` |
 | Owned `capntproto-futures` derived from `capnp-futures` | `crates/capntproto-futures/LICENSE` (MIT) | `vendor/provenance/capnp-futures-revision.json` records the upstream base; async framing and queue changes are maintained locally |
-| Unmodified quiche 0.30.0 | BSD-2-Clause, obtained through Cargo | Registry source and checksum in Cargo.lock |
 | s2n-quic 1.88.0 | Apache-2.0, obtained through Cargo | Optional independent development test peer; registry source and checksums in Cargo.lock |
 | C++ reference submodule and normative schemas | `vendor/capnproto/LICENSE`, schema notices | `.gitmodules` and `vendor/provenance/revision.json` |
 | Unmodified verus-tla temporal proof library | `vendor/verus-tla/LICENSE` (MIT) | Development-only submodule; `.gitmodules` and `vendor/provenance/verus-tla-revision.json`. Verified before use; never linked into production. |
 | Vendored rustls 0.23.46 with upstream caller-provided encryption output | `vendor/rustls/LICENSE-APACHE`, `LICENSE-ISC`, and `LICENSE-MIT` | `vendor/rustls/UPSTREAM.json` pins the published package and source hashes; `UPSTREAM-3127.json` identifies the upstream implementation and `LOCAL.patch` records the backport |
 | tokio-rustls | Apache-2.0 OR MIT, obtained through Cargo | Buffered interoperability and comparator adapters; exact version and checksum in Cargo.lock |
-| BoringSSL / boring and x509-parser | Respective crate license notices, obtained through Cargo | quiche TLS and pinned certificate verification; exact versions in Cargo.lock |
-| rcgen | Apache-2.0 OR MIT, obtained through Cargo | Native identity and test certificate generation; version and checksum in Cargo.lock |
+| rcgen | Apache-2.0 OR MIT, obtained through Cargo | Development and test certificate generation; version and checksum in Cargo.lock |
 | Shuttle 0.9.4 | Apache-2.0, obtained through Cargo | Development-only schedule testing; exact version and component checksums in Cargo.lock |
 | EAE research archive | Archive package metadata declares MIT | `research/EAE-Reconstruction.zip`; benchmark-only input, not a runtime dependency |
 

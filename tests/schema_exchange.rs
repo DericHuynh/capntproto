@@ -424,55 +424,6 @@ async fn replay(trace: Trace) {
         );
     }
 }
-#[tokio::test(flavor = "current_thread")]
-async fn schema_service_over_authenticated_native() {
-    use capntproto::{
-        native_rpc::Network,
-        transport::{self, Identity},
-    };
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                let a = Identity::generate();
-                let b = Identity::generate();
-                let left = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let right = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let remote = right.local_addr().unwrap();
-                let (aa, bb) = tokio::join!(
-                    transport::connect_authenticated(
-                        left,
-                        remote,
-                        &a,
-                        b.public_key(),
-                        None,
-                        b"schemas"
-                    ),
-                    transport::accept_authenticated(right, &b, a.public_key(), None, b"schemas")
-                );
-                let (an, ah) = Network::new(a.public_key());
-                let (bn, bh) = Network::new(b.public_key());
-                ah.attach(aa.unwrap()).unwrap();
-                bh.attach(bb.unwrap()).unwrap();
-                let owner = Rc::new(RefCell::new(Catalog::new(Limits::default())));
-                owner.borrow_mut().publish(graph("cycle", 1)).unwrap();
-                let server =
-                    capnp_rpc::RpcSystem::new(Box::new(bn), Some(Catalog::service(owner).client));
-                let mut client = capnp_rpc::RpcSystem::new(Box::new(an), None);
-                let schemas: wire::catalog::Client = client.bootstrap(b.public_key());
-                let _tasks = Tasks(vec![
-                    tokio::task::spawn_local(server),
-                    tokio::task::spawn_local(client),
-                ]);
-                let bundle = exchange::fetch(&schemas, key(1, 1), Limits::default(), 3)
-                    .await
-                    .unwrap();
-                assert_eq!(bundle.len(), 2);
-            })
-            .await
-            .unwrap();
-        })
-        .await;
-}
 
 #[tokio::test(flavor = "current_thread")]
 async fn cancelling_fetch_releases_outstanding_schema_calls() {

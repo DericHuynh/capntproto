@@ -107,8 +107,6 @@ fn build(output: &Path) -> (PathBuf, PathBuf, PathBuf) {
             "--no-default-features",
             "--example",
             "rpc_interop",
-            "--example",
-            "bounded_cpp_interop",
             "--target-dir",
             "target/interop-build",
         ]),
@@ -262,25 +260,9 @@ fn cpp_and_upstream_rust_bidirectional_rpc() {
     fs::create_dir_all(&output).unwrap();
     let _lock = v::lock(&output.join("matrix.lock")).unwrap();
     let (ours, cpp, rust) = build(&output);
-    let peers = [
-        (&ours, "legacy"),
-        (&ours, "portable"),
-        (&cpp, "cpp"),
-        (&rust, "upstream-rust"),
-    ];
+    let peers = [(&ours, "legacy"), (&cpp, "cpp"), (&rust, "upstream-rust")];
     let mut results = Vec::new();
     let mut failures = Vec::new();
-    let bounded = run(
-        command(root().join("target/interop-build/debug/examples/bounded_cpp_interop"))
-            .arg(&rust)
-            .arg("bounded-server"),
-        &output.join("bounded-upstream-rust.log"),
-        0,
-    )
-    .map_err(|error| error.to_string());
-    if let Err(error) = &bounded {
-        failures.push(format!("bounded-to-upstream-rust: {error}"));
-    }
     let mut pairs: Vec<_> = peers
         .iter()
         .flat_map(|client| peers.iter().map(move |server| (*client, *server)))
@@ -351,11 +333,10 @@ fn cpp_and_upstream_rust_bidirectional_rpc() {
         results.push(serde_json::json!({"client":client_driver,"server":server_driver,"passed":result.is_ok(),"upstream_limitation":limitation,"error":result.err(),"required_cases":CASES,"completed_cases":completed}));
     }
     markdown.push_str("\nThe two upstream-only controls expose unsupported optimized tail transfer in capnp-rpc 0.27.0. They are reported as failures, never as successful interoperability. Every capntproto row must pass all scenarios. See docs/wiki/Interoperability.md for scope and reproduction.\n");
-    markdown.push_str(&format!("\nAllocation-free caller-buffered client against upstream Rust: **{}**. Its allocation counter must remain zero through RPC teardown and complete message-buffer recovery.\n", if bounded.is_ok() { "passed" } else { "FAILED" }));
     fs::write(output.join("README.md"), markdown).unwrap();
     fs::write(output.join("matrix.json"), serde_json::to_vec_pretty(&serde_json::json!({
         "cpp_revision":"0de72d8d8cec6b69edaa29de51d3bd490341f9c2", "capnp":"0.27.2", "capnp_rpc":"0.27.0", "capnpc":"0.27.0", "rows": results,
-        "bounded_upstream_rust": {"passed": bounded.is_ok(), "error": bounded.err()}
+        "implementation": "legacy"
     })).unwrap()).unwrap();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

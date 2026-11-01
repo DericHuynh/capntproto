@@ -166,7 +166,7 @@ async fn weak_self_capability_and_canonical_client_lifetimes() {
     assert!(state.self_cap.get::<harness::Client>().is_none());
 }
 
-async fn trace(portable: bool, steps: &[serde_json::Value], fail: bool, reject: bool, wire: bool) {
+async fn trace(_portable: bool, steps: &[serde_json::Value], fail: bool, reject: bool, wire: bool) {
     let state = Rc::new(State {
         fail,
         ..Default::default()
@@ -193,11 +193,10 @@ async fn trace(portable: bool, steps: &[serde_json::Value], fail: bool, reject: 
     let client = if wire {
         let hub = Rc::new(RefCell::new(support::Hub::default()));
         let server = RpcSystem::new(
-            portable,
             Box::new(support::Hub::network(&hub, 1)),
             Some(local.client.clone()),
         );
-        let mut caller = RpcSystem::new(portable, Box::new(support::Hub::network(&hub, 2)), None);
+        let mut caller = RpcSystem::new(Box::new(support::Hub::network(&hub, 2)), None);
         let client = caller.bootstrap(1);
         drivers.0.push(tokio::task::spawn_local(server.run()));
         drivers.0.push(tokio::task::spawn_local(caller.run()));
@@ -371,7 +370,7 @@ async fn replay_tlc_server_hooks_traces() {
     tokio::task::LocalSet::new()
         .run_until(async {
             for case in cases {
-                for portable in [false, true] {
+                for portable in [false] {
                     if portable && !case["wire"].as_bool().unwrap() {
                         continue;
                     }

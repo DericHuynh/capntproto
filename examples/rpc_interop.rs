@@ -38,28 +38,11 @@ fn start<T: futures::AsyncRead + Unpin + 'static>(
     if driver == "legacy-transfer" {
         network.set_tail_call_optimization(true);
     }
-    let (client, disconnect, task) = if driver == "portable" {
-        let options = capnp_rpc::portable::Options::bounded(
-            4.try_into().unwrap(),
-            512.try_into().unwrap(),
-            (8 * 1024 * 1024).try_into().unwrap(),
-            (64 * 1024 * 1024).try_into().unwrap(),
-        )
-        .unwrap();
-        let mut system =
-            capnp_rpc::portable::RpcSystem::new(Box::new(network), bootstrap, options).unwrap();
-        let client =
-            is_client.then(|| system.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server));
-        let disconnect: rpc_peer::Disconnect = Box::pin(system.get_disconnector());
-        (client, disconnect, tokio::task::spawn_local(system.run()))
-    } else {
-        assert!(matches!(driver, "legacy" | "legacy-transfer"));
-        let mut system = capnp_rpc::RpcSystem::new(Box::new(network), bootstrap);
-        let client =
-            is_client.then(|| system.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server));
-        let disconnect: rpc_peer::Disconnect = Box::pin(system.get_disconnector());
-        (client, disconnect, tokio::task::spawn_local(system))
-    };
+    assert!(matches!(driver, "legacy" | "legacy-transfer"));
+    let mut system = capnp_rpc::RpcSystem::new(Box::new(network), bootstrap);
+    let client = is_client.then(|| system.bootstrap(capnp_rpc::rpc_twoparty_capnp::Side::Server));
+    let disconnect: rpc_peer::Disconnect = Box::pin(system.get_disconnector());
+    let task = tokio::task::spawn_local(system);
     rpc_peer::Connection {
         client,
         disconnect,

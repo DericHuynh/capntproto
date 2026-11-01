@@ -128,162 +128,58 @@ fn repository_rejects_tracked_ignored_files() {
         .to_string()
         .contains("Ignored file is tracked"));
 }
+fn workflow_fixture() -> BTreeMap<String, Value> {
+    fs::read_dir(root().join(".github/workflows"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
+        .map(|path| {
+            (
+                path.file_stem().unwrap().to_str().unwrap().to_owned(),
+                serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap(),
+            )
+        })
+        .collect()
+}
 #[test]
 fn workflows_keep_unique_trigger_owners() {
-    workflows().unwrap();
-    let text = |name: &str| {
-        fs::read_to_string(root().join(".github/workflows").join(format!("{name}.yml"))).unwrap()
-    };
-    assert!(text("verification-tests").contains("--kind cargo"));
-    assert!(!text("verification-tests").contains("native_fuzz"));
-    assert!(text("verification-models").contains("-- models target/quality/models"));
-    assert!(text("verification-fuzz").contains("-- fuzz target/quality/fuzz"));
-    assert!(text("verification-extended").contains("--test guard_quality"));
-    let policy = fs::read_to_string(root().join("quality/src/lanes.rs")).unwrap();
-    for name in [
-        "tlc",
-        "native_fuzz_smoke",
-        "serialization_and_ownership_miri",
-        "authority_and_transition_mutations",
-        "authority_and_transition_coverage",
-    ] {
-        assert!(policy.contains(&format!("\"{name}\"")));
-    }
-    assert!(fs::read_to_string(root().join("quality/src/coverage.rs"))
-        .unwrap()
-        .contains("crate::lanes::CARGO_SKIPS"));
+    workflow_policy(&workflow_fixture()).unwrap();
 }
-
 #[test]
-fn workflow_policy_rejects_missing_gates_duplicates_and_untrusted_cloud_jobs() {
-    let mut all = BTreeMap::new();
-    for entry in fs::read_dir(root().join(".github/workflows")).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().is_some_and(|e| e == "yml") {
-            all.insert(
-                path.file_stem().unwrap().to_str().unwrap().to_owned(),
-                serde_saphyr::from_str::<Value>(&fs::read_to_string(path).unwrap()).unwrap(),
-            );
-        }
-    }
+fn workflow_policy_rejects_missing_verification_or_unsafe_publication() {
+    let all = workflow_fixture();
     workflow_policy(&all).unwrap();
     for (file, pointer, value) in [
+        ("ci", "/on/pull_request", json!({"paths":["src/**"]})),
+        ("ci", "/jobs/report/if", json!("success()")),
+        ("ci", "/jobs/report/needs", json!(["cargo"])),
+        ("quality", "/jobs/coverage/continue-on-error", json!(true)),
+        ("performance", "/permissions/contents", json!("write")),
+        (
+            "performance",
+            "/jobs/profile/env/CAPNTPROTO_VALGRIND_INCLUDE",
+            json!(""),
+        ),
         ("release", "/jobs/release/if", json!("true")),
         (
             "release",
             "/on/workflow_dispatch/inputs/publish/default",
             json!(true),
         ),
-        (
-            "release",
-            "/on/workflow_dispatch/inputs/bootstrap/default",
-            json!(true),
-        ),
-        ("verification-models", "/jobs/models/needs", json!(["kani"])),
-        (
-            "verification-models",
-            "/jobs/verus/steps/4/run",
-            json!("true"),
-        ),
-        (
-            "verification-models",
-            "/jobs/verus/steps/5/if",
-            json!("success()"),
-        ),
-        (
-            "verification-models",
-            "/jobs/kani",
-            json!({"runs-on":"ubuntu-24.04"}),
-        ),
-        ("ci", "/jobs/performance/needs", json!(["cargo"])),
-        (
-            "ci",
-            "/jobs/performance/needs",
-            json!(["cargo", "models", "fuzz", "extended"]),
-        ),
-        (
-            "performance",
-            "/on/workflow_call/inputs/campaign/default",
-            json!("run-secure"),
-        ),
-        (
-            "performance",
-            "/on/workflow_dispatch/inputs/campaign/default",
-            json!("run-secure"),
-        ),
-        ("ci", "/jobs/report/needs", json!(["platforms"])),
-        (
-            "ci",
-            "/jobs/report/needs",
-            json!([
-                "workflows",
-                "documentation",
-                "portability",
-                "platforms",
-                "performance",
-                "cleanup",
-                "cargo"
-            ]),
-        ),
-        ("quality", "/jobs/coverage/continue-on-error", json!(true)),
-        ("quality", "/jobs/coverage/if", json!("false")),
-        (
-            "quality",
-            "/jobs/cargo",
-            json!({"uses":"./.github/workflows/verification-tests.yml"}),
-        ),
-        (
-            "ci",
-            "/jobs/cargo/uses",
-            json!("./.github/workflows/quality.yml"),
-        ),
-        (
-            "verification-tests",
-            "/jobs/tests/steps/2/run",
-            json!("cargo run --locked -p capntproto-quality -- coverage target/quality/coverage"),
-        ),
-        (
-            "quality",
-            "/on/pull_request",
-            json!({"paths":["crates/**"]}),
-        ),
-        (
-            "verification-fuzz",
-            "/on/push",
-            json!({"branches":["main"]}),
-        ),
-        (
-            "verification-models",
-            "/concurrency/group",
-            all["ci"]["concurrency"]["group"].clone(),
-        ),
-        ("performance", "/jobs/benchmark/if", json!("always()")),
-        ("performance", "/on/push", json!({"branches":["main"]})),
-        ("performance", "/on/push", json!({"branches":["*"]})),
-        ("performance", "/on/pull_request", Value::Null),
-        ("performance", "/on/push/paths", json!(["crates/**"])),
-        (
-            "performance",
-            "/jobs/build/environment",
-            json!("Benchmarking"),
-        ),
-        ("ci", "/jobs/cleanup/if", json!("success()")),
-        ("ci", "/jobs/performance/secrets", json!({})),
-        ("ci", "/jobs/cleanup/secrets", json!({})),
-        ("ci", "/jobs/performance/secrets", json!("inherit")),
-        ("performance", "/on/workflow_call/secrets", json!({})),
-        (
-            "maintenance-benchmarks",
-            "/on/workflow_call/secrets",
-            json!({}),
-        ),
     ] {
-        let mut broken = all.clone();
-        let (parent, key) = pointer.rsplit_once('/').unwrap();
-        broken.get_mut(file).unwrap().pointer_mut(parent).unwrap()[key] = value;
-        assert!(
-            workflow_policy(&broken).is_err(),
-            "{file}{pointer} was accepted"
-        );
+        let mut bad = all.clone();
+        let parts = pointer.split('/').skip(1).collect::<Vec<_>>();
+        let mut node = bad.get_mut(file).unwrap();
+        for part in &parts[..parts.len() - 1] {
+            node = &mut node[*part];
+        }
+        node[parts[parts.len() - 1]] = value;
+        assert!(workflow_policy(&bad).is_err(), "accepted {file} {pointer}");
     }
+    let mut bad = all.clone();
+    bad.get_mut("ci").unwrap()["jobs"]
+        .as_object_mut()
+        .unwrap()
+        .remove("fuzz");
+    assert!(workflow_policy(&bad).is_err());
 }

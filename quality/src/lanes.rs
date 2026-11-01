@@ -4,7 +4,6 @@ use capntproto_test_support::verification as v;
 
 pub const CARGO_SKIPS: &[&str] = &[
     "tlc",
-    "native_fuzz_smoke",
     "serialization_and_ownership_miri",
     "authority_and_transition_mutations",
     "authority_and_transition_coverage",
@@ -30,14 +29,13 @@ pub fn cargo(r: &mut Runner) -> Result<()> {
             "--workspace",
             "--all-targets",
             "--features",
-            "capntproto/quic",
+            "capntproto/tls",
             "--message-format=json",
         ]),
     )?;
     let inventory_path = r.directory.join("workspace-inventory.json");
     std::fs::write(&inventory_path, &inventory)?;
-    // Build the service workspace before concurrent tests so cold QUIC builds
-    // do not consume the bounded service-test subprocess deadline.
+    // Build service executables before concurrent process tests.
     r.run(
         "service-examples-build",
         v::command("cargo")
@@ -48,8 +46,6 @@ pub fn cargo(r: &mut Runner) -> Result<()> {
                 "--manifest-path",
                 "examples/kv/Cargo.toml",
                 "--bins",
-                "--features",
-                "quic",
                 "--target-dir",
             ])
             .arg(v::root().join("target/service-examples")),
@@ -65,7 +61,7 @@ pub fn cargo(r: &mut Runner) -> Result<()> {
                 "--workspace",
                 "--all-targets",
                 "--features",
-                "capntproto/quic",
+                "capntproto/tls",
                 "--no-fail-fast",
                 "-E",
                 &filter,
@@ -85,7 +81,7 @@ pub fn cargo(r: &mut Runner) -> Result<()> {
             "--ignore-rust-version",
             "--workspace",
             "--features",
-            "capntproto/quic",
+            "capntproto/tls",
             "--doc",
             "--no-fail-fast",
             "--",
@@ -119,7 +115,7 @@ pub fn models(r: &mut Runner) -> Result<()> {
                 "--locked",
                 "--workspace",
                 "--features",
-                "capntproto/quic",
+                "capntproto/tls",
                 "--no-fail-fast",
                 "tlc",
             ])
@@ -149,92 +145,4 @@ pub fn models(r: &mut Runner) -> Result<()> {
         return Err("model job produced no TLC measurements".into());
     }
     Ok(())
-}
-
-/// Keep independent engines running after a finding so both retain diagnostics.
-pub fn fuzz(r: &mut Runner) -> Result<()> {
-    let libfuzzer = r.cargo(
-        "libfuzzer",
-        &["nextest", "run", "--locked", "--test", "native_fuzz"],
-    );
-    if libfuzzer.is_ok() {
-        let bytes = std::fs::read(v::root().join("target/verification/native-fuzz/checked.json"))?;
-        r.evidence.data["libfuzzer"] = serde_json::from_slice(&bytes)?;
-    }
-    let corpus = r.directory.join("afl-corpus");
-    let afl_output = r.directory.join("afl");
-    // Only owned, generated directories are cleared; retained findings are
-    // uploaded by CI before a later run reuses the output path.
-    for path in [&corpus, &afl_output] {
-        if path.exists() {
-            std::fs::remove_dir_all(path)?;
-        }
-    }
-    let afl = (|| -> Result<()> {
-        let host = r
-            .evidence
-            .compiler
-            .lines()
-            .find_map(|line| line.strip_prefix("host: "))
-            .ok_or("rustc did not report its host target")?
-            .to_owned();
-        let binaries = std::path::Path::new("target/afl-build")
-            .join(&host)
-            .join("debug");
-        r.run(
-            "afl-build",
-            v::command("cargo")
-                .args([
-                    "afl",
-                    "build",
-                    "--locked",
-                    "--manifest-path",
-                    "fuzz/Cargo.toml",
-                    "--no-default-features",
-                    "--features",
-                    "afl-targets",
-                    "--bins",
-                    "--target-dir",
-                    "target/afl-build",
-                ])
-                // Explicit target selection confines AFL's RUSTFLAGS to the
-                // fuzz targets. Schema compilers and build scripts run on the
-                // host and must not execute AFL-instrumented code at build time.
-                .args(["--target", &host])
-                .env("AFL_NO_CFG_FUZZING", "1"),
-        )?;
-        r.cargo(
-            "afl-seeds",
-            &[
-                "run",
-                "--locked",
-                "--manifest-path",
-                "fuzz/Cargo.toml",
-                "--no-default-features",
-                "--example",
-                "afl_seeds",
-                "--",
-                corpus.to_str().ok_or("non-UTF8 corpus path")?,
-            ],
-        )?;
-        let result = r.run(
-            "afl-campaigns",
-            v::command("cargo")
-                .args(["run", "--locked", "-p", "capntproto-dev", "--", "afl-fuzz"])
-                .arg("--output")
-                .arg(&afl_output)
-                .arg("--binaries")
-                .arg(&binaries)
-                .arg("--corpus")
-                .arg(&corpus),
-        );
-        if let Ok(bytes) = std::fs::read(afl_output.join("afl.json")) {
-            r.evidence.data["afl"] = serde_json::from_slice(&bytes)?;
-        }
-        result?;
-        Ok(())
-    })();
-    r.save()?;
-    libfuzzer?;
-    afl
 }

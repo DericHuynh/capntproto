@@ -2,7 +2,7 @@ use crate::{
     checkout_capnp as api, error,
     faults::{self, FaultStage, Faults},
     store::{self, Orders, Resources},
-    Config, Driver, OrderRow, ResourceClient, Result, Snapshot, State, Wire,
+    Config, OrderRow, ResourceClient, Result, Snapshot, State, Wire,
 };
 use capntproto::{
     capnp::{capability::Promise, Error},
@@ -25,7 +25,7 @@ pub struct NodeConfig {
     pub listen: SocketAddr,
     pub db: PathBuf,
     pub config: Config,
-    pub driver: Driver,
+
     pub cert: PathBuf,
     pub key: PathBuf,
     pub ca: PathBuf,
@@ -420,13 +420,11 @@ pub async fn serve(config: NodeConfig) -> Result<()> {
             };
             let inventory = ResourceClient(Wire::new(
                 config.inventory.ok_or("shop needs --inventory")?,
-                config.driver,
                 &config.ca,
                 Some(identity()?),
             )?);
             let payments = ResourceClient(Wire::new(
                 config.payments.ok_or("shop needs --payments")?,
-                config.driver,
                 &config.ca,
                 Some(identity()?),
             )?);
@@ -460,12 +458,11 @@ pub async fn serve(config: NodeConfig) -> Result<()> {
             new_client::<api::shop::Client, _>(Shop(app)).client
         }
     };
-    let (server, driver) =
-        TwoPartyServer::with_driver(bootstrap, config.driver.protocol()?, |error| {
-            if error.kind != crate::capnp::ErrorKind::Disconnected {
-                eprintln!("RPC: {error}");
-            }
-        });
+    let (server, driver) = TwoPartyServer::with_error_handler(bootstrap, |error| {
+        if error.kind != crate::capnp::ErrorKind::Disconnected {
+            eprintln!("RPC: {error}");
+        }
+    });
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
     println!(
         "{}",

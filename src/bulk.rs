@@ -10,8 +10,6 @@ use futures::{
 use std::{cell::RefCell, rc::Rc};
 mod config;
 mod credit;
-#[cfg(feature = "native")]
-pub mod split;
 pub use config::Config;
 pub use credit::{CreditWindow, Reservation, Settlement};
 pub use wire::Status;

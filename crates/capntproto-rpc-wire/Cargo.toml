@@ -6,18 +6,17 @@ version = "0.1.0"
 edition = "2021"
 publish = true
 license = "MIT"
-description = "Portable RPC schemas and bounded outgoing capability publication"
+description = "Cap'n Proto RPC protocol schemas"
 
 [features]
 default = []
-alloc = ["capnp/alloc", "capntproto-rpc-engine/alloc"]
+alloc = ["capnp/alloc"]
 std = ["alloc", "capnp/std"]
 unaligned = ["capnp/unaligned"]
 sync_reader = ["capnp/sync_reader"]
 
 [dependencies]
 capnp = { package = "capntproto-core", version = "0.25.6", path = "../capntproto-core", default-features = false }
-capntproto-rpc-engine = { version = "0.1.0", path = "../capntproto-rpc-engine" }
 
 [build-dependencies]
 capnp = { package = "capntproto-core", version = "0.25.6", path = "../capntproto-core" }

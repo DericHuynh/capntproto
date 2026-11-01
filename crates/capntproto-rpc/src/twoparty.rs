@@ -37,7 +37,7 @@ mod facade;
 mod output_driver_tests;
 mod send_buffer;
 pub use facade::{
-    ConnectionOptions, QueueDiagnostics, RpcDriver, ServerDriver, TwoPartyClient, TwoPartyNetwork,
+    ConnectionOptions, QueueDiagnostics, ServerDriver, TwoPartyClient, TwoPartyNetwork,
     TwoPartyServer,
 };
 pub use send_buffer::SendBufferWindow;
@@ -56,6 +56,7 @@ enum IncomingPayload {
     Results,
 }
 
+#[cfg(test)]
 struct IncomingStream<T> {
     _connection: Rc<dyn std::any::Any>,
     input: Box<capnp_futures::BufferedRead<T>>,
@@ -89,39 +90,8 @@ impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for OwnedIncomingStream<
             })
     }
 }
-impl<T: AsyncRead + Unpin> crate::IncomingFrameStream for IncomingStream<T> {
-    fn buffered_next_frame_size(&mut self) -> Option<core::num::NonZeroUsize> {
-        self.input.buffered_next_frame_size()
-    }
-    fn poll_frame_size(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<capnp::Result<Option<usize>>> {
-        self.input.poll_stream_frame_size(cx)
-    }
-    fn poll_read_frame(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-        bytes: &mut [u8],
-    ) -> std::task::Poll<capnp::Result<usize>> {
-        self.input.poll_stream_frame(cx, bytes)
-    }
-    fn poll_frame(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<capnp::Result<Option<&[u8]>>> {
-        self.input.poll_borrowed_frame(cx)
-    }
-    fn frame(&self) -> Option<&[u8]> {
-        self.input.borrowed_frame()
-    }
-    fn share_frame(&mut self) -> Option<(std::sync::Arc<Vec<u8>>, core::ops::Range<usize>)> {
-        self.input.share_borrowed_frame()
-    }
-    fn finish_frame(&mut self) {
-        self.input.finish_borrowed_frame();
-    }
-}
+
+#[cfg(test)]
 impl<T: AsyncRead + Unpin> crate::IncomingMessageStream for IncomingStream<T> {
     fn poll_receive(
         &mut self,
@@ -156,6 +126,9 @@ impl capnp::private::capability::ParamsHook for IncomingMessage {
     }
 }
 impl crate::IncomingMessage for IncomingMessage {
+    fn framed_bytes(&self) -> Option<&[u8]> {
+        Some(self.message.message().get_segments().framed_bytes())
+    }
     fn into_params(
         mut self: Box<Self>,
         caps: Vec<Option<Box<dyn capnp::private::capability::ClientHook>>>,
@@ -211,9 +184,7 @@ impl crate::IncomingMessage for IncomingMessage {
         };
         Ok(payload?.get_content())
     }
-    fn framed_bytes(&self) -> Option<&[u8]> {
-        Some(self.message.message().get_segments().framed_bytes())
-    }
+
     fn get_segments(&self) -> Option<&dyn capnp::message::ReaderSegments> {
         Some(self.message.message().get_segments())
     }
@@ -232,7 +203,6 @@ struct BuiltMessage {
 enum QueuedMessage {
     Built(BuiltMessage),
     Owned(QueuedOutgoing),
-    Frame(crate::OutgoingFrame),
 }
 // Recycle only the empty envelope after the physical writer releases it.
 // Payloads, admission guards and the sender never enter the cache.
@@ -249,24 +219,16 @@ impl Drop for QueuedOutgoing {
     }
 }
 impl capnp_futures::serialize::AsOutputSegments for QueuedMessage {
-    fn framed_bytes(&self) -> Option<&[u8]> {
-        match self {
-            Self::Frame(frame) => frame.framed_bytes(),
-            _ => None,
-        }
-    }
     fn size_in_bytes(&self) -> usize {
         match self {
             Self::Built(message) => message.body.size_in_words() * 8,
             Self::Owned(message) => message.message.message().size_in_words() * 8,
-            Self::Frame(frame) => frame.size_in_words() * 8,
         }
     }
     fn as_output_segments(&self) -> capnp::OutputSegments<'_> {
         match self {
             Self::Built(message) => message.body.get_segments_for_output(),
             Self::Owned(message) => message.message.message().get_segments_for_output(),
-            Self::Frame(frame) => frame.segments(),
         }
     }
 }
@@ -607,52 +569,6 @@ where
         Option<capnp::message::SelectedStructBuilderTemplate<capnp::message::HeapAllocator>>,
 }
 
-struct OutgoingStream {
-    _connection: Rc<dyn std::any::Any>,
-    sender: capnp_futures::LocalObservedSender<QueuedMessage>,
-    driver: Weak<OutputDriver>,
-    closed: futures::future::Shared<Promise<(), capnp::Error>>,
-}
-impl crate::OutgoingMessageStream for OutgoingStream {
-    fn reserve(&mut self) -> capnp::Result<()> {
-        self.sender.reserve()
-    }
-    fn cancel_reservation(&mut self) {
-        self.sender.cancel_reservation();
-    }
-
-    fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), capnp::Error> {
-        let drained = self.sender.terminate(result);
-        let closed = self.closed.clone();
-        Promise::from_future(async move {
-            drained.await?;
-            closed.await
-        })
-    }
-    fn publish_reserved(&mut self, frame: crate::OutgoingFrame) -> capnp::Result<()> {
-        #[cfg(unix)]
-        let frame = {
-            let mut frame = frame;
-            drop(frame.take_fds());
-            frame
-        };
-        self.sender.publish_reserved(QueuedMessage::Frame(frame))
-    }
-    fn poll_flush(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<capnp::Result<()>> {
-        if let Some(driver) = self.driver.upgrade() {
-            if !driver.extracted.get() {
-                if let std::task::Poll::Ready(Err(error)) = driver.poll_cooperative(cx) {
-                    return std::task::Poll::Ready(Err(error));
-                }
-            }
-        }
-        self.sender.poll_flush(cx)
-    }
-}
-
 struct Connection<T>
 where
     T: AsyncRead + 'static,
@@ -724,27 +640,8 @@ where
 }
 
 impl<T: AsyncRead + Unpin> Connection<T> {
-    fn take_outgoing_stream(&mut self) -> Option<Box<dyn crate::OutgoingMessageStream>> {
-        let inner = self.inner.borrow();
-        inner.sender.observe().map(|sender| {
-            Box::new(OutgoingStream {
-                _connection: self.inner.clone(),
-                sender,
-                driver: inner.output_driver.clone(),
-                closed: inner.output_closed.clone(),
-            }) as Box<dyn crate::OutgoingMessageStream>
-        })
-    }
     #[cfg(test)]
     fn take_incoming_stream(&mut self) -> Option<Box<dyn crate::IncomingMessageStream>> {
-        let input = self.inner.borrow().input_stream.borrow_mut().take()?;
-        Some(Box::new(IncomingStream {
-            input,
-            _connection: self.inner.clone(),
-        }))
-    }
-
-    fn take_incoming_frames(&mut self) -> Option<Box<dyn crate::IncomingFrameStream>> {
         let input = self.inner.borrow().input_stream.borrow_mut().take()?;
         Some(Box::new(IncomingStream {
             input,
@@ -757,22 +654,6 @@ impl<T> crate::Connection<crate::rpc_twoparty_capnp::Side> for Connection<T>
 where
     T: AsyncRead + Unpin,
 {
-    fn control_mode(&self) -> crate::ControlMode {
-        crate::ControlMode::TwoParty
-    }
-    fn take_frame_io(&mut self) -> capnp::Result<crate::FrameIo> {
-        let outgoing = self
-            .take_outgoing_stream()
-            .ok_or_else(|| capnp::Error::failed("output already owned".into()))?;
-        let incoming = self
-            .take_incoming_frames()
-            .ok_or_else(|| capnp::Error::failed("input already owned".into()))?;
-        Ok(crate::FrameIo {
-            incoming,
-            outgoing,
-            write_finished: self.when_write_finished(),
-        })
-    }
     fn get_peer_vat_id(&self) -> crate::rpc_twoparty_capnp::Side {
         match self.inner.borrow().side {
             VatId::Client => VatId::Server,
@@ -813,18 +694,6 @@ where
             MessageBuilder::Root(message),
             inner.sender.clone(),
         )
-    }
-
-    fn send_frame(&mut self, frame: crate::OutgoingFrame) -> Promise<(), capnp::Error> {
-        // Ordinary byte streams do not transport ancillary resources.
-        #[cfg(unix)]
-        let frame = {
-            let mut frame = frame;
-            drop(frame.take_fds());
-            frame
-        };
-        let sender = self.inner.borrow().sender.clone();
-        Promise::from_future(sender.send(QueuedMessage::Frame(frame)).map_ok(|_| ()))
     }
 
     fn new_outgoing_call(
@@ -1333,13 +1202,6 @@ impl<T> crate::VatNetwork<VatId> for VatNetwork<T>
 where
     T: AsyncRead + Unpin,
 {
-    fn take_output_driver(&mut self) -> Option<Promise<(), capnp::Error>> {
-        if self._output_driver.extracted.replace(true) {
-            return None;
-        }
-        Some(Promise::from_future(self.execution_driver.clone()))
-    }
-
     fn task_yield(&self) -> fn(&mut std::task::Context<'_>) {
         self.task_yield
     }
@@ -1512,7 +1374,6 @@ mod receive_lifetime_tests {
         let mut stream = connection.take_owned_incoming_stream().unwrap();
         assert!(connection.take_owned_incoming_stream().is_none());
         assert!(connection.take_incoming_stream().is_none());
-        assert!(connection.take_incoming_frames().is_none());
         assert!(futures::executor::block_on(connection.receive(false)).is_err());
         let mut cx = Context::from_waker(Waker::noop());
         assert!(stream.poll_receive(&mut cx).is_pending());

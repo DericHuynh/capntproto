@@ -9,7 +9,7 @@ readme = "README.md"
 rust-version = "1.97"
 publish = true
 build = "build.rs"
-include = ["src/**", "schemas/**", "build.rs", "examples/*.rs", "examples/support/**", "examples/README.md", "tests/interop/quic_peer.rs", "README.md", "LICENSE"]
+include = ["src/**", "schemas/**", "build.rs", "examples/*.rs", "examples/support/**", "examples/README.md", "README.md", "LICENSE"]
 
 [workspace]
 resolver = "2"
@@ -19,47 +19,30 @@ members = ["test-support", "quality", "dev", "crates/*"]
 exclude = [
     "vendor/capnproto",
     "vendor/rustls",
-    "vendor/embedded-tls",
-    "vendor/monoio",
     "benchmarks/rpc",
     "benchmarks/runtimes",
-    "benchmarks/rpc-upstream",
     "benchmarks/storage",
     "benchmarks/instructions",
     "benchmarks/concurrency",
     "examples/downstream",
     "examples/kv",
-    "examples/webtransport",
     "examples/service",
-    "examples/wasip3",
-    "examples/embedded-tls",
     "examples/configurations",
     "examples/checkout",
     "fuzz",
     "verification/miri",
-    "verification/portable",
     "verification/upstream-rpc",
 ]
 
 [features]
-default = ["native", "services", "storage"]
-native = ["tls", "dep:rcgen", "dep:x509-parser", "dep:boring", "dep:quiche", "dep:bytes", "dep:zeroize", "dep:capnpc", "dep:capntproto-compiler", "dep:nix", "dep:rustix"]
+default = ["tls", "services", "storage"]
 services = ["dep:capnpc", "dep:capntproto-compiler"]
 storage = ["dep:memmap2", "dep:fs2", "dep:capnpc", "dep:capntproto-compiler"]
-tls = ["dep:rustls", "dep:capntproto-transport", "capntproto-transport/rustls", "capntproto-transport/tokio"]
-monoio = ["dep:capntproto-transport", "capntproto-transport/monoio"]
-webtransport = ["dep:capntproto-transport", "capntproto-transport/webtransport"]
-embedded-tls = ["dep:capntproto-transport", "capntproto-transport/embedded-rpc"]
-quic = ["native"]
+tls = ["dep:rustls", "dep:capntproto-transport"]
 
 [dependencies]
 capntproto-transport = { version = "0.1.0", path = "crates/capntproto-transport", optional = true, default-features = false }
 capntproto-rpc-engine = { version = "0.1.0", path = "crates/capntproto-rpc-engine" }
-bytes = { version = "1", optional = true }
-boring = { version = "5", optional = true }
-x509-parser = { version = "0.18", optional = true }
-rcgen = { version = "0.14", optional = true, default-features = false, features = ["crypto", "ring"] }
-quiche = { version = "=0.30.0", optional = true, default-features = false, features = ["boringssl-boring-crate", "custom-client-dcid"] }
 capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntproto-core" }
 capnp-rpc = { package = "capntproto-rpc", version = "0.25.1", path = "crates/capntproto-rpc" }
 capnp-futures = { package = "capntproto-futures", version = "0.25", path = "crates/capntproto-futures" }
@@ -72,7 +55,6 @@ fs2 = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-zeroize = { version = "1", optional = true }
 
 [build-dependencies]
 capnpc = { package = "capntproto-codegen", version = "0.25", path = "crates/capntproto-codegen", optional = true }
@@ -80,10 +62,10 @@ capntproto-compiler = { version = "0.1.0", path = "crates/capntproto-compiler", 
 capnp = { package = "capntproto-core", version = "0.25", path = "crates/capntproto-core" }
 
 [dev-dependencies]
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 rand = "0.8"
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 allocation-counter = "=0.8.1"
-rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["test-util"] }
 capntproto-test-support = { path = "test-support" }
@@ -96,6 +78,10 @@ path = "src/bin/model.rs"
 
 [[example]]
 name = "message_basic"
+
+[[example]]
+name = "durable_store"
+required-features = ["storage"]
 
 [[example]]
 name = "storage_probe"
@@ -113,10 +99,6 @@ required-features = ["storage"]
 name = "component_store"
 required-features = ["storage"]
 
-[[example]]
-name = "quic-interop"
-path = "tests/interop/quic_peer.rs"
-required-features = ["quic"]
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -129,11 +111,7 @@ tempfile = "3"
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "0.31", optional = true, default-features = false, features = ["net", "uio"] }
-rustix = { version = "1.1", optional = true, features = ["net", "time"] }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-wtransport = { version = "0.7.2", default-features = false, features = ["ring", "quinn"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 rustix = { version = "1.1", features = ["process"] }

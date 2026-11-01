@@ -24,7 +24,7 @@ use core::cell::OnceCell;
 /// ```
 /// # #[cfg(feature = "alloc")]
 /// # {
-/// use capntproto_rpc_engine::{connection::Growth, messages};
+/// use capntproto_rpc_engine::{storage::Growth, messages};
 /// // At most two buffers, 1024 usable bytes each, including padding in the
 /// // aggregate retained-byte budget. No buffer is allocated yet.
 /// let mut pool = messages::GrowingBuffers::new(2, 1024, 2 * (1024 + 7));
@@ -366,7 +366,7 @@ impl<'bytes> GrowingBuffers<'bytes> {
 
 fn new_growing_scope<'id, 'storage, 'bytes>(
     buffers: &'storage mut GrowingBuffers<'bytes>,
-    sends: crate::connection::Growth,
+    sends: crate::storage::Growth,
 ) -> Result<Messages<'id, 'storage, 'bytes>, Error> {
     buffers.prepare_scope()?;
     let sends = crate::storage::Storage::growing(sends.initial, sends.maximum, || SendSlot::EMPTY)
@@ -384,7 +384,7 @@ fn new_growing_scope<'id, 'storage, 'bytes>(
 /// completion from a previous scope can be presented to a new one.
 pub fn with_growing_messages<'storage, 'bytes, R>(
     buffers: &'storage mut GrowingBuffers<'bytes>,
-    sends: crate::connection::Growth,
+    sends: crate::storage::Growth,
     f: impl for<'id> FnOnce(&mut Messages<'id, 'storage, 'bytes>) -> R,
 ) -> Result<R, Error> {
     Ok(f(&mut new_growing_scope(buffers, sends)?))
@@ -394,7 +394,7 @@ pub fn with_growing_messages<'storage, 'bytes, R>(
 /// Stop IO before dropping this future or tearing down its scope.
 pub async fn with_growing_messages_async<'storage, 'bytes, R>(
     buffers: &'storage mut GrowingBuffers<'bytes>,
-    sends: crate::connection::Growth,
+    sends: crate::storage::Growth,
     f: impl for<'id> core::ops::AsyncFnOnce(&mut Messages<'id, 'storage, 'bytes>) -> R,
 ) -> Result<R, Error> {
     Ok(f(&mut new_growing_scope(buffers, sends)?).await)

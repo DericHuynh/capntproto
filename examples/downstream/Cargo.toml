@@ -8,12 +8,10 @@ publish = false
 resolver = "2"
 
 [features]
-default = ["native", "storage", "services", "tls", "quic"]
-native = ["capntproto/native"]
+default = ["storage", "services", "tls"]
 storage = ["capntproto/storage"]
 services = ["capntproto/services"]
 tls = ["capntproto/tls"]
-quic = ["capntproto/quic"]
 
 [dependencies]
 capntproto = { path = "../..", default-features = false }

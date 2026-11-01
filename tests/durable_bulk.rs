@@ -7,9 +7,9 @@ use capntproto::{
     bulk::{Config, Status},
     bulk_capnp::durable_transfer,
     durable_bulk::{self, Receiver},
-    orm::{ObjectServer, ObjectState},
+    orm::ObjectState,
     storage::{Retention, Store, Update},
-    store_capnp::{document, object},
+    store_capnp::document,
 };
 use futures::FutureExt;
 use ring::digest::{digest, SHA256};
@@ -850,118 +850,6 @@ fn invalid_values_digest_and_retired_staging_cannot_publish() {
     assert!(Receiver::<document::Owned>::resume(state, JournalId::new(99), grant()).is_err());
     assert_eq!(db.borrow().published(ObjectKey::new(7)), Revision::INITIAL);
     assert_eq!(r.cancel().unwrap(), Status::Canceled);
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn completion_notifies_orm_history_and_push_subscribers_over_native() {
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            tokio::time::timeout(Duration::from_secs(10), async {
-                let dir = tempfile::tempdir().unwrap();
-                let db = Rc::new(RefCell::new(Store::open(dir.path().join("db")).unwrap()));
-                let state = ObjectState::new(db.clone(), ObjectId::new(7).unwrap());
-                let bytes = message("Native file");
-                let receiver = Receiver::<document::Owned>::create(
-                    state.clone(),
-                    JournalId::new(99),
-                    grant(),
-                    config(&bytes),
-                    hash(&bytes),
-                )
-                .unwrap();
-                let object: object::Client<document::Owned> =
-                    ObjectServer::client(state, grant()).unwrap();
-                let history = object
-                    .history_request()
-                    .send()
-                    .promise
-                    .await
-                    .unwrap()
-                    .get()
-                    .unwrap()
-                    .get_history()
-                    .unwrap();
-                let mut waiting = history.next_request().send().promise;
-                assert!((&mut waiting).now_or_never().is_none());
-                struct Observer(Rc<RefCell<Vec<u64>>>);
-                impl capntproto::store_capnp::observer::Server<document::Owned> for Observer {
-                    fn changed(
-                        self: Rc<Self>,
-                        context: capntproto::store_capnp::observer::ChangedContext<
-                            '_,
-                            document::Owned,
-                        >,
-                    ) -> capnp::capability::Promise<(), capnp::Error> {
-                        let (p, _) = context.into_owned();
-                        capnp::capability::Promise::from_future(async move {
-                            self.0.borrow_mut().push(p.get()?.get_revision());
-                            Ok(())
-                        })
-                    }
-                }
-                let observations = Rc::new(RefCell::new(vec![]));
-                let mut subscribe = object.subscribe_request();
-                subscribe
-                    .get()
-                    .set_observer(capnp_rpc::new_client(Observer(observations.clone())));
-                let subscription = subscribe
-                    .send()
-                    .promise
-                    .await
-                    .unwrap()
-                    .get()
-                    .unwrap()
-                    .get_subscription()
-                    .unwrap();
-                let a = capntproto::transport::Identity::generate();
-                let b = capntproto::transport::Identity::generate();
-                let left = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let right = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let address = right.local_addr().unwrap();
-                let mut ac =
-                    capntproto::transport::config(&a, b.public_key(), None, b"durable-bulk")
-                        .unwrap();
-                let mut bc =
-                    capntproto::transport::config(&b, a.public_key(), None, b"durable-bulk")
-                        .unwrap();
-                let (left, at) = capntproto::transport::connect(left, address, &mut ac)
-                    .await
-                    .unwrap();
-                let (right, bt) = capntproto::transport::accept(right, &mut bc).await.unwrap();
-                let server = capntproto::rpc::raw::serve(right, receiver.capability().client);
-                let (client, driver) =
-                    capntproto::rpc::raw::client::<durable_transfer::Client>(left);
-                let input = dir.path().join("input");
-                std::fs::write(&input, &bytes).unwrap();
-                assert_eq!(
-                    durable_bulk::upload_file(client, &mut std::fs::File::open(input).unwrap())
-                        .await
-                        .unwrap()
-                        .revision,
-                    Revision::new(1)
-                );
-                let event = waiting.await.unwrap();
-                match event.get().unwrap().get_result().unwrap().which().unwrap() {
-                    capntproto::store_capnp::history_result::Event(e) => {
-                        assert_eq!(e.get_revision(), 1)
-                    }
-                    _ => panic!("completion did not publish an ORM event"),
-                }
-                while observations.borrow().is_empty() {
-                    tokio::task::yield_now().await;
-                }
-                assert_eq!(&*observations.borrow(), &[1]);
-                assert_eq!(text(&db.borrow()), Some("Native file".into()));
-                subscription.cancel_request().send().promise.await.unwrap();
-                server.abort();
-                driver.abort();
-                at.abort();
-                bt.abort();
-            })
-            .await
-            .unwrap();
-        })
-        .await;
 }
 
 #[derive(serde::Deserialize)]

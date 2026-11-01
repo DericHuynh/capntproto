@@ -18,17 +18,7 @@ pub(super) struct Pending {
     state: Arc<Mutex<State>>,
     id: u64,
 }
-impl Pending {
-    pub(super) fn set_bytes(&self, bytes: usize) {
-        self.state
-            .lock()
-            .unwrap()
-            .entries
-            .get_mut(&self.id)
-            .expect("reserved diagnostic")
-            .0 = bytes;
-    }
-}
+impl Pending {}
 impl Drop for Pending {
     fn drop(&mut self) {
         self.state.lock().unwrap().entries.remove(&self.id);

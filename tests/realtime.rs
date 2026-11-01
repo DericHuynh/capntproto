@@ -203,55 +203,6 @@ async fn receiver_owner_drop_closes_pending_receipts() {
     drop(clone);
     assert_eq!(receipt.outcome().await.unwrap(), Outcome::Closed);
 }
-#[tokio::test(flavor = "current_thread")]
-async fn authenticated_native_realtime_worker() {
-    use capntproto::{
-        native_rpc::Network,
-        transport::{self, Identity},
-    };
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let a = Identity::generate();
-                let b = Identity::generate();
-                let left = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let right = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let address = right.local_addr().unwrap();
-                let (aa, bb) = tokio::join!(
-                    transport::connect_authenticated(
-                        left,
-                        address,
-                        &a,
-                        b.public_key(),
-                        None,
-                        b"realtime"
-                    ),
-                    transport::accept_authenticated(right, &b, a.public_key(), None, b"realtime")
-                );
-                let (an, ah) = Network::new(a.public_key());
-                let (bn, bh) = Network::new(b.public_key());
-                ah.attach(aa.unwrap()).unwrap();
-                bh.attach(bb.unwrap()).unwrap();
-                let (_clock, r, service) = setup();
-                let server = capnp_rpc::RpcSystem::new(Box::new(bn), Some(service.client));
-                let mut client = capnp_rpc::RpcSystem::new(Box::new(an), None);
-                let stream = client.bootstrap(b.public_key());
-                let _tasks = Tasks(vec![
-                    tokio::task::spawn_local(server),
-                    tokio::task::spawn_local(client),
-                    tokio::task::spawn_local(r.clone().run(Duration::from_millis(2))),
-                ]);
-                let sender = Sender::connect(stream).await.unwrap();
-                let receipt = sender.offer(1, 10, b"latest snapshot").unwrap();
-                assert_eq!(receipt.outcome().await.unwrap(), Outcome::Applied);
-                assert_eq!(r.get(1).unwrap().bytes(), b"latest snapshot");
-                sender.close().await.unwrap();
-            })
-            .await
-            .unwrap();
-        })
-        .await;
-}
 
 #[derive(serde::Deserialize)]
 struct Trace {

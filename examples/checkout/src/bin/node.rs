@@ -1,4 +1,4 @@
-use capntproto_checkout_example::{serve, Config, Driver, NodeConfig, Result, Role};
+use capntproto_checkout_example::{serve, Config, NodeConfig, Result, Role};
 use clap::Parser;
 use std::{net::SocketAddr, path::PathBuf};
 #[derive(Parser)]
@@ -11,8 +11,6 @@ struct Args {
     db: PathBuf,
     #[arg(long)]
     config: PathBuf,
-    #[arg(long, value_enum, default_value = "portable")]
-    driver: Driver,
     #[arg(long)]
     cert: PathBuf,
     #[arg(long)]
@@ -41,7 +39,6 @@ async fn main() -> Result<()> {
             listen: args.listen,
             db: args.db,
             config,
-            driver: args.driver,
             cert: args.cert,
             key: args.key,
             ca: args.ca,

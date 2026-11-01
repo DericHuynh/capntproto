@@ -113,7 +113,7 @@ fn finish(peer: &mut Endpoint, id: u32) {
     });
 }
 async fn fixture(
-    portable: bool,
+    _portable: bool,
 ) -> (
     Rc<RefCell<Control>>,
     oneshot::Sender<()>,
@@ -128,9 +128,8 @@ async fn fixture(
     let network = Hub::network(&hub, 1);
     assert_eq!(hub.borrow().provision_count(), 0);
     let service: harness::Client = capnp_rpc::new_client(Service(control.clone()));
-    let task = tokio::task::spawn_local(
-        RpcSystem::new(portable, Box::new(network), Some(service.client)).run(),
-    );
+    let task =
+        tokio::task::spawn_local(RpcSystem::new(Box::new(network), Some(service.client)).run());
     let mut peer = hub.borrow_mut().connect(2, 1);
     peer.send(|m| m.init_bootstrap().set_question_id(0));
     let reply = peer.recv().await;
@@ -163,7 +162,7 @@ async fn fixture(
 async fn canceled_call_returns_once_and_releases_answer_id() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let (control, _gate, mut peer, export, task) = fixture(portable).await;
                 pending(&mut peer, 1, export, false, false);
                 settle().await;
@@ -186,7 +185,7 @@ async fn canceled_call_returns_once_and_releases_answer_id() {
 async fn legacy_early_finish_allows_dispatch_before_cancellation() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let (control, _gate, mut peer, export, task) = fixture(portable).await;
                 pending(&mut peer, 1, export, false, false);
                 peer.send(|m| {
@@ -209,7 +208,7 @@ async fn legacy_early_finish_allows_dispatch_before_cancellation() {
 async fn retained_context_delays_cancellation_return_and_survives_disconnect() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for disconnect in [false, true] {
                     let (control, _gate, mut peer, export, mut task) = fixture(portable).await;
                     pending(&mut peer, 1, export, true, false);
@@ -256,7 +255,7 @@ fn pipelined_echo(peer: &mut Endpoint, question: u32, parent: u32) {
 async fn child_pipeline_keeps_parent_running_after_finish() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let (control, gate, mut peer, export, task) = fixture(portable).await;
                 pending(&mut peer, 1, export, false, false);
                 settle().await;
@@ -285,7 +284,7 @@ async fn child_pipeline_keeps_parent_running_after_finish() {
 async fn redirected_cancellation_and_completion_return_elsewhere_once() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for complete in [false, true] {
                     let (control, gate, mut peer, export, task) = fixture(portable).await;
                     pending(&mut peer, 1, export, false, true);
@@ -311,7 +310,7 @@ async fn redirected_cancellation_and_completion_return_elsewhere_once() {
 // A raw peer asks us to execute its tail call, then redirects our outstanding
 // call to that result. No second RPC engine can accidentally repair ownership.
 async fn adoption_fixture(
-    portable: bool,
+    _portable: bool,
 ) -> (
     Rc<RefCell<Control>>,
     oneshot::Sender<()>,
@@ -326,7 +325,7 @@ async fn adoption_fixture(
     let hub = Rc::new(RefCell::new(Hub::default()));
     let network = Hub::network(&hub, 1);
     let service: harness::Client = capnp_rpc::new_client(Service(control.clone()));
-    let mut system = RpcSystem::new(portable, Box::new(network), Some(service.client));
+    let mut system = RpcSystem::new(Box::new(network), Some(service.client));
     let mut peer = hub.borrow_mut().connect(2, 1);
     let remote: harness::Client = system.bootstrap(2);
     let request = remote.pending_request().send();
@@ -384,7 +383,7 @@ fn adopt(peer: &mut Endpoint, outgoing_id: u32) {
 async fn adopted_redirected_call_survives_finish_until_completion() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let (control, gate, mut peer, outgoing_id, request, task) =
                     adoption_fixture(portable).await;
                 adopt(&mut peer, outgoing_id);
@@ -441,7 +440,7 @@ async fn replay_tlc_cancellation_traces() {
     let traces: Vec<Trace> = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert!(!traces.is_empty());
     tokio::task::LocalSet::new().run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
         let replay = async {
             for trace in &traces {
                 let (control,gate,mut peer,export,mut task) = fixture(portable).await;
@@ -523,7 +522,7 @@ async fn replay_tlc_tail_adoption_traces() {
     assert!(!traces.is_empty());
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(60), async {
                     for trace in &traces {
                         let (control, gate, mut peer, outgoing_id, request, task) =

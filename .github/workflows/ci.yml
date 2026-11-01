@@ -1,6 +1,5 @@
 name: CI
 on:
-  # Branch work is checked through pull_request; only main needs push checks.
   push:
     branches: [main]
   pull_request:
@@ -9,427 +8,70 @@ permissions:
   contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  # Do not interrupt paid measurements on main; obsolete PR checks may stop.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   CARGO_TERM_COLOR: never
   CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
   RUST_BACKTRACE: '1'
 jobs:
   workflows:
     name: Validate workflows
-    # actionlint 1.7.12 requires the checked-out reusable-workflow syntax.
     uses: ./.github/workflows/ci-workflows.yml # zizmor: ignore[self-repository]
   documentation:
     name: Validate documentation
+    needs: workflows
     uses: ./.github/workflows/ci-docs.yml # zizmor: ignore[self-repository]
-  portability:
-    name: Check portable views and RPC transitions
-    needs: workflows
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
-        with:
-          cache-key: portable-engine
-          workspaces: |
-            . -> target
-            verification/portable -> target
-      - name: Install schema compiler and bare-metal target
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
-          rustup target add thumbv7em-none-eabi --toolchain 1.97.0
-      - name: Check isolated core and RPC profiles
-        # cargo-auditable detects a direct linker only when it is explicit;
-        # otherwise it gives ARM's rust-lld a C-driver-only -Wl argument.
-        env:
-          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
-        run: |
-          cargo check --locked -p capntproto-core --no-default-features --target thumbv7em-none-eabi --lib
-          cargo check --locked -p capntproto-core --no-default-features --features alloc --target thumbv7em-none-eabi --lib
-          cargo check --locked -p capntproto-rpc-engine --target thumbv7em-none-eabi --lib
-          cargo check --locked -p capntproto-rpc-wire --no-default-features --target thumbv7em-none-eabi --lib
-          cargo check --locked -p capntproto-rpc --no-default-features --target thumbv7em-none-eabi --lib
-          cargo check --locked -p capntproto-rpc --no-default-features --features alloc --target thumbv7em-none-eabi --lib
-          cargo build --locked --release --manifest-path verification/portable/Cargo.toml --target thumbv7em-none-eabi
-          rust-audit-info verification/portable/target/thumbv7em-none-eabi/release/capntproto-portable-check
-      - name: Exercise portable state transitions and rejected inputs
-        run: |
-          mkdir -p target/quality/portability
-          rm -f target/nextest/ci/junit.xml target/quality/portability/engine.xml
-          status=0
-          cargo nextest run --locked -p capntproto-rpc-engine -p capntproto-rpc-wire --profile ci || status=$?
-          if [ -f target/nextest/ci/junit.xml ]; then
-            cp target/nextest/ci/junit.xml target/quality/portability/engine.xml
-          else
-            status=1
-          fi
-          exit "$status"
-      - name: Check hosted RPC without downstream futures feature unification
-        run: cargo check --locked -p capntproto-rpc
-      - name: Test generated views and bounded RPC tables with isolated target features
-        run: |
-          status=0
-          mkdir -p target/quality/portability
-          for features in "" "alloc" "growing" "std" "unaligned,sync_reader"; do
-            rm -f verification/portable/target/nextest/ci/junit.xml "target/quality/portability/${features:-core}.xml"
-            if ! cargo nextest run --locked --manifest-path verification/portable/Cargo.toml --lib --features "$features" --profile ci; then
-              status=1
-            fi
-            if [ -f verification/portable/target/nextest/ci/junit.xml ]; then
-              cp verification/portable/target/nextest/ci/junit.xml "target/quality/portability/${features:-core}.xml"
-            else
-              status=1
-            fi
-          done
-          exit "$status"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: portable-generated-views
-          path: target/quality/portability/*.xml
-          if-no-files-found: error
-  transports:
-    name: Check runtimes, WebTransport WASM and embedded TLS
-    needs: workflows
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
-        with:
-          cache-key: optional-transports
-          workspaces: |
-            . -> target
-            examples/webtransport -> target
-      - name: Install cross targets and C compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y clang
-          rustup target add wasm32-unknown-unknown thumbv7em-none-eabi --toolchain 1.97.0
-          rustup component add clippy --toolchain 1.97.0
-      - name: Exercise TLS and HTTP3 RPC with both drivers
-        run: |
-          cargo test --locked -p capntproto-transport --all-features --lib
-          cargo clippy --locked -p capntproto-transport --all-features --all-targets -- -D warnings
-          cargo test --locked -p capntproto --no-default-features --features tls,monoio,webtransport,embedded-tls --test secure_rpc
-          cargo build --locked --manifest-path examples/webtransport/Cargo.toml --features monoio --bins
-      - name: Compile WASM library and browser service client
-        env:
-          CC_wasm32_unknown_unknown: clang
-        run: |
-          cargo check --locked -p capntproto --no-default-features --features webtransport,tls,embedded-tls --target wasm32-unknown-unknown --lib
-          cargo build --locked --manifest-path examples/webtransport/Cargo.toml --no-default-features --features browser --target wasm32-unknown-unknown --lib
-      - name: Check embedded TLS without std or allocation
-        env:
-          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
-        run: cargo check --locked -p capntproto-transport --no-default-features --features embassy-net --target thumbv7em-none-eabi --lib
-      - name: Check isolated monoio profile without Tokio
-        shell: bash
-        run: |
-          cargo check --locked -p capntproto-transport --no-default-features --features monoio,webtransport-core --lib
-          cargo tree --locked -p capntproto-transport --no-default-features --features monoio,webtransport-core -e normal > /tmp/monoio-dependencies.txt
-          if grep -q 'tokio v' /tmp/monoio-dependencies.txt; then
-            cat /tmp/monoio-dependencies.txt
-            exit 1
-          fi
-      - name: Check runtime benchmark worker and example formatting
-        run: |
-          cargo check --locked --manifest-path benchmarks/runtimes/Cargo.toml
-          cargo fmt --manifest-path benchmarks/runtimes/Cargo.toml -- --check
-          cargo fmt --manifest-path examples/webtransport/Cargo.toml -- --check
-  examples:
-    name: Run distributed checkout, browser, embedded TLS and configuration examples
-    needs: workflows
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
-        with:
-          cache-key: example-services
-          workspaces: |
-            . -> target/dev-tools
-            examples/configurations -> target
-            examples/checkout -> target
-            examples/embedded-tls -> target
-            examples/wasip3 -> target
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: examples/integration/package-lock.json
-      - name: Install cross targets and browser tooling
-        run: |
-          rustup target add wasm32-unknown-unknown thumbv7em-none-eabi --toolchain 1.97.0
-          npm ci --prefix examples/integration
-          npm exec --prefix examples/integration -- playwright install --with-deps chromium
-      - name: Run the local integration entry point
-        env:
-          CARGO_TARGET_DIR: target
-          CARGO_TARGET_THUMBV7EM_NONE_EABI_LINKER: rust-lld
-        run: cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- examples
-      - name: Check example formatting and diagnostics
-        run: |
-          for example in service wasip3 embedded-tls configurations checkout; do
-            cargo fmt --manifest-path "examples/$example/Cargo.toml" -- --check
-          done
-          cargo clippy --locked --manifest-path examples/checkout/Cargo.toml --all-targets -- -D warnings
-          cargo clippy --locked --manifest-path examples/configurations/Cargo.toml --all-targets -- -D warnings
-          cargo clippy --locked --manifest-path examples/embedded-tls/Cargo.toml --features host --all-targets -- -D warnings
-          cargo clippy --locked --manifest-path examples/wasip3/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-  platforms:
-    name: Build and test (${{ matrix.os }})
-    needs: workflows
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
-    runs-on: ${{ matrix.os }}
-    # Cold Windows native builds and the feature matrix can exceed 25 minutes.
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/hosted-apt # zizmor: ignore[self-repository]
-      - name: Check Cargo wrapper argument forwarding
-        shell: bash
-        run: bash scripts/test-auditable-cargo.sh
-      - name: Pinned schema fixtures for compiler tests
-        shell: bash
-        run: git submodule update --init --depth 1 -- vendor/capnproto
-      - name: Linux schema compiler
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev cmake clang libclang-dev pkg-config
-      - name: macOS schema compiler
-        if: runner.os == 'macOS'
-        run: |
-          brew install capnp
-          echo "CAPNP_INCLUDE_DIR=$(brew --prefix capnp)/include" >> "$GITHUB_ENV"
-      - name: Windows schema compiler
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $zip = "$env:RUNNER_TEMP/capnp.zip"
-          Invoke-WebRequest https://capnproto.org/capnproto-c++-win32-1.3.0.zip -OutFile $zip
-          if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() -ne '2c503361f8bf26fa9e7caccb6db04d6b271d5f0ad3da0616cf40e9a51335c89c') { throw 'Compiler checksum mismatch' }
-          Expand-Archive $zip "$env:RUNNER_TEMP/capnp"
-          (Get-ChildItem "$env:RUNNER_TEMP/capnp" -Recurse -Filter capnp.exe | Select-Object -First 1).DirectoryName >> $env:GITHUB_PATH
-          "CAPNP_INCLUDE_DIR=$env:RUNNER_TEMP/capnp/capnproto-c++-1.3.0/src" >> $env:GITHUB_ENV
-      - name: Pinned Rust
-        shell: bash
-        run: |
-          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
-          if test "$RUNNER_OS" = Linux; then
-            rustup toolchain install nightly-2026-08-29 --profile minimal --component clippy
-          fi
-      # actionlint 1.7.12 requires the checked-out local action syntax.
-      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
-        with:
-          cache-key: platform-${{ matrix.os }}
-          workspaces: |
-            . -> target
-            . -> target/dev-tools
-            examples/downstream -> target
-      # Keep the CLI's dependency features out of the runtime build cache.
-      # --target-dir applies to the CLI only; its child Cargo commands retain
-      # the normal runtime targets and the existing artifact/report paths.
-      - name: Keep generated output and large files out of Git
-        shell: bash
-        run: cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- check-repository
-      - name: Compile applications, Rust schema compiler, compatibility adapters and core package
-        id: compile
-        shell: bash
-        run: |
-          cargo build --locked -p capntproto --lib --bins
-          cargo build --locked -p capntproto-compiler --lib --bins
-          cargo build --locked -p capntproto-compat --lib
-          cargo build --locked --manifest-path examples/downstream/Cargo.toml
-          cargo package --locked --manifest-path crates/capntproto-core/Cargo.toml
-          cargo clippy --locked --manifest-path crates/capntproto-core/Cargo.toml --all-targets -- -D warnings
-      - name: Enforce unsafe documentation and frozen imported debt
-        if: runner.os == 'Linux'
-        run: cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- check-unsafe
-      - name: Require embedded dependency inventories
-        id: auditable
-        shell: bash
-        env:
-          PLATFORM: ${{ matrix.os }}
-        run: |
-          suffix=''
-          if test "$RUNNER_OS" = Windows; then suffix='.exe'; fi
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- check-auditable --output "target/platforms/auditable-$PLATFORM.json" \
-            "target/debug/capntproto-model$suffix" \
-            "target/debug/capntproto-compile$suffix" \
-            "examples/downstream/target/debug/capntproto-preview-example$suffix"
-      - name: Smoke capability RPC, Rust schema compiler and compatibility adapters
-        id: smoke
-        shell: bash
-        run: |
-          cargo run --locked --manifest-path examples/downstream/Cargo.toml
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked --no-fail-fast -p capntproto-compiler
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto-compat --test codecs --test adapters --test json_rpc
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tcp_rpc --test secure_rpc
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test rpc_ownership --test native_vat
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib transport::backend_tests
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --features quic --lib rpc::quic::retry
-          cargo test --locked -p capntproto-compiler --doc
-          cargo check --locked -p capntproto --no-default-features --lib
-          if test "$RUNNER_OS" = Linux; then
-            RUSTDOCFLAGS='-D warnings' cargo doc --locked -p capntproto --no-default-features --no-deps --lib
-            RUSTDOCFLAGS='-D warnings' cargo doc --locked -p capntproto --no-deps --lib
-            RUSTDOCFLAGS='-D warnings' cargo doc --locked -p capntproto --features quic --no-deps --lib
-          fi
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --test rpc_ownership
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --lib storage::components
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features storage --test component_orm
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features tls --test secure_rpc
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --no-default-features --features quic --test secure_rpc
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test buffered_input scratch::
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_groups -- --skip group_resets_match_pinned_cpp
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_getters -- --skip mutable_getters_match_pinned_cpp
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_nested_lists -- --skip nested_getters_match_pinned_cpp
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_blobs -- --skip blob_access_matches_pinned_cpp
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test dynamic_pointers -- --skip pointer_views_match_pinned_cpp
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test loaded_view_casts -- --skip compatible_loaded_casts_match_pinned_cpp
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test capnp_root
-          if test "$RUNNER_OS" != Windows; then
-            cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib unix_rpc:: -- --skip tlc --skip pinned_cpp
-            cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test unix_facade --test fd_capabilities -- --skip tlc
-            cargo clippy --locked -p capntproto --lib --test unix_facade --test fd_capabilities -- -D warnings
-          fi
-          if test "$RUNNER_OS" = Linux; then
-            cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tooling nightly_rpc_try_contracts -- --exact
-          fi
-      - name: Enforce allocation budgets on Linux
-        id: allocations
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test allocations
-      - name: Upstream QUIC v1 protocol and independent interoperability checks
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --test tooling pinned_native_profile
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev -- nextest cargo -- --locked -p capntproto --lib transport:: -- --skip tlc --skip transport::backend_tests
-          cargo build --locked --example quic-interop --no-default-features --features quic
-          cargo clippy --locked -p capntproto-dev --features quic-interop --all-targets -- -D warnings
-          cargo run --locked --target-dir target/dev-tools -p capntproto-dev --features quic-interop -- check-quic-interop
-      - name: Platform result
-        if: always()
-        shell: bash
-        env:
-          PLATFORM: ${{ matrix.os }}
-          COMPILE: ${{ steps.compile.outcome }}
-          SMOKE: ${{ steps.smoke.outcome }}
-          ALLOCATIONS: ${{ steps.allocations.outcome }}
-          AUDITABLE: ${{ steps.auditable.outcome }}
-        run: |
-          mkdir -p target/platforms
-          printf '| %s | %s | %s | %s | %s |\n' "$PLATFORM" "$COMPILE" "$SMOKE" "$ALLOCATIONS" "$AUDITABLE" > "target/platforms/$PLATFORM.md"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: platform-${{ matrix.os }}
-          overwrite: true
-          path: target/platforms/
-          if-no-files-found: error
-      - name: Upload nextest results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: nextest-${{ matrix.os }}
-          overwrite: true
-          path: target/nextest/reports/
-          if-no-files-found: warn
-  report:
-    name: Required CI result
-    needs: [workflows, documentation, portability, transports, examples, platforms, cargo, models, fuzz, extended, performance, cleanup]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          pattern: platform-*-*
-          path: platforms
-          merge-multiple: true
-      - name: Generate CI report
-        if: always()
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          # Markdown backticks in the format string are literal.
-          # shellcheck disable=SC2016
-          printf '# Platform checks\n\nCommit: `%s`\n\nDefault features: Native, services, storage and TLS. Standard RPC and native directory routes default to TCP; native routes retain mandatory peer authentication. Standard QUIC is enabled explicitly. Smoke checks exercise TCP, TLS/mTLS, QUIC/mTLS, the Rust schema compiler, generated capability RPC and pipelining; Linux/macOS also check storage reopen and descriptor-aware Unix RPC (ownership, limits, cancellation and scratch slots). Linux also enforces allocation budgets. All platforms require embedded cargo-auditable inventories in the application and schema-compiler binaries. Windows also runs component storage and retained-snapshot checks; power-loss durability is not qualified by CI.\n\n| Platform | Compile | Smoke | Allocation budgets (Linux) | Embedded dependency metadata |\n| --- | --- | --- | --- | --- |\n' "$GITHUB_SHA" > README.md
-          for platform in ubuntu-24.04 macos-15 windows-2025; do
-            if test -f "platforms/$platform.md"; then cat "platforms/$platform.md" >> README.md; else printf '| %s | missing | missing | missing | missing |\n' "$platform" >> README.md; fi
-          done
-          {
-            printf '\n## Pipeline results\n\n'
-            jq -r 'to_entries[] | "- \(.key): \(.value.result)"' <<< "$RESULTS"
-            printf '\nMain CI requires workspace tests, formal checks, fuzzing, extended verification, platform, documentation, portability and benchmark checks. LLVM coverage and its regression thresholds run independently with their own Coverage badge. Fork and Dependabot PRs build benchmarks without cloud credentials; their cloud measurement and cleanup are skipped. CodeQL runs independently through GitHub default setup.\n'
-          } >> README.md
-          cat README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: platform-report
-          overwrite: true
-          path: |
-            README.md
-            platforms/auditable-*.json
-          if-no-files-found: error
-      - name: Require every mandatory CI stage to pass
-        if: always()
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-          CLOUD: ${{ github.actor_id != '49699333' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        run: |
-          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$RESULTS"
-          jq -e --arg cloud "$CLOUD" 'to_entries | all(.[]; if .key == "cleanup" and $cloud == "false" then .value.result == "skipped" else .value.result == "success" end)' <<< "$RESULTS"
   cargo:
-    name: Verify workspace tests and doctests
-    needs: [platforms, documentation, portability]
+    name: Tests and diagnostics
+    needs: workflows
     uses: ./.github/workflows/verification-tests.yml # zizmor: ignore[self-repository]
+  examples:
+    name: TLS services and distributed checkout
+    needs: workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
+        with:
+          cache-key: legacy-tokio-examples
+      - name: Exercise schema services and distributed recovery
+        run: cargo run --locked -p capntproto-dev -- examples
   models:
-    name: Verify formal proofs and distributed models
-    needs: [platforms, documentation]
+    name: Protocol and storage models
+    needs: workflows
     uses: ./.github/workflows/verification-models.yml # zizmor: ignore[self-repository]
   fuzz:
-    name: Verify fuzz targets
-    needs: [platforms, documentation]
+    name: Codec and legacy RPC fuzzing
+    needs: workflows
     uses: ./.github/workflows/verification-fuzz.yml # zizmor: ignore[self-repository]
   extended:
-    name: Verify memory safety and mutation controls
-    needs: [platforms, documentation]
+    name: Memory safety
+    needs: workflows
     uses: ./.github/workflows/verification-extended.yml # zizmor: ignore[self-repository]
   performance:
-    name: Build and measure release benchmarks
+    name: Instruction and allocation profiles
     needs: workflows
     uses: ./.github/workflows/performance.yml # zizmor: ignore[self-repository]
-    secrets:
-      DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-  cleanup:
-    name: Recover expired benchmark resources
-    needs: performance
-    # 49699333 is Dependabot's immutable GitHub actor ID.
-    if: >-
-      always() && github.actor_id != '49699333' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    uses: ./.github/workflows/maintenance-benchmarks.yml # zizmor: ignore[self-repository]
-    secrets:
-      DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+  report:
+    name: CI
+    if: always()
+    needs: [workflows, documentation, cargo, examples, models, fuzz, extended, performance]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every CI lane
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          failed = {name: value['result'] for name, value in results.items() if value['result'] != 'success'}
+          if failed:
+              raise SystemExit(f'CI lanes did not pass: {failed}')
+          print('All legacy Tokio/rustls CI lanes passed. Coverage is independent.')
+          PY

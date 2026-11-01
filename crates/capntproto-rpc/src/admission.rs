@@ -20,14 +20,12 @@ pub(crate) fn retain_context(
 
 pub(crate) struct Admission {
     counter: Rc<Outgoing>,
-    pub(crate) held_responses: std::cell::Cell<usize>,
 }
 
 impl Admission {
     pub(crate) fn new(limit: usize) -> Rc<Self> {
         Rc::new(Self {
             counter: Rc::new(Outgoing::new(limit)),
-            held_responses: std::cell::Cell::new(0),
         })
     }
 

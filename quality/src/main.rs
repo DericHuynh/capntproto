@@ -1,4 +1,4 @@
-use capntproto_quality::{benchmark, coverage, qualification, report, Result, Runner};
+use capntproto_quality::{coverage, qualification, report, Result, Runner};
 use std::path::Path;
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
@@ -19,11 +19,6 @@ fn main() -> Result<()> {
         "cargo" => capntproto_quality::lanes::cargo(&mut r),
         "qualification" => qualification(&mut r),
         "models" => capntproto_quality::lanes::models(&mut r),
-        "benchmark-build" => benchmark::bundle(&mut r),
-        "benchmark" => benchmark::import(
-            &mut r,
-            Path::new(args.get(2).ok_or("missing bundle directory")?),
-        ),
         "memory" => r
             .cargo(
                 "miri-and-mutations",
@@ -38,7 +33,6 @@ fn main() -> Result<()> {
                 ],
             )
             .map(|_| ()),
-        "fuzz" => capntproto_quality::lanes::fuzz(&mut r),
         "security" => {
             let mut failures = Vec::new();
             for (name, manifest) in [
@@ -46,18 +40,15 @@ fn main() -> Result<()> {
                 ("fuzz", "fuzz/Cargo.lock"),
                 ("downstream-example", "examples/downstream/Cargo.lock"),
                 ("kv-service-example", "examples/kv/Cargo.lock"),
-                ("rpc-benchmark", "benchmarks/rpc/Cargo.lock"),
+                ("tls-example", "examples/configurations/Cargo.lock"),
+                ("checkout-example", "examples/checkout/Cargo.lock"),
+                ("runtime-benchmark", "benchmarks/runtimes/Cargo.lock"),
                 ("storage-benchmark", "benchmarks/storage/Cargo.lock"),
                 ("concurrency-benchmark", "benchmarks/concurrency/Cargo.lock"),
                 ("miri", "verification/miri/Cargo.lock"),
-                ("portable", "verification/portable/Cargo.lock"),
                 (
                     "upstream-rpc-interop",
                     "verification/upstream-rpc/Cargo.lock",
-                ),
-                (
-                    "upstream-rpc-benchmark",
-                    "benchmarks/rpc-upstream/Cargo.lock",
                 ),
                 (
                     "instructions-benchmark",

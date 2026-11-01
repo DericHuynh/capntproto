@@ -118,18 +118,14 @@ impl Fixture {
         });
         let client = wrap(capnp_rpc::new_client(Controlled(state.clone())));
         let mut drivers = Drivers(Vec::new());
-        let client = if let Some(selected) = selected {
+        let client = if let Some(_selected) = selected {
             let hub = Rc::new(RefCell::new(support::Hub::default()));
             let server = support::driver::System::new(
-                selected[1],
                 Box::new(support::Hub::network(&hub, 1)),
                 Some(client.client),
             );
-            let mut caller = support::driver::System::new(
-                selected[0],
-                Box::new(support::Hub::network(&hub, 2)),
-                None,
-            );
+            let mut caller =
+                support::driver::System::new(Box::new(support::Hub::network(&hub, 2)), None);
             let client = caller.bootstrap(1);
             drivers.0.push(tokio::task::spawn_local(server.run()));
             drivers.0.push(tokio::task::spawn_local(caller.run()));

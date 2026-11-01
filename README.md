@@ -1,202 +1,82 @@
-# Cap'nt Proto
+# Cap’nt Proto
 
 [![CI](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/ci.yml)
 [![Coverage](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/DericHuynh/capntproto/actions/workflows/quality.yml)
 [![Rust 1.97](https://img.shields.io/badge/rust-1.97-orange.svg)](rust-toolchain.toml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Rust implementation of Cap'n Proto schemas, serialization and capability RPC,
-with a native schema compiler, compatibility adapters, encrypted transport and
-correctness tooling. Start with the **[project wiki](docs/wiki/Home.md)**.
+Rust schemas, serialization, capability RPC and durable storage. RPC uses one
+implementation: the legacy driver on **Tokio, with rustls TLS 1.3 over TCP**.
+This is an experimental developer preview, independent of upstream Cap’n Proto.
 
-The CI badge covers workspace tests and doctests, Verus/TLA+, fuzzing, extended
-verification, platform, portability, documentation and benchmarks. The independent
-Coverage badge covers LLVM code coverage and its regression thresholds; coverage
-failures do not block main CI. Fork/Dependabot PRs
-build benchmarks without cloud measurement. See the [workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
-and [independent results and graphs](https://github.com/DericHuynh/capntproto/tree/reports).
+## Start with a service
 
-**Experimental developer preview.** The project includes owned Rust protocol crates
-and independent comparisons against pinned C++ Cap'n Proto. It is not affiliated
-with the upstream Cap'n Proto project. Full API parity and production
-qualification remain work in progress; see the [release criteria](docs/wiki/Release-Acceptance.md).
+The examples have separate client/server programs and real Cap’n Proto schemas:
 
-## Start small, then go deeper
-
-- [Distributed checkout](examples/checkout/README.md): independent order, inventory and payment services with crash recovery and checked concurrent customer histories.
-- [Message round trip](examples/message_basic.rs): `cargo run --no-default-features --example message_basic`.
-- [Key/value server](examples/kv/src/bin/server.rs) and [independent client](examples/kv/src/bin/client.rs), using a shared [Cap'n Proto schema](examples/kv/key_value.capnp).
-- [Deep concurrent client](examples/kv/src/bin/deep-client.rs): concurrent writes and reads through 32 levels of remote directory capabilities.
+- [Greeting](examples/configurations/README.md): a session capability, a pipelined call, TLS and mutual TLS.
+- [Key/value](examples/README.md): shared state and a deep concurrent directory client.
+- [Distributed checkout](examples/checkout/README.md): order, inventory and payment services with durable recovery, cancellation and concurrent history checks.
+- [Messages](examples/message_basic.rs): serialization without a network connection.
 
 ```sh
+cargo run --manifest-path examples/configurations/Cargo.toml --bin example-credentials -- /tmp/example-pki
 # Terminal 1
-cargo run --manifest-path examples/kv/Cargo.toml --bin server
-# Terminal 2: separate processes share the server's state
-cargo run --manifest-path examples/kv/Cargo.toml --bin client -- put greeting hello
-cargo run --manifest-path examples/kv/Cargo.toml --bin client -- get greeting
-cargo run --manifest-path examples/kv/Cargo.toml --bin deep-client
+cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-server -- \
+  --cert /tmp/example-pki/server.pem --key /tmp/example-pki/server-key.pem
+# Terminal 2
+cargo run --manifest-path examples/configurations/Cargo.toml --bin rpc-client -- \
+  --ca /tmp/example-pki/ca.pem world
 ```
 
-Choose TCP, QUIC or WebTransport. TLS secures TCP; QUIC and WebTransport include TLS 1.3.
-Certificate configuration lives in `rpc::security`, TCP's TLS adapter in
-`rpc::tcp::tls`, and QUIC in `rpc::quic`. The facade re-exports `capnp`,
-`capnp_rpc` and `capnp_futures`. Retain an `rpc::Connection` while using its
-capabilities. For work driven in an application scope, use
-`rpc::ConnectionOptions::client(stream)` and `driver.run(application)`; no spawned
-task is needed. `client_with_clock` accepts a browser monotonic clock. See the
-[example guide](examples/README.md) for complete configurations.
+`capntproto` re-exports `capnp`, `capnp_rpc` and `capnp_futures`. Generate schemas
+with `capntproto-codegen`; its native Rust compiler needs no external schema
+compiler. Use `rpc::tcp::tls` to authenticate a socket before installing RPC.
+`rpc::Connection` owns a running connection. The lower-level
+`capnp_rpc::twoparty::TwoPartyClient` can be polled alongside an application in a
+Tokio `LocalSet`. Configuration accepts an explicit `TlsClock` for certificate
+validation. The low-level byte stream and Unix descriptor adapters use the same
+RPC driver; they provide no additional protocol implementation.
 
-## What is here
+## Allocation-conscious IO
 
-- **Native schema compiler:** imports, generics, constants, annotations, runtime
-  reflection and concurrent parser caches. [Compiler guide](docs/wiki/Schema-Compiler.md).
-- **Serialization and capability RPC:** maintained `capnp`, `capnpc` and
-  `capnp-rpc` crates, with generated Rust APIs and C++ interoperability tests.
-  [Runtime scope](docs/wiki/Runtime-Status.md) · [C++ parity](docs/wiki/Cpp-Parity.md).
-  Local small-call TCP qualification: [portable instructions within 1.05× of legacy on both peers](docs/wiki/Quality-and-Benchmarks.md#portable-and-legacy-instruction-qualification).
-- **Adapters and transport:** TCP with optional TLS 1.3 and standard QUIC v1 with optional mutual
-  TLS; JSON/text codecs, ByteStream, HTTP, WebSockets and JSON-RPC; encrypted
-  multiparty sessions through quiche and durable storage. [TCP, TLS and QUIC guide](docs/wiki/TCP-TLS-and-QUIC.md).
-  [Compatibility adapters](docs/wiki/Compatibility-Adapters.md) · [Architecture](docs/wiki/Architecture.md).
-- **Executable correctness checks:** Rust tests, C++ comparisons, Verus source
-  contracts and temporal induction for portable Rust, bounded TLA+
-  models, fuzzing, memory checks and LLVM coverage regression gates.
-  [Testing](docs/wiki/Testing.md) · [Formal verification](docs/wiki/Formal-Verification.md) · [Qualification limits](docs/wiki/Model-Conformance.md).
-- **RPC application APIs:** owned connections and native vats, typed bootstraps
-  after startup, peer-specific bootstrap factories, automatic three-party
-  capability handoff and joins. [RPC guide](docs/wiki/RPC-Applications.md).
-- **Storage and ORM:** whole-entry objects plus opt-in component revisions that
-  share unchanged data, mapped typed reads and atomic publication.
-  [Component storage](docs/wiki/Component-Storage.md).
+The write path retains message envelopes, framing tables and TLS ciphertext
+storage, preserves vectored writes, and batches related protocol output. rustls’s
+Unbuffered API encrypts into caller-provided output storage. A single nonempty
+write slice bypasses plaintext staging, including its first write. Fixed message
+builders, borrowed readers and caller-owned framing scratch remain available for
+allocation-free operations.
 
-## Development commands
+RPC connections and TLS handshakes allocate. rustls 0.23 also allocates received
+plaintext records; the complete network stack is not allocation-free. See the
+[transport API](crates/capntproto-transport/README.md) and
+[benchmark fixtures](benchmarks/runtimes/README.md) for precise boundaries.
 
-Repository and CI tooling lives in `capntproto-dev`:
+## Build and verify
+
+Use Rust 1.97.0 and a platform C toolchain for rustls’s cryptography provider.
+Default features are `tls`, `services` and `storage`. The smaller network build is:
 
 ```sh
-cargo run --locked -p capntproto-dev -- --help
-cargo run --locked -p capntproto-dev -- wiki check
-cargo run --locked -p capntproto-dev -- reports render --output target/report-preview
-cargo nextest run --locked -p capntproto-dev
+cargo build --locked --no-default-features --features tls
+cargo test --locked -p capntproto-rpc -p capntproto-futures -p capntproto-transport
+cargo test --locked --test secure_rpc
+cargo run --locked -p capntproto-dev -- examples
 ```
 
-The optional `quic-interop` feature adds an independent s2n-quic test peer.
-Conventional QUIC uses quiche. WebTransport uses Quinn on native hosts and browser
-APIs on WASM. See the [tooling guide](docs/wiki/Repository-Layout.md#development-subcommands).
-
-## Build and test
-
-For TCP with TLS/mTLS, start with the smaller feature set (Rust and a platform C toolchain):
+The full test suite additionally uses pinned C++ Cap’n Proto, CMake, a C++
+compiler and Java for independent interoperability and model checks:
 
 ```sh
-cargo build --locked -p capntproto --no-default-features --features tls
-```
-
-This avoids quiche/BoringSSL, CMake, libclang, Java and the C++ reference compiler.
-TCP is the default transport; native directory routes retain mTLS. Default builds
-still compile the native quiche driver and need its native toolchain. Enable
-`quic` explicitly for conventional two-party QUIC RPC. The Rust schema compiler
-builds project schemas; C++ tools and Java are for the full verification suite.
-[Build profiles and prerequisites](docs/wiki/Getting-Started.md#install-and-run).
-
-Use the pinned **Rust 1.97.0** toolchain. The full suite also needs CMake, a C++
-compiler, libclang, Cap'n Proto headers/tools and Java 17; the [setup guide](docs/wiki/Getting-Started.md)
-and [CI prerequisites](.github/actions/quality-setup/action.yml) describe them.
-
-```sh
-# Git checkouts only; source bundles already include the C++ reference.
-git submodule update --init --depth 1 -- vendor/capnproto
-bash scripts/setup-auditable.sh
-export PATH="$PWD/target/auditable-tools/wrapper:$PWD/target/auditable-tools/bin:$PATH"
-cargo build --locked -p capntproto --lib --bins
-cargo install cargo-nextest --version 0.9.146 --locked
+git submodule update --init --depth 1 -- vendor/capnproto vendor/verus-tla
 cargo nextest run --locked --workspace
 cargo test --locked --workspace --doc
 ```
 
-The C++ reference is pinned as a Git submodule. Ordinary Rust dependencies are
-resolved by Cargo; the maintained Rust implementations live in this workspace under `crates/`.
-Quiche is the unmodified 0.30.0 registry package; QUIC v2 is currently unsupported. [Dependency and checkout policy](docs/wiki/Repository-Layout.md#vendored-and-external-code).
+CI runs tests, examples, fuzzing, formal checks and instruction profiles. LLVM
+coverage runs separately with its own badge. Each performance fixture is repeated
+five times, retaining raw counters, independent minima, means and sample standard
+deviations. Instructions and simulated branch misses are measured separately
+from noisy network latency.
 
-Our crates use `capntproto`, `capntproto-compiler`, `capntproto-compat` and the
-`capntproto-` prefix for supporting tools. Upstream dependencies retain their
-`capnp`, `capnpc` and `capnp-rpc` names. See the [name migration](docs/wiki/Repository-Layout.md#crate-name-migration).
-Use Bash / Git Bash for the setup
-commands. Linux, macOS and Windows have compile-and-smoke CI; full verification
-and dedicated benchmarks run on Linux.
-
-Benchmarks are separate from tests: CI builds individual release benchmarks with
-`cargo bench --no-run`, transfers the artifacts to a temporary dedicated
-DigitalOcean droplet, measures Linux loopback RPC and deletes the droplet.
-Credentials stay in GitHub Actions secrets. [Benchmark setup](docs/wiki/Quality-and-Benchmarks.md).
-The [CI workflow graph](docs/wiki/Quality-and-Benchmarks.md#workflow-dependencies)
-shows the validation gates and how coverage and benchmark results reach the report dashboard.
-The CI and Coverage badges link to their independent workflow runs. Measured
-coverage, verification results and exhaustive benchmark tables appear in the
-report dashboard.
-
-## Documentation and participation
-
-[Project wiki](docs/wiki/Home.md) · [Repository boundaries](docs/wiki/Repository-Layout.md)
-· [Correctness roadmap](docs/wiki/Correctness.md) · [CI reporting](docs/wiki/README-Reports.md)
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes. Use the
-[issue templates](.github/ISSUE_TEMPLATE) for bugs and questions, and follow the
-[code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately through
-[SECURITY.md](SECURITY.md); the maintainer contact is
-[huynhderic@gmail.com](mailto:huynhderic@gmail.com).
-
-Original project code is [MIT licensed](LICENSE). Vendored components retain
-their own licenses and [third-party notices](THIRD_PARTY_NOTICES.md).
-[GitHub upload/setup instructions](docs/wiki/GitHub-Setup.md).
-
-## Verification results
-
-[Current reports and graphs](https://github.com/DericHuynh/capntproto/blob/reports/README.md) · [All failed tests](https://github.com/DericHuynh/capntproto/blob/reports/docs/reports/failed-tests.md) · [Failed model replays](https://github.com/DericHuynh/capntproto/blob/reports/docs/reports/failed-models.md)
-
-The report dashboard records each lane's measured commit, date, counts and original
-CI run. Generated history and graphs live on the `reports` branch; source changes
-and this README are maintained on `main`. Different lanes may describe different
-commits and do not imply a combined release qualification.
-
-![Cargo test history](https://raw.githubusercontent.com/DericHuynh/capntproto/reports/docs/reports/cargo-history.svg)
-
-![TLA+ replay history](https://raw.githubusercontent.com/DericHuynh/capntproto/reports/docs/reports/tla-history.svg)
-
-## Benchmark results
-
-[Latest measurements, commit and workflow status](https://github.com/DericHuynh/capntproto/blob/reports/README.md#linux-loopback-benchmark-comparisons)
-· [Exact plotted values](https://github.com/DericHuynh/capntproto/blob/reports/docs/reports/history.json)
-
-[![Latest validated RPC median latencies](https://raw.githubusercontent.com/DericHuynh/capntproto/reports/docs/reports/benchmarks.svg)](https://github.com/DericHuynh/capntproto/blob/reports/README.md#linux-loopback-benchmark-comparisons)
-
-Release builds, separate client/server processes, one outstanding request,
-10,000 warmups and 1,000 retained calls per trial, five repetitions per payload.
-TCP uses TLS 1.3 for all implementations; QUIC is measured
-separately. The dashboard includes p95/p99, request rates and
-the measured source revision. Relative charts use C++ as their reference.
-
-The suite includes an independent [upstream Rust RPC baseline](benchmarks/rpc-upstream/README.md)
-using published `capnp-rpc` crates. Fresh loopback and two-host workflow reports
-compare it against C++ alongside our drivers, gRPC and WebSockets. Historical
-graphs retain the implementations measured at their recorded revision.
-
-The default dedicated campaign also compares realistic gRPC and binary Protobuf
-WebSocket services for nested data, 32 concurrent calls, and four/eight service
-chains with eight client connections. Every hop validates the same data and
-returns the full result. Comparisons retain five process repetitions, minimum
-latency, means and spread; gRPC/WebSocket QUIC and capability promise pipelining
-are marked unsupported. See the [fixture contracts](benchmarks/rpc/README.md).
-
-Graphs identify the measured TCP driver: **legacy** or **portable**. Legacy
-results do not qualify the opt-in portable replacement. Its current small-call
-target is pooled p50 ≤1.5× C++ at 0, 64 and 1,024 bytes; 64 KiB and tail latencies
-remain visible as separate measurements. Missing results are shown as unavailable.
-The benchmark defaults to portable; `CAPNTPROTO_BENCH_PORTABLE=0` measures the
-legacy control. The library's default driver remains legacy until migration is complete.
-Fuzzing and coverage graphs remain in the dashboard and workflow artifacts.
-
-The [tested service examples](examples/README.md) include a browser WASI Preview 3
-frontend, embedded TLS telemetry and a Tokio/monoio configuration matrix. Run
-`cargo run --locked -p capntproto-dev -- examples` after installing the
-[integration prerequisites](examples/integration/README.md).
+Portable RPC, bounded RPC generation, Monoio, Embassy, embedded TLS, QUIC and
+WebTransport backends have been removed. Earlier architecture and benchmark
+reports in `docs/` describe historical versions and are not the current API.

@@ -144,9 +144,7 @@ impl<S: Connection> Connections<S> {
     pub(crate) fn is_closing(&self) -> bool {
         self.0.completion.closing.get()
     }
-    pub(crate) fn get(&self, id: usize) -> Option<Rc<S>> {
-        self.0.entries.borrow().get(&id)?.state.clone()
-    }
+
     pub(crate) fn states(&self) -> Vec<Rc<S>> {
         self.0
             .entries
@@ -176,15 +174,6 @@ impl<S: Connection> Connections<S> {
         if self.0.completion.closing.replace(true) {
             return Vec::new();
         }
-        let states = self.states();
-        self.0.completion.notify();
-        states
-    }
-    /// Preserve an explicit abort even while a constructor has reserved its
-    /// identity but has not published a state that can receive the abort yet.
-    pub(crate) fn begin_abort(&self, error: Error) -> Vec<Rc<S>> {
-        self.0.completion.error.borrow_mut().get_or_insert(error);
-        self.0.completion.closing.set(true);
         let states = self.states();
         self.0.completion.notify();
         states
@@ -223,6 +212,7 @@ impl<S: Connection> Registration<S> {
         Ok(())
     }
     /// Stop lookup while retaining ownership of pending transport completion.
+    #[cfg(test)]
     pub(crate) fn detach(&self) {
         drop(self.remove());
     }

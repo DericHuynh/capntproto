@@ -204,24 +204,7 @@ impl RustTypeInfo for type_::Reader<'_> {
                 module,
                 &ctx.get_qualified_module(st.get_type_id()),
             ),
-            type_::Interface(interface) if ctx.bounded_rpc && !matches!(module, Leaf::Owned) => {
-                let owned = do_branding(
-                    ctx,
-                    interface.get_type_id(),
-                    interface.get_brand()?,
-                    Leaf::Owned,
-                    &ctx.get_qualified_module(interface.get_type_id()),
-                )?;
-                match module {
-                    Leaf::Builder(_) => Ok(fmt!(ctx, "{capnp}::any_pointer::{module}")),
-                    Leaf::Reader(lifetime) => Ok(fmt!(
-                        ctx,
-                        "{capnp}::wire_capability::Reader<{lifetime}, {owned}>"
-                    )),
-                    Leaf::Client => Ok(fmt!(ctx, "{capnp}::wire_capability::Reader<'a, {owned}>")),
-                    _ => Ok(fmt!(ctx, "{capnp}::any_pointer::Pipeline")),
-                }
-            }
+
             type_::Interface(interface) => do_branding(
                 ctx,
                 interface.get_type_id(),
@@ -259,14 +242,6 @@ impl RustTypeInfo for type_::Reader<'_> {
                     type_::Text(()) => Ok(fmt!(ctx, "{capnp}::text_list::{module}")),
                     type_::Data(()) => Ok(fmt!(ctx, "{capnp}::data_list::{module}")),
                     type_::Interface(_) => {
-                        if ctx.bounded_rpc {
-                            let inner = element_type.type_string(ctx, Leaf::Owned)?;
-                            return Ok(fmt!(
-                                ctx,
-                                "{capnp}::list_list::{}<{lifetime_comma}{inner}>",
-                                module.bare_name()
-                            ));
-                        }
                         let inner = element_type.type_string(ctx, Leaf::Client)?;
                         Ok(fmt!(
                             ctx,

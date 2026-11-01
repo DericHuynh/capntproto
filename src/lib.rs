@@ -1,9 +1,8 @@
-//! Cap'n Proto messages and scoped RPC over TCP or QUIC. TLS secures TCP;
-//! QUIC includes TLS 1.3.
+//! Cap'n Proto messages and legacy RPC over Tokio TCP with rustls TLS 1.3.
 //!
 //! [`capnp`] provides messages and generated capability types; [`capnp_rpc`]
 //! provides protocol drivers. [`rpc::Connection`] owns a running connection and
-//! cancels it on drop. Storage, services and native networking are optional.
+//! cancels it on drop. Storage and services are optional.
 //!
 //! Start with `message_basic`, then run the separate `server` and `client`
 //! binaries in the [key/value service example](https://github.com/DericHuynh/capntproto/tree/main/examples/kv).
@@ -19,35 +18,8 @@ pub mod store_capnp {
     include!(concat!(env!("OUT_DIR"), "/store_capnp.rs"));
 }
 pub mod authority;
-#[cfg(all(feature = "native", feature = "storage"))]
-pub mod handoff;
-#[cfg(all(feature = "native", feature = "storage"))]
-pub mod introduction;
-#[cfg(feature = "native")]
-pub mod nat;
-#[cfg(feature = "native")]
-pub mod native_arbitration;
-#[cfg(feature = "native")]
-pub mod native_discovery;
-#[cfg(feature = "native")]
-pub mod native_listener;
 mod object_ids;
-#[allow(clippy::extra_unused_type_parameters)]
-#[cfg(feature = "native")]
-pub mod native_discovery_capnp {
-    include!(concat!(env!("OUT_DIR"), "/native_discovery_capnp.rs"));
-}
-#[cfg(feature = "native")]
-pub mod native_provisioning;
-#[allow(clippy::extra_unused_type_parameters)]
-#[cfg(feature = "native")]
-pub mod native_provisioning_capnp {
-    include!(concat!(env!("OUT_DIR"), "/native_provisioning_capnp.rs"));
-}
-#[cfg(feature = "native")]
-pub mod native_rpc;
-#[cfg(feature = "native")]
-pub mod native_shutdown;
+
 #[cfg(feature = "storage")]
 pub mod orm;
 #[cfg(feature = "storage")]
@@ -61,8 +33,6 @@ pub mod rpc;
 pub mod semantics;
 #[cfg(feature = "storage")]
 pub mod storage;
-#[cfg(feature = "native")]
-pub mod transport;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub mod unix_rpc;
@@ -86,8 +56,6 @@ pub mod bulk_capnp {
 }
 #[cfg(feature = "services")]
 pub mod realtime;
-#[cfg(all(feature = "services", feature = "native"))]
-pub mod realtime_datagram;
 #[allow(clippy::extra_unused_type_parameters)]
 #[cfg(feature = "services")]
 pub mod realtime_capnp {

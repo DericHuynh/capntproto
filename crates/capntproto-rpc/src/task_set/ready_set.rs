@@ -52,23 +52,6 @@ impl<F: Future + Unpin> ReadySet<F> {
             .as_ref()
             .map_or(self.live, FuturesUnordered::len)
     }
-    /// Reserve reusable slot storage before consuming a fallible hosted owner.
-    /// Exceptional concurrency keeps the same FuturesUnordered allocation path.
-    pub(crate) fn try_push(
-        &mut self,
-        future: F,
-    ) -> Result<(), (std::collections::TryReserveError, F)> {
-        if self.queued.is_none()
-            && self.live < REUSABLE_TASKS
-            && self.available.trailing_zeros() as usize == self.tasks.len()
-        {
-            if let Err(error) = self.tasks.try_reserve(1) {
-                return Err((error, future));
-            }
-        }
-        self.push(future);
-        Ok(())
-    }
     pub(crate) fn push(&mut self, future: F) {
         if let Some(queued) = &self.queued {
             queued.push(future);

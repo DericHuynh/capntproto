@@ -6,8 +6,6 @@ mod engine;
 pub use engine::*;
 fn main() {}
 
-#[path = "../../src/semantics/sequence.rs"]
-mod sequence;
 #[path = "../../src/semantics/stream.rs"]
 mod stream;
 #[path = "../../src/semantics/revisions.rs"]

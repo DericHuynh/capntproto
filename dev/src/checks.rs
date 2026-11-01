@@ -1,5 +1,5 @@
 use crate::{file_hash, hash, process, read_json, remove, root, write, write_json};
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use clap::Args;
 use serde_json::{json, Value};
 use std::{
@@ -304,68 +304,44 @@ pub fn workflows() -> Result<()> {
 }
 fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
     let mut automatic = Vec::new();
-    for (name, w) in all {
-        if name == "performance" && w["on"].get("push").is_some() {
-            // An explicit qualification branch can run the same campaign as
-            // manual dispatch. It must never duplicate main/PR CI triggers.
-            ensure!(
-                w["on"]["push"] == json!({"branches": ["codex/portable-qualification"]})
-                    && w["on"].get("pull_request").is_none(),
-                "performance qualification must use only its explicit branch"
-            );
-            continue;
-        }
-        if w["on"].get("push").is_some() || w["on"].get("pull_request").is_some() {
+    for (name, workflow) in all {
+        if workflow["on"].get("push").is_some() || workflow["on"].get("pull_request").is_some() {
             automatic.push(name.as_str());
-        }
-        if let Some(push) = w["on"].get("push") {
             ensure!(
-                push["branches"] == json!(["main"]) && w["on"].get("pull_request").is_some(),
-                "{name}: overlapping push triggers"
-            );
-            ensure!(
-                push.as_object()
-                    .unwrap()
-                    .keys()
-                    .all(|k| ["branches", "paths"].contains(&k.as_str())),
-                "invalid push filter"
+                workflow["on"]["push"]["branches"] == json!(["main"])
+                    && workflow["on"]["pull_request"].is_null(),
+                "{name}: automatic checks must cover every PR and main"
             );
         }
     }
     ensure!(
         automatic == ["ci", "quality"],
-        "CI and quality must have separate automatic entrypoints"
+        "CI and coverage must be the only automatic entrypoints"
     );
-    if let Some(release) = all.get("release") {
-        ensure!(
-            keys(&release["on"])? == BTreeSet::from(["workflow_dispatch".into()])
-                && release["on"]["workflow_dispatch"]["inputs"]["publish"]["default"] == false
-                && release["on"]["workflow_dispatch"]["inputs"]["bootstrap"]["default"] == false
-                && release["jobs"]["release"]["if"] == "github.ref == 'refs/heads/main'"
-                && release["concurrency"]["cancel-in-progress"] == false,
-            "crate publication must be explicit, default to verification, and use main"
-        );
-        let steps = release["jobs"]["release"]["steps"]
-            .as_array()
-            .context("release steps")?;
-        for name in [
-            "Require passing CI for the exact release commit",
-            "Publish the verified package set",
-        ] {
-            ensure!(
-                steps
-                    .iter()
-                    .any(|step| step["name"] == name && step["if"] == "inputs.publish"),
-                "publication requires both the exact-commit CI gate and explicit input"
-            );
-        }
-    }
-    let ci = &all["ci"];
+    let jobs = &all["ci"]["jobs"];
+    let required = [
+        "workflows",
+        "documentation",
+        "cargo",
+        "examples",
+        "models",
+        "fuzz",
+        "extended",
+        "performance",
+    ];
     ensure!(
-        ci["on"]["pull_request"].is_null(),
-        "PR checks cannot be path filtered"
+        jobs["report"]["if"] == "always()" && jobs["report"]["needs"] == json!(required),
+        "CI must require every verification lane"
     );
-    let jobs = &ci["jobs"];
+    ensure!(
+        keys(jobs)?
+            == required
+                .into_iter()
+                .map(str::to_owned)
+                .chain(["report".into()])
+                .collect(),
+        "untracked or missing CI gate"
+    );
     for (job, file) in [
         ("workflows", "ci-workflows"),
         ("documentation", "ci-docs"),
@@ -374,365 +350,86 @@ fn workflow_policy(all: &BTreeMap<String, Value>) -> Result<()> {
         ("fuzz", "verification-fuzz"),
         ("extended", "verification-extended"),
         ("performance", "performance"),
-        ("cleanup", "maintenance-benchmarks"),
     ] {
         ensure!(
             jobs[job]["uses"] == format!("./.github/workflows/{file}.yml")
                 && all[file]["on"].get("workflow_call").is_some(),
-            "reusable workflow dependency changed"
+            "{job}: reusable workflow is missing"
         );
     }
+    let quality = &all["quality"]["jobs"];
     ensure!(
-        jobs["platforms"]["needs"] == "workflows" && jobs["report"]["if"] == "always()",
-        "CI dependency gate changed"
+        keys(quality)? == BTreeSet::from(["coverage".into()])
+            && quality["coverage"].get("if").is_none()
+            && quality["coverage"].get("continue-on-error").is_none(),
+        "coverage must be independent and required for its own badge"
     );
-    ensure!(
-        jobs["report"]["needs"]
-            == json!([
-                "workflows",
-                "documentation",
-                "portability",
-                "transports",
-                "examples",
-                "platforms",
-                "cargo",
-                "models",
-                "fuzz",
-                "extended",
-                "performance",
-                "cleanup"
-            ]),
-        "required CI result must depend on every gate"
-    );
-    ensure!(
-        keys(jobs)?
-            == jobs["report"]["needs"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_str().unwrap().to_owned())
-                .chain(["report".into()])
-                .collect(),
-        "untracked CI gate"
-    );
-    let quality = &all["quality"];
-    ensure!(
-        quality["on"]["pull_request"].is_null(),
-        "quality cannot be path filtered"
-    );
-    ensure!(
-        keys(&quality["jobs"])? == BTreeSet::from(["coverage".into()])
-            && quality["jobs"]["coverage"].get("if").is_none()
-            && quality["jobs"]["coverage"]
-                .get("continue-on-error")
-                .is_none(),
-        "independent coverage must not own ordinary verification lanes"
-    );
-    let coverage_steps = quality["jobs"]["coverage"]["steps"]
+    let coverage = quality["coverage"]["steps"]
         .as_array()
-        .context("missing coverage steps")?;
+        .context("coverage steps")?;
     ensure!(
-        coverage_steps.iter().any(|s| s["run"]
+        coverage.iter().any(|step| step["run"]
             == "cargo run --locked -p capntproto-quality -- coverage target/quality/coverage"
-            && s.get("if").is_none()
-            && s.get("continue-on-error").is_none()),
-        "coverage badge must execute the unchanged instrumented coverage gate"
+            && step.get("if").is_none()
+            && step.get("continue-on-error").is_none()),
+        "coverage must execute its instrumented checks"
     );
-    let test_steps = all["verification-tests"]["jobs"]["tests"]["steps"]
-        .as_array()
-        .context("missing normal test steps")?;
+    let performance = &all["performance"];
     ensure!(
-        test_steps.iter().any(|s| s["run"]
-            == "cargo run --locked -p capntproto-quality -- cargo target/quality/cargo"
-            && s.get("if").is_none()
-            && s.get("continue-on-error").is_none()),
-        "main CI must execute ordinary tests independently of coverage"
+        performance["permissions"]["contents"] == "read"
+            && performance.to_string().find("secrets.").is_none(),
+        "instruction profiles need no cloud credentials or write access"
     );
     ensure!(
-        jobs["portability"]["needs"] == "workflows",
-        "portability must follow workflow validation"
+        keys(&performance["jobs"])? == BTreeSet::from(["profile".into()]),
+        "only the legacy instruction profiler is supported"
     );
-    let formal = &all["verification-models"]["jobs"];
     ensure!(
-        formal["models"]["needs"] == json!(["verus"]),
-        "distributed models must follow Verus proofs"
+        performance["jobs"]["profile"]["env"]["CAPNTPROTO_VALGRIND_INCLUDE"] == "/usr/include",
+        "measured-region headers are required"
     );
-    let verus_steps = formal["verus"]["steps"]
-        .as_array()
-        .context("missing Verus job")?;
-    ensure!(verus_steps.iter().any(|s| s["run"] == "cargo run --locked -p capntproto-dev -- verus verify --output target/verification/verus"
-        && s.get("if").is_none() && s.get("continue-on-error").is_none())
-        && formal["verus"].get("if").is_none() && formal["verus"].get("continue-on-error").is_none(),
-        "Verus gate must verify the full inventory and controls unconditionally");
     ensure!(
-        verus_steps
+        performance["jobs"]["profile"]["steps"]
+            .as_array()
+            .context("profile steps")?
             .iter()
-            .any(|s| s["with"]["name"] == "verus-report" && s["if"] == "always()"),
-        "Verus failures must retain diagnostics"
+            .any(|step| step["run"]
+                .as_str()
+                .is_some_and(|run| run.contains("runtime-runner --profile"))),
+        "benchmarks must run the repeated instruction profiler"
     );
-    ensure!(
-        formal.get("kani").is_none(),
-        "the retired Kani matrix must not run in CI"
-    );
-    ensure!(
-        jobs["performance"]["needs"] == "workflows",
-        "benchmarks must start after workflow validation, alongside verification"
-    );
-    let trusted = "github.actor_id != '49699333' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
-    let normalized = |v: &Value| {
-        v.as_str()
-            .unwrap_or("")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    ensure!(
-        jobs["cleanup"]["needs"] == "performance"
-            && normalized(&jobs["cleanup"]["if"]) == format!("always() && {trusted}"),
-        "cleanup must run after benchmarks, including failure, only for trusted events"
-    );
-    ensure!(
-        all["performance"]["on"]["workflow_call"]["inputs"]["campaign"]["default"] == "run-latency"
-            && all["performance"]["on"]["workflow_dispatch"]["inputs"]["campaign"]["default"]
-                == "run-latency",
-        "routine benchmarks must qualify latency; full profiling is opt-in"
-    );
-    let performance = &all["performance"]["jobs"];
-    ensure!(
-        performance["benchmark"]["needs"] == "build"
-            && normalized(&performance["benchmark"]["if"]) == trusted
-            && performance["benchmark"]["environment"] == "Benchmarking"
-            && performance["build"].get("if").is_none()
-            && performance["build"].get("environment").is_none(),
-        "every PR must build benchmarks; only trusted runs may use cloud credentials"
-    );
-    ensure!(
-        performance["build"].to_string().find("secrets.").is_none(),
-        "benchmark build must be credential-free"
-    );
-    for (job, file, required) in [
-        ("performance", "performance", false),
-        ("cleanup", "maintenance-benchmarks", true),
-    ] {
+    if let Some(release) = all.get("release") {
         ensure!(
-            jobs[job]["secrets"]
-                == json!({"DIGITALOCEAN_ACCESS_TOKEN": "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"})
-                && all[file]["on"]["workflow_call"]["secrets"]["DIGITALOCEAN_ACCESS_TOKEN"]
-                    ["required"]
-                    == required,
-            "{job}: explicitly forward and declare the cloud credential"
+            keys(&release["on"])? == BTreeSet::from(["workflow_dispatch".into()])
+                && release["on"]["workflow_dispatch"]["inputs"]["publish"]["default"] == false
+                && release["on"]["workflow_dispatch"]["inputs"]["bootstrap"]["default"] == false
+                && release["jobs"]["release"]["if"] == "github.ref == 'refs/heads/main'"
+                && release["concurrency"]["cancel-in-progress"] == false,
+            "publication must be explicit and use main"
         );
-    }
-    for (file, lane) in [
-        ("verification-tests", "cargo"),
-        ("quality", "coverage"),
-        ("verification-models", "models"),
-        ("verification-fuzz", "fuzz"),
-        ("performance", "benchmark"),
-    ] {
-        let steps = all[file]["jobs"]
-            .as_object()
-            .unwrap()
-            .values()
-            .flat_map(|job| job["steps"].as_array().unwrap());
-        let names: Vec<_> = steps
-            .filter(|step| step["with"]["path"] == "target/readme-data/publication.json")
-            .collect();
-        ensure!(
-            names.len() == 1
-                && names[0]["with"]["name"]
-                    == format!("readme-data-{lane}-${{{{ github.run_attempt }}}}")
-                && names[0]["with"].get("overwrite").is_none(),
-            "publication artifacts must have unique immutable lane names"
-        );
-    }
-    let mut groups = BTreeSet::new();
-    for name in [
-        "ci",
-        "quality",
-        "ci-workflows",
-        "ci-docs",
-        "verification-tests",
-        "verification-models",
-        "verification-fuzz",
-        "verification-extended",
-    ] {
-        let w = &all[name];
-        ensure!(
-            w["concurrency"]["cancel-in-progress"]
-                == if name == "ci" {
-                    json!("${{ github.event_name == 'pull_request' }}")
-                } else {
-                    json!(true)
-                },
-            "PR checks must cancel stale runs"
-        );
-        for pr in [1, 2] {
-            let key = concurrency(
-                w,
-                "pull_request",
-                &format!("refs/pull/{pr}/merge"),
-                Some(pr),
-                ci["name"].as_str().unwrap(),
-            )?;
-            ensure!(groups.insert(key), "reusable workflow cancels caller");
-        }
-        let mut events = BTreeSet::new();
-        for event in w["on"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .filter(|e| !["pull_request", "workflow_call"].contains(&e.as_str()))
-        {
+        for name in [
+            "Require passing CI for the exact release commit",
+            "Publish the verified package set",
+        ] {
             ensure!(
-                events.insert(concurrency(
-                    w,
-                    event,
-                    "refs/heads/main",
-                    None,
-                    crate::string(w, "name")?
-                )?),
-                "event groups overlap"
+                release["jobs"]["release"]["steps"]
+                    .as_array()
+                    .context("release steps")?
+                    .iter()
+                    .any(|step| step["name"] == name && step["if"] == "inputs.publish"),
+                "publication must require passing CI and explicit input"
             );
         }
     }
-    for name in [
-        "verification-tests",
-        "verification-models",
-        "verification-fuzz",
-        "verification-extended",
-    ] {
-        ensure!(
-            keys(&all[name]["on"])?
-                == BTreeSet::from([
-                    "schedule".into(),
-                    "workflow_dispatch".into(),
-                    "workflow_call".into()
-                ]),
-            "verification must be called by CI, not duplicate push/PR triggers"
-        );
-    }
-    ensure!(
-        keys(&all["performance"]["on"])?
-            == BTreeSet::from([
-                "workflow_dispatch".into(),
-                "workflow_call".into(),
-                "push".into()
-            ]),
-        "benchmarks must be called by CI, explicitly dispatched, or use the qualification branch"
-    );
-    let mut groups = BTreeSet::new();
-    for name in ["performance", "maintenance-benchmarks", "reports"] {
-        let w = if name == "performance" {
-            &performance["benchmark"]
-        } else {
-            &all[name]
-        };
-        ensure!(
-            w["concurrency"]["cancel-in-progress"] == false,
-            "resource workflows must not cancel"
-        );
-        let key = concurrency(
-            w,
-            "workflow_dispatch",
-            "refs/heads/main",
-            None,
-            crate::string(&all[name], "name")?,
-        )?;
-        ensure!(
-            key == concurrency(
-                w,
-                "schedule",
-                "refs/heads/other",
-                None,
-                crate::string(&all[name], "name")?
-            )? && groups.insert(key),
-            "resource groups overlap"
-        );
-    }
-    let publishers = all
-        .values()
-        .filter(|w| w["on"].get("workflow_run").is_some())
-        .collect::<Vec<_>>();
-    ensure!(publishers.len() == 1, "expected one report publisher");
-    let events = &publishers[0]["on"];
-    ensure!(
-        keys(events)? == BTreeSet::from(["workflow_run".into(), "workflow_dispatch".into()])
-            && events["workflow_run"]["types"] == json!(["completed"]),
-        "report trigger changed"
-    );
-    let names = [
-        "ci",
-        "quality",
-        "verification-tests",
-        "verification-models",
-        "verification-fuzz",
-        "performance",
-    ]
-    .into_iter()
-    .map(|n| {
-        all[n]["name"]
-            .as_str()
-            .unwrap()
-            .chars()
-            .flat_map(|c| {
-                if r"\*+?![]".contains(c) {
-                    vec!['\\', c]
-                } else {
-                    vec![c]
-                }
-            })
-            .collect::<String>()
-    })
-    .collect::<BTreeSet<_>>();
-    ensure!(
-        events["workflow_run"]["workflows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect::<BTreeSet<_>>()
-            == names,
-        "publisher must name exact producers"
-    );
     Ok(())
 }
+
 fn keys(v: &Value) -> Result<BTreeSet<String>> {
     Ok(v.as_object()
         .context("expected map")?
         .keys()
         .cloned()
         .collect())
-}
-fn concurrency(
-    w: &Value,
-    event: &str,
-    reference: &str,
-    pr: Option<u32>,
-    name: &str,
-) -> Result<String> {
-    let regex = regex::Regex::new(r"\$\{\{\s*(.*?)\s*\}\}")?;
-    let group = crate::string(&w["concurrency"], "group")?;
-    let mut error = false;
-    let result = regex
-        .replace_all(group, |m: &regex::Captures| match &m[1] {
-            "github.workflow" => name.into(),
-            "github.event_name" => event.into(),
-            "github.ref" => reference.into(),
-            "github.event.pull_request.number || github.ref" => {
-                pr.map(|p| p.to_string()).unwrap_or(reference.into())
-            }
-            _ => {
-                error = true;
-                String::new()
-            }
-        })
-        .to_lowercase();
-    if error {
-        bail!("unsupported concurrency expression");
-    }
-    Ok(result)
 }
 
 #[cfg(test)]

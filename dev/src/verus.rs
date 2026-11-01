@@ -18,8 +18,6 @@ const SOURCES: &[&str] = &[
     "crates/capntproto-core/src/wire_capability/map/policy.rs",
     "src/semantics/revisions.rs",
     "src/semantics/verified/revisions.rs",
-    "src/semantics/sequence.rs",
-    "src/semantics/verified/sequence.rs",
     "src/semantics/stream.rs",
     "src/semantics/verified/stream.rs",
     "verification/verus/main.rs",
@@ -473,7 +471,7 @@ fn verify(root: &Path, output: &Path, cancel: &Cancellation) -> Result<()> {
     } else {
         evidence["error"].as_str().unwrap().to_owned()
     };
-    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: production handoff/question temporal induction; reply ownership, answer lifetime/adoption, import revival, export reservation, wire references, promise/embargo transitions, message counts/progress, flow control, ring/growth/fixed-arena bounds and capability indices. Full-width source contracts preserve owned values and rejection state. Progress assumes fair draining/lifting, Return processing/local release or route allocation. Container traversal/batch composition, pointer provenance, buffer bytes, callbacks, authentication, network/storage IO and constructor/Default wrappers remain outside these contracts; native, Miri, compile-fail and distributed-model checks cover integration boundaries. Optional bounded Kani checks remain local, not a CI prerequisite.\n"))?;
+    crate::write(output.join("README.md"), format!("# Verus and verus-tla: {status}\n\n{details}\n\nSee [production proofs](proofs.json), [temporal library](temporal-library.json) and [source-bound evidence](evidence.json). Each JSON report includes per-function SMT timings. Control failures are expected and their logs identify the violated obligation.\n\n![SMT time per production contract and temporal lemma](proofs.svg)\n\nScope: production handoff/question temporal induction; reply ownership, wire reference credits, promise/embargo transitions, message counts/progress, flow control, ring/growth/fixed-arena bounds and capability indices. Full-width source contracts preserve owned values and rejection state. Progress assumes fair draining/lifting, Return processing/local release or route allocation. Container traversal/batch composition, pointer provenance, buffer bytes, callbacks, authentication, network/storage IO and constructor/Default wrappers remain outside these contracts; Rust, Miri, compile-fail and distributed-model checks cover integration boundaries. Optional bounded Kani checks remain local, not a CI prerequisite.\n"))?;
     result
 }
 

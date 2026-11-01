@@ -51,7 +51,7 @@ jobs:
         with:
           key: release-packages
       - name: Check transport interoperability before packaging
-        run: cargo test --locked --no-default-features --features services,tls,quic --test secure_rpc --test service_examples
+        run: cargo test --locked --no-default-features --features services,tls --test secure_rpc --test service_examples
       - name: Prepare the package workspace
         # The vendor stays outside the development workspace. Cargo's package
         # workspace stages unpublished dependencies in its temporary registry.

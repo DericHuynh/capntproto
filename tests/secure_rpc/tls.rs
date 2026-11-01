@@ -225,8 +225,8 @@ async fn handshake_deadlines_release_stalled_sockets() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn portable_tls_wakes_only_one_of_32_parked_calls() {
-    use capnp_rpc::portable::RpcSystem;
+async fn legacy_tls_wakes_only_one_of_32_parked_calls() {
+    use capnp_rpc::RpcSystem;
     local(async {
         let pki = Pki::new();
         let calls = SparseCalls::new();
@@ -240,10 +240,7 @@ async fn portable_tls_wakes_only_one_of_32_parked_calls() {
             RpcSystem::new(
                 Box::new(tls::network(stream, Side::Server, Default::default())),
                 Some(bootstrap),
-                portable_options(),
             )
-            .unwrap()
-            .run()
             .await
         });
         let stream = tls::connect(
@@ -257,12 +254,10 @@ async fn portable_tls_wakes_only_one_of_32_parked_calls() {
         let mut system = RpcSystem::new(
             Box::new(tls::network(stream, Side::Client, Default::default())),
             None,
-            portable_options(),
-        )
-        .unwrap();
+        );
         let cap = system.bootstrap(Side::Server);
         let close = system.get_disconnector();
-        let driving = tokio::task::spawn_local(system.run());
+        let driving = tokio::task::spawn_local(system);
         calls.exercise(cap).await;
         close.await.unwrap();
         driving.await.unwrap().unwrap();

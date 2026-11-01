@@ -15,7 +15,7 @@ impl<V: 'static, const PORTABLE: bool> System<V, PORTABLE> {
         bootstrap: Option<capnp::capability::Client>,
     ) -> Self {
         Self {
-            system: Some(support::driver::System::new(PORTABLE, network, bootstrap)),
+            system: Some(support::driver::System::new(network, bootstrap)),
             running: None,
         }
     }
@@ -26,7 +26,7 @@ impl<V: 'static, const PORTABLE: bool> System<V, PORTABLE> {
     ) -> Self {
         Self {
             system: Some(support::driver::System::with_factory(
-                PORTABLE, network, local, factory,
+                network, local, factory,
             )),
             running: None,
         }

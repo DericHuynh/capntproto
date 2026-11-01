@@ -88,7 +88,7 @@ struct Fixture {
     _drivers: Drivers,
 }
 impl Fixture {
-    async fn new(wire: bool, portable: bool, cancellable: bool, api: u32, wrapper: u32) -> Self {
+    async fn new(wire: bool, _portable: bool, cancellable: bool, api: u32, wrapper: u32) -> Self {
         let (tx, rx) = oneshot::channel();
         let state = Rc::new(State::default());
         *state.gate.borrow_mut() = Some(rx);
@@ -99,12 +99,10 @@ impl Fixture {
         let client: policy::Client = if wire {
             let hub = Rc::new(RefCell::new(support::Hub::default()));
             let server = RpcSystem::new(
-                portable,
                 Box::new(support::Hub::network(&hub, 1)),
                 Some(client.client),
             );
-            let mut caller =
-                RpcSystem::new(portable, Box::new(support::Hub::network(&hub, 2)), None);
+            let mut caller = RpcSystem::new(Box::new(support::Hub::network(&hub, 2)), None);
             let client = caller.bootstrap(1);
             drivers.0.push(tokio::task::spawn_local(server.run()));
             drivers.0.push(tokio::task::spawn_local(caller.run()));

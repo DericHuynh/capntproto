@@ -67,10 +67,10 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
-    async fn new(portable: bool, prebuilt: bool) -> Self {
+    async fn new(_portable: bool, prebuilt: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let mut system = RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), None);
+        let mut system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None);
         let remote: harness::Client = system.bootstrap(2);
         let mut peer = hub.borrow_mut().connect(2, 1);
         let status = hub.borrow_mut().connect(1, 2).status();
@@ -180,7 +180,7 @@ fn check_error(e: Error) {
 async fn disconnect_marks_broken_before_capability_destructors() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(5), async {
                     for prebuilt in [false, true] {
                         let mut f = Fixture::new(portable, prebuilt).await;
@@ -208,7 +208,7 @@ async fn disconnect_marks_broken_before_capability_destructors() {
 async fn requests_built_before_disconnect_fail_without_wire_traffic() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(5), async {
                     let mut f = Fixture::new(portable, false).await;
                     let ordinary = f.remote.echo_request();
@@ -235,7 +235,7 @@ async fn requests_built_before_disconnect_fail_without_wire_traffic() {
 async fn disconnect_trace_encoder_can_reenter_rpc() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(5), async {
                     let mut f = Fixture::new(portable, false).await;
                     let remote = f.remote.clone();
@@ -363,7 +363,7 @@ async fn replay_tlc_disconnect_cleanup_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(60), async {
                     for trace in &traces {
                         for prebuilt in [false, true] {
@@ -389,7 +389,7 @@ async fn replay_tlc_disconnect_cleanup_traces() {
 async fn abort_body_failure_still_releases_capabilities_and_shuts_down() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(5), async {
                     let mut f = Fixture::new(portable, true).await;
                     drop(f.cap.take());
@@ -414,7 +414,7 @@ async fn abort_body_failure_still_releases_capabilities_and_shuts_down() {
 async fn explicit_disconnect_cancels_outstanding_transport_read() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(Duration::from_secs(5), async {
                     let f = Fixture::new(portable, false).await;
                     assert_eq!(f.status.borrow().readers, 1);
@@ -438,7 +438,7 @@ async fn explicit_disconnect_cancels_outstanding_transport_read() {
 async fn failed_terminal_publication_still_awaits_physical_shutdown() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let mut f = Fixture::new(portable, true).await;
                 drop(f.cap.take());
                 let release = f._hub.borrow_mut().connect(1, 2).gate_shutdown();
@@ -464,7 +464,7 @@ async fn failed_terminal_publication_still_awaits_physical_shutdown() {
 #[tokio::test(flavor = "current_thread")]
 async fn disconnect_releases_exports_before_waiting_for_physical_shutdown() {
     tokio::task::LocalSet::new().run_until(async {
-        for portable in [false, true] {
+        for portable in [false] {
             for fail_body in [false, true] {
                 let mut f = Fixture::new(portable, true).await;
                 drop(f.cap.take());
@@ -492,7 +492,7 @@ async fn disconnect_releases_exports_before_waiting_for_physical_shutdown() {
 async fn native_read_failure_preserves_diagnostics_through_disconnect() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let mut f = Fixture::new(portable, true).await;
                 drop(f.cap.take());
                 let mut error = Error::overloaded("native read failure".into());
@@ -520,7 +520,7 @@ async fn native_read_failure_preserves_diagnostics_through_disconnect() {
 async fn peer_abort_waits_for_physical_shutdown_before_completing_disconnect() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for (fail_body, close_fails) in [(false, false), (false, true), (true, false), (true, true)] {
                     let mut f = Fixture::new(portable, true).await;
                     drop(f.cap.take());

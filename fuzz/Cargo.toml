@@ -16,12 +16,11 @@ afl-targets = ["dep:afl"]
 
 [dependencies]
 afl = { version = "=0.18.2", optional = true, features = ["no_cfg_fuzzing"] }
-capntproto = { path = "..", default-features = false, features = ["native"] }
+capntproto = { path = "..", default-features = false, features = ["tls"] }
 capnp = { package = "capntproto-core", path = "../crates/capntproto-core" }
 capnp-rpc = { package = "capntproto-rpc", path = "../crates/capntproto-rpc" }
 futures = "0.3"
 libfuzzer-sys = { version = "=0.4.13", optional = true }
-quiche = { version = "=0.30.0", default-features = false, features = ["boringssl-boring-crate"] }
 
 [build-dependencies]
 capnpc = { package = "capntproto-codegen", path = "../crates/capntproto-codegen" }
@@ -58,21 +57,7 @@ doc = false
 bench = false
 required-features = ["fuzz-targets"]
 
-[[bin]]
-name = "native_packet"
-path = "fuzz_targets/native_packet.rs"
-test = false
-doc = false
-bench = false
-required-features = ["fuzz-targets"]
 
-[[bin]]
-name = "native_stream"
-path = "fuzz_targets/native_stream.rs"
-test = false
-doc = false
-bench = false
-required-features = ["fuzz-targets"]
 
 [profile.release]
 debug = 1

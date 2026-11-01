@@ -1,6 +1,5 @@
 use crate::{
-    checkout_capnp as api, Audit, Bucket, BusinessError, Claim, Driver, Entry, Result, Snapshot,
-    State,
+    checkout_capnp as api, Audit, Bucket, BusinessError, Claim, Entry, Result, Snapshot, State,
 };
 use capntproto::{
     capnp,
@@ -12,19 +11,18 @@ use tokio_util::compat::TokioAsyncReadCompatExt;
 #[derive(Clone)]
 pub struct Wire {
     pub address: SocketAddr,
-    pub driver: Driver,
+
     pub tls: Arc<security::rustls::ClientConfig>,
 }
 impl Wire {
     pub fn new(
         address: SocketAddr,
-        driver: Driver,
+
         ca: &Path,
         identity: Option<security::Identity>,
     ) -> Result<Self> {
         Ok(Self {
             address,
-            driver,
             tls: tls::client_config(
                 security::roots_from_pem_file(ca)?,
                 identity,
@@ -41,9 +39,7 @@ impl Wire {
         )
         .await?;
         Ok(Connection::spawn(
-            ConnectionOptions::new()
-                .driver(self.driver.protocol()?)
-                .client(io.compat())?,
+            ConnectionOptions::new().client(io.compat())?,
         ))
     }
 }

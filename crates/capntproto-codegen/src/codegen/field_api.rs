@@ -86,9 +86,7 @@ fn kind(ctx: &GeneratorContext, t: type_::Reader<'_>) -> capnp::Result<String> {
             remap(ctx, t.type_string(ctx, Leaf::Owned)?)?
         ),
         type_::List(l) => format!("{f}::List<{}>", element(ctx, l.get_element_type()?)?),
-        type_::Interface(_) if ctx.bounded_rpc => {
-            format!("{f}::WireCapability<{}>", t.type_string(ctx, Leaf::Owned)?)
-        }
+
         type_::Interface(_) => format!(
             "{f}::Capability<{}>",
             remap(ctx, t.type_string(ctx, Leaf::Client)?)?

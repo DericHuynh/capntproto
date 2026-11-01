@@ -4,10 +4,7 @@ mod transports;
 mod service_capnp {
     include!(concat!(env!("OUT_DIR"), "/service_capnp.rs"));
 }
-use capnp_rpc::{
-    rpc_twoparty_capnp::Side,
-    twoparty::{RpcDriver, TwoPartyClient},
-};
+use capnp_rpc::{rpc_twoparty_capnp::Side, twoparty::TwoPartyClient};
 use capntproto_transport::rustls;
 use futures::{AsyncRead, AsyncWrite};
 use service_capnp::service;
@@ -22,10 +19,7 @@ static ALLOCATOR: measure::Allocator = measure::Allocator;
 
 #[derive(Clone)]
 pub struct Args {
-    runtime: String,
-    transport: String,
     case: String,
-    portable: bool,
     iterations: usize,
     warmup: usize,
     certificates: PathBuf,
@@ -33,10 +27,7 @@ pub struct Args {
 impl Args {
     fn parse() -> Result<Self> {
         let mut args = Self {
-            runtime: "tokio".into(),
-            transport: "tls".into(),
             case: "unary".into(),
-            portable: true,
             iterations: 32,
             warmup: 4,
             certificates: PathBuf::from("certificates"),
@@ -45,16 +36,8 @@ impl Args {
         while let Some(key) = input.next() {
             let value = input.next().ok_or("every option requires a value")?;
             match key.as_str() {
-                "--runtime" => args.runtime = value,
-                "--transport" => args.transport = value,
                 "--case" => args.case = value,
-                "--driver" => {
-                    args.portable = match value.as_str() {
-                        "portable" => true,
-                        "legacy" => false,
-                        _ => return Err("unknown RPC driver".into()),
-                    }
-                }
+
                 "--iterations" => args.iterations = value.parse()?,
                 "--warmup" => args.warmup = value.parse()?,
                 "--certificates" => args.certificates = value.into(),
@@ -70,21 +53,7 @@ impl Args {
         }
         Ok(args)
     }
-    fn driver(&self) -> RpcDriver {
-        if self.portable {
-            RpcDriver::Portable(
-                capnp_rpc::portable::Options::bounded(
-                    1.try_into().unwrap(),
-                    8192.try_into().unwrap(),
-                    (2 * 1024 * 1024).try_into().unwrap(),
-                    (64 * 1024 * 1024).try_into().unwrap(),
-                )
-                .unwrap(),
-            )
-        } else {
-            RpcDriver::Legacy
-        }
-    }
+
     fn root_certificate(&self) -> std::io::Result<Vec<u8>> {
         let ca = self.certificates.join("ca.der");
         std::fs::read(if ca.is_file() {
@@ -237,18 +206,17 @@ async fn perform(client: &service::Client, case: &str) -> capnp::Result<()> {
 }
 pub async fn serve<S: AsyncRead + AsyncWrite + Unpin + 'static>(
     stream: S,
-    args: &Args,
+    _args: &Args,
 ) -> Result<()> {
     let bootstrap: service::Client = capnp_rpc::new_client(Service);
-    TwoPartyClient::with_driver(stream, Some(bootstrap.client), Side::Server, args.driver())?
-        .await?;
+    TwoPartyClient::with_bootstrap(stream, Some(bootstrap.client), Side::Server).await?;
     Ok(())
 }
 pub async fn call<S: AsyncRead + AsyncWrite + Unpin + 'static>(
     stream: S,
     args: &Args,
 ) -> Result<measure::Sample> {
-    let mut rpc = TwoPartyClient::with_driver(stream, None, Side::Client, args.driver())?;
+    let mut rpc = TwoPartyClient::with_bootstrap(stream, None, Side::Client);
     let client: service::Client = rpc.bootstrap();
     let disconnect = rpc.get_disconnector();
     let application = async {
@@ -268,20 +236,12 @@ pub async fn call<S: AsyncRead + AsyncWrite + Unpin + 'static>(
     output
 }
 fn main() -> Result<()> {
-    let input = std::env::args().skip(1).collect::<Vec<_>>();
-    if input.first().map(String::as_str) == Some("--probe-runtime") {
-        if input.len() != 2 {
-            return Err("--probe-runtime requires one runtime name".into());
-        }
-        println!("{}", transports::probe(&input[1])?);
-        return Ok(());
-    }
     let args = Args::parse()?;
     let sample = transports::run(&args)?;
     println!(
         "{}",
-        serde_json::json!({"runtime":args.runtime,"transport":args.transport,"case":args.case,"driver":if args.portable{"portable"}else{"legacy"},
-        "iterations":args.iterations,"warmup":args.warmup,"io_level":if args.transport=="tls"{"ciphertext-completions"}else{"rpc-stream-completions"},"sample":sample,"version":1})
+        serde_json::json!({"runtime":"tokio","transport":"tls","case":args.case,"driver":"legacy",
+        "iterations":args.iterations,"warmup":args.warmup,"io_level":"ciphertext-completions","sample":sample,"version":1})
     );
     Ok(())
 }

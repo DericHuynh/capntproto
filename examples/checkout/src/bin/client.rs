@@ -1,4 +1,4 @@
-use capntproto_checkout_example::{Client, Driver, Result, Wire};
+use capntproto_checkout_example::{Client, Result, Wire};
 use clap::{Parser, Subcommand};
 use std::{net::SocketAddr, path::PathBuf};
 #[derive(Parser)]
@@ -12,8 +12,7 @@ struct Args {
     /// Provision a token via the environment instead of putting it in shell history.
     #[arg(long, env = "CHECKOUT_TOKEN", hide_env_values = true)]
     token: String,
-    #[arg(long, value_enum, default_value = "portable")]
-    driver: Driver,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -31,7 +30,7 @@ async fn main() -> Result<()> {
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(15), async {
                 let client = Client::connect(
-                    &Wire::new(args.address, args.driver, &args.ca, None)?,
+                    &Wire::new(args.address, &args.ca, None)?,
                     &args.account,
                     &args.token,
                 )

@@ -12,48 +12,11 @@ use std::{
     process::Command,
 };
 
-const CASES: &[(&str, &str, &str)] = &[
-    (
-        "capntproto",
-        "native_shutdown::schedule_tests::shuttle_shutdown_first_completion_wakes_all_waiters",
-        "shutdown-completion",
-    ),
-    (
-        "capntproto",
-        "native_shutdown::schedule_tests::shuttle_shutdown_cancellation_and_generation_isolation",
-        "shutdown-cancellation",
-    ),
-    (
-        "authority_schedules",
-        "shuttle_grant_waiters_cancel_replace_and_preserve_sibling_isolation",
-        "grant-waiters",
-    ),
-    (
-        "capntproto",
-        "native_rpc::session::schedule_tests::shuttle_route_owners_cancel_pending_tasks_and_isolate_generations",
-        "route-owners",
-    ),
-    (
-        "capntproto",
-        "native_rpc::session::output_tests::shuttle_output_fences_cancel_replace_and_preserve_order",
-        "route-output-success",
-    ),
-    (
-        "capntproto",
-        "native_rpc::session::output_tests::shuttle_output_failures_race_drain_and_owner_stop",
-        "route-output-errors",
-    ),
-    (
-        "capntproto",
-        "native_rpc::session::shutdown_tests::shuttle_shutdown_fences_compete_with_deadline",
-        "shutdown-fences",
-    ),
-    (
-        "capntproto",
-        "native_rpc::session::shutdown_tests::shuttle_shutdown_terminal_causes_and_cancellation_wake_blocked_fences",
-        "shutdown-terminal",
-    ),
-];
+const CASES: &[(&str, &str, &str)] = &[(
+    "authority_schedules",
+    "shuttle_grant_waiters_cancel_replace_and_preserve_sibling_isolation",
+    "grant-waiters",
+)];
 
 fn child(metadata: &Path, test: &str, output: &Path) -> Command {
     let mut cmd = command("cargo");
@@ -98,8 +61,6 @@ fn recorded_async_schedules_replay_across_processes() {
                 "list",
                 "--locked",
                 "--no-default-features",
-                "--features",
-                "native",
                 "--lib",
                 "--test",
                 "authority_schedules",
@@ -196,46 +157,7 @@ fn recorded_async_schedules_replay_across_processes() {
             );
         }
     }
-    for (test, name, markers) in [
-        (
-            "native_shutdown::schedule_tests::shuttle_detects_lost_wakeup",
-            "lost-wakeup-control",
-            ["registered-with-lost-waker", "finished-without-wakeup"],
-        ),
-        (
-            "native_rpc::session::shutdown_tests::shuttle_detects_lost_shutdown_terminal_wakeup",
-            "shutdown-terminal-lost-wakeup",
-            ["blocked-with-receipt", "terminal-canceled"],
-        ),
-    ] {
-        let lost = directory.join(name);
-        let output = run(
-            child(&metadata, test, &lost).args(["--run-ignored", "only"]),
-            &directory.join(format!("{name}.log")),
-            100,
-        )
-        .unwrap();
-        assert!(output.contains("deadlock! blocked tasks:"));
-        let saved = lost.join(name).join("runs.json");
-        let record: Saved = serde_json::from_slice(&fs::read(&saved).unwrap()).unwrap();
-        assert_eq!(record.runs.len(), 1);
-        for marker in markers {
-            assert!(record.runs[0].events.contains(&(marker.into(), 1)));
-        }
-        assert!(!record.runs[0]
-            .events
-            .iter()
-            .any(|(name, _)| name == "case-complete"));
-        let output = run(
-            child(&metadata, test, &directory.join(format!("{name}-replay")))
-                .args(["--run-ignored", "only"])
-                .env("CAPNTPROTO_SCHEDULE_REPLAY", saved),
-            &directory.join(format!("{name}-replay.log")),
-            100,
-        )
-        .unwrap();
-        assert!(output.contains("deadlock! blocked tasks:"));
-    }
+
     assert_eq!(
         v::distribution::verification_hashes(&root()).unwrap(),
         inputs
@@ -243,8 +165,8 @@ fn recorded_async_schedules_replay_across_processes() {
     fs::write(base.join("checked.json"), serde_json::to_vec_pretty(&json!({
         "format":1,"tool":"shuttle 0.9.4", "runner_compiler":compiler,"inputs":inputs,"seed":SEED,
         "ci_inventory_sha256":std::env::var("CAPNTPROTO_TEST_INVENTORY_SHA256").ok(),
-        "iterations_per_case":ITERATIONS,"processes":2,"same_process_replays":true,"required_features":["native"],
-        "cases":evidence,"artifacts":directory,"controls":["lost-wakeup","replayed-lost-wakeup","terminal-lost-wakeup","replayed-terminal-lost-wakeup","truncated-decisions","changed-events"],
-        "limits":"bounded single-thread polling of real watch/Notify futures, route workers, serializer/two-party output fences and shutdown completion with scheduled receipt/deadline signals; no instrumentation inside Tokio atomics, no weak-memory, actual clock/socket, authenticated route-installation, receipt-frame authentication or whole-runtime claim"
+        "iterations_per_case":ITERATIONS,"processes":2,"same_process_replays":true,"required_features":[],
+        "cases":evidence,"artifacts":directory,"controls":["truncated-decisions","changed-events"],
+        "limits":"bounded single-thread schedules of grant revocation waiters; no weak-memory or socket claim"
     })).unwrap()).unwrap();
 }

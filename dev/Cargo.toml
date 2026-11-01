@@ -6,9 +6,6 @@ edition = "2021"
 rust-version = "1.97"
 publish = false
 
-[features]
-quic-interop = ["dep:s2n-quic", "dep:tokio", "dep:rcgen", "dep:rustls"]
-
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
@@ -33,10 +30,6 @@ percent-encoding = "2"
 ctrlc = { version = "3", features = ["termination"] }
 rand = "0.9"
 rust_decimal = { version = "1", default-features = false, features = ["std"] }
-s2n-quic = { version = "=1.88.0", default-features = false, features = ["provider-tls-rustls", "provider-address-token-default"], optional = true }
-tokio = { version = "1", features = ["rt-multi-thread", "time", "io-util", "process", "macros"], optional = true }
-rcgen = { version = "0.14", optional = true }
-rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal", "process", "resource", "sched"] }

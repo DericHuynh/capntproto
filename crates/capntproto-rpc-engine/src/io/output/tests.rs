@@ -412,7 +412,7 @@ fn empty_frames_release_receipts_without_writing_or_flushing() {
 #[cfg(feature = "alloc")]
 #[test]
 fn zero_progress_from_borrowed_and_shared_adapters_preserves_owners_until_abort() {
-    use crate::connection::Growth;
+    use crate::storage::Growth;
     use alloc::rc::Rc;
     struct Parts;
     impl messages::Parts for Parts {

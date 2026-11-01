@@ -646,7 +646,6 @@ pub(super) fn generate_node(
             let mut dispatch_arms = Vec::new();
             let mut method_type_arms = Vec::new();
             let mut bounded_methods = Vec::new();
-            let mut bounded_server_methods = Vec::new();
             let mut private_mod_interior = vec![generate_brand(ctx, *node_reader)];
 
             let bracketed_params = if params.params.is_empty() {
@@ -820,14 +819,7 @@ pub(super) fn generate_node(
                         let r = field_api::remap(ctx, result_type.clone())?;
                         let method = camel_to_snake_case(name);
                         let constant = snake_to_upper_case(&method);
-                        bounded_server_methods.push(bounded_server::Method {
-                            name: module_name(name),
-                            constant: constant.clone(),
-                            params: p.clone(),
-                            results: Some(r.clone()),
-                            cancellation: allow_cancellation,
-                            no_pipelining: no_promise_pipelining,
-                        });
+
                         bounded_methods.push(doc.clone());
                         // Schema brands can nest arbitrarily. Keep this allowance
                         // on the generated constant rather than its user module.
@@ -873,14 +865,7 @@ pub(super) fn generate_node(
                         let p = field_api::remap(ctx, param_type.clone())?;
                         let method = camel_to_snake_case(name);
                         let constant = snake_to_upper_case(&method);
-                        bounded_server_methods.push(bounded_server::Method {
-                            name: module_name(name),
-                            constant: constant.clone(),
-                            params: p.clone(),
-                            results: None,
-                            cancellation: allow_cancellation,
-                            no_pipelining: true,
-                        });
+
                         bounded_methods.push(doc.clone());
                         bounded_methods.push(line("#[allow(clippy::type_complexity)]"));
                         bounded_methods.push(Line(fmt!(ctx,"pub const {constant}: {capnp}::wire_capability::StreamingMethod<Owned{bracketed_params},{p}> = {capnp}::wire_capability::StreamingMethod::new({ordinal}, {allow_cancellation});")));
@@ -938,39 +923,7 @@ pub(super) fn generate_node(
                 indent(bounded_methods),
                 line("}"),
             ]);
-            if ctx.bounded_rpc {
-                // Interface identity/reflection and parameter/result schemas
-                // survive without importing any hosted capability machinery.
-                let phantom = if params.expanded_list.len() == 1 {
-                    params.params.clone()
-                } else {
-                    format!("({})", params.params)
-                };
-                let mut wire = vec![
-                    Line(format!("pub struct Owned{bracketed_params}(::core::marker::PhantomData<{phantom}>) {};",params.where_clause)),
-                    Line(fmt!(ctx,"impl<{}> {capnp}::introspect::Introspect for Owned{bracketed_params} {} {{ fn introspect() -> {capnp}::introspect::Type {{ {interface_type}.into() }} }}",params.params,params.where_clause)),
-                    Line(fmt!(ctx,"impl<{}> {capnp}::traits::Owned for Owned{bracketed_params} {} {{ type Reader<'a> = {capnp}::wire_capability::Reader<'a, Self>; type Builder<'a> = {capnp}::any_pointer::Builder<'a>; }}",params.params,params.where_clause)),
-                    Line(fmt!(ctx,"impl<{}> {capnp}::field_api::FixedType for Owned{bracketed_params} {} {{ type Kind = {capnp}::field_api::WireCapability<Self>; }}",params.params,params.where_clause)),
-                    portable_methods,
-                    line("pub(crate) mod _private {"),
-                    indent(private_mod_interior),
-                    line("}"),
-                ];
-                wire.push(bounded_server::generate(
-                    ctx,
-                    *node_reader,
-                    interface,
-                    bounded_server_methods,
-                )?);
-                wire.extend(nested_output);
-                output.extend([
-                    node_doc.clone(),
-                    Line(format!("pub mod {node_name} {{")),
-                    indent(wire),
-                    line("}"),
-                ]);
-                return Ok(Branch(output));
-            }
+
             if ctx.field_api {
                 mod_interior.push(portable_methods);
             }

@@ -50,7 +50,7 @@ impl<T> TokioIo<T> {
             encrypted_batch: None,
         }
     }
-    #[cfg(any(feature = "quic", test))]
+    #[cfg(test)]
     pub(crate) fn encrypted(inner: T) -> Self {
         Self {
             inner,

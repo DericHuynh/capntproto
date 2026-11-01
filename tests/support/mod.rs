@@ -16,13 +16,9 @@ use std::{
 };
 
 struct Msg {
-    body: Body,
+    body: Rc<Builder<capnp::message::HeapAllocator>>,
     #[cfg(unix)]
     fds: Vec<std::os::fd::OwnedFd>,
-}
-enum Body {
-    Built(Rc<Builder<capnp::message::HeapAllocator>>),
-    Framed(capnp::message::Reader<capnp::serialize::OwnedSegments>),
 }
 type Key = (u8, u8, Vec<u8>);
 #[derive(Default)]
@@ -66,22 +62,13 @@ impl IncomingMessage for Input {
     }
 
     fn size_in_words(&self) -> usize {
-        match &self.0.body {
-            Body::Built(body) => body.size_in_words(),
-            Body::Framed(body) => body.size_in_words(),
-        }
+        self.0.body.size_in_words()
     }
     fn get_body(&self) -> capnp::Result<capnp::any_pointer::Reader<'_>> {
-        match &self.0.body {
-            Body::Built(body) => body.get_root_as_reader(),
-            Body::Framed(body) => body.get_root(),
-        }
+        self.0.body.get_root_as_reader()
     }
     fn get_segments(&self) -> Option<&dyn capnp::message::ReaderSegments> {
-        Some(match &self.0.body {
-            Body::Built(body) => &**body,
-            Body::Framed(body) => body.get_segments(),
-        })
+        Some(&*self.0.body)
     }
 }
 #[derive(Default)]
@@ -148,7 +135,7 @@ impl OutgoingMessage for Output {
         let result = self
             .sender
             .unbounded_send(Msg {
-                body: Body::Built(message.clone()),
+                body: message.clone(),
                 #[cfg(unix)]
                 fds: self.fds.iter().map(|fd| fd.try_clone().unwrap()).collect(),
             })
@@ -212,96 +199,8 @@ impl Drop for ReadLease {
 }
 #[derive(Clone)]
 pub struct Endpoint(Rc<Inner>);
-impl Endpoint {
-    fn publish_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
-        if self.0.status.borrow().fail_body {
-            return Err(Error::failed("injected outgoing body failure".into()));
-        }
-        #[cfg(unix)]
-        let mut frame = frame;
-        let result = (|| {
-            let bytes = capnp::serialize::write_message_segments_to_words(&frame.segments());
-            let body = capnp::serialize::read_message(bytes.as_slice(), Default::default())?;
-            self.0.status.borrow_mut().record(body.get_root()?);
-            self.0
-                .sender
-                .unbounded_send(Msg {
-                    body: Body::Framed(body),
-                    #[cfg(unix)]
-                    fds: frame
-                        .take_fds()
-                        .iter()
-                        .map(|fd| fd.try_clone().unwrap())
-                        .collect(),
-                })
-                .map_err(|_| Error::disconnected("peer gone".into()))
-        })();
-        result
-    }
-}
-struct FrameInput {
-    lease: ReadLease,
-    bytes: Option<Vec<u8>>,
-    #[cfg(unix)]
-    fds: Vec<std::os::fd::OwnedFd>,
-}
-impl capnp_rpc::IncomingFrameStream for FrameInput {
-    fn poll_frame(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<capnp::Result<Option<&[u8]>>> {
-        use futures::Stream;
-        use std::{pin::Pin, task::Poll};
-        if self.bytes.is_none() {
-            let value =
-                std::task::ready!(Pin::new(self.lease.receiver.as_mut().unwrap()).poll_next(cx));
-            let Some(message) = value else {
-                if let Some(error) = self.lease.inner.status.borrow_mut().read_error.take() {
-                    return Poll::Ready(Err(error));
-                }
-                return Poll::Ready(Ok(None));
-            };
-            let mut input = Input(message);
-            self.bytes = Some(capnp::serialize::write_message_segments_to_words(
-                &input.get_segments().unwrap(),
-            ));
-            #[cfg(unix)]
-            {
-                self.fds = input.take_fds();
-            }
-        }
-        Poll::Ready(Ok(self.bytes.as_deref()))
-    }
-    fn frame(&self) -> Option<&[u8]> {
-        self.bytes.as_deref()
-    }
-    #[cfg(unix)]
-    fn take_fds(&mut self) -> Vec<std::os::fd::OwnedFd> {
-        std::mem::take(&mut self.fds)
-    }
-    fn finish_frame(&mut self) {
-        self.bytes = None;
-        #[cfg(unix)]
-        self.fds.clear();
-    }
-}
-struct FrameOutput(Endpoint);
-impl capnp_rpc::OutgoingMessageStream for FrameOutput {
-    fn reserve(&mut self) -> capnp::Result<()> {
-        Ok(())
-    }
-    fn cancel_reservation(&mut self) {}
+impl Endpoint {}
 
-    fn shutdown(&mut self, result: capnp::Result<()>) -> Promise<(), Error> {
-        self.0.shutdown(result)
-    }
-    fn publish_reserved(&mut self, frame: capnp_rpc::OutgoingFrame) -> capnp::Result<()> {
-        self.0.publish_frame(frame)
-    }
-    fn poll_flush(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<capnp::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-}
 impl Connection<u8> for Endpoint {
     fn new_stream(&mut self) -> (Box<dyn capnp_rpc::FlowController>, Promise<(), Error>) {
         let window = {
@@ -324,34 +223,7 @@ impl Connection<u8> for Endpoint {
             driving,
         )
     }
-    fn control_mode(&self) -> capnp_rpc::ControlMode {
-        capnp_rpc::ControlMode::Network
-    }
-    fn take_frame_io(&mut self) -> capnp::Result<capnp_rpc::FrameIo> {
-        let receiver = self
-            .0
-            .receiver
-            .borrow_mut()
-            .take()
-            .ok_or_else(|| Error::failed("test frame input already owned".into()))?;
-        self.0.status.borrow_mut().readers += 1;
-        Ok(capnp_rpc::FrameIo {
-            incoming: Box::new(FrameInput {
-                lease: ReadLease {
-                    inner: self.0.clone(),
-                    receiver: Some(receiver),
-                },
-                bytes: None,
-                #[cfg(unix)]
-                fds: Vec::new(),
-            }),
-            outgoing: Box::new(FrameOutput(self.clone())),
-            write_finished: None,
-        })
-    }
-    fn send_frame(&mut self, frame: capnp_rpc::OutgoingFrame) -> Promise<(), Error> {
-        Promise::from(self.publish_frame(frame))
-    }
+
     fn get_peer_vat_id(&self) -> u8 {
         self.0.peer
     }
@@ -743,9 +615,7 @@ impl VatNetwork<u8> for Network {
             Ok(Box::new(endpoint) as Box<dyn Connection<u8>>)
         })
     }
-    fn take_output_driver(&mut self) -> Option<capnp::capability::Promise<(), capnp::Error>> {
-        None
-    }
+
     fn drive_until_shutdown(&mut self) -> Promise<(), Error> {
         Promise::from_future(futures::future::pending())
     }

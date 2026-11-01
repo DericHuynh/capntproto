@@ -157,54 +157,20 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
     if instrumented {
         build.arg("--ignore-rust-version");
     }
-    if cfg!(feature = "quic") {
-        build.args(["--features", "quic"]);
-    }
+
     run(&mut build, &directory.path().join("build.log"), 0).unwrap();
-    if cfg!(feature = "quic") {
-        let (mut test, instrumented) = example_cargo();
-        test.args([
-            "test",
-            "--locked",
-            "--manifest-path",
-            "examples/kv/Cargo.toml",
-            "--lib",
-            "--features",
-            "quic",
-            "--target-dir",
-        ])
-        .arg(target());
-        if instrumented {
-            test.arg("--ignore-rust-version");
-        }
-        run(&mut test, &directory.path().join("address-fallback.log"), 0).unwrap();
-    }
+
     certificates(directory.path());
     let path = |name| directory.path().join(name).display().to_string();
-    let mut modes = vec![("tcp", false), ("tcp", true)];
-    if cfg!(feature = "quic") {
-        modes.push(("quic", true));
-    }
-    for (transport, encrypted) in modes {
-        let mut server_args = vec!["--transport".into(), transport.into()];
-        if encrypted {
-            server_args.extend([
-                "--cert".into(),
-                path("server.pem"),
-                "--key".into(),
-                path("server-key.pem"),
-            ]);
-        }
-        let (_server, address) = start(&server_args);
-        let mut base = vec![
-            "--server".into(),
-            address,
-            "--transport".into(),
-            transport.into(),
+    {
+        let server_args = vec![
+            "--cert".into(),
+            path("server.pem"),
+            "--key".into(),
+            path("server-key.pem"),
         ];
-        if encrypted {
-            base.extend(["--ca".into(), path("ca.pem")]);
-        }
+        let (_server, address) = start(&server_args);
+        let base = vec!["--server".into(), address, "--ca".into(), path("ca.pem")];
         assert_eq!(
             client(
                 "client",
@@ -262,7 +228,7 @@ fn independent_clients_share_a_real_service_and_pipeline_deep_access() {
             .trim(),
             "value-17"
         );
-        if encrypted {
+        {
             // Certificate verification must not fall back to plaintext.
             client(
                 "client",

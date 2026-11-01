@@ -19,7 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-mod bounded_server;
 mod documentation;
 mod field_api;
 mod node;
@@ -48,7 +47,6 @@ pub struct CodeGenerationCommand {
     field_api_values: bool,
     field_api_projections: bool,
     structured_replies: bool,
-    bounded_rpc: bool,
 }
 
 impl Default for CodeGenerationCommand {
@@ -63,7 +61,6 @@ impl Default for CodeGenerationCommand {
             field_api_values: false,
             field_api_projections: false,
             structured_replies: false,
-            bounded_rpc: false,
         }
     }
 }
@@ -76,17 +73,7 @@ impl CodeGenerationCommand {
 
     /// Also emit the API-design reader/editor facade under each file's `api` module.
     pub fn field_api(&mut self, enabled: bool) -> &mut Self {
-        self.field_api =
-            enabled || self.field_api_values || self.field_api_projections || self.bounded_rpc;
-        self
-    }
-
-    /// Generate wire-only interfaces and typed method descriptors, without
-    /// boxed clients, servers or executor assumptions. Enables the field API.
-    /// Use FixedBuilder and the bounded RPC driver with these bindings.
-    pub fn bounded_rpc(&mut self, enabled: bool) -> &mut Self {
-        self.bounded_rpc = enabled;
-        self.field_api |= enabled;
+        self.field_api = enabled || self.field_api_values || self.field_api_projections;
         self
     }
 
@@ -174,12 +161,6 @@ impl CodeGenerationCommand {
     {
         use capnp::serialize;
         use std::io::Write;
-
-        if self.bounded_rpc && (self.field_api_values || self.structured_replies) {
-            return Err(Error::failed(
-                "bounded_rpc cannot generate allocating native values or hosted reply hooks".into(),
-            ));
-        }
 
         let message = serialize::read_message(inp, capnp::message::ReaderOptions::new())?;
 
@@ -284,7 +265,6 @@ pub struct GeneratorContext<'a> {
     field_api_values: bool,
     field_api_projections: bool,
     structured_replies: bool,
-    pub(crate) bounded_rpc: bool,
 }
 
 impl<'a> GeneratorContext<'a> {
@@ -313,7 +293,6 @@ impl<'a> GeneratorContext<'a> {
             field_api_values: code_generation_command.field_api_values,
             field_api_projections: code_generation_command.field_api_projections,
             structured_replies: code_generation_command.structured_replies,
-            bounded_rpc: code_generation_command.bounded_rpc,
         };
 
         let crates_provide = &code_generation_command.crates_provide_map;
@@ -946,12 +925,7 @@ pub fn getter_text(
                 }
 
                 (type_::Interface(_), value::Interface(_)) => {
-                    if ctx.bounded_rpc {
-                        let reader = if is_reader { "" } else { ".into_reader()" };
-                        fmt!(ctx,"{capnp}::traits::FromPointerReader::get_from_pointer(&self.{member}.get_pointer_field({offset}){reader}, None)")
-                    } else {
-                        fmt!(ctx,"match self.{member}.get_pointer_field({offset}).get_capability() {{ ::core::result::Result::Ok(c) => ::core::result::Result::Ok({capnp}::capability::FromClientHook::new(c)), ::core::result::Result::Err(e) => ::core::result::Result::Err(e)}}")
-                    }
+                    fmt!(ctx,"match self.{member}.get_pointer_field({offset}).get_capability() {{ ::core::result::Result::Ok(c) => ::core::result::Result::Ok({capnp}::capability::FromClientHook::new(c)), ::core::result::Result::Err(e) => ::core::result::Result::Err(e)}}")
                 }
                 (type_::AnyPointer(_), value::AnyPointer(_)) => {
                     if !raw_type.is_parameter()? && reg_field.get_had_explicit_default() {
@@ -1307,11 +1281,6 @@ fn generate_setter(
                     )
                 }
                 type_::Interface(_) => {
-                    if ctx.bounded_rpc {
-                        // Raw indices cannot be copied between message tables.
-                        // FixedField::set_index is the explicit wire boundary.
-                        return Ok(Branch(result));
-                    }
                     setter_interior.push(Line(format!(
                         "self.builder.reborrow().get_pointer_field({offset}).set_capability(value.client.hook);"
                     )));
@@ -1561,12 +1530,7 @@ fn generate_union(
                         ty_args.push(ty);
                         new_ty_param(&mut ty_params)
                     }
-                    Ok(type_::Interface(_)) if ctx.bounded_rpc => {
-                        // Bounded capabilities borrow their message identity;
-                        // hosted clients are owned and need no such lifetime.
-                        ty_args.push(ty);
-                        new_ty_param(&mut ty_params)
-                    }
+
                     Ok(type_::Interface(_)) => ty,
                     _ => ty,
                 }
@@ -1708,11 +1672,6 @@ fn generate_pipeline_getter(
     ctx: &GeneratorContext,
     field: schema_capnp::field::Reader,
 ) -> ::capnp::Result<FormattedText> {
-    if ctx.bounded_rpc {
-        // Bounded promised-answer transforms use caller-owned path storage,
-        // not the allocating legacy Pipeline hook or its no-alloc placeholder.
-        return Ok(Branch(Vec::new()));
-    }
     use capnp::schema_capnp::{field, type_};
 
     let name = get_field_name(field)?;

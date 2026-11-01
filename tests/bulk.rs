@@ -378,67 +378,6 @@ async fn disconnect_settles_outstanding_calls_without_claiming_completion() {
         .await;
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn bulk_over_authenticated_blake3_native() {
-    use capntproto::{
-        native_rpc::Network,
-        transport::{self, Identity},
-    };
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let a = Identity::generate();
-                let b = Identity::generate();
-                let left = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let right = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                let address = right.local_addr().unwrap();
-                let (aa, bb) = tokio::join!(
-                    transport::connect_authenticated(
-                        left,
-                        address,
-                        &a,
-                        b.public_key(),
-                        Some([7; 32]),
-                        b"bulk"
-                    ),
-                    transport::accept_authenticated(
-                        right,
-                        &b,
-                        a.public_key(),
-                        Some([7; 32]),
-                        b"bulk"
-                    )
-                );
-                let (an, ah) = Network::new(a.public_key());
-                let (bn, bh) = Network::new(b.public_key());
-                ah.attach(aa.unwrap()).unwrap();
-                bh.attach(bb.unwrap()).unwrap();
-                let (r, service) = Receiver::new(config(3, 3));
-                let server = capnp_rpc::RpcSystem::new(Box::new(bn), Some(service.client));
-                let mut client = capnp_rpc::RpcSystem::new(Box::new(an), None);
-                let transfer = client.bootstrap(b.public_key());
-                let _tasks = Tasks(vec![
-                    tokio::task::spawn_local(server),
-                    tokio::task::spawn_local(client),
-                ]);
-                let mut sender = Sender::connect(transfer).await.unwrap();
-                sender.write(b"a").await.unwrap();
-                sender.write(b"bc").await.unwrap();
-                assert_eq!(
-                    sender.done().await.unwrap(),
-                    Summary {
-                        bytes: 3,
-                        chunks: 2
-                    }
-                );
-                assert_eq!(&*r.completed().unwrap(), b"abc");
-            })
-            .await
-            .unwrap();
-        })
-        .await;
-}
-
 #[derive(serde::Deserialize)]
 struct Trace {
     window: u32,

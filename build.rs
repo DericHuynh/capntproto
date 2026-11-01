@@ -1,4 +1,4 @@
-#[cfg(any(feature = "native", feature = "storage", feature = "services"))]
+#[cfg(any(feature = "storage", feature = "services"))]
 fn main() {
     // A fresh coverage run needs fresh build-script and code-generation counters.
     println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
@@ -17,8 +17,6 @@ fn main() {
     let schemas: &[(&str, bool)] = &[
         ("store", cfg!(feature = "storage")),
         ("persistence", cfg!(feature = "storage")),
-        ("native-provisioning", cfg!(feature = "native")),
-        ("native-discovery", cfg!(feature = "native")),
         ("bulk", cfg!(feature = "services")),
         ("realtime", cfg!(feature = "services")),
         ("schema-exchange", cfg!(feature = "services")),
@@ -40,7 +38,7 @@ fn main() {
         .run(bytes.as_slice())
         .expect("generate service bindings");
 }
-#[cfg(not(any(feature = "native", feature = "storage", feature = "services")))]
+#[cfg(not(any(feature = "storage", feature = "services")))]
 fn main() {
     // A fresh coverage run needs fresh build-script and code-generation counters.
     println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");

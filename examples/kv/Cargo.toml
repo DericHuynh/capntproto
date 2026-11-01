@@ -6,10 +6,6 @@ publish = false
 
 [workspace]
 
-[features]
-default = []
-quic = ["capntproto/quic"]
-
 [dependencies]
 capntproto = { path = "../..", default-features = false, features = ["tls"] }
 clap = { version = "4", features = ["derive"] }

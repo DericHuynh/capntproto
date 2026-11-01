@@ -1,6 +1,6 @@
 use capntproto_checkout_example::{
-    Account, Audit, Client, Config, Driver, FaultAction, FaultPlan, FaultStage, ResourceClient,
-    Snapshot, Wire,
+    Account, Audit, Client, Config, FaultAction, FaultPlan, FaultStage, ResourceClient, Snapshot,
+    Wire,
 };
 use std::{
     net::SocketAddr,
@@ -41,18 +41,9 @@ pub struct Cluster {
     pub inventory: Node,
     pub payments: Node,
     pub shop: Node,
-    pub client_driver: Driver,
-    pub shop_driver: Driver,
-    pub inventory_driver: Driver,
-    pub payments_driver: Driver,
 }
 impl Cluster {
-    pub async fn start(
-        drivers: [Driver; 4],
-        stock: u64,
-        balance: u64,
-        plans: [Vec<FaultPlan>; 3],
-    ) -> Self {
+    pub async fn start(stock: u64, balance: u64, plans: [Vec<FaultPlan>; 3]) -> Self {
         let directory = tempfile::tempdir().unwrap();
         fixtures::Pki::generate()
             .unwrap()
@@ -85,12 +76,11 @@ impl Cluster {
             )
             .unwrap();
         }
-        let inventory = Self::spawn(directory.path(), "inventory", drivers[2], None, None).await;
-        let payments = Self::spawn(directory.path(), "payments", drivers[3], None, None).await;
+        let inventory = Self::spawn(directory.path(), "inventory", None, None).await;
+        let payments = Self::spawn(directory.path(), "payments", None, None).await;
         let shop = Self::spawn(
             directory.path(),
             "shop",
-            drivers[1],
             None,
             Some((inventory.address, payments.address)),
         )
@@ -100,16 +90,12 @@ impl Cluster {
             inventory,
             payments,
             shop,
-            client_driver: drivers[0],
-            shop_driver: drivers[1],
-            inventory_driver: drivers[2],
-            payments_driver: drivers[3],
         }
     }
     async fn spawn(
         path: &Path,
         role: &str,
-        driver: Driver,
+
         address: Option<SocketAddr>,
         backends: Option<(SocketAddr, SocketAddr)>,
     ) -> Node {
@@ -122,11 +108,6 @@ impl Cluster {
             .arg(role)
             .arg("--listen")
             .arg(address.map_or("127.0.0.1:0".into(), |v| v.to_string()))
-            .arg("--driver")
-            .arg(match driver {
-                Driver::Legacy => "legacy",
-                Driver::Portable => "portable",
-            })
             .arg("--db")
             .arg(path.join(format!("{role}.sqlite")))
             .arg("--config")
@@ -174,13 +155,7 @@ impl Cluster {
         self.directory.path()
     }
     pub fn public_wire(&self) -> Wire {
-        Wire::new(
-            self.shop.address,
-            self.client_driver,
-            &self.path().join("pki/ca.pem"),
-            None,
-        )
-        .unwrap()
+        Wire::new(self.shop.address, &self.path().join("pki/ca.pem"), None).unwrap()
     }
     pub async fn client(&self, account: &str) -> Client {
         Client::connect(
@@ -192,15 +167,14 @@ impl Cluster {
         .unwrap()
     }
     pub fn resource(&self, payments: bool) -> ResourceClient {
-        let (node, driver) = if payments {
-            (&self.payments, self.payments_driver)
+        let node = if payments {
+            &self.payments
         } else {
-            (&self.inventory, self.inventory_driver)
+            &self.inventory
         };
         ResourceClient(
             Wire::new(
                 node.address,
-                driver,
                 &self.path().join("pki/ca.pem"),
                 Some(
                     capntproto::rpc::security::Identity::from_pem_files(
@@ -222,26 +196,12 @@ impl Cluster {
     pub async fn restart_inventory(&mut self) {
         let address = self.inventory.address;
         self.inventory.stop().await;
-        self.inventory = Self::spawn(
-            self.path(),
-            "inventory",
-            self.inventory_driver,
-            Some(address),
-            None,
-        )
-        .await;
+        self.inventory = Self::spawn(self.path(), "inventory", Some(address), None).await;
     }
     pub async fn restart_payments(&mut self) {
         let address = self.payments.address;
         self.payments.stop().await;
-        self.payments = Self::spawn(
-            self.path(),
-            "payments",
-            self.payments_driver,
-            Some(address),
-            None,
-        )
-        .await;
+        self.payments = Self::spawn(self.path(), "payments", Some(address), None).await;
     }
     pub async fn restart_shop(&mut self) {
         let address = self.shop.address;
@@ -249,7 +209,6 @@ impl Cluster {
         self.shop = Self::spawn(
             self.path(),
             "shop",
-            self.shop_driver,
             Some(address),
             Some((self.inventory.address, self.payments.address)),
         )

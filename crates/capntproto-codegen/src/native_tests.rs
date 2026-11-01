@@ -118,24 +118,3 @@ fn native_frontend_rejects_multiple_source_prefixes() {
         .unwrap_err();
     assert!(error.to_string().contains("one src_prefix"), "{error}");
 }
-
-#[test]
-fn native_frontend_forwards_bounded_rpc_option() {
-    let directory = tempfile::tempdir().unwrap();
-    let file = directory.path().join("bounded.capnp");
-    std::fs::write(
-        &file,
-        "@0x91ba7f8d25c9e605; interface Service { read @0 () -> (value :UInt32); }",
-    )
-    .unwrap();
-    CompilerCommand::new()
-        .src_prefix(directory.path())
-        .file(&file)
-        .output_path(directory.path())
-        .bounded_rpc(true)
-        .run_native()
-        .unwrap();
-    let generated = std::fs::read_to_string(directory.path().join("bounded_capnp.rs")).unwrap();
-    assert!(generated.contains("::capnp::wire_capability"));
-    assert!(!generated.contains("capability::Promise"));
-}

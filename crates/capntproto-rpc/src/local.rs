@@ -74,119 +74,15 @@ impl ResponseHook for Response {
 }
 
 pub(crate) struct Params {
-    request: RequestMessage,
+    request: message::Builder<message::HeapAllocator>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
-    envelope: bool,
 }
-
-impl Params {
-    pub(crate) fn freeze_large_params(&mut self) {
-        if self.cap_table.is_empty() {
-            self.request.freeze_large();
-        }
-    }
-
-    pub(crate) fn capability_table(&self) -> &[Option<Box<dyn ClientHook>>] {
-        &self.cap_table
-    }
-
-    #[inline(always)]
-    pub(crate) fn scoped(
-        interface_id: u64,
-        method_id: u16,
-        allocator: message::HeapAllocator,
-        // None is a local request. Some(None) needs a fresh remote envelope.
-        envelope: Option<Option<&capntproto_rpc_wire::owned::connection::PreparedCallTemplate>>,
-    ) -> Self {
-        use capntproto_rpc_wire::owned::connection::PreparedCall;
-        let is_envelope = envelope.is_some();
-        let message = match envelope {
-            None => RequestMessage::Root(message::Builder::new(allocator)),
-            Some(template) => RequestMessage::Envelope(
-                match template {
-                    Some(template) => {
-                        PreparedCall::from_template(template, allocator, interface_id, method_id)
-                    }
-                    None => {
-                        PreparedCall::new(message::Builder::new(allocator), interface_id, method_id)
-                    }
-                }
-                .expect("private request envelope"),
-            ),
-        };
-        Self {
-            request: message,
-            cap_table: Vec::new(),
-            envelope: is_envelope,
-        }
-    }
-    pub(crate) fn builder(&mut self) -> any_pointer::Builder<'_> {
-        let mut result = match &mut self.request {
-            RequestMessage::Root(message) => message.get_root::<any_pointer::Builder>().unwrap(),
-            RequestMessage::Envelope(message) => message.params(),
-            RequestMessage::Frozen(_) => unreachable!("sent request is immutable"),
-        };
-        result.imbue_mut(&mut self.cap_table);
-        result
-    }
-    pub(crate) fn into_request(
-        self,
-        interface_id: u64,
-        method_id: u16,
-        hints: CallHints,
-        client: crate::scoped::Hook,
-        context: Option<Rc<dyn Any>>,
-        third_party: Option<Rc<message::Builder<message::HeapAllocator>>>,
-    ) -> Request {
-        Request {
-            third_party,
-            context,
-            message: self.request,
-            cap_table: self.cap_table,
-            interface_id,
-            method_id,
-            client: Some(RequestClient::Scoped(client)),
-            hints,
-            is_streaming: false,
-        }
-    }
-
-    pub(crate) fn prepared_call(
-        &self,
-    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
-        if !self.cap_table.is_empty() {
-            return None;
-        }
-        self.prepared_envelope()
-    }
-    pub(crate) fn prepared_envelope(
-        &self,
-    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
-        match &self.request {
-            RequestMessage::Envelope(message) => Some(message),
-            RequestMessage::Frozen(message) => Some(message),
-            RequestMessage::Root(_) => None,
-        }
-    }
-}
-
 impl ParamsHook for Params {
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
+    fn as_any(&self) -> Option<&dyn Any> {
         Some(self)
     }
-    fn get(&self) -> ::capnp::Result<any_pointer::Reader<'_>> {
-        let mut result = match &self.request {
-            RequestMessage::Envelope(message) => message.params_reader()?,
-            RequestMessage::Frozen(message) => message.params_reader()?,
-            RequestMessage::Root(message) if self.envelope => {
-                let root = message.get_root_as_reader::<crate::rpc_capnp::message::Reader>()?;
-                let crate::rpc_capnp::message::Call(call) = root.which()? else {
-                    return Err(Error::failed("request envelope changed".into()));
-                };
-                call?.get_params()?.get_content()
-            }
-            RequestMessage::Root(message) => message.get_root_as_reader()?,
-        };
+    fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
+        let mut result: any_pointer::Reader = self.request.get_root_as_reader()?;
         result.imbue(&self.cap_table);
         Ok(result)
     }
@@ -200,18 +96,11 @@ pub(crate) struct Results {
     message: Option<message::Builder<message::HeapAllocator>>,
     response: Option<Rc<dyn ResponseHook>>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
-    results_done_fulfiller: Option<ResultsFulfiller>,
+    results_done_fulfiller: Option<oneshot::Sender<Box<dyn ResultsDoneHook>>>,
     pipeline_sender: Option<crate::queued::PipelineInnerSender>,
-}
-enum ResultsFulfiller {
-    Joined(oneshot::Sender<Box<dyn ResultsDoneHook>>),
-    Direct(crate::scoped::response::ResultsSender),
 }
 
 impl Results {
-    pub(crate) fn mark_streaming(&mut self) {
-        self.is_streaming = true;
-    }
     fn new(
         fulfiller: oneshot::Sender<Box<dyn ResultsDoneHook>>,
         pipeline_sender: crate::queued::PipelineInnerSender,
@@ -224,89 +113,9 @@ impl Results {
             message: None,
             response: None,
             cap_table: Vec::new(),
-            results_done_fulfiller: Some(ResultsFulfiller::Joined(fulfiller)),
+            results_done_fulfiller: Some(fulfiller),
             pipeline_sender: Some(pipeline_sender),
         }
-    }
-    pub(crate) fn direct(
-        fulfiller: crate::scoped::response::ResultsSender,
-        context: Option<Rc<dyn Any>>,
-    ) -> Self {
-        Self {
-            context,
-            retained_results: OnceCell::new(),
-            only_pipeline: false,
-            is_streaming: false,
-            message: None,
-            response: None,
-            cap_table: Vec::new(),
-            results_done_fulfiller: Some(ResultsFulfiller::Direct(fulfiller)),
-            pipeline_sender: Some(crate::queued::PipelineInnerSender::disabled()),
-        }
-    }
-    pub(crate) fn direct_pipelined(
-        fulfiller: crate::scoped::response::ResultsSender,
-        context: Option<Rc<dyn Any>>,
-        pipeline: crate::queued::PipelineInnerSender,
-    ) -> Self {
-        let mut results = Self::direct(fulfiller, context);
-        results.pipeline_sender = Some(pipeline);
-        results
-    }
-
-    pub(crate) fn take_wire_pipeline(
-        &mut self,
-    ) -> Option<Option<Rc<crate::scoped::wire::PipelineState>>> {
-        let pipeline = self.pipeline_sender.as_mut()?.take_wire()?;
-        self.pipeline_sender.take();
-        Some(pipeline)
-    }
-
-    pub(crate) fn adopt_pipeline_clients(
-        &mut self,
-        pipeline: Box<dyn PipelineHook>,
-        adopt: impl FnMut(&Rc<RefCell<crate::queued::ClientInner>>, Vec<PipelineOp>),
-    ) -> capnp::Result<()> {
-        let Some(sender) = self.pipeline_sender.take() else {
-            return Err(Error::failed("set_pipeline() called twice".into()));
-        };
-        sender.complete_with_clients(pipeline, adopt);
-        Ok(())
-    }
-    /// The portable payload is constructed only by validated admission or a
-    /// successful owning copy. Preserve that proof instead of traversing the
-    /// same graph again at the exact local sink. Arbitrary hooks still use the
-    /// validating ResultsHook::set_response entry point below.
-    pub(crate) fn set_admitted_response(&mut self, response: Rc<crate::scoped::wire::Payload>) {
-        self.response = Some(response);
-        self.message = None;
-        self.cap_table.clear();
-    }
-
-    /// A final private completion can transfer its owner directly to the
-    /// response future. Retained cancellation contexts and pipeline observers
-    /// require the ordinary shareable ResultsDone path instead.
-    // Rejection preserves the existing owner without another heap allocation.
-    #[allow(clippy::result_large_err)]
-    pub(crate) fn finish_admitted_response(
-        &mut self,
-        payload: crate::scoped::wire::Payload,
-    ) -> Result<(), crate::scoped::wire::Payload> {
-        if !matches!(
-            self.results_done_fulfiller,
-            Some(ResultsFulfiller::Direct(_))
-        ) || self
-            .retained_results
-            .get()
-            .is_some_and(|retained| Rc::strong_count(retained) > 1)
-        {
-            return Err(payload);
-        }
-        let Some(ResultsFulfiller::Direct(sender)) = self.results_done_fulfiller.take() else {
-            unreachable!()
-        };
-        sender.send_payload(payload, self.context.take());
-        Ok(())
     }
 }
 
@@ -333,12 +142,7 @@ impl Drop for Results {
         {
             *retained.borrow_mut() = Some(result.add_ref());
         }
-        match fulfiller {
-            ResultsFulfiller::Joined(fulfiller) => {
-                let _ = fulfiller.send(result);
-            }
-            ResultsFulfiller::Direct(fulfiller) => fulfiller.send(result),
-        }
+        let _ = fulfiller.send(result);
     }
 }
 
@@ -547,65 +351,13 @@ impl ResponseHook for ResultsDone {
     }
 }
 
-enum RequestMessage {
-    Root(message::Builder<message::HeapAllocator>),
-    Envelope(capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>),
-    // Constructed only after ownership has left the public RequestHook editor.
-    Frozen(Rc<capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>>),
-}
-
-impl RequestMessage {
-    fn freeze_large(&mut self) {
-        use capnp::message::ReaderSegments;
-        let RequestMessage::Envelope(message) = &*self else {
-            return;
-        };
-        let builder = message.message();
-        if builder.len() != 2
-            || builder.get_segment(0).unwrap().len() > 4096
-            || builder.get_segment(1).unwrap().len() < 4096
-        {
-            return;
-        }
-        let RequestMessage::Envelope(message) =
-            std::mem::replace(self, RequestMessage::Root(message::Builder::new_default()))
-        else {
-            unreachable!()
-        };
-        *self = RequestMessage::Frozen(message.into_shared());
-    }
-}
-
-// Keep the private hosted endpoint inline until an opaque API needs a box.
-// Ordinary remote requests already own a box for their parameter storage.
-enum RequestClient {
-    Hook(Box<dyn ClientHook>),
-    Scoped(crate::scoped::Hook),
-    // Once the target has been resolved, the parameter owner can retain its
-    // parent pipeline in this same slot until ordered wire publication.
-    Publishing {
-        _parent: crate::scoped::wire::PipelineRef,
-    },
-}
-impl std::ops::Deref for RequestClient {
-    type Target = dyn ClientHook;
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Hook(hook) => &**hook,
-            Self::Scoped(hook) => hook,
-            Self::Publishing { .. } => unreachable!("published parameters have no request target"),
-        }
-    }
-}
-
 pub(crate) struct Request {
-    third_party: Option<Rc<message::Builder<message::HeapAllocator>>>,
     context: Option<Rc<dyn std::any::Any>>,
-    message: RequestMessage,
+    message: message::Builder<message::HeapAllocator>,
     cap_table: Vec<Option<Box<dyn ClientHook>>>,
     interface_id: u64,
     method_id: u16,
-    client: Option<RequestClient>,
+    client: Box<dyn ClientHook>,
     hints: CallHints,
     is_streaming: bool,
 }
@@ -615,80 +367,13 @@ impl ParamsHook for Request {
         Some(self)
     }
     fn get(&self) -> capnp::Result<any_pointer::Reader<'_>> {
-        let mut content = match &self.message {
-            RequestMessage::Root(message) => message.get_root_as_reader()?,
-            RequestMessage::Envelope(message) => message.params_reader()?,
-            RequestMessage::Frozen(message) => message.params_reader()?,
-        };
+        let mut content: any_pointer::Reader = self.message.get_root_as_reader()?;
         content.imbue(&self.cap_table);
         Ok(content)
     }
 }
 
 impl Request {
-    /// A portable pipeline already knows its outgoing message domain before
-    /// its target resolves. Keep that envelope through queued forwarding; local
-    /// resolution still reads the selected parameters through ParamsHook.
-    pub(crate) fn prepared(
-        interface_id: u64,
-        method_id: u16,
-        size_hint: Option<capnp::MessageSize>,
-        client: Box<dyn ClientHook>,
-        pipeline: &crate::scoped::wire::PipelineState,
-    ) -> Box<Self> {
-        // Construct in the final owner rather than returning a large request
-        // that the projected client must copy into a separate box.
-        let request = Box::<Self>::new_uninit();
-        let params = pipeline.prepare_params(interface_id, method_id, size_hint);
-        Box::write(
-            request,
-            Self {
-                message: params.request,
-                third_party: None,
-                context: None,
-                cap_table: params.cap_table,
-                interface_id,
-                method_id,
-                client: Some(RequestClient::Hook(client)),
-                hints: CallHints::default(),
-                is_streaming: false,
-            },
-        )
-    }
-    pub(crate) fn retain_pipeline(&mut self, parent: crate::scoped::wire::PipelineRef) {
-        debug_assert!(self.client.is_none());
-        self.client = Some(RequestClient::Publishing { _parent: parent });
-    }
-    pub(crate) fn publication_committed(&mut self) {
-        // FIFO publication transfers the target and its ordering dependency to
-        // the wire question. The request builder no longer needs the client.
-        drop(self.client.take());
-    }
-    pub(crate) fn freeze_large_params(&mut self) {
-        if self.cap_table.is_empty() {
-            self.message.freeze_large();
-        }
-    }
-    pub(crate) fn capability_table(&self) -> &[Option<Box<dyn ClientHook>>] {
-        &self.cap_table
-    }
-    pub(crate) fn prepared_call(
-        &self,
-    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
-        if !self.cap_table.is_empty() {
-            return None;
-        }
-        self.prepared_envelope()
-    }
-    pub(crate) fn prepared_envelope(
-        &self,
-    ) -> Option<&capntproto_rpc_wire::owned::connection::PreparedCall<message::HeapAllocator>> {
-        match &self.message {
-            RequestMessage::Envelope(message) => Some(message),
-            RequestMessage::Frozen(message) => Some(message),
-            _ => None,
-        }
-    }
     pub(crate) fn new(
         interface_id: u64,
         method_id: u16,
@@ -696,13 +381,12 @@ impl Request {
         client: Box<dyn ClientHook>,
     ) -> Self {
         Self {
-            message: RequestMessage::Root(message::Builder::new(result_allocator(size_hint))),
-            third_party: None,
+            message: message::Builder::new(result_allocator(size_hint)),
             context: None,
             cap_table: Vec::new(),
             interface_id,
             method_id,
-            client: Some(RequestClient::Hook(client)),
+            client,
             hints: CallHints::default(),
             is_streaming: false,
         }
@@ -710,22 +394,6 @@ impl Request {
 }
 
 impl RequestHook for Request {
-    fn third_party_tail_target(&self) -> Option<Box<dyn std::any::Any>> {
-        crate::scoped::tail_target(self.client.as_deref().expect("unsent request"))
-    }
-    fn set_third_party_tail_target(
-        &mut self,
-        contact: any_pointer::Reader<'_>,
-    ) -> capnp::Result<()> {
-        if self.third_party.is_some() || self.third_party_tail_target().is_none() {
-            return Err(Error::failed("ineligible tail transfer".into()));
-        }
-        contact.validate_capability_indices(0)?;
-        let mut body = message::Builder::new_default();
-        body.set_root(contact)?;
-        self.third_party = Some(Rc::new(body));
-        Ok(())
-    }
     fn set_hints(&mut self, hints: CallHints) {
         self.hints = hints;
     }
@@ -736,56 +404,16 @@ impl RequestHook for Request {
     }
 
     fn get(&mut self) -> any_pointer::Builder<'_> {
-        let mut result: any_pointer::Builder = match &mut self.message {
-            RequestMessage::Root(message) => message.get_root().unwrap(),
-            RequestMessage::Envelope(message) => message.params(),
-            RequestMessage::Frozen(_) => unreachable!("sent request is immutable"),
-        };
+        let mut result: any_pointer::Builder = self.message.get_root().unwrap();
         result.imbue_mut(&mut self.cap_table);
         result
     }
     fn get_brand(&self) -> usize {
         0
     }
-    fn send(mut self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
-        if !self.is_streaming
-            && self.third_party.is_none()
-            && match self.client.as_ref().expect("unsent request") {
-                RequestClient::Scoped(hook) => hook.direct_response_available(),
-                RequestClient::Hook(hook) => {
-                    crate::scoped::response::available(&**hook, self.hints)
-                }
-                RequestClient::Publishing { .. } => unreachable!("parameters were already sent"),
-            }
-        {
-            // The request already owns exactly the parameter storage required
-            // by this call. Transfer its box instead of allocating another
-            // ParamsHook and moving the builder and capability table into it.
-            let client = self.client.take().unwrap();
-            let context = self.context.take();
-            return match client {
-                RequestClient::Publishing { .. } => unreachable!("parameters were already sent"),
-                RequestClient::Scoped(hook) => crate::scoped::response::request_scoped(
-                    &hook,
-                    self.interface_id,
-                    self.method_id,
-                    self.hints,
-                    self,
-                    context,
-                ),
-                RequestClient::Hook(hook) => crate::scoped::response::request(
-                    &*hook,
-                    self.interface_id,
-                    self.method_id,
-                    self.hints,
-                    self,
-                    context,
-                ),
-            };
-        }
+    fn send(self: Box<Self>) -> capability::RemotePromise<any_pointer::Owned> {
         let tmp = *self;
         let Self {
-            third_party,
             message,
             context,
             cap_table,
@@ -795,33 +423,9 @@ impl RequestHook for Request {
             hints,
             is_streaming,
         } = tmp;
-        let client = client.expect("unsent request");
-        let (request, envelope) = match message {
-            RequestMessage::Frozen(message) => (RequestMessage::Frozen(message), true),
-            RequestMessage::Root(message) => (RequestMessage::Root(message), false),
-            RequestMessage::Envelope(message)
-                if hints.no_promise_pipelining && !hints.only_promise_pipeline =>
-            {
-                (RequestMessage::Envelope(message), true)
-            }
-            RequestMessage::Envelope(message) => {
-                let mut message = message.into_inner();
-                let root = message
-                    .get_root::<crate::rpc_capnp::message::Builder>()
-                    .unwrap();
-                let crate::rpc_capnp::message::Call(call) = root.which().unwrap() else {
-                    unreachable!("private request envelope")
-                };
-                let mut call = call.unwrap();
-                call.set_no_promise_pipelining(hints.no_promise_pipelining);
-                call.set_only_promise_pipeline(hints.only_promise_pipeline);
-                (RequestMessage::Root(message), true)
-            }
-        };
         let params = Params {
-            request,
+            request: message,
             cap_table,
-            envelope,
         };
         // Hints are final at send (send_for_pipeline may change them). Allocate
         // pipeline state only for callers that can observe a pipeline.
@@ -839,25 +443,13 @@ impl RequestHook for Request {
         results.context = context;
         results.only_pipeline = hints.only_promise_pipeline;
         results.is_streaming = is_streaming;
-        let promise = if let Some(contact) = third_party {
-            crate::scoped::call_third_party(
-                &*client,
-                interface_id,
-                method_id,
-                Box::new(params),
-                Box::new(results),
-                hints,
-                contact,
-            )
-        } else {
-            client.call_with_hints(
-                interface_id,
-                method_id,
-                Box::new(params),
-                Box::new(results),
-                hints,
-            )
-        };
+        let promise = client.call_with_hints(
+            interface_id,
+            method_id,
+            Box::new(params),
+            Box::new(results),
+            hints,
+        );
 
         if hints.no_promise_pipelining {
             return capability::RemotePromise {
@@ -892,6 +484,9 @@ impl RequestHook for Request {
             pipeline,
         }
     }
+    fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
+        None
+    }
     fn send_streaming(mut self: Box<Self>) -> Promise<(), Error> {
         // Local servers complete normally. If this capability resolves remotely,
         // direct_tail_call must preserve streaming credit-based readiness.
@@ -904,19 +499,6 @@ impl RequestHook for Request {
             Ok(())
         })
     }
-    fn tail_send(self: Box<Self>) -> Option<(u32, Promise<(), Error>, Box<dyn PipelineHook>)> {
-        self.third_party.as_ref()?;
-        let capability::RemotePromise { promise, pipeline } = self.send();
-        // Portable transfer never uses numeric IDs to identify another driver.
-        Some((
-            0,
-            Promise::from_future(async move {
-                promise.await?;
-                Ok(())
-            }),
-            pipeline.hook,
-        ))
-    }
 }
 
 struct PipelineInner {
@@ -928,21 +510,6 @@ pub(crate) struct Pipeline {
 }
 
 impl Pipeline {
-    pub(crate) fn share_response(
-        response: capability::Response<any_pointer::Owned>,
-    ) -> (
-        capability::Response<any_pointer::Owned>,
-        Box<dyn PipelineHook>,
-    ) {
-        let results = SharedResponse {
-            response: Rc::from(response.hook),
-            context: None,
-        };
-        let pipeline = Box::new(Self::new(results.add_ref()));
-        let response = capability::Response::new(Box::new(Response::new(Box::new(results))));
-        (response, pipeline)
-    }
-
     pub(crate) fn new(results: Box<dyn ResultsDoneHook>) -> Self {
         Self {
             inner: Rc::new(RefCell::new(PipelineInner { results })),

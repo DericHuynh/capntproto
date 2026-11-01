@@ -29,7 +29,7 @@ pub const OPTIMIZED_RUNTIME_TESTS: &[&str] = &[
     "durable_bulk",
     "persistence",
     "field_api_rpc",
-    "native",
+    "secure_rpc",
 ];
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

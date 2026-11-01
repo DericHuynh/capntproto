@@ -43,16 +43,12 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
-    async fn new(portable: bool) -> Self {
+    async fn new(_portable: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
         let cloned = Rc::new(RefCell::new(None));
         let local: harness::Client = capnp_rpc::new_client(Forward(cloned.clone()));
-        let mut system = RpcSystem::new(
-            portable,
-            Box::new(Hub::network(&hub, 1)),
-            Some(local.client),
-        );
+        let mut system = RpcSystem::new(Box::new(Hub::network(&hub, 1)), Some(local.client));
         let remote: harness::Client = system.bootstrap(2);
         let mut peer = hub.borrow_mut().connect(2, 1);
         let (system, driver) = system.start();
@@ -329,7 +325,7 @@ async fn replay_tlc_exception_metadata_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for case in &cases {
                     for kind in [0, 1, 2, 3, 65535] {
                         replay(
@@ -349,7 +345,7 @@ async fn replay_tlc_exception_metadata_traces() {
 async fn owned_details_survive_clone_forwarding_and_second_decode() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(std::time::Duration::from_secs(5), async {
                     let mut f = Fixture::new(portable).await;
                     f.receive(65535, true).await;
@@ -427,7 +423,7 @@ async fn replay_tlc_exception_disconnect_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for trace in &cases {
                     for kind in [
                         exception::Type::Failed,
@@ -446,7 +442,7 @@ async fn replay_tlc_exception_disconnect_traces() {
 async fn abort_rejects_pending_and_future_calls_with_owned_diagnostics() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 tokio::time::timeout(std::time::Duration::from_secs(5), async {
                     disconnect_trace(
                         portable,
@@ -467,7 +463,7 @@ async fn abort_rejects_pending_and_future_calls_with_owned_diagnostics() {
 async fn malformed_abort_reason_keeps_its_kind_trace_and_details() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let mut f = Fixture::new(portable).await;
                 let pending = f.remote.echo_request().send().promise;
                 f.next_call().await;

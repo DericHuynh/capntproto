@@ -1,4 +1,4 @@
-//! The complete hosted runtime matrix, executed sequentially on one pinned CPU.
+//! Legacy RPC / Tokio / rustls fixtures, executed sequentially on one pinned CPU.
 //! Smoke output is deliberately ineligible for performance publication.
 use crate::process::Cancellation;
 use anyhow::{ensure, Context, Result};
@@ -12,9 +12,9 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-const RUNTIMES: [&str; 4] = ["tokio", "tokio-driven", "monoio-epoll", "monoio-uring"];
-const TRANSPORTS: [&str; 2] = ["tls", "webtransport"];
-const DRIVERS: [&str; 2] = ["legacy", "portable"];
+const RUNTIMES: [&str; 1] = ["tokio"];
+const TRANSPORTS: [&str; 1] = ["tls"];
+const DRIVERS: [&str; 1] = ["legacy"];
 const METRICS: [&str; 9] = [
     "wall_ns",
     "cpu_ns",
@@ -28,6 +28,9 @@ const METRICS: [&str; 9] = [
 ];
 #[derive(Parser)]
 pub struct Args {
+    /// Collect five measured-region instruction/branch/allocation profiles per fixture.
+    #[arg(long, conflicts_with = "smoke")]
+    pub profile: bool,
     #[arg(long)]
     pub worker: PathBuf,
     #[arg(long)]
@@ -37,7 +40,7 @@ pub struct Args {
     /// Required for native measurements; binds worker/controller to the audited bundle.
     #[arg(long)]
     pub manifest: Option<PathBuf>,
-    /// Run every fixture once for correctness; permit an explicitly unavailable io_uring.
+    /// Run every fixture once for correctness.
     #[arg(long)]
     pub smoke: bool,
 }
@@ -205,7 +208,7 @@ pub fn aggregate(
         "native measurements require five repetitions"
     );
     ensure!(
-        unsupported.is_empty() || smoke && unsupported.keys().all(|r| r == "monoio-uring"),
+        unsupported.is_empty(),
         "native runtime matrix is incomplete"
     );
     let expected: BTreeSet<_> = plan(smoke)
@@ -297,7 +300,12 @@ fn identity(manifest: &Value, worker_hash: &str, runner_hash: &str) -> Result<St
     );
     Ok(source.into())
 }
+mod profile;
+
 pub fn run(args: Args) -> Result<()> {
+    if args.profile {
+        return profile::run(args);
+    }
     ensure!(
         args.smoke || args.manifest.is_some(),
         "native campaign requires --manifest"
@@ -348,25 +356,6 @@ pub fn run(args: Args) -> Result<()> {
         let placement = pin_cpu()?;
         let environment = json!({"placement":placement,"kernel":crate::process::text(Command::new("uname").arg("-a"))?,"cpu":fs::read_to_string("/proc/cpuinfo")?,"io_uring_disabled":fs::read_to_string("/proc/sys/kernel/io_uring_disabled").ok(),"topology":"both loopback peers in one process on one pinned runtime thread","clock":"process CPU ns; user-space thread cycles when perf_event_open is available","profile":"release in CI; smoke is not performance evidence"});
         crate::write_json(args.output.join("environment.json"), &environment)?;
-        for runtime in RUNTIMES {
-            let probe = invoke(
-                &worker,
-                &["--probe-runtime".into(), runtime.into()],
-                &cancel,
-            )?;
-            ensure!(
-                probe["runtime"] == runtime && probe["available"].is_boolean(),
-                "invalid runtime capability probe"
-            );
-            if probe["available"] == false {
-                let reason = crate::string(&probe, "reason")?.to_owned();
-                ensure!(
-                    args.smoke && runtime == "monoio-uring",
-                    "required runtime {runtime} unavailable: {reason}"
-                );
-                summary.unsupported.insert(runtime.into(), reason);
-            }
-        }
         let cells = plan(args.smoke)
             .into_iter()
             .filter(|c| !summary.unsupported.contains_key(&c.runtime))
@@ -387,9 +376,6 @@ pub fn run(args: Args) -> Result<()> {
                     cell.case
                 );
                 let arguments = [
-                    ("--runtime", cell.runtime.clone()),
-                    ("--transport", cell.transport.clone()),
-                    ("--driver", cell.driver.clone()),
                     ("--case", cell.case.clone()),
                     ("--iterations", cell.iterations.to_string()),
                     ("--warmup", cell.warmup.to_string()),

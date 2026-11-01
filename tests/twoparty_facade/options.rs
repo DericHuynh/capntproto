@@ -8,8 +8,8 @@ use std::sync::{
 #[tokio::test(flavor = "current_thread")]
 async fn configured_roles_and_graceful_scope_work_for_both_protocols() {
     local(async {
-        for server_protocol in protocol_drivers() {
-            for client_protocol in protocol_drivers() {
+        for _server_protocol in protocol_drivers() {
+            for _client_protocol in protocol_drivers() {
                 let (a, b) = tokio::io::duplex(43);
                 let clock_calls = Arc::new(AtomicUsize::new(0));
                 let clock = {
@@ -20,13 +20,11 @@ async fn configured_roles_and_graceful_scope_work_for_both_protocols() {
                     }
                 };
                 let server = ConnectionOptions::new()
-                    .driver(server_protocol)
                     .server_with_clock(a.compat(), bootstrap(), clock.clone())
                     .unwrap();
                 let server_task = tokio::task::spawn_local(server);
                 let drops = Rc::new(Cell::new(0));
                 let mut driver = ConnectionOptions::new()
-                    .driver(client_protocol)
                     .client_with_clock(
                         Tracked {
                             io: b.compat(),
@@ -64,16 +62,14 @@ async fn configured_roles_and_graceful_scope_work_for_both_protocols() {
 #[tokio::test(flavor = "current_thread")]
 async fn scoped_completion_cancels_driver_and_preserves_application_errors() {
     local(async {
-        for protocol in protocol_drivers() {
+        for _protocol in protocol_drivers() {
             let drops = Rc::new(Cell::new(0));
             let (a, b) = tokio::io::duplex(43);
             let server = ConnectionOptions::new()
-                .driver(protocol)
                 .server(a.compat(), bootstrap())
                 .unwrap();
             let server_task = tokio::task::spawn_local(server);
             let mut driver = ConnectionOptions::new()
-                .driver(protocol)
                 .client(Tracked {
                     io: b.compat(),
                     drops: drops.clone(),
@@ -106,10 +102,9 @@ async fn scoped_completion_cancels_driver_and_preserves_application_errors() {
 #[tokio::test(flavor = "current_thread")]
 async fn application_does_not_hide_early_driver_failure() {
     local(async {
-        for protocol in protocol_drivers() {
+        for _protocol in protocol_drivers() {
             for graceful in [false, true] {
                 let driver = ConnectionOptions::new()
-                    .driver(protocol)
                     .client(BrokenIo {
                         closes: Rc::new(Cell::new(0)),
                         fail_read: true,
@@ -137,11 +132,10 @@ async fn application_does_not_hide_early_driver_failure() {
 #[tokio::test(flavor = "current_thread")]
 async fn dropping_application_scope_releases_driver_and_io() {
     local(async {
-        for protocol in protocol_drivers() {
+        for _protocol in protocol_drivers() {
             let drops = Rc::new(Cell::new(0));
             let (a, _peer) = tokio::io::duplex(43);
             let driver = ConnectionOptions::new()
-                .driver(protocol)
                 .client(Tracked {
                     io: a.compat(),
                     drops: drops.clone(),
@@ -161,10 +155,9 @@ async fn dropping_application_scope_releases_driver_and_io() {
 #[tokio::test(flavor = "current_thread")]
 async fn final_driver_poll_can_complete_the_application_without_repolling_a_finished_driver() {
     local(async {
-        for protocol in protocol_drivers() {
+        for _protocol in protocol_drivers() {
             for graceful in [false, true] {
                 let driver = ConnectionOptions::new()
-                    .driver(protocol)
                     .client(futures::io::Cursor::new(Vec::<u8>::new()))
                     .unwrap();
                 let application = driver.on_disconnect();

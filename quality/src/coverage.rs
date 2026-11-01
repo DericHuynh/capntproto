@@ -13,19 +13,6 @@ pub const NIGHTLY: &str = "nightly-2026-03-05";
 pub const SCOPE: &str = "first-party-owned-crates-v4";
 const FLAGS: &str = "-C instrument-coverage -C link-dead-code -C opt-level=1 -C debug-assertions=yes -C overflow-checks=yes -Z coverage-options=branch";
 
-// Keep the original coordinator's coverage obligation when code moves into
-// execution components. Per-file and crate-group checks still apply as well.
-// Do not include test modules: moving code must not dilute its floor with tests.
-const PORTABLE_COORDINATOR_SOURCES: [&str; 7] = [
-    "crates/capntproto-rpc/src/scoped/wire/coordinator.rs",
-    "crates/capntproto-rpc/src/scoped/wire/coordinator/control.rs",
-    "crates/capntproto-rpc/src/scoped/wire/coordinator/ingress.rs",
-    "crates/capntproto-rpc/src/scoped/wire/coordinator/lifecycle.rs",
-    "crates/capntproto-rpc/src/scoped/wire/coordinator/pump.rs",
-    "crates/capntproto-rpc/src/scoped/wire/coordinator/scheduler.rs",
-    "crates/capntproto-rpc/src/scoped/wire/coordinator/work.rs",
-];
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Metric {
@@ -112,7 +99,6 @@ fn owned_source(path: &Path) -> bool {
             "fuzz",
             "benchmarks",
             "verification/miri",
-            "verification/portable",
         ]
         .iter()
         .any(|prefix| path.starts_with(prefix))
@@ -200,34 +186,7 @@ pub fn regression(
     let mut failures = vec![];
     let old_totals = totals(baseline);
     let new_totals = totals(current);
-    let mut old_coordinator = Metrics::default();
-    let mut new_coordinator = Metrics::default();
-    let coordinator_measured = PORTABLE_COORDINATOR_SOURCES.iter().any(|name| {
-        baseline
-            .get(*name)
-            .is_some_and(|file| file.metrics.is_some())
-    });
-    if coordinator_measured {
-        for name in PORTABLE_COORDINATOR_SOURCES {
-            if let Some(old) = baseline.get(name).and_then(|file| file.metrics.as_ref()) {
-                old_coordinator.add(old);
-            }
-            match current.get(name).and_then(|file| file.metrics.as_ref()) {
-                Some(new) => new_coordinator.add(new),
-                None => failures.push(format!(
-                    "{name}: missing extracted coordinator instrumentation"
-                )),
-            }
-        }
-    }
     let mut pairs = Vec::new();
-    if coordinator_measured {
-        pairs.push((
-            "portable coordinator (including extracted components)",
-            &old_coordinator,
-            &new_coordinator,
-        ));
-    }
     for (name, old) in baseline {
         // Preserve the measured adapter's floor after moving TLS beneath TCP.
         // The historical baseline and its measured numbers stay unchanged.
@@ -333,9 +292,7 @@ fn visit(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 fn instrumented(args: &[&str], build: &Path, profiles: &Path) -> Command {
-    // quiche emits an unhashed libquiche.rlib alongside its cdylib/staticlib.
-    // Sharing targets across workspaces can overwrite it with a build using a
-    // different Tokio feature set while Cargo retains the earlier fingerprint.
+    // Isolate workspace feature resolution and coverage fingerprints.
     let workspace = args
         .windows(2)
         .find(|pair| pair[0] == "--manifest-path")
@@ -364,8 +321,6 @@ fn service_examples(build: &Path, profiles: &Path) -> Command {
             "--manifest-path",
             "examples/kv/Cargo.toml",
             "--bins",
-            "--features",
-            "quic",
         ],
         build,
         profiles,
@@ -520,7 +475,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
                 "--workspace",
                 "--all-targets",
                 "--features",
-                "capntproto/quic",
+                "capntproto/tls",
                 "--message-format=json",
             ],
             &build,
@@ -553,7 +508,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
                 "--workspace",
                 "--all-targets",
                 "--features",
-                "capntproto/quic",
+                "capntproto/tls",
                 "--no-fail-fast",
                 "-E",
                 &filter,
@@ -582,7 +537,7 @@ pub fn collect(r: &mut Runner) -> Result<()> {
                 "--ignore-rust-version",
                 "--workspace",
                 "--features",
-                "capntproto/quic",
+                "capntproto/tls",
                 "--doc",
                 "--no-fail-fast",
                 "--",
@@ -803,54 +758,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("missing renamed TCP TLS adapter"));
-    }
-    #[test]
-    fn coordinator_extraction_keeps_its_floor_and_requires_every_component() {
-        let file = |count, covered| FileCoverage {
-            sha256: "fixture".into(),
-            group: "capability-rpc".into(),
-            status: "measured".into(),
-            metrics: Some(Metrics {
-                lines: Metric { count, covered },
-                regions: Metric { count, covered },
-                functions: Metric { count, covered },
-                branches: Metric { count, covered },
-            }),
-        };
-        let baseline = BTreeMap::from([
-            (PORTABLE_COORDINATOR_SOURCES[0].into(), file(7, 7)),
-            ("unrelated.rs".into(), file(1000, 1000)),
-        ]);
-        let mut current = BTreeMap::from([("unrelated.rs".into(), file(1000, 1000))]);
-        for name in PORTABLE_COORDINATOR_SOURCES {
-            current.insert(name.into(), file(1, 1));
-        }
-        assert!(regression(&current, &baseline).is_ok());
-        // Crate-wide dilution would hide this miss within the 0.5% allowance.
-        let moved = PORTABLE_COORDINATOR_SOURCES[6];
-        current.insert(moved.into(), file(1, 0));
-        let error = regression(&current, &baseline).unwrap_err().to_string();
-        for kind in ["lines", "regions", "functions", "branches"] {
-            assert!(error.contains(&format!(
-                "portable coordinator (including extracted components): {kind} regressed"
-            )));
-        }
-        current.insert(moved.into(), file(1, 1));
-        // An absent mapping and an absent source are both failures, including
-        // for a fully measured future baseline containing all components.
-        let measured_baseline = current.clone();
-        for old in [&baseline, &measured_baseline] {
-            for name in PORTABLE_COORDINATOR_SOURCES {
-                current.get_mut(name).unwrap().metrics = None;
-                assert!(regression(&current, old)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("missing extracted coordinator instrumentation"));
-                current.remove(name);
-                assert!(regression(&current, old).is_err());
-                current.insert(name.into(), file(1, 1));
-            }
-        }
     }
     #[test]
     fn reference_compiler_preserves_overrides_and_tests_the_local_default_in_ci() {
@@ -1082,7 +989,7 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["--manifest-path", "examples/kv/Cargo.toml"]));
-        assert!(args.windows(2).any(|pair| pair == ["--features", "quic"]));
+        assert!(!args.iter().any(|arg| *arg == "quic"));
         let env: BTreeMap<_, _> = command.get_envs().collect();
         assert_eq!(
             env[std::ffi::OsStr::new("CARGO_TARGET_DIR")],

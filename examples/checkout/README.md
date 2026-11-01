@@ -14,8 +14,8 @@ flowchart LR
   P --- PD[(Wallets and payment ledger)]
 ```
 
-Each RPC endpoint can use legacy or portable independently. Tests also run mixed
-drivers. There is no shared memory or database between the three services.
+Each RPC endpoint uses legacy RPC on Tokio with rustls. There is no shared
+memory or database between the three services.
 The example uses local development TLS names; the tests run the actual server
 executables, not in-memory service substitutes.
 
@@ -121,9 +121,8 @@ cargo run --locked --manifest-path examples/checkout/Cargo.toml --bin checkout-c
   --address 127.0.0.1:4700 --ca /tmp/checkout-pki/ca.pem --account alice list
 ```
 
-Restart processes with the same database paths to recover their state. Select
-`--driver legacy` on any node/client to mix implementations. `--help` lists
-configuration flags. A confirmed purchase is not cancellable in this model;
+Restart processes with the same database paths to recover their state.
+`--help` lists configuration flags. A confirmed purchase is not cancellable in this model;
 `cancel purchase-1` returns its confirmed receipt.
 
 ## Check correctness
@@ -131,16 +130,15 @@ configuration flags. A confirmed purchase is not cancellable in this model;
 ```sh
 cargo test --locked --manifest-path examples/checkout/Cargo.toml -- --test-threads=1
 # The shared local/required-CI integration entry point includes this application:
-cargo run --locked -p capntproto-dev -- examples --native-only
+cargo run --locked -p capntproto-dev -- examples
 # Longer reproducible history campaign:
 CHECKOUT_HISTORY_SEEDS=512 cargo test --locked --manifest-path examples/checkout/Cargo.toml \
   --test distributed concurrent_user_histories -- --nocapture
 ```
 
-The default campaign records 64 histories per topology, with seven concurrent
+The default campaign records 64 histories, with seven concurrent
 purchase/cancel/view operations through three independent customer connections.
-Four topologies cover both homogeneous implementations and both mixed directions.
-Topology vectors name the client, order, inventory and payment drivers in that order.
+All four participants use the same legacy driver.
 The independent checker exhausts legal operation orderings consistent with
 observed real-time intervals. It permits asynchronous settlement, while rejecting
 lost updates, payload changes, non-monotonic receipts and confirmation after an

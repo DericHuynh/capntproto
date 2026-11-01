@@ -53,7 +53,7 @@ fn capacity_lookahead_observes_growth_limits_and_shared_owners() {
     })
     .unwrap();
 }
-use crate::connection::Growth;
+use crate::storage::Growth;
 use core::{
     future::Future,
     task::{Context, Poll, Waker},

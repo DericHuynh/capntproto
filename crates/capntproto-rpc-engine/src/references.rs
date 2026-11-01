@@ -44,11 +44,6 @@ impl Default for ExportRefs {
 const fn initial_export() -> ExportRefs {
     ExportRefs { count: 1 }
 }
-#[inline]
-#[cfg_attr(capntproto_verus, verus_spec(r => ensures export_count(r) == count))]
-pub(crate) fn published_refs(count: u32) -> ExportRefs {
-    ExportRefs { count }
-}
 impl ExportRefs {
     /// The first descriptor grants one reference.
     pub const fn new() -> Self {

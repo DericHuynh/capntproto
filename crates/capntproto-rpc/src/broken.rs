@@ -114,6 +114,7 @@ pub(crate) struct Client {
 }
 
 impl Client {
+    #[cfg(test)]
     pub(crate) fn error(&self) -> &Error {
         &self.inner.error
     }

@@ -31,10 +31,9 @@ fn compile(files: &[&str], facade: bool, structured: bool) {
 }
 
 fn main() {
-    bounded_rpc();
     // A fresh coverage run needs fresh build-script and code-generation counters.
     println!("cargo:rerun-if-env-changed=LLVM_PROFILE_FILE");
-    compile(&["field-api", "enum-brand"], true, false);
+    compile(&["field-api", "enum-brand", "allocation"], true, false);
     compile(&["runtime-test", "rpc-api"], true, true);
     compile(
         &[
@@ -54,25 +53,4 @@ fn main() {
         false,
         false,
     );
-}
-
-fn bounded_rpc() {
-    let compiled = capntproto_compiler::FileCompiler::new()
-        .src_prefix("../schemas")
-        .import_path("../schemas/imports")
-        .compile_with_dependencies(&["../schemas/runtime-test.capnp"])
-        .expect("compile bounded interoperability schema");
-    for dependency in compiled.dependencies {
-        println!("cargo:rerun-if-changed={}", dependency.display());
-    }
-    let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("bounded");
-    std::fs::create_dir_all(&output).unwrap();
-    let bytes = capnp::serialize::write_message_to_words(&compiled.message);
-    capnpc::codegen::CodeGenerationCommand::new()
-        .output_directory(output)
-        .default_parent_module(vec!["bounded".into()])
-        .field_api(true)
-        .bounded_rpc(true)
-        .run(bytes.as_slice())
-        .expect("generate bounded interoperability bindings");
 }

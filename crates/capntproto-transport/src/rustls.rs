@@ -9,12 +9,7 @@ use rustls_impl::pki_types::{
 pub use rustls_impl::{pki_types, ClientConfig, RootCertStore, ServerConfig};
 use std::{fmt, io, path::Path, sync::Arc};
 mod record;
-pub use record::{Progress, RecordLayer};
-mod owned;
-pub use owned::{client, server, Buffer as OwnedBuffer, Stream};
-#[cfg(feature = "tokio")]
 mod stream;
-#[cfg(feature = "tokio")]
 pub use stream::TlsStream;
 
 struct Clock(Arc<dyn TlsClock + Send + Sync>);
@@ -114,8 +109,8 @@ fn pem_error(error: PemError) -> io::Error {
     }
 }
 
-/// Read all PEM certificates, rejecting an empty chain. Suitable for a QUIC
-/// trust configuration or a leaf-first server chain.
+/// Read all PEM certificates, rejecting an empty chain. Suitable for a trust
+/// configuration or a leaf-first server chain.
 pub fn certificates_from_pem_file(
     path: impl AsRef<Path>,
 ) -> io::Result<Vec<CertificateDer<'static>>> {

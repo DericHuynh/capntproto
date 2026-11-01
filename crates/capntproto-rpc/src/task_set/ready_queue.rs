@@ -1,7 +1,6 @@
 //! Hosted wakeup adapter over the shared no-std/no-alloc notification FIFO.
 pub(crate) use capntproto_rpc_engine::ready_queue::CAPACITY;
 use futures::task::AtomicWaker;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) struct ReadyQueue {
     queue: capntproto_rpc_engine::ready_queue::ReadyQueue,
@@ -21,21 +20,8 @@ impl ReadyQueue {
         }
     }
     #[inline]
-    pub(crate) fn enqueue_notified(&self, index: usize, notified: &AtomicBool) {
-        let fresh = self.queue.enqueue(index);
-        // Publish before invoking an executor that may poll synchronously.
-        notified.store(true, Ordering::Release);
-        if fresh {
-            self.parent.wake();
-        }
-    }
-    #[inline]
     pub(crate) fn front(&self, position: usize) -> Option<usize> {
         self.queue.front(position)
-    }
-    #[inline]
-    pub(crate) fn pending(&self, position: usize) -> bool {
-        self.queue.pending(position)
     }
     #[inline]
     pub(crate) fn consume(&self, position: usize, index: usize) {

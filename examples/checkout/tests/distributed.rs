@@ -3,8 +3,7 @@ mod cluster;
 #[path = "support/model.rs"]
 mod model;
 use capntproto_checkout_example::{
-    BusinessError, Client, Driver, FaultAction as Action, FaultStage as Stage, Snapshot, State,
-    Status,
+    BusinessError, Client, FaultAction as Action, FaultStage as Stage, Snapshot, State, Status,
 };
 use cluster::{fault, local, Cluster};
 use model::{Operation, Record};
@@ -14,14 +13,8 @@ use std::{
     rc::Rc,
     time::Duration,
 };
-fn profiles() -> [[Driver; 4]; 4] {
-    use Driver::*;
-    [
-        [Legacy; 4],
-        [Portable; 4],
-        [Portable, Legacy, Portable, Legacy],
-        [Legacy, Portable, Legacy, Portable],
-    ]
+fn profiles() -> [(); 1] {
+    [()]
 }
 async fn public_orders(cluster: &Cluster) -> BTreeMap<(String, String), Snapshot> {
     let mut orders = BTreeMap::new();
@@ -64,7 +57,7 @@ async fn check(cluster: &Cluster, accepted: &BTreeSet<(String, String)>) {
 async fn customers_compete_for_limited_stock_and_money_without_duplicate_effects() {
     local(async {
         for profile in profiles() {
-            let mut cluster = Cluster::start(profile, 7, 6000, [vec![], vec![], vec![]]).await;
+            let mut cluster = Cluster::start(7, 6000, [vec![], vec![], vec![]]).await;
             let alice = cluster.client("alice").await;
             let bob = cluster.client("bob").await;
             let requests = (0..24).map(|index| {
@@ -123,7 +116,6 @@ async fn customers_compete_for_limited_stock_and_money_without_duplicate_effects
             let untrusted = capntproto_checkout_example::ResourceClient(
                 capntproto_checkout_example::Wire::new(
                     cluster.inventory.address,
-                    profile[0],
                     &cluster.path().join("pki/ca.pem"),
                     None,
                 )
@@ -172,7 +164,7 @@ async fn concurrent_user_histories_have_a_legal_explanation() {
             .expect("CHECKOUT_HISTORY_SEEDS must be an integer");
         assert!((1..=2048).contains(&seeds));
         for profile in profiles() {
-            let mut cluster = Cluster::start(profile, 256, 200_000, [vec![], vec![], vec![]]).await;
+            let mut cluster = Cluster::start(256, 200_000, [vec![], vec![], vec![]]).await;
             let clients = [
                 cluster.client("alice").await,
                 cluster.client("alice").await,
@@ -235,7 +227,7 @@ async fn concurrent_user_histories_have_a_legal_explanation() {
 #[tokio::test(flavor = "current_thread")]
 async fn late_reservation_after_cancel_cannot_resurrect_stock_or_charge() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
+        for _ in [()] {
             let plan = fault(
                 "late",
                 "reserve",
@@ -243,8 +235,7 @@ async fn late_reservation_after_cancel_cannot_resurrect_stock_or_charge() {
                 Stage::Before,
                 Action::Pause,
             );
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 20_000, [vec![plan], vec![], vec![]]).await;
+            let mut cluster = Cluster::start(8, 20_000, [vec![plan], vec![], vec![]]).await;
             let client = cluster.client("alice").await;
             client.place("undo", 3).await.unwrap();
             cluster.hit("late").await;
@@ -277,7 +268,7 @@ async fn late_reservation_after_cancel_cannot_resurrect_stock_or_charge() {
 #[tokio::test(flavor = "current_thread")]
 async fn charge_committed_before_reply_loss_is_recovered_exactly_once() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
+        for _ in [()] {
             let plan = fault(
                 "charge",
                 "commit",
@@ -285,8 +276,7 @@ async fn charge_committed_before_reply_loss_is_recovered_exactly_once() {
                 Stage::After,
                 Action::Crash,
             );
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 20_000, [vec![], vec![plan], vec![]]).await;
+            let mut cluster = Cluster::start(8, 20_000, [vec![], vec![plan], vec![]]).await;
             let client = cluster.client("alice").await;
             client.place("retry", 3).await.unwrap();
             cluster.hit("charge").await;
@@ -316,7 +306,7 @@ async fn charge_committed_before_reply_loss_is_recovered_exactly_once() {
 #[tokio::test(flavor = "current_thread")]
 async fn lost_acceptance_reply_survives_order_service_restart() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
+        for _ in [()] {
             let plan = fault(
                 "accept",
                 "place",
@@ -324,8 +314,7 @@ async fn lost_acceptance_reply_survives_order_service_restart() {
                 Stage::After,
                 Action::Crash,
             );
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 20_000, [vec![], vec![], vec![plan]]).await;
+            let mut cluster = Cluster::start(8, 20_000, [vec![], vec![], vec![plan]]).await;
             let client = cluster.client("alice").await;
             assert!(client.place("accepted", 2).await.is_err());
             cluster.hit("accept").await;
@@ -350,7 +339,7 @@ async fn lost_acceptance_reply_survives_order_service_restart() {
 #[tokio::test(flavor = "current_thread")]
 async fn acknowledged_cancel_survives_partition_and_crash_during_compensation() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
+        for _ in [()] {
             let plan = fault(
                 "refund",
                 "release",
@@ -358,8 +347,7 @@ async fn acknowledged_cancel_survives_partition_and_crash_during_compensation() 
                 Stage::After,
                 Action::Pause,
             );
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 20_000, [vec![], vec![plan], vec![]]).await;
+            let mut cluster = Cluster::start(8, 20_000, [vec![], vec![plan], vec![]]).await;
             cluster.payments.stop().await;
             let client = cluster.client("alice").await;
             client.place("refund", 2).await.unwrap();
@@ -400,7 +388,7 @@ async fn acknowledged_cancel_survives_partition_and_crash_during_compensation() 
 #[tokio::test(flavor = "current_thread")]
 async fn cancel_after_capture_wins_before_confirmation_and_refunds_the_charge() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
+        for _ in [()] {
             let plan = fault(
                 "capture",
                 "commit",
@@ -408,8 +396,7 @@ async fn cancel_after_capture_wins_before_confirmation_and_refunds_the_charge() 
                 Stage::After,
                 Action::Pause,
             );
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 20_000, [vec![], vec![plan], vec![]]).await;
+            let mut cluster = Cluster::start(8, 20_000, [vec![], vec![plan], vec![]]).await;
             let client = cluster.client("alice").await;
             client.place("captured", 3).await.unwrap();
             cluster.hit("capture").await;
@@ -437,7 +424,7 @@ async fn cancel_after_capture_wins_before_confirmation_and_refunds_the_charge() 
 #[tokio::test(flavor = "current_thread")]
 async fn cancellation_during_a_declined_charge_does_not_turn_into_a_purchase_or_refund() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
+        for _ in [()] {
             let plan = fault(
                 "decline",
                 "reserve",
@@ -445,8 +432,7 @@ async fn cancellation_during_a_declined_charge_does_not_turn_into_a_purchase_or_
                 Stage::After,
                 Action::Pause,
             );
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 2000, [vec![], vec![plan], vec![]]).await;
+            let mut cluster = Cluster::start(8, 2000, [vec![], vec![plan], vec![]]).await;
             let client = cluster.client("alice").await;
             client.place("insufficient", 3).await.unwrap();
             cluster.hit("decline").await;
@@ -475,9 +461,8 @@ async fn cancellation_during_a_declined_charge_does_not_turn_into_a_purchase_or_
 #[tokio::test(flavor = "current_thread")]
 async fn receipts_account_isolation_and_cancel_tombstones_survive_full_restart() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 20_000, [vec![], vec![], vec![]]).await;
+        for _ in [()] {
+            let mut cluster = Cluster::start(8, 20_000, [vec![], vec![], vec![]]).await;
             let alice = cluster.client("alice").await;
             let bob = cluster.client("bob").await;
             let a = alice.buy("shared", 2).await.unwrap();
@@ -660,18 +645,7 @@ fn audit_oracle_rejects_double_charge_refund_omission_and_created_money() {
 #[tokio::test(flavor = "current_thread")]
 async fn command_line_customer_retries_and_lists_real_purchases() {
     local(async {
-        let mut cluster = Cluster::start(
-            [
-                Driver::Portable,
-                Driver::Legacy,
-                Driver::Portable,
-                Driver::Legacy,
-            ],
-            8,
-            20_000,
-            [vec![], vec![], vec![]],
-        )
-        .await;
+        let mut cluster = Cluster::start(8, 20_000, [vec![], vec![], vec![]]).await;
         let run = |arguments: Vec<&'static str>, token: &'static str| {
             let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_checkout-client"));
             command
@@ -727,7 +701,7 @@ async fn command_line_customer_retries_and_lists_real_purchases() {
 #[tokio::test(flavor = "current_thread")]
 async fn failed_cli_purchase_keeps_stdout_clean_and_recovers_the_same_request() {
     local(async {
-        for driver in [Driver::Legacy, Driver::Portable] {
+        for _ in [()] {
             let plan = fault(
                 "cli-crash",
                 "place",
@@ -735,8 +709,7 @@ async fn failed_cli_purchase_keeps_stdout_clean_and_recovers_the_same_request() 
                 Stage::After,
                 Action::Crash,
             );
-            let mut cluster =
-                Cluster::start([driver; 4], 8, 20_000, [vec![], vec![], vec![plan]]).await;
+            let mut cluster = Cluster::start(8, 20_000, [vec![], vec![], vec![plan]]).await;
             let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_checkout-client"));
             command
                 .kill_on_drop(true)
@@ -746,11 +719,6 @@ async fn failed_cli_purchase_keeps_stdout_clean_and_recovers_the_same_request() 
                 .arg(cluster.path().join("pki/ca.pem"))
                 .arg("--account")
                 .arg("alice")
-                .arg("--driver")
-                .arg(match driver {
-                    Driver::Legacy => "legacy",
-                    Driver::Portable => "portable",
-                })
                 .env("CHECKOUT_TOKEN", "alice-development-token")
                 .args(["buy", "cli-lost", "3"]);
             let failed = tokio::time::timeout(cluster::TIMEOUT, command.output())

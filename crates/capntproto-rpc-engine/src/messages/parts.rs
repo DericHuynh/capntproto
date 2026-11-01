@@ -154,7 +154,7 @@ impl Messages<'_, '_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connection::Growth;
+    use crate::storage::Growth;
 
     struct Source([alloc::vec::Vec<u8>; 3]);
     impl Parts for Source {

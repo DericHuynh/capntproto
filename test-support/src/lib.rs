@@ -2,10 +2,7 @@
 pub mod interop_capnp {
     include!(concat!(env!("OUT_DIR"), "/interop_capnp.rs"));
 }
-/// The standard interoperability schema using allocation-free dispatch bindings.
-pub mod bounded {
-    capnp::generated_code!(pub mod runtime_test_capnp, "bounded/runtime_test_capnp.rs");
-}
+
 /// The same wire schema with affine server reply signatures and field editors.
 pub mod structured {
     #[allow(clippy::extra_unused_type_parameters)]
@@ -83,3 +80,9 @@ pub mod field_api_capnp {
 pub mod schedules;
 pub mod traces;
 pub mod verification;
+
+/// Schema fixtures for allocation-free message editors.
+#[allow(clippy::extra_unused_type_parameters)]
+pub mod allocation_capnp {
+    include!(concat!(env!("OUT_DIR"), "/allocation_capnp.rs"));
+}

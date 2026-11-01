@@ -104,29 +104,15 @@ impl PipelineInner {
 pub(crate) struct PipelineInnerSender {
     inner: Option<Weak<RefCell<PipelineInner>>>,
     resolve_on_drop: bool,
-    // A prepared hosted request already owns the wire projection queue.
-    // This weak sender never keeps a canceled public pipeline alive.
-    wire: Option<Weak<crate::scoped::wire::PipelineState>>,
 }
 
 impl PipelineInnerSender {
-    pub(crate) fn wire(pipeline: &Rc<crate::scoped::wire::PipelineState>) -> Self {
-        Self {
-            inner: None,
-            resolve_on_drop: false,
-            wire: Some(Rc::downgrade(pipeline)),
-        }
-    }
-    pub(crate) fn take_wire(&mut self) -> Option<Option<Rc<crate::scoped::wire::PipelineState>>> {
-        self.wire.take().map(|pipeline| pipeline.upgrade())
-    }
     // Preserve the single-use set_pipeline contract even when the caller
     // explicitly promises not to pipeline on this answer.
     pub(crate) fn disabled() -> Self {
         Self {
             inner: None,
             resolve_on_drop: false,
-            wire: None,
         }
     }
 
@@ -134,7 +120,6 @@ impl PipelineInnerSender {
         Self {
             inner: self.inner.clone(),
             resolve_on_drop: false,
-            wire: self.wire.clone(),
         }
     }
 }
@@ -160,33 +145,24 @@ impl PipelineInnerSender {
     // The hosted wire adapter can adopt existing unresolved clients instead of
     // manufacturing another queued client for each projection. Publication of
     // the redirect and detachment of the driver retain the ordinary ordering.
-    pub(crate) fn complete_with_clients(
+
+    #[cfg(test)]
+    fn complete_with_clients(
         mut self,
         pipeline: Box<dyn PipelineHook>,
-        mut adopt: impl FnMut(&Rc<RefCell<ClientInner>>, Vec<PipelineOp>),
+        mut inspect: impl FnMut(&Rc<RefCell<ClientInner>>, Vec<PipelineOp>),
     ) {
-        if let Some(wire) = self.wire.take() {
-            if let Some(wire) = wire.upgrade() {
-                wire.publish(pipeline);
-            }
-            return;
-        }
         if let Some(inner) = self.inner.take().and_then(|weak| weak.upgrade()) {
-            PipelineInner::resolve_with(&inner, Ok(pipeline), |_, client, ops| adopt(client, ops));
+            PipelineInner::resolve_with(&inner, Ok(pipeline), |_, client, ops| {
+                inspect(client, ops)
+            });
         }
     }
-
     pub(crate) fn complete(self, pipeline: Box<dyn PipelineHook>) {
         self.complete_with(|| pipeline);
     }
 
     pub(crate) fn complete_with(mut self, pipeline: impl FnOnce() -> Box<dyn PipelineHook>) {
-        if let Some(wire) = self.wire.take() {
-            if let Some(wire) = wire.upgrade().filter(|wire| wire.unresolved()) {
-                wire.publish(pipeline());
-            }
-            return;
-        }
         if let Some(weak_queued) = self.inner.take() {
             if let Some(pipeline_inner) = weak_queued.upgrade() {
                 let resolved = pipeline_inner.borrow().redirect.is_some();
@@ -214,7 +190,6 @@ impl Pipeline {
             PipelineInnerSender {
                 inner: Some(Rc::downgrade(&inner)),
                 resolve_on_drop: true,
-                wire: None,
             },
             Self { inner },
         )

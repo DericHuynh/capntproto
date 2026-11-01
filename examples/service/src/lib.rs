@@ -1,40 +1,16 @@
-//! One schema-defined service shared by native and component clients.
+//! A schema-defined greeting service for Tokio/rustls client and server examples.
 pub use capnp_rpc as rpc;
 pub mod greeting_capnp {
     include!(concat!(env!("OUT_DIR"), "/greeting_capnp.rs"));
 }
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-use capnp_rpc::twoparty::{ConnectionOptions, RpcDriver, TwoPartyClient};
-pub fn protocol() -> capnp::Result<RpcDriver> {
-    Ok(RpcDriver::Portable(capnp_rpc::portable::Options::bounded(
-        64.try_into().unwrap(),
-        4096.try_into().unwrap(),
-        (1024 * 1024).try_into().unwrap(),
-        (16 * 1024 * 1024).try_into().unwrap(),
-    )?))
-}
-
+use capnp_rpc::twoparty::{ConnectionOptions, TwoPartyClient};
 pub async fn greeting<S: futures::AsyncRead + futures::AsyncWrite + Unpin + 'static>(
     stream: S,
     prefix: &str,
     value: &str,
 ) -> Result<String> {
-    greeting_with_protocol(stream, prefix, value, protocol()?).await
-}
-pub async fn greeting_with_protocol<
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin + 'static,
->(
-    stream: S,
-    prefix: &str,
-    value: &str,
-    protocol: RpcDriver,
-) -> Result<String> {
-    greeting_with_driver(
-        ConnectionOptions::new().driver(protocol).client(stream)?,
-        prefix,
-        value,
-    )
-    .await
+    greeting_with_driver(ConnectionOptions::new().client(stream)?, prefix, value).await
 }
 pub async fn greeting_with_driver(
     mut driver: TwoPartyClient<'_>,

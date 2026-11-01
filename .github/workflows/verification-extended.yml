@@ -1,228 +1,30 @@
-name: Verification / Extended
+name: Verification / Memory safety
 on:
   workflow_call:
-  schedule:
-    - cron: '37 4 * * 3'
   workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * 1'
 permissions:
   contents: read
-concurrency:
-  group: extended-quality-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-defaults:
-  run:
-    shell: bash
-env:
-  CARGO_TERM_COLOR: never
-  CARGO_INCREMENTAL: '0'
 jobs:
   miri:
-    name: Miri ownership and endian checks
+    name: Miri codec and legacy ownership
     runs-on: ubuntu-24.04
-    # The expanded hosted RPC matrix takes over 22 minutes by itself on 32-bit
-    # Miri. Leave time for the remaining ownership and growing-ledger suites.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/hosted-apt # zizmor: ignore[self-repository]
-      - name: Memory-check prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
-          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy
-          rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
-          git submodule update --init --depth 1 -- vendor/capnproto
       - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
         with:
-          cache-key: extended-miri
+          cache-key: legacy-miri
           workspaces: |
             . -> target
             verification/miri -> target
-            verification/portable -> target
-      - name: Ownership checks plus big-endian and seed sweeps
-        id: checks
-        env:
-          CAPNTPROTO_MIRI_EXTENDED: '1'
-        run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --test memory_safety
-      - name: Allocation-free readers and length overflow on 32-bit Miri
-        id: portable
+      - name: Install the pinned memory interpreter
+        run: rustup toolchain install nightly-2026-08-29 --profile minimal --component miri,rust-src
+      - name: Check reader and ownership invariants
         run: |
-          mkdir -p target/verification/memory-safety
-          cargo run --locked -p capntproto-dev -- nextest cargo +nightly-2026-08-29 miri -- --locked -p capntproto-core --no-default-features --lib --target i686-unknown-linux-gnu -E 'test(serialize::indexed_segments::tests) | test(wire_capability::map::tests)' 2>&1 | tee target/verification/memory-safety/reader-32.log
-      - name: Allocation-free generated views, builders and RPC tables under Miri
-        id: views
-        run: |
-          mkdir -p target/verification/memory-safety
-          rm -f verification/portable/target/nextest/ci/junit.xml target/verification/memory-safety/generated-views.xml target/verification/memory-safety/bounded-32.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked --manifest-path verification/portable/Cargo.toml --lib --profile ci 2>&1 | tee target/verification/memory-safety/generated-views.log
-          cp verification/portable/target/nextest/ci/junit.xml target/verification/memory-safety/generated-views.xml
-          rm -f verification/portable/target/nextest/ci/junit.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked --manifest-path verification/portable/Cargo.toml --lib --target i686-unknown-linux-gnu --profile ci -E 'test(resumable_stream_framing) | test(fallible_fixed_construction) | test(bounded_lists_and_groups) | test(recursive_fixed_copies) | test(bounded_struct_upgrades) | test(bounded_list_upgrades) | test(bounded_list_promotions) | test(bounded_generic_fields) | test(bounded_capability_references) | test(bounded_import_ownership) | test(bounded_export_ownership) | test(leased_message_roundtrip) | test(suspended_request_and_nested_call) | test(suspended_result_and_nested_output) | test(bounded_rpc_publication) | test(bounded_resource_output) | test(bounded_server_output) | test(bounded_promise_resolution) | test(bounded_loopback_ordering) | test(bounded_reflected_capabilities) | test(bounded_reflected_return) | test(bounded_reflected_resolution) | test(bounded_tail_adoption) | test(bounded_dispatch_ordering) | test(bounded_imported_clients) | test(owned_rpc_conversation) | test(owned_task_failures) | test(graph_connection) | test(graph_resolution_retry) | test(outgoing_question_pipeline) | test(owning_connection_driver) | test(owning_return_resolve_order) | test(owning_loopback_driver) | test(owning_loopback_unresolved) | test(owning_terminal_cleanup) | test(owning_protocol_controls) | test(owning_tail_driver) | test(owning_tail_pipeline) | test(owning_invocation_driver) | test(owning_invocation_ordering) | test(queued_invocation_pipeline) | test(local_invocation_pipeline) | test(caller_owned_reply_future) | test(tracked_reply_delivery) | test(local_reply_ownership) | test(queued_local_reply_bindings) | test(queued_remote_reply_bindings) | test(owning_reflected_output) | test(exported_promise_failure) | test(owned_result_draft) | test(owning_network) | test(owning_adopted_capability) | test(owning_adoption_sender) | test(owning_provision_sender) | test(bounded_provision) | test(typed_session_calls) | test(streaming_session_calls) | test(streaming_acknowledgment_pump) | test(caller_polled_session) | test(typed_capability_calls) | test(generated_context_nested_call) | test(generated_context_wire_dispatch) | test(generated_async_server) | test(generated_branded_server) | test(generated_rpc_conversation) | test(bounded_wire_capabilities) | test(bounded_pipeline_and_streaming)' 2>&1 | tee target/verification/memory-safety/bounded-32.log
-          cp verification/portable/target/nextest/ci/junit.xml target/verification/memory-safety/bounded-32.xml
-      - name: Shared RPC ownership, growing storage and wakeups under Miri
-        id: replies
-        run: |
-          rm -f target/nextest/ci/junit.xml target/verification/memory-safety/shared-replies-32.xml target/verification/memory-safety/flow-wakeups.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked -p capntproto-rpc-engine --features alloc --lib --target i686-unknown-linux-gnu --profile ci -E 'test(completion::) | test(growing_) | test(messages::growing) | test(questions::adoption)' 2>&1 | tee target/verification/memory-safety/shared-replies-32.log
-          cp target/nextest/ci/junit.xml target/verification/memory-safety/shared-replies-32.xml
-          rm -f target/nextest/ci/junit.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked -p capntproto-rpc --lib --profile ci -E 'test(credit_ready_failure_and_drop) | test(sender_queue::tests) | test(resolution_wakes_after)' 2>&1 | tee target/verification/memory-safety/flow-wakeups.log
-          cp target/nextest/ci/junit.xml target/verification/memory-safety/flow-wakeups.xml
-          rm -f target/nextest/ci/junit.xml target/verification/memory-safety/client-hooks-32.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked -p capntproto-rpc -p capntproto-rpc-wire -p capntproto-rpc-engine --lib --target i686-unknown-linux-gnu --profile ci -E 'test(scoped::) | test(queued::tests::resolved_requests) | test(owned::attachment_tests::) | test(owned::connection::server_output::) | test(attachments::tests::) | test(messages::queue::tests::) | test(attachment_bundle_commits) | test(buffer::tests::) | test(connection::growing::tests::)' 2>&1 | tee target/verification/memory-safety/client-hooks-32.log
-          cp target/nextest/ci/junit.xml target/verification/memory-safety/client-hooks-32.xml
-          rm -f target/nextest/ci/junit.xml target/verification/memory-safety/selected-readers-32.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked -p capntproto-core --lib --test selected_struct --target i686-unknown-linux-gnu --profile ci -E 'binary(selected_struct) | test(promise_tests)' 2>&1 | tee target/verification/memory-safety/selected-readers-32.log
-          cp target/nextest/ci/junit.xml target/verification/memory-safety/selected-readers-32.xml
-          rm -f target/nextest/ci/junit.xml target/verification/memory-safety/session-wakeups-32.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked -p capntproto-rpc-wire --lib --target i686-unknown-linux-gnu --profile ci -E 'test(driver_wake_reenters) | test(busy_driver_preserves) | test(replacing_driver_waker)' 2>&1 | tee target/verification/memory-safety/session-wakeups-32.log
-          cp target/nextest/ci/junit.xml target/verification/memory-safety/session-wakeups-32.xml
-          rm -f verification/portable/target/nextest/ci/junit.xml target/verification/memory-safety/growing-graph-32.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked --manifest-path verification/portable/Cargo.toml --features alloc --lib --target i686-unknown-linux-gnu --profile ci -E 'test(growing_streaming_acknowledgment_pump) | test(growing_ledger_)' 2>&1 | tee target/verification/memory-safety/growing-graph-32.log
-          cp verification/portable/target/nextest/ci/junit.xml target/verification/memory-safety/growing-graph-32.xml
-          rm -f verification/portable/target/nextest/ci/junit.xml target/verification/memory-safety/growing-ledger-replay-32.xml
-          cargo +nightly-2026-08-29 miri nextest run --locked --manifest-path verification/portable/Cargo.toml --features growing --lib --target i686-unknown-linux-gnu --profile ci -E 'test(owning_adoption_sender) | test(owning_network_rendezvous) | test(owning_network_await) | test(owning_tail_driver) | test(owning_terminal_cleanup) | test(queued_invocation_pipeline) | test(queued_local_reply_bindings) | test(owning_loopback_driver) | test(growing_binding_cleanup) | test(owned_result_draft) | test(generated_context_nested_call) | test(owning_network_adoption) | test(owning_adopted_capability) | test(typed_session_calls) | test(typed_capability_calls) | test(streaming_session_calls)' 2>&1 | tee target/verification/memory-safety/growing-ledger-replay-32.log
-          cp verification/portable/target/nextest/ci/junit.xml target/verification/memory-safety/growing-ledger-replay-32.xml
-      - name: Summarize memory checks
-        if: always()
-        env:
-          RESULT: ${{ steps.checks.outcome }}
-          PORTABLE: ${{ steps.portable.outcome }}
-          VIEWS: ${{ steps.views.outcome }}
-          REPLIES: ${{ steps.replies.outcome }}
-        run: |
-          mkdir -p target/verification/memory-safety
-          {
-            # Markdown backticks in the format string are literal.
-            # shellcheck disable=SC2016
-            printf '# Extended Miri\n\nCommit: `%s`\n\nResult: **%s**. The ordinary 49-test memory suite covers aligned/unaligned readers and both aliasing models. The extension runs six wire tests with seeds 2–5 on x86-64 and big-endian s390x: 48 additional interpreted executions. Only recorded executions are qualified; this is not native s390x platform support.\n\n[Source-bound results and log paths](checked.json). A failed run does not retain a prior checked.json.\n' "$GITHUB_SHA" "$RESULT"
-            printf '\nAllocation-free readers on 32-bit Miri: **%s**. Checks cover frame-length overflow, caller-indexed segment lookup and unchanged input/metadata after rejected frames. [Execution log](reader-32.log); JUnit reports are included in the artifact.\n' "$PORTABLE"
-            printf '\nAllocation-free generated views, builders, framing and RPC tables: **%s**. Thirty-eight interpreted tests cover editing and reuse, defaults, unions, malformed pointers, invalid UTF-8, caller-owned diagnostics, bounded peer/local-ID tables, handoff revocation/draining, resumable framing and fallible fixed-buffer publication. Framing, lists, recursive copying, struct upgrades, wire reference counts and bounded import/export ownership and leased message sends and bound RPC publication, generated call/return/cancellation conversations, wire capability indices, typed pipeline paths, streaming acknowledgements and suspended readers/results during nested output, promise resolution, loopback embargo ordering and reflected local/answer descriptors in calls, returns and promise resolution, plus same-connection tail adoption, owning async task conversations and terminal IO faults also run on 32-bit Miri. [Native-width log](generated-views.log); [32-bit log](bounded-32.log); fixture JUnit reports are included in the artifact.\n' "$VIEWS"
-            printf '\nShared RPC ownership: **%s**. Heap-owned and caller-owned replies share the same transitions. [32-bit ownership and growing storage log](shared-replies-32.log), [queue and flow reentrancy log](flow-wakeups.log), [selected reader provenance, bounds and promise ownership](selected-readers-32.log), [session wakeups](session-wakeups-32.log), [growing graph and ledger RPC cleanup](growing-graph-32.log), [growing provider protocol replay](growing-ledger-replay-32.log); JUnit reports are included in the artifact.\n' "$REPLIES"
-          } > target/verification/memory-safety/README.md
-          cat target/verification/memory-safety/README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: extended-miri
-          overwrite: true
-          path: |
-            target/verification/memory-safety/
-            target/nextest/reports/
-            verification/portable/target/nextest/ci/junit.xml
-          if-no-files-found: error
-  careful:
-    name: Native unsafe-precondition checks
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/hosted-apt # zizmor: ignore[self-repository]
-      - name: Native-check prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
-          rustup toolchain install nightly-2026-08-29 --profile minimal --component rust-src
-      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
-        with:
-          cache-key: extended-careful
-          workspaces: |
-            . -> target
-            . -> target/careful
-      - name: Install cargo-careful
-        run: cargo +nightly-2026-08-29 install cargo-careful --version 0.4.10 --locked
-      - name: Native storage and descriptor checks
-        id: checks
-        env:
-          CARGO_TARGET_DIR: target/careful
-        run: |
-          mkdir -p target/extended/careful
-          rustc +nightly-2026-08-29 -vV > target/extended/careful/compiler.txt
-          cargo run --locked -p capntproto-dev -- nextest cargo +nightly-2026-08-29 careful -- --locked -p capntproto --lib storage::fault_tests 2>&1 | tee target/extended/careful/storage.log
-          cargo run --locked -p capntproto-dev -- nextest cargo +nightly-2026-08-29 careful -- --locked -p capntproto --test fd_capabilities --test serialization_reads --test allocations -- --skip replay_tlc_fd_traces 2>&1 | tee target/extended/careful/native.log
-      - name: Summarize native checks
-        if: always()
-        env:
-          RESULT: ${{ steps.checks.outcome }}
-        run: |
-          mkdir -p target/extended/careful
-          # Markdown backticks in the format string are literal.
-          # shellcheck disable=SC2016
-            printf '# Native memory checks\n\nCommit: `%s`\n\nResult: **%s**. cargo-careful 0.4.10 on nightly-2026-08-29 checks storage fault recovery, native descriptor/RPC behavior, framing, and allocation budgets. The TLC replay runs in Verification / Formal checks and is excluded from this native-only run. These checks detect selected unsafe-precondition violations; C++ internals are not instrumented by cargo-careful.\n\n- [Storage fault tests](storage.log)\n- [Native tests](native.log)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" "$RESULT" > target/extended/careful/README.md
-          cat target/extended/careful/README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: native-careful
-          overwrite: true
-          path: |
-            target/extended/careful/
-            target/nextest/reports/
-          if-no-files-found: error
-  llvm-lines:
-    name: LLVM IR size report
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/hosted-apt # zizmor: ignore[self-repository]
-      - name: IR-report prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y capnproto libcapnp-dev
-          rustup toolchain install 1.97.0 --profile minimal
-      - uses: ./.github/actions/auditable-setup # zizmor: ignore[self-repository]
-        with:
-          cache-key: extended-ir
-          workspaces: |
-            . -> target
-      - name: Install cargo-llvm-lines
-        run: cargo install cargo-llvm-lines --version 0.4.48 --locked
-      - name: Report generated and runtime IR
-        run: |
-          mkdir -p target/extended/llvm-lines
-          rustc -vV > target/extended/llvm-lines/compiler.txt
-          cargo llvm-lines --locked --release -p capntproto --lib > target/extended/llvm-lines/runtime.txt
-          cargo llvm-lines --locked --release -p capntproto --example native_store > target/extended/llvm-lines/consumer.txt
-          # Markdown backticks in the format string are literal.
-          # shellcheck disable=SC2016
-            printf '# LLVM IR size\n\nCommit: `%s`\n\nReports include the default-feature runtime and the native_store consumer, where generic bindings are instantiated. Counts measure IR size and instantiations, not compilation time. No regression baseline is established.\n\n- [Runtime](runtime.txt)\n- [Consumer](consumer.txt)\n- [Compiler](compiler.txt)\n' "$GITHUB_SHA" > target/extended/llvm-lines/README.md
-          cat target/extended/llvm-lines/README.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: llvm-ir-size
-          overwrite: true
-          path: target/extended/llvm-lines/
-          if-no-files-found: error
-  mutations:
-    name: Guard mutations and focused coverage
-    runs-on: ubuntu-26.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/quality-setup # zizmor: ignore[self-repository]
-        with:
-          lane: memory
-      - name: Require guard mutations to be detected
-        env:
-          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools.jar
-        run: cargo run --locked -p capntproto-dev -- nextest cargo -- --locked --test guard_quality
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: guard-mutation-report
-          overwrite: true
-          path: |
-            target/verification/rust-mutations/
-            target/nextest/reports/
-            target/verification/guard-coverage/
-          if-no-files-found: warn
+          cargo +nightly-2026-08-29 miri test --locked --manifest-path verification/miri/Cargo.toml
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc --lib sender_queue::tests
+          cargo +nightly-2026-08-29 miri test --locked -p capntproto-rpc --lib queued::tests

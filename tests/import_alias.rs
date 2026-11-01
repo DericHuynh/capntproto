@@ -25,11 +25,10 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
-    async fn new(portable: bool) -> Self {
+    async fn new(_portable: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let (system, driver) =
-            RpcSystem::new(portable, Box::new(Hub::network(&hub, 1)), None).start();
+        let (system, driver) = RpcSystem::new(Box::new(Hub::network(&hub, 1)), None).start();
         let peer = hub.borrow_mut().connect(1, 2);
         drop(peer);
         let peer = hub.borrow_mut().connect(2, 1);
@@ -149,7 +148,7 @@ async fn replay_tlc_import_alias_traces() {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for trace in &traces {
                     tokio::time::timeout(std::time::Duration::from_secs(3), async {
                         Fixture::new(portable).await.replay(trace).await;
@@ -166,7 +165,7 @@ async fn dropping_reimport_does_not_break_original_capability() {
     let trace = serde_json::json!([{"action":"first"},{"action":"acquire"},{"action":"drop"},{"action":"last"}]);
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 Fixture::new(portable)
                     .await
                     .replay(trace.as_array().unwrap())
@@ -185,7 +184,7 @@ async fn repeated_reimports_keep_the_original_canonical_client() {
     ]);
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 Fixture::new(portable)
                     .await
                     .replay(trace.as_array().unwrap())

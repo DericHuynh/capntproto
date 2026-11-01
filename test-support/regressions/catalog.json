@@ -14,19 +14,6 @@
         "capntproto_proofs::revisions::Revisions::stage",
         "capntproto_proofs::revisions::Revisions::publish"
       ]
-    },
-    "route-generation": {
-      "sha256": "a103228fa2bdcbfbcb1a553f1550b3792e1d8055fdb84e653393dc2d0fbe3f7a",
-      "traces": 78,
-      "states": 39,
-      "steps": 414,
-      "former_model": "RouteGeneration",
-      "model_sha256": "9df0b1f29fd690902542834c242138a249027fbd95377e76dea0332824f3c529",
-      "config_sha256": "9c928c943d4ab01fba64bfc8a0dc0ea58a72957d56d2f81d76bcb287235b3ef4",
-      "proofs": [
-        "capntproto_proofs::sequence::safety",
-        "capntproto_proofs::sequence::progress"
-      ]
     }
   }
 }

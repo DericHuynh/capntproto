@@ -3,9 +3,7 @@ mod client;
 mod faults;
 mod service;
 mod store;
-use capntproto::capnp_rpc::twoparty::RpcDriver;
 pub use capntproto::{capnp, capnp_rpc};
-use clap::ValueEnum;
 pub use client::{Client, ResourceClient, Wire};
 pub use faults::{FaultAction, FaultPlan, FaultStage};
 use serde::{Deserialize, Serialize};
@@ -16,24 +14,6 @@ pub mod checkout_capnp {
 }
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 pub const RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
-#[derive(Clone, Copy, Debug, ValueEnum)]
-pub enum Driver {
-    Legacy,
-    Portable,
-}
-impl Driver {
-    pub fn protocol(self) -> capnp::Result<RpcDriver> {
-        Ok(match self {
-            Self::Legacy => RpcDriver::Legacy,
-            Self::Portable => RpcDriver::Portable(capnp_rpc::portable::Options::bounded(
-                4.try_into().unwrap(),
-                1024.try_into().unwrap(),
-                (1024 * 1024).try_into().unwrap(),
-                (4 * 1024 * 1024).try_into().unwrap(),
-            )?),
-        })
-    }
-}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BusinessError {
     Invalid,

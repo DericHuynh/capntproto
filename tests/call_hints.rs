@@ -109,7 +109,7 @@ async fn private_parameter_tombstones_keep_legacy_indices_and_refunds() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                for portable in [false, true] {
+                for portable in [false] {
                     for canceled in [false, true] {
                         scenario(portable, canceled).await;
                     }
@@ -125,7 +125,7 @@ async fn private_parameter_tombstones_keep_legacy_indices_and_refunds() {
 async fn multiple_parameter_grants_match_legacy_refunds_and_retained_releases() {
     tokio::task::LocalSet::new().run_until(async {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            for portable in [false, true] {
+            for portable in [false] {
               for pending in [false, true] {
                 for refund in [false, true] {
                     for canceled in [false, true] {
@@ -202,7 +202,7 @@ async fn multiple_parameter_grants_match_legacy_refunds_and_retained_releases() 
 async fn resolved_queued_remote_parameters_reflect_directly_like_legacy() {
     tokio::task::LocalSet::new().run_until(async {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let mut f = Fixture::with_driver(0, portable).await;
                 let remote = f.remote.clone();
                 let queued: harness::Client = capnp_rpc::new_future_client(async move { Ok(remote) });
@@ -229,7 +229,7 @@ async fn resolved_queued_remote_parameters_reflect_directly_like_legacy() {
 async fn repeated_local_exports_match_legacy_identity_and_promise_descriptors() {
     tokio::task::LocalSet::new().run_until(async {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for pending in [false, true] {
                     let mut f = Fixture::with_driver(0, portable).await;
                     let alive = Rc::new(Cell::new(true));
@@ -314,7 +314,7 @@ async fn published_parameter_cap_lifetimes_match_legacy() {
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 let mut legacy_retained = [false; 4];
-                for portable in [false, true] {
+                for portable in [false] {
                     for wrapper in 0..4 {
                         let mut f = Fixture::with_driver(wrapper, portable).await;
                         let alive = Rc::new(Cell::new(true));
@@ -407,7 +407,7 @@ async fn a_remote_promise_resolved_back_to_local_preserves_join_identity() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                for portable in [false, true] {
+                for portable in [false] {
                     let mut f = Fixture::with_driver(0, portable).await;
                     let original: harness::Client = capnp_rpc::new_client(Dummy(None));
                     let mut request = f.remote.bounce_request();
@@ -514,11 +514,10 @@ impl Fixture {
     async fn new(wrapper: u32) -> Self {
         Self::with_driver(wrapper, false).await
     }
-    async fn with_driver(wrapper: u32, portable: bool) -> Self {
+    async fn with_driver(wrapper: u32, _portable: bool) -> Self {
         let hub = Rc::new(RefCell::new(Hub::default()));
         let network = Hub::network(&hub, 2);
-        let mut system =
-            support::driver::System::new(portable, Box::new(Hub::network(&hub, 1)), None);
+        let mut system = support::driver::System::new(Box::new(Hub::network(&hub, 1)), None);
         let remote: harness::Client = system.bootstrap(2);
         let joiner = system.get_joiner();
         let disconnect = system.disconnect();
@@ -814,7 +813,7 @@ async fn wrappers_preserve_pipeline_only_and_disabled_pipeline_hints() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                for portable in [false, true] {
+                for portable in [false] {
                     for wrapper in 0..4 {
                         let mut f = Fixture::with_driver(wrapper, portable).await;
                         f.send(false, false).await;
@@ -1334,7 +1333,7 @@ async fn queued_streaming_trace(
 async fn dropping_streaming_credit_before_driver_poll_keeps_accepted_call_alive() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let mut fixture = Fixture::with_driver(0, portable).await;
                 let request: capnp::capability::StreamingRequest<harness::echo_params::Owned> =
                     fixture
@@ -1379,7 +1378,7 @@ async fn streaming_pipeline_and_imported_promise_use_transport_credit() {
     tokio::task::LocalSet::new()
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                for portable in [false, true] {
+                for portable in [false] {
                     for imported_promise in [false, true] {
                         let mut fixture = Fixture::with_driver(0, portable).await;
                         let parent = fixture.remote.bounce_request().send();
@@ -1482,7 +1481,7 @@ async fn streaming_pipeline_and_imported_promise_use_transport_credit() {
 async fn remote_streaming_credit_does_not_wait_for_its_return() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 let mut fixture = Fixture::with_driver(0, portable).await;
                 let request: capnp::capability::StreamingRequest<harness::echo_params::Owned> =
                     fixture
@@ -1527,7 +1526,7 @@ async fn remote_streaming_credit_does_not_wait_for_its_return() {
 async fn remote_streaming_aliases_share_credit_and_keep_unacknowledged_calls_alive() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            for portable in [false, true] {
+            for portable in [false] {
                 for fail in [false, true] {
                     let mut fixture = Fixture::with_driver(0, portable).await;
                     let status = fixture._hub.borrow_mut().connect(1, 2).status();
@@ -1627,7 +1626,7 @@ async fn replay_tlc_queued_streaming_traces() {
             for trace in traces {
                 for fail in [false, true] {
                     for wrapper in 0..3 {
-                        for portable in [false, true] {
+                        for portable in [false] {
                             queued_streaming_trace(&trace, fail, wrapper, portable).await;
                         }
                     }
@@ -1648,7 +1647,7 @@ async fn queued_streaming_preserves_credit_readiness_and_ack_lifetime() {
                     {"action":"ack","state":[1,1,1,1,1,1]}
                 ]);
                 for wrapper in 0..3 {
-                    for portable in [false, true] {
+                    for portable in [false] {
                         queued_streaming_trace(steps.as_array().unwrap(), true, wrapper, portable)
                             .await;
                     }
@@ -1719,7 +1718,7 @@ async fn closing_connection_rejects_credit_and_last_client_retires_stream_driver
         .run_until(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 let mut observations = Vec::new();
-                for portable in [false, true] {
+                for portable in [false] {
                     let mut fixture = Fixture::with_driver(0, portable).await;
                     let status = fixture._hub.borrow_mut().connect(1, 2).status();
                     status.borrow_mut().stream_window = Some(0);
@@ -1755,11 +1754,11 @@ async fn closing_connection_rejects_credit_and_last_client_retires_stream_driver
                     ));
                     settle().await;
                     observations.push((portable, retained, failed, status.borrow().active_streams));
-                    // Both drivers retain the per-capability controller until the
-                    // final client drops. Neither observer requires system Drop.
+                    // Retain the per-capability controller until the final client
+                    // drops, without requiring system Drop.
                     assert!(!fixture.task.is_finished());
                 }
-                assert_eq!(observations, [(false, 1, true, 0), (true, 1, true, 0)]);
+                assert_eq!(observations, [(false, 1, true, 0)]);
             })
             .await
             .unwrap();
