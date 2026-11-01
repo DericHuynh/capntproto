@@ -1,6 +1,8 @@
 //! Native multiparty sessions over mutually authenticated TCP/TLS 1.3.
 //! TLS pins stable peer keys and the reservation context before publishing IO.
 mod framing;
+#[cfg(test)]
+mod tests;
 use super::*;
 use crate::native_shutdown::{Frame, Protocol, FRAME_BYTES};
 use bytes::{Bytes, BytesMut};

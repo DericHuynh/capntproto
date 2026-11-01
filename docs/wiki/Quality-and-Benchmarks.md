@@ -1029,6 +1029,61 @@ environment mutation. Their coverage no longer depends on those CI variables;
 the measured reference is unchanged. The comparison is retained in
 `target/ci-fix-20261015/hosted-local-comparison.json`.
 
+### November 1 hosted-runtime coverage review
+
+[Coverage run 41275232417](https://github.com/DericHuynh/capntproto/actions/runs/41275232417)
+passes all 2,643 executed instrumented tests (seven remain explicitly skipped),
+88 runnable doctests, and every collection/export step. It still fails the
+October 15 baseline comparison after the RPC ownership, driver and runtime
+changes. That run remains failed evidence. The replacement is its complete,
+unmodified [measured summary](https://github.com/DericHuynh/capntproto/actions/runs/41275232417/artifacts/13072974293)
+from commit `fda88272f6f86b33df67785e9f3cbc8c02ff8d9e`.
+
+Before saving the reference, all 1,115 source hashes were checked against that
+commit, all 929 mapped-file metrics against the raw LLVM export, and all nine
+group totals were recomputed. The other 186 files remain explicitly unmapped;
+no previously mapped surviving source lost instrumentation. Compiler, flags,
+source scope and the per-file/per-group 0.5 percentage-point allowance are
+unchanged. The extracted-coordinator rollup still requires every component.
+
+Six direct receive-adapter regressions cover partial progress, interruption,
+read budgets, malformed/truncated/oversized input, terminal IO failure and EOF.
+They also check allocation-free completion and wake/read counts. Adapter
+coverage improves from the old reference's 24/33 to 31/33 lines; the earlier
+zero-hit snapshot was not adopted. Comparing two fresh collections identifies
+one scheduler-dependent TCP shutdown branch. A follow-up test explicitly polls
+shutdown while the local RPC writer is still open, requires the local fence
+before a reciprocal acknowledgement, and completes both receipts without sleeps.
+An intentionally eager acknowledgement fails that regression.
+
+| Source group | Lines, October 15 → measured | Regions | Functions | Branches |
+| --- | ---: | ---: | ---: | ---: |
+| async-framing | 2657/2780 → 4610/4795 | 4055/4258 → 7559/7914 | 273/297 → 434/472 | 271/284 → 502/546 |
+| capability-rpc | 62613/70196 → 100722/110169 | 101956/114060 → 164605/179917 | 5741/6719 → 8791/10113 | 5603/7470 → 9147/11978 |
+| optional-compatibility | 5222/5802 → 5260/5852 | 8194/9431 → 8251/9496 | 449/542 → 449/542 | 545/742 → 545/742 |
+| runtime | 30733/36446 → 32155/37927 | 45485/53785 → 47592/56010 | 2847/3142 → 2977/3282 | 3284/4446 → 3395/4590 |
+| rust-codegen | 3874/4270 → 4081/4445 | 6514/7509 → 6854/7816 | 140/160 → 154/169 | 549/638 → 571/656 |
+| schema-compiler | 9531/9814 → 9534/9817 | 16222/16842 → 16226/16846 | 654/690 → 655/691 | 1101/1322 → 1101/1322 |
+| tests-and-verification | 69986/89155 → 76604/95902 | 101743/130970 → 109837/139426 | 4311/5505 → 4763/5979 | 2424/4262 → 2639/4538 |
+| tools-fuzz-examples-benchmarks | 11357/17044 → 14708/21465 | 20895/31894 → 26530/39763 | 902/1316 → 1135/1650 | 1533/2485 → 1883/3017 |
+| wire-runtime | 20753/23996 → 21629/24869 | 31626/37538 → 32969/38890 | 2400/2864 → 2500/2961 | 1859/2363 → 1918/2427 |
+
+The review retains 220 rejected per-file metrics across 115 files. These include
+real gaps in ownership/publication fallbacks, queue reservation and buffer-cache
+combinations, native error handling and untaken test assertions. Unchanged text,
+peer-table, attachment and inbound helpers also retain uncovered paths; their
+lower measurements are not described as false positives. Async-framing branches
+decrease from 95.42% to 91.94%, despite more covered branches. Extracted-coordinator
+regions change from 1603/1816 to 2657/3042. None of these counters is excluded or
+adjusted, and the reviewed snapshot does not claim exhaustive protocol coverage.
+
+Source identity: `0133fe24aa9ab60f02b51dafc734f6907598e6ee47221270d7e12dcb7ac3fc31`.
+Raw LLVM JSON SHA-256: `40d70ca42ea08e0a8316f73f147af2acd9798a695f4d196fab5e738695da226d`.
+Previous baseline SHA-256: `956e9006fd555916cf648bb817070b54d459ac74c2011f35a5136714a5c79c4d`.
+Replacement summary SHA-256: `f822dcc6bd18f94b1771e0b0c2a6049ac8f55fbdfb18e2fc9b9ba133ebdb3729`.
+A fresh follow-up collection must pass the unchanged gates against this reference;
+copying it does not certify the failed historical comparison.
+
 ## Dedicated remote workflows and loopback controls
 
 The CI runner provisions **two** dedicated droplets: one client and one server,
