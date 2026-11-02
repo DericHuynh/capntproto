@@ -13325,6 +13325,38 @@
       "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
       "conclusion": "success",
       "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "models",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 41327633418
+        },
+        "source_id": "2c95fefb7354537b92eaac96c4121ee1058312c6b55144fbbd36bc9ab5bf7e36",
+        "status": "passed",
+        "tests": {
+          "command_passed": true,
+          "complete": true,
+          "errors": 0,
+          "failed": 0,
+          "passed": 233,
+          "skipped": 7,
+          "suites": 88,
+          "total": 240
+        }
+      },
+      "date": "2026-11-01T16:41:43Z",
+      "run_id": 41327633418,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41327633418"
+    },
+    {
+      "attempt": 1,
+      "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
+      "conclusion": "success",
+      "data": {
         "charts": [
           {
             "name": "tla-outcomes",
@@ -13359,7 +13391,7 @@
                 "bars": [
                   {
                     "label": "CapnpRealtime",
-                    "value": 2278065
+                    "value": 2278146
                   },
                   {
                     "label": "RealtimeConfigBoundary",
@@ -13367,43 +13399,43 @@
                   },
                   {
                     "label": "RpcNativeProvisioning",
-                    "value": 139242
+                    "value": 139254
                   },
                   {
                     "label": "StructuralEquality",
-                    "value": 19552
+                    "value": 19954
                   },
                   {
                     "label": "RealtimeReceiptLifecycle",
-                    "value": 43153
+                    "value": 43239
                   },
                   {
                     "label": "DatagramReentry",
-                    "value": 14178
+                    "value": 14258
                   },
                   {
                     "label": "BulkConfigBoundary",
-                    "value": 71725
+                    "value": 71653
                   },
                   {
                     "label": "RpcFieldOwners",
-                    "value": 25851
+                    "value": 25806
                   },
                   {
                     "label": "GrantRevocation",
-                    "value": 50575
+                    "value": 50535
                   },
                   {
                     "label": "ShutdownWaiters",
-                    "value": 49767
+                    "value": 49836
                   },
                   {
                     "label": "RpcNativeArbitration",
-                    "value": 22880
+                    "value": 23204
                   },
                   {
                     "label": "RpcRealtimeReceiver",
-                    "value": 35088
+                    "value": 34839
                   },
                   {
                     "label": "CapnpConformance",
@@ -13411,15 +13443,15 @@
                   },
                   {
                     "label": "RouteShutdownCompletion",
-                    "value": 17624
+                    "value": 17710
                   },
                   {
-                    "label": "RpcPersistenceExpiry",
-                    "value": 10953
+                    "label": "CapnpJoin",
+                    "value": 11590
                   },
                   {
                     "label": "Other models",
-                    "value": 293188
+                    "value": 291561
                   }
                 ],
                 "title": "Generated states"
@@ -13428,7 +13460,7 @@
                 "bars": [
                   {
                     "label": "CapnpRealtime",
-                    "value": 365562
+                    "value": 365595
                   },
                   {
                     "label": "RealtimeConfigBoundary",
@@ -13436,43 +13468,43 @@
                   },
                   {
                     "label": "RpcNativeProvisioning",
-                    "value": 25353
+                    "value": 25347
                   },
                   {
                     "label": "StructuralEquality",
-                    "value": 19552
+                    "value": 19954
                   },
                   {
                     "label": "RealtimeReceiptLifecycle",
-                    "value": 13832
+                    "value": 13908
                   },
                   {
                     "label": "DatagramReentry",
-                    "value": 12948
+                    "value": 13018
                   },
                   {
                     "label": "BulkConfigBoundary",
-                    "value": 10870
+                    "value": 10798
                   },
                   {
                     "label": "RpcFieldOwners",
-                    "value": 9932
+                    "value": 9915
                   },
                   {
                     "label": "GrantRevocation",
-                    "value": 9704
+                    "value": 9675
                   },
                   {
                     "label": "ShutdownWaiters",
-                    "value": 7989
+                    "value": 8043
                   },
                   {
                     "label": "RpcNativeArbitration",
-                    "value": 7385
+                    "value": 7519
                   },
                   {
                     "label": "RpcRealtimeReceiver",
-                    "value": 7356
+                    "value": 7294
                   },
                   {
                     "label": "CapnpConformance",
@@ -13480,15 +13512,15 @@
                   },
                   {
                     "label": "RouteShutdownCompletion",
-                    "value": 4785
+                    "value": 4831
                   },
                   {
-                    "label": "RpcPersistenceExpiry",
-                    "value": 4579
+                    "label": "CapnpJoin",
+                    "value": 4606
                   },
                   {
                     "label": "Other models",
-                    "value": 101431
+                    "value": 101164
                   }
                 ],
                 "title": "Distinct states"
@@ -13505,7 +13537,7 @@
           "attempt": 1,
           "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
           "repository": "DericHuynh/capntproto",
-          "run_id": 41327633418
+          "run_id": 41437501151
         },
         "source_id": "2c95fefb7354537b92eaac96c4121ee1058312c6b55144fbbd36bc9ab5bf7e36",
         "status": "passed",
@@ -13521,9 +13553,9 @@
           "total": 240
         }
       },
-      "date": "2026-11-01T16:41:43Z",
-      "run_id": 41327633418,
-      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41327633418"
+      "date": "2026-11-02T11:31:26Z",
+      "run_id": 41437501151,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41437501151"
     }
   ]
 }
