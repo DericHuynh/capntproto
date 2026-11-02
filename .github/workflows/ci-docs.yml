@@ -26,7 +26,7 @@ jobs:
           cargo run --locked -p capntproto-dev -- wiki check
           cargo run --locked -p capntproto-dev -- wiki build --output target/wiki --source-ref "${GITHUB_SHA}"
       - name: Upload GitHub Wiki export
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: github-wiki
           overwrite: true
@@ -49,7 +49,7 @@ jobs:
           fail: false
           output: target/links/external.md
           jobSummary: true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: documentation-links
