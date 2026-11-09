@@ -10978,6 +10978,29 @@
       "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
       "conclusion": "success",
       "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "fuzz",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 41438445318
+        },
+        "source_id": "2c95fefb7354537b92eaac96c4121ee1058312c6b55144fbbd36bc9ab5bf7e36",
+        "status": "passed",
+        "tests": null
+      },
+      "date": "2026-11-02T11:38:44Z",
+      "run_id": 41438445318,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41438445318"
+    },
+    {
+      "attempt": 1,
+      "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
+      "conclusion": "success",
+      "data": {
         "charts": [
           {
             "name": "fuzz-executions",
@@ -11016,19 +11039,19 @@
                 "bars": [
                   {
                     "label": "AFL++ / capnp_framing",
-                    "value": 1184034
+                    "value": 816849
                   },
                   {
                     "label": "AFL++ / capnp_pointers",
-                    "value": 2606171
+                    "value": 1890757
                   },
                   {
                     "label": "AFL++ / capnp_schema",
-                    "value": 1057161
+                    "value": 718154
                   },
                   {
                     "label": "AFL++ / rpc_lifecycle",
-                    "value": 111172
+                    "value": 123082
                   }
                 ],
                 "title": "AFL++ + RPC IJON"
@@ -11049,15 +11072,15 @@
                   },
                   {
                     "label": "libFuzzer / capnp_pointers",
-                    "value": 1317
+                    "value": 1321
                   },
                   {
                     "label": "libFuzzer / capnp_schema",
-                    "value": 3377
+                    "value": 3382
                   },
                   {
                     "label": "libFuzzer / native_packet",
-                    "value": 5580
+                    "value": 5578
                   },
                   {
                     "label": "libFuzzer / native_stream",
@@ -11065,7 +11088,7 @@
                   },
                   {
                     "label": "libFuzzer / rpc_lifecycle",
-                    "value": 7740
+                    "value": 7693
                   }
                 ],
                 "title": "libFuzzer + ASan"
@@ -11082,11 +11105,11 @@
                   },
                   {
                     "label": "AFL++ / capnp_schema",
-                    "value": 5316
+                    "value": 5131
                   },
                   {
                     "label": "AFL++ / rpc_lifecycle",
-                    "value": 11967
+                    "value": 12083
                   }
                 ],
                 "title": "AFL++ + RPC IJON"
@@ -11177,15 +11200,15 @@
           "attempt": 1,
           "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
           "repository": "DericHuynh/capntproto",
-          "run_id": 41438445318
+          "run_id": 42613877911
         },
         "source_id": "2c95fefb7354537b92eaac96c4121ee1058312c6b55144fbbd36bc9ab5bf7e36",
         "status": "passed",
         "tests": null
       },
-      "date": "2026-11-02T11:38:44Z",
-      "run_id": 41438445318,
-      "url": "https://github.com/DericHuynh/capntproto/actions/runs/41438445318"
+      "date": "2026-11-09T12:03:43Z",
+      "run_id": 42613877911,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/42613877911"
     }
   ],
   "models": [
