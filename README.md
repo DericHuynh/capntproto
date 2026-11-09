@@ -26,7 +26,7 @@ Latest Cargo run: [2026-11-09T11:35:34Z · run 42610265472 / attempt 1](https://
 
 ### TLA+ models and Rust trace replays
 
-[2026-11-02T11:31:26Z · run 41437501151 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/41437501151) · commit `af2eeeb4818f` · **success**
+[2026-11-09T11:55:52Z · run 42612872487 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/42612872487) · commit `af2eeeb4818f` · **success**
 
 ![TLA+ Rust replay results](docs/reports/tla-history.svg)
 
