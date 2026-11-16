@@ -14,7 +14,7 @@ Generated automatically from CI evidence. Each lane keeps its own measured commi
 
 ### Cargo tests
 
-Latest Cargo run: [2026-11-09T11:35:34Z · run 42610265472 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/42610265472) · commit `af2eeeb4818f` · **failure**
+Latest Cargo run: [2026-11-16T11:23:12Z · run 43857284228 / attempt 1](https://github.com/DericHuynh/capntproto/actions/runs/43857284228) · commit `af2eeeb4818f` · **failure**
 
 ![Cargo test results](docs/reports/cargo-history.svg)
 
