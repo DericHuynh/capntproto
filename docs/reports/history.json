@@ -8889,6 +8889,29 @@
       "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
       "conclusion": "success",
       "data": {
+        "charts": [],
+        "format": 1,
+        "kind": "coverage",
+        "note": "Evidence passed.",
+        "origin": {
+          "attempt": 1,
+          "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
+          "repository": "DericHuynh/capntproto",
+          "run_id": 43860168105
+        },
+        "source_id": "2c95fefb7354537b92eaac96c4121ee1058312c6b55144fbbd36bc9ab5bf7e36",
+        "status": "passed",
+        "tests": null
+      },
+      "date": "2026-11-16T11:42:54Z",
+      "run_id": 43860168105,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/43860168105"
+    },
+    {
+      "attempt": 1,
+      "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
+      "conclusion": "success",
+      "data": {
         "charts": [
           {
             "coverage": true,
@@ -9021,7 +9044,7 @@
                       178
                     ],
                     "label": "tests and verification / current",
-                    "value": 79.87737482012888
+                    "value": 79.87633208900753
                   },
                   {
                     "color": [
@@ -9143,7 +9166,7 @@
                       178
                     ],
                     "label": "runtime / current",
-                    "value": 84.99545478851398
+                    "value": 84.99723722439086
                   },
                   {
                     "color": [
@@ -9197,7 +9220,7 @@
                       178
                     ],
                     "label": "tests and verification / current",
-                    "value": 78.77798975800783
+                    "value": 78.77727253166555
                   },
                   {
                     "color": [
@@ -9602,15 +9625,15 @@
           "attempt": 1,
           "commit": "af2eeeb4818f258511f8718c8cb64562b3f9e4ec",
           "repository": "DericHuynh/capntproto",
-          "run_id": 43860168105
+          "run_id": 45181533606
         },
         "source_id": "2c95fefb7354537b92eaac96c4121ee1058312c6b55144fbbd36bc9ab5bf7e36",
         "status": "passed",
         "tests": null
       },
-      "date": "2026-11-16T11:42:54Z",
-      "run_id": 43860168105,
-      "url": "https://github.com/DericHuynh/capntproto/actions/runs/43860168105"
+      "date": "2026-11-23T13:11:57Z",
+      "run_id": 45181533606,
+      "url": "https://github.com/DericHuynh/capntproto/actions/runs/45181533606"
     }
   ],
   "format": 1,

@@ -27,8 +27,8 @@
 <rect x="600.00" y="390.00" width="529.30" height="23" fill="#00ac7b"/>
 <text x="1135.30" y="407.00" font-size="13" fill="#334155">84.97</text>
 <text x="35.00" y="447.00" font-size="13" fill="#334155">runtime &#x2F; current</text>
-<rect x="600.00" y="432.00" width="529.46" height="23" fill="#ef4444"/>
-<text x="1135.46" y="449.00" font-size="13" fill="#334155">85.00</text>
+<rect x="600.00" y="432.00" width="529.47" height="23" fill="#ef4444"/>
+<text x="1135.47" y="449.00" font-size="13" fill="#334155">85.00</text>
 <text x="35.00" y="489.00" font-size="13" fill="#334155">rust codegen &#x2F; baseline</text>
 <rect x="600.00" y="474.00" width="546.26" height="23" fill="#e89200"/>
 <text x="1152.26" y="491.00" font-size="13" fill="#334155">87.69</text>
@@ -45,8 +45,8 @@
 <rect x="600.00" y="642.00" width="490.73" height="23" fill="#ef4444"/>
 <text x="1096.73" y="659.00" font-size="13" fill="#334155">78.78</text>
 <text x="35.00" y="699.00" font-size="13" fill="#334155">tests and verification &#x2F; current</text>
-<rect x="600.00" y="684.00" width="490.73" height="23" fill="#e89200"/>
-<text x="1096.73" y="701.00" font-size="13" fill="#334155">78.78</text>
+<rect x="600.00" y="684.00" width="490.72" height="23" fill="#e89200"/>
+<text x="1096.72" y="701.00" font-size="13" fill="#334155">78.78</text>
 <text x="35.00" y="741.00" font-size="13" fill="#334155">tools fuzz examples benchmarks &#x2F; baseline</text>
 <rect x="600.00" y="726.00" width="415.62" height="23" fill="#8b5cf6"/>
 <text x="1021.62" y="743.00" font-size="13" fill="#334155">66.72</text>
@@ -60,6 +60,6 @@
 <rect x="600.00" y="852.00" width="528.09" height="23" fill="#ef4444"/>
 <text x="1134.09" y="869.00" font-size="13" fill="#334155">84.78</text>
 <text x="600.00" y="914.00" font-size="13" fill="#64748b">Coverage (%) - higher is better</text>
-<text x="35.00" y="978.00" font-size="13" fill="#64748b">Measured 2026-11-16T11:42:54Z | commit af2eeeb4818f</text>
+<text x="35.00" y="978.00" font-size="13" fill="#64748b">Measured 2026-11-23T13:11:57Z | commit af2eeeb4818f</text>
 </g>
 </svg>
